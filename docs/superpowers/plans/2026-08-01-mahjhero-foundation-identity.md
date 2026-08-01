@@ -597,6 +597,41 @@ In `package.json`, add to `scripts`:
 }
 ```
 
+- [ ] **Step 2b: Configure Vitest**
+
+Vitest cannot run these tests without this. `lib/supabase.ts` transitively imports `react-native`, whose published source is Flow-typed and unparseable by Vitest's transform, and the module throws at import time if its env vars are missing.
+
+Create `vitest.config.mts`:
+
+```ts
+import { defineConfig } from 'vitest/config';
+
+export default defineConfig({
+  resolve: {
+    alias: {
+      // React Native ships Flow-typed source Vitest cannot parse.
+      // react-native-web is plain pre-compiled JS and a safe stand-in for
+      // unit tests that only need modules to resolve, not native behaviour.
+      //
+      // CAVEAT: react-native-web hardcodes `Platform.OS === 'web'`, so the
+      // native branch of any platform-branching code is invisible to this
+      // suite. A test needing it must override explicitly, e.g.
+      // vi.mock('react-native', () => ({ Platform: { OS: 'ios' } })).
+      'react-native': 'react-native-web',
+    },
+  },
+  test: {
+    env: {
+      // Satisfies lib/supabase.ts's import-time env guard. Real values live
+      // in .env.local. Note this means the guard's throw path is never
+      // exercised here; a test covering it must clear these for that spec.
+      EXPO_PUBLIC_SUPABASE_URL: 'https://example.supabase.co',
+      EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_test',
+    },
+  },
+});
+```
+
 - [ ] **Step 3: Write the failing test**
 
 Create `lib/session.test.ts`:
