@@ -277,6 +277,10 @@ Create `supabase/tests/database/profiles.test.sql`:
 
 ```sql
 begin;
+-- pgTAP lives in the `extensions` schema, which is not on the runner's
+-- search_path. Every test file needs this line or plan() will not resolve.
+set local search_path to extensions, public;
+
 select plan(8);
 
 -- Structure
@@ -440,6 +444,10 @@ Create `supabase/tests/database/identity_linking.test.sql`:
 
 ```sql
 begin;
+-- pgTAP lives in the `extensions` schema, which is not on the runner's
+-- search_path. Every test file needs this line or plan() will not resolve.
+set local search_path to extensions, public;
+
 select plan(2);
 
 -- One auth user, two verified identities for the same address
