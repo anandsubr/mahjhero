@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
-import { isValidEmail, sendMagicLink } from '../lib/auth';
+import { availableProviders, isValidEmail, sendMagicLink, signInWithProvider } from '../lib/auth';
 
 export default function SignIn() {
   const [email, setEmail] = useState('');
@@ -68,6 +69,22 @@ export default function SignIn() {
           <Text style={styles.buttonText}>Email me a sign-in link</Text>
         )}
       </Pressable>
+      <Text style={styles.divider}>or</Text>
+      {availableProviders(Platform.OS).map((provider) => (
+        <Pressable
+          key={provider}
+          style={styles.providerButton}
+          onPress={async () => {
+            const { error: providerError } = await signInWithProvider(provider);
+            if (providerError) setError(providerError);
+          }}
+          accessibilityRole="button"
+        >
+          <Text style={styles.providerButtonText}>
+            Continue with {provider === 'google' ? 'Google' : 'Apple'}
+          </Text>
+        </Pressable>
+      ))}
     </View>
   );
 }
@@ -91,4 +108,16 @@ const styles = StyleSheet.create({
   },
   buttonText: { color: 'white', fontSize: 18, fontWeight: '600' },
   error: { color: '#b3261e', fontSize: 18 },
+  // The brief specified fontSize: 16 for the divider, but this app's
+  // 18pt minimum body-text floor (older player base) applies to all
+  // visible text, so it is raised to 18 here.
+  divider: { textAlign: 'center', fontSize: 18, color: '#666' },
+  providerButton: {
+    borderWidth: 1,
+    borderColor: '#999',
+    borderRadius: 8,
+    padding: 18,
+    alignItems: 'center',
+  },
+  providerButtonText: { fontSize: 18, fontWeight: '600' },
 });
