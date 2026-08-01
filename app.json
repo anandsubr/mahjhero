@@ -1,0 +1,22 @@
+{
+  "expo": {
+    "name": "MahjHero",
+    "slug": "mahjhero",
+    "scheme": "mahjhero",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "app.mahjhero.client"
+    },
+    "android": {
+      "package": "app.mahjhero.client"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
+    "plugins": ["expo-router"]
+  }
+}
