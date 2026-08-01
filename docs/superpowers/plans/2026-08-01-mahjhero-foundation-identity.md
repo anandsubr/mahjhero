@@ -870,13 +870,26 @@ export function isValidEmail(value: string): boolean {
   return EMAIL_PATTERN.test(value.trim());
 }
 
+/**
+ * Never rejects. A function declared as returning `{ error }` must report
+ * failure through that channel, not by throwing — the sign-in screen sets
+ * its status to "sending" before calling this, and an escaping rejection
+ * would strand the user in a spinner with the submit button disabled and
+ * no message explaining why.
+ */
 export async function sendMagicLink(
   email: string,
 ): Promise<{ error: string | null }> {
-  const { error } = await supabase.auth.signInWithOtp({
-    email: email.trim(),
-  });
-  return { error: error ? error.message : null };
+  try {
+    const { error } = await supabase.auth.signInWithOtp({
+      email: email.trim(),
+    });
+    return { error: error ? error.message : null };
+  } catch {
+    return {
+      error: 'Could not reach MahjHero. Check your connection and try again.',
+    };
+  }
 }
 ```
 
@@ -955,7 +968,7 @@ export default function SignIn() {
         accessibilityRole="button"
       >
         {status === 'sending' ? (
-          <ActivityIndicator />
+          <ActivityIndicator accessibilityLabel="Sending your sign-in link" />
         ) : (
           <Text style={styles.buttonText}>Email me a sign-in link</Text>
         )}
@@ -982,7 +995,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   buttonText: { color: 'white', fontSize: 18, fontWeight: '600' },
-  error: { color: '#b3261e', fontSize: 16 },
+  error: { color: '#b3261e', fontSize: 18 },
 });
 ```
 
