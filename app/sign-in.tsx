@@ -63,7 +63,7 @@ export default function SignIn() {
         accessibilityRole="button"
       >
         {status === 'sending' ? (
-          <ActivityIndicator />
+          <ActivityIndicator accessibilityLabel="Sending your sign-in link" />
         ) : (
           <Text style={styles.buttonText}>Email me a sign-in link</Text>
         )}
@@ -90,5 +90,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   buttonText: { color: 'white', fontSize: 18, fontWeight: '600' },
-  error: { color: '#b3261e', fontSize: 16 },
+  error: { color: '#b3261e', fontSize: 18 },
 });
