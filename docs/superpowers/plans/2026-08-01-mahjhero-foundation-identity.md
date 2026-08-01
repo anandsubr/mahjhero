@@ -157,13 +157,26 @@ git commit -m "feat: scaffold Expo app with expo-router for iOS, Android, and we
 
 **Interfaces:**
 - Consumes: nothing from Task 1.
-- Produces: a linked hosted Supabase project, a migrations directory, and a working `supabase test db --linked` command. All later database tasks depend on this harness.
+- Produces: a running local Supabase stack, a linked hosted dev project, a migrations directory, and a working `supabase test db --local` command. All later database tasks depend on this harness.
 
-**Deployment model:** this project runs **remote-only** — there is no local Supabase database. Migrations are applied to the linked dev project with `supabase db push`, and pgTAP tests run against it with `supabase test db --linked`.
+**Deployment model — two databases, different jobs:**
 
-**A container runtime is still required, for the test runner only.** `--linked` selects which *database* the tests run against; it does not change where the *runner* executes. The CLI runs `pg_prove` in a local container regardless, so OrbStack (or Docker Desktop) must be installed and running before Step 6. Your data never leaves the hosted project — the container holds only the test harness binary.
+- **Tests run against a local stack** (`supabase test db --local`). The local Postgres connects as superuser, which pgTAP requires.
+- **The app runs against the hosted `mahjhero-dev` project.** Migrations go there with `supabase db push`.
 
-**The dev project is disposable.** It holds no real data and exists to be recreated whenever the schema needs a clean slate — that recreation is this setup's substitute for `supabase db reset`, which has no safe remote equivalent.
+Both receive the same migrations, so schema stays identical.
+
+**Do not attempt `supabase test db --linked`.** It was tried and abandoned for a structural reason: the CLI connects to a linked project as `cli_login_postgres`, a non-superuser that is absent from the `extensions` schema ACL. Supabase forces extensions into that schema and does not let a `grant usage ... to public` stick, so pgTAP's functions are unreachable — and Postgres reports the missing schema privilege as `function plan(integer) does not exist` rather than a permission error, which makes it look like the extension is missing when it is not.
+
+**Prerequisites:** OrbStack (or Docker Desktop) installed and running, and several GB of free disk for the container images.
+
+To keep the footprint small, start only the services the tests need:
+
+```bash
+npx supabase start -x studio,storage-api,imgproxy,edge-runtime,logflare,vector,supavisor,realtime,mailpit
+```
+
+**`supabase db reset` applies to the local database only.** It rebuilds local Postgres from the migrations in seconds and is the normal way to get a clean slate while iterating on schema. It has no remote equivalent — resetting the hosted dev project means recreating it in the dashboard, which is acceptable because that project holds no real data.
 
 - [ ] **Step 1: Initialize the Supabase directory**
 
@@ -222,7 +235,7 @@ rollback;
 
 - [ ] **Step 6: Run the test suite against the linked project**
 
-Run: `npx supabase test db --linked`
+Run: `npx supabase test db --local`
 Expected: PASS — `harness.test.sql .. ok`
 
 Every pgTAP test in this plan wraps itself in `begin`/`rollback`, so a test run leaves the dev database unchanged. That property is what makes running against a hosted project safe; do not write a test that omits it.
@@ -328,7 +341,7 @@ rollback;
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `npx supabase test db --linked`
+Run: `npx supabase test db --local`
 Expected: FAIL — `relation "public.profiles" does not exist`
 
 - [ ] **Step 3: Write the migration**
@@ -396,7 +409,7 @@ Expected: reports `create_profiles` applied.
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `npx supabase test db --linked`
+Run: `npx supabase test db --local`
 Expected: PASS — all 8 assertions in `profiles.test.sql`
 
 - [ ] **Step 6: Commit**
@@ -466,7 +479,7 @@ rollback;
 
 - [ ] **Step 2: Run the test to verify current behaviour**
 
-Run: `npx supabase test db --linked`
+Run: `npx supabase test db --local`
 Expected: PASS for both assertions. The `on conflict (id) do nothing` clause in `handle_new_user()` is what makes the first hold.
 
 If either assertion fails, the trigger is creating duplicate profiles — fix `handle_new_user()` before continuing. Do not proceed with a failing assertion here; every later plan assumes one profile per person.
@@ -1697,7 +1710,7 @@ const styles = StyleSheet.create({
 
 - [ ] **Step 6: Run the full test suite**
 
-Run: `npm test && npx supabase test db --linked`
+Run: `npm test && npx supabase test db --local`
 Expected: 18 Vitest tests PASS; all pgTAP files PASS.
 
 - [ ] **Step 7: Verify all three platforms build**
