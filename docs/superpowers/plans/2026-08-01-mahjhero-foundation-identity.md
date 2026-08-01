@@ -591,16 +591,16 @@ import { createClient } from '@supabase/supabase-js';
 import { Platform } from 'react-native';
 
 const url = process.env.EXPO_PUBLIC_SUPABASE_URL;
-const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+const publishableKey = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
-if (!url || !anonKey) {
+if (!url || !publishableKey) {
   throw new Error(
-    'Missing EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_ANON_KEY. ' +
+    'Missing EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY. ' +
       'Copy .env.local.example to .env.local and fill it in.',
   );
 }
 
-export const supabase = createClient(url, anonKey, {
+export const supabase = createClient(url, publishableKey, {
   auth: {
     // On web, Supabase uses localStorage by default; AsyncStorage is native-only.
     storage: Platform.OS === 'web' ? undefined : AsyncStorage,
@@ -681,10 +681,10 @@ Create `.env.local.example`:
 
 ```
 # From the dev project dashboard: Settings -> API
-# The anon key is a publishable client key and is safe in a client bundle.
-# Never put the service_role key in this file or anywhere in the app.
+# The publishable key (sb_publishable_...) is a client key and is safe in a
+# client bundle. Never put the service_role key here or anywhere in the app.
 EXPO_PUBLIC_SUPABASE_URL=https://<dev-project-ref>.supabase.co
-EXPO_PUBLIC_SUPABASE_ANON_KEY=replace-with-dev-anon-key
+EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_replace_me
 ```
 
 Then copy it to `.env.local` and fill in the real values. `.env.local` is git-ignored (Task 2).
@@ -1126,7 +1126,7 @@ describe('isCompleteProfile', () => {
 });
 ```
 
-Skill level is required rather than optional because events tier their tables by it. A member with no skill level cannot be matched to a table, so the app must collect it before they reach any club.
+Skill level is required rather than optional because events tier their tables by it. A member with no skill level cannot be matched to a table, so the app must collect it before they reach any club. Step 5 uses this to disable the Save button until both fields are present, which is why it is worth extracting rather than inlining.
 
 - [ ] **Step 2: Run the test to verify it fails**
 
@@ -1202,7 +1202,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { fetchProfile, updateProfile } from '../lib/profile';
+import { fetchProfile, isCompleteProfile, updateProfile } from '../lib/profile';
 import type { SkillLevel } from '../lib/profile';
 import { useSession } from '../lib/session';
 import { supabase } from '../lib/supabase';
@@ -1294,7 +1294,30 @@ export default function ProfileScreen() {
         </Pressable>
       ))}
 
-      <Pressable style={styles.button} onPress={onSave} accessibilityRole="button">
+      {isCompleteProfile({ display_name: displayName, skill_level: skillLevel }) ? null : (
+        <Text style={styles.help}>
+          Add your name and skill level so hosts can seat you at the right table.
+        </Text>
+      )}
+      <Pressable
+        style={[
+          styles.button,
+          isCompleteProfile({ display_name: displayName, skill_level: skillLevel })
+            ? null
+            : styles.buttonDisabled,
+        ]}
+        onPress={onSave}
+        disabled={
+          !isCompleteProfile({ display_name: displayName, skill_level: skillLevel })
+        }
+        accessibilityRole="button"
+        accessibilityState={{
+          disabled: !isCompleteProfile({
+            display_name: displayName,
+            skill_level: skillLevel,
+          }),
+        }}
+      >
         <Text style={styles.buttonText}>{saved ? 'Saved' : 'Save'}</Text>
       </Pressable>
 
@@ -1341,6 +1364,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 16,
   },
+  buttonDisabled: { backgroundColor: '#9db8e8' },
   buttonText: { color: 'white', fontSize: 18, fontWeight: '600' },
   linkRow: { marginTop: 24 },
   link: { fontSize: 18, color: '#1f6feb' },
@@ -1453,10 +1477,19 @@ export async function updatePreferences(
   userId: string,
   changes: Partial<NotificationPreferences>,
 ): Promise<{ error: string | null }> {
+  const touchesStart = changes.quiet_hours_start !== undefined;
+  const touchesEnd = changes.quiet_hours_end !== undefined;
+
+  // Both bounds must travel together. Accepting one alone would let a caller
+  // slip past validation and store a window this module considers invalid.
+  if (touchesStart !== touchesEnd) {
+    return { error: 'Quiet hours must be changed as a pair.' };
+  }
+
   if (
-    changes.quiet_hours_start !== undefined &&
-    changes.quiet_hours_end !== undefined &&
-    !isValidQuietWindow(changes.quiet_hours_start, changes.quiet_hours_end)
+    touchesStart &&
+    touchesEnd &&
+    !isValidQuietWindow(changes.quiet_hours_start!, changes.quiet_hours_end!)
   ) {
     return { error: 'Those quiet hours do not make sense.' };
   }
@@ -1682,4 +1715,4 @@ Deliberately deferred to later plans, so they aren't mistaken for omissions:
 
 ## Forward references
 
-`isCompleteProfile` (Task 8) is defined and tested here but has no caller in this plan. That is intentional, not dead code: Plan 2 uses it to block a member from joining a club until they have set a skill level, because events tier their tables by it and a member without one cannot be seated. If Plan 2 changes that rule, delete the function rather than leaving it unused.
+None. Every function this plan defines has a caller within it. Plan 2 additionally reuses `isCompleteProfile` to block joining a club without a skill level, but that is a second consumer, not the first.
