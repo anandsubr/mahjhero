@@ -76,8 +76,7 @@ installing is an upgrade, never a prerequisite.
 
 **Scheduled work.** `pg_cron` firing Edge Functions.
 
-**Delivery.** Expo push service (wrapping APNs and FCM) for push; Resend or Postmark
-for email.
+**Delivery.** Expo push service (wrapping APNs and FCM) for push; Resend for email.
 
 **Governing principle.** The database owns authorization and capacity, not the app.
 With RLS plus a transactional booking function, a stale or hostile client cannot
@@ -101,8 +100,8 @@ requirement, not an optional extra.
 
 | Table | Key fields |
 |---|---|
-| `profiles` | id (= auth user id), display_name, skill_level, avatar_url |
-| `clubs` | id, name, slug, visibility (public/private), timezone, created_by |
+| `profiles` | id (= auth user id), display_name, skill_level, avatar_url, notify_channel (push/email/both), mute_need_a_fourth |
+| `clubs` | id, name, slug, visibility (public/private), timezone, reminder_offsets (default `[24h, 2h]`), quiet_hours_start/end, created_by |
 | `club_members` | club_id, profile_id, role (host/co_organizer/member), status — unique per (club_id, profile_id) |
 | `club_invites` | club_id, token, email, phone, display_name, skill_level, invited_by, expires_at, accepted_at, accepted_by |
 
@@ -118,8 +117,8 @@ anyone accepts. Importing forty members into an apparently empty club reads as f
 | `events` | club_id, series_id (nullable), title, starts_at, ends_at, venue, notes, status (draft/published/cancelled), created_by |
 | `event_tables` | event_id, label, skill_tier (beginner/intermediate/advanced/mixed), capacity (default 4) |
 | `booking_groups` | created_by, size, preferred_table_id, allow_split, status (confirmed/waitlisted/cancelled), waitlist_position |
-| `bookings` | group_id, event_id, event_table_id, profile_id, status |
-| `promotion_offers` | group_id, offered_seat_count, expires_at, responded_at |
+| `bookings` | group_id, event_id, event_table_id (**nullable** — see "any table" below), profile_id, status |
+| `promotion_offers` | group_id, event_table_id, offered_seat_count, expires_at, responded_at |
 | `checkins` | event_id, profile_id, checked_in_at, checked_in_by |
 | `broadcasts` | club_id, event_id (nullable), author_id, body, audience, sent_at |
 | `notification_log` | recipient_id, notification_type, subject_key, sent_at |
@@ -135,6 +134,12 @@ Notes on the shape:
 - **Recurring events materialize** into concrete `events` rows roughly six weeks ahead
   rather than being computed on read; bookings need something real to attach to.
 - **One confirmed booking per person per event**, enforced by constraint.
+- **`bookings.event_table_id` is nullable.** A null means "any table" — the member is
+  confirmed for the event but not yet placed. Such bookings consume no table capacity
+  until a host assigns them, and are excluded from "need a 4th" detection.
+- **`club_invites.skill_level` is the host's suggestion, not authoritative.** On
+  acceptance it seeds the profile only if that profile has no skill level set. A
+  member's own setting always wins thereafter.
 
 ## 6. Seating and booking mechanics
 

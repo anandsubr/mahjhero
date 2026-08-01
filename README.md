@@ -45,7 +45,7 @@ roadmap for the reasoning.
 
 - **Client:** Expo / React Native — iOS, Android, and web from one codebase
 - **Backend:** Supabase — Postgres, Auth, Row-Level Security, Realtime, Edge Functions
-- **Delivery:** Expo push (APNs + FCM); Resend or Postmark for email
+- **Delivery:** Expo push (APNs + FCM); Resend for email
 - **Domain:** `mahjhero.app` / `mahjhero.com`, registered via Cloudflare Registrar
 
 The organizing principle is that the database owns authorization and capacity, not the
