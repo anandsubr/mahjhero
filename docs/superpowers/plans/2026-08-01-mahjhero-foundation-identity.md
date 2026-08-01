@@ -42,9 +42,17 @@ The repository already contains `README.md` and `docs/`. Scaffold into a tempora
 
 ```bash
 npx create-expo-app@latest /tmp/mahjhero-scaffold --template blank-typescript
-rsync -a --exclude=README.md /tmp/mahjhero-scaffold/ .
+rsync -a \
+  --exclude=.git \
+  --exclude=README.md \
+  --exclude=CLAUDE.md \
+  --exclude=AGENTS.md \
+  --exclude=LICENSE \
+  /tmp/mahjhero-scaffold/ .
 rm -rf /tmp/mahjhero-scaffold
 ```
+
+**`--exclude=.git` is not optional.** `create-expo-app` initializes its own git repository in the scaffold directory; without that exclusion the rsync overwrites this repository's `.git` with the throwaway one and destroys all history.
 
 - [ ] **Step 2: Add expo-router and web support**
 
