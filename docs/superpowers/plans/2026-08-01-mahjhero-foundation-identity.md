@@ -139,27 +139,42 @@ git commit -m "feat: scaffold Expo app with expo-router for iOS, Android, and we
 
 ---
 
-### Task 2: Initialize Supabase with a pgTAP test harness
+### Task 2: Link the Supabase dev project and set up the pgTAP test harness
 
 **Files:**
 - Create: `supabase/config.toml` (generated)
 - Create: `supabase/migrations/<timestamp>_enable_pgtap.sql`
 - Create: `supabase/tests/database/harness.test.sql`
+- Modify: `.gitignore`
 
 **Interfaces:**
 - Consumes: nothing from Task 1.
-- Produces: a local Supabase stack, a migrations directory, and a working `supabase test db` command. All later database tasks depend on this harness.
+- Produces: a linked hosted Supabase project, a migrations directory, and a working `supabase test db --linked` command. All later database tasks depend on this harness.
 
-- [ ] **Step 1: Initialize Supabase and start the local stack**
+**Deployment model:** this project runs **remote-only** — there is no local Supabase stack and Docker is not required. Migrations are applied to the linked dev project with `supabase db push`, and pgTAP tests run against it with `--linked`.
+
+**The dev project is disposable.** It holds no real data and exists to be recreated whenever the schema needs a clean slate — that recreation is this setup's substitute for `supabase db reset`, which has no safe remote equivalent.
+
+- [ ] **Step 1: Initialize the Supabase directory**
 
 ```bash
 npx supabase init
-npx supabase start
 ```
 
-Expected: prints local API URL, DB URL, and anon/service keys. Docker must be running.
+Expected: creates `supabase/config.toml` and empty `migrations/` and `functions/` directories.
 
-- [ ] **Step 2: Create the pgTAP migration**
+- [ ] **Step 2: Authenticate and link the dev project**
+
+These two commands involve credentials — a browser authorization and the project's database password — so run them interactively yourself rather than delegating them.
+
+```bash
+npx supabase login
+npx supabase link --project-ref <dev-project-ref>
+```
+
+Expected: `Finished supabase link.` The ref is the subdomain in your project's dashboard URL.
+
+- [ ] **Step 3: Create the pgTAP migration**
 
 ```bash
 npx supabase migration new enable_pgtap
@@ -171,7 +186,17 @@ Write into the generated file in `supabase/migrations/`:
 create extension if not exists pgtap with schema extensions;
 ```
 
-- [ ] **Step 3: Write a harness test that proves the runner works**
+- [ ] **Step 4: Push the migration to the dev project**
+
+```bash
+npx supabase db push
+```
+
+Expected: lists the pending migration and reports it applied.
+
+Every task that adds a migration must push it before its tests run. Unlike a local stack, nothing applies migrations implicitly.
+
+- [ ] **Step 5: Write a harness test that proves the runner works**
 
 Create `supabase/tests/database/harness.test.sql`:
 
@@ -185,12 +210,14 @@ select * from finish();
 rollback;
 ```
 
-- [ ] **Step 4: Run the test suite**
+- [ ] **Step 6: Run the test suite against the linked project**
 
-Run: `npx supabase test db`
+Run: `npx supabase test db --linked`
 Expected: PASS — `harness.test.sql .. ok`
 
-- [ ] **Step 5: Ignore local Supabase artefacts**
+Every pgTAP test in this plan wraps itself in `begin`/`rollback`, so a test run leaves the dev database unchanged. That property is what makes running against a hosted project safe; do not write a test that omits it.
+
+- [ ] **Step 7: Ignore Supabase artefacts and local environment files**
 
 Append to `.gitignore`:
 
@@ -200,11 +227,11 @@ supabase/.temp
 .env.local
 ```
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add -A
-git commit -m "feat: initialize Supabase with pgTAP test harness"
+git commit -m "feat: link Supabase dev project with pgTAP test harness"
 ```
 
 ---
@@ -291,7 +318,7 @@ rollback;
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `npx supabase test db`
+Run: `npx supabase test db --linked`
 Expected: FAIL — `relation "public.profiles" does not exist`
 
 - [ ] **Step 3: Write the migration**
@@ -352,12 +379,17 @@ create trigger on_auth_user_created
   for each row execute function public.handle_new_user();
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [ ] **Step 4: Push the migration to the dev project**
 
-Run: `npx supabase test db`
+Run: `npx supabase db push`
+Expected: reports `create_profiles` applied.
+
+- [ ] **Step 5: Run the tests to verify they pass**
+
+Run: `npx supabase test db --linked`
 Expected: PASS — all 8 assertions in `profiles.test.sql`
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add supabase/migrations supabase/tests
@@ -424,21 +456,16 @@ rollback;
 
 - [ ] **Step 2: Run the test to verify current behaviour**
 
-Run: `npx supabase test db`
+Run: `npx supabase test db --linked`
 Expected: PASS for both assertions. The `on conflict (id) do nothing` clause in `handle_new_user()` is what makes the first hold.
 
 If either assertion fails, the trigger is creating duplicate profiles — fix `handle_new_user()` before continuing. Do not proceed with a failing assertion here; every later plan assumes one profile per person.
 
-- [ ] **Step 3: Enable automatic identity linking in local config**
+- [ ] **Step 3: Confirm automatic identity linking is on in the dashboard**
 
-In `supabase/config.toml`, under `[auth]`, set:
+Because this project is remote-only, auth behaviour is configured in the Supabase dashboard rather than in `config.toml`. In the dev project, open **Authentication → Sign In / Providers** and confirm that manual linking is **disabled**.
 
-```toml
-[auth]
-enable_manual_linking = false
-```
-
-This keeps Supabase's automatic linking behaviour, where a provider sign-in with an already-verified email attaches to the existing user rather than creating a new one.
+Leaving manual linking off preserves Supabase's automatic behaviour: a provider sign-in carrying an already-verified email attaches to the existing user instead of creating a second one. That is precisely what the test in Step 1 asserts.
 
 - [ ] **Step 4: Document the hosted-project configuration**
 
@@ -475,7 +502,7 @@ it against any environment whose auth settings change.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add supabase/tests supabase/config.toml docs/auth-configuration.md
+git add supabase/tests docs/auth-configuration.md
 git commit -m "test: assert one verified email maps to one profile"
 ```
 
@@ -653,10 +680,14 @@ Expected: PASS — 3 tests
 Create `.env.local.example`:
 
 ```
-# Values printed by `npx supabase start`
-EXPO_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
-EXPO_PUBLIC_SUPABASE_ANON_KEY=replace-with-local-anon-key
+# From the dev project dashboard: Settings -> API
+# The anon key is a publishable client key and is safe in a client bundle.
+# Never put the service_role key in this file or anywhere in the app.
+EXPO_PUBLIC_SUPABASE_URL=https://<dev-project-ref>.supabase.co
+EXPO_PUBLIC_SUPABASE_ANON_KEY=replace-with-dev-anon-key
 ```
+
+Then copy it to `.env.local` and fill in the real values. `.env.local` is git-ignored (Task 2).
 
 - [ ] **Step 9: Wrap the app in the provider**
 
@@ -1623,7 +1654,7 @@ const styles = StyleSheet.create({
 
 - [ ] **Step 6: Run the full test suite**
 
-Run: `npm test && npx supabase test db`
+Run: `npm test && npx supabase test db --linked`
 Expected: 18 Vitest tests PASS; all pgTAP files PASS.
 
 - [ ] **Step 7: Verify all three platforms build**
