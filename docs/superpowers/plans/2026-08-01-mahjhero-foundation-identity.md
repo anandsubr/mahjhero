@@ -159,7 +159,9 @@ git commit -m "feat: scaffold Expo app with expo-router for iOS, Android, and we
 - Consumes: nothing from Task 1.
 - Produces: a linked hosted Supabase project, a migrations directory, and a working `supabase test db --linked` command. All later database tasks depend on this harness.
 
-**Deployment model:** this project runs **remote-only** — there is no local Supabase stack and Docker is not required. Migrations are applied to the linked dev project with `supabase db push`, and pgTAP tests run against it with `--linked`.
+**Deployment model:** this project runs **remote-only** — there is no local Supabase database. Migrations are applied to the linked dev project with `supabase db push`, and pgTAP tests run against it with `supabase test db --linked`.
+
+**A container runtime is still required, for the test runner only.** `--linked` selects which *database* the tests run against; it does not change where the *runner* executes. The CLI runs `pg_prove` in a local container regardless, so OrbStack (or Docker Desktop) must be installed and running before Step 6. Your data never leaves the hosted project — the container holds only the test harness binary.
 
 **The dev project is disposable.** It holds no real data and exists to be recreated whenever the schema needs a clean slate — that recreation is this setup's substitute for `supabase db reset`, which has no safe remote equivalent.
 

@@ -42,3 +42,8 @@ yarn-error.*
 
 # project tooling
 .superpowers/
+
+# Supabase
+supabase/.branches
+supabase/.temp
+.env.local
