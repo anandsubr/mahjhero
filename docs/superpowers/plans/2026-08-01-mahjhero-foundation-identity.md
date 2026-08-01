@@ -514,9 +514,9 @@ Expected: PASS for both assertions.
 
 **Verify the test can actually fail before trusting it.** Temporarily change `on delete cascade` to `on delete restrict` in the `profiles.id` foreign key, re-apply with `npx supabase db reset`, and confirm assertion 2 now fails. Restore it and re-apply. This file previously contained assertions that passed regardless of the code's correctness; do not trust a green run without a mutation proving otherwise.
 
-If assertion 1 fails, `auth.users` does not enforce email uniqueness on this Supabase version. Do not delete the assertion or work around it — report it, because the entire identity model assumes that guarantee. The `on conflict (id) do nothing` clause in `handle_new_user()` is what makes the first hold.
+If assertion 1 fails, `auth.users` does not enforce email uniqueness on this Supabase version. Do not delete the assertion or work around it — report it, because the entire identity model assumes that guarantee. Note that this constraint lives in Supabase's own auth schema and is unrelated to `handle_new_user()`, which only guards `profiles.id`.
 
-If either assertion fails, the trigger is creating duplicate profiles — fix `handle_new_user()` before continuing. Do not proceed with a failing assertion here; every later plan assumes one profile per person.
+If assertion 2 fails, the `profiles.id` foreign key has lost its `on delete cascade` and deleted accounts are leaving orphaned profiles behind on club rosters. Do not proceed with a failing assertion here; every later plan assumes one profile per person and no orphans.
 
 - [ ] **Step 3: Confirm automatic identity linking is on in the dashboard**
 
