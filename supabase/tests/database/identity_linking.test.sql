@@ -3,48 +3,27 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(4);
+select plan(2);
 
 -- ---------------------------------------------------------------------------
--- Part 1: the trigger absorbs a conflicting profile instead of failing.
+-- What is NOT tested here, and why.
 --
--- Seed a profile row FIRST, then create the auth user with the same id. The
--- trigger fires into an id that already exists, which is the only way to
--- exercise `on conflict (id) do nothing`. Delete that clause from
--- handle_new_user() and the insert below raises a unique violation, so
--- these assertions genuinely fail.
--- ---------------------------------------------------------------------------
-insert into public.profiles (id, display_name)
-values ('33333333-3333-3333-3333-333333333333', 'Existing Carol');
-
-select lives_ok(
-  $$insert into auth.users (id, email, raw_user_meta_data)
-    values ('33333333-3333-3333-3333-333333333333', 'carol@example.com',
-            '{"full_name": "New Carol"}'::jsonb)$$,
-  'creating an auth user whose profile already exists does not raise'
-);
-
-select is(
-  (select count(*)::int from public.profiles
-   where id = '33333333-3333-3333-3333-333333333333'),
-  1,
-  'still exactly one profile for that id'
-);
-
-select is(
-  (select display_name from public.profiles
-   where id = '33333333-3333-3333-3333-333333333333'),
-  'Existing Carol',
-  'the existing profile is preserved, not overwritten by the trigger'
-);
-
--- ---------------------------------------------------------------------------
--- Part 2: the platform guarantee this design leans on.
+-- `handle_new_user()` carries `on conflict (id) do nothing`. That branch is
+-- structurally unreachable and therefore untestable: profiles.id references
+-- auth.users(id) non-deferrably, so a profile cannot exist before its auth
+-- user; auth.users.id is a primary key, so the same id cannot be inserted
+-- twice to re-fire the trigger; and deleting the user cascades the profile
+-- away rather than orphaning it. The clause stays as cheap insurance against
+-- a future schema change, but no test can exercise it, and a test that
+-- claims to is worse than none — an earlier version of this file made
+-- exactly that false claim.
 --
--- `on conflict (id)` cannot stop two DIFFERENT ids sharing one email — that
--- is prevented by auth.users itself. Assert it, so we find out if that ever
--- stops being true rather than discovering it through duplicated members.
+-- The two guarantees below are the ones that actually hold the identity
+-- model together, and both genuinely fail if broken.
 -- ---------------------------------------------------------------------------
+
+-- 1. One verified email cannot become two accounts. This is what prevents a
+--    member appearing twice on a club roster with their bookings split.
 insert into auth.users (id, email)
 values ('44444444-4444-4444-4444-444444444444', 'dave@example.com');
 
@@ -54,6 +33,21 @@ select throws_ok(
   '23505',
   null,
   'auth.users rejects a second user with the same email'
+);
+
+-- 2. Removing an auth user removes their profile. Without the cascade, a
+--    deleted account leaves an orphaned profile that still appears on
+--    rosters and in bookings.
+insert into auth.users (id, email)
+values ('66666666-6666-6666-6666-666666666666', 'erin@example.com');
+
+delete from auth.users where id = '66666666-6666-6666-6666-666666666666';
+
+select is(
+  (select count(*)::int from public.profiles
+   where id = '66666666-6666-6666-6666-666666666666'),
+  0,
+  'deleting an auth user cascades to their profile, leaving no orphan'
 );
 
 select * from finish();
