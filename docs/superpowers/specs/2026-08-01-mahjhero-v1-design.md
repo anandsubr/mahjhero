@@ -100,8 +100,8 @@ requirement, not an optional extra.
 
 | Table | Key fields |
 |---|---|
-| `profiles` | id (= auth user id), display_name, skill_level, avatar_url, notify_channel (push/email/both), mute_need_a_fourth |
-| `clubs` | id, name, slug, visibility (public/private), timezone, reminder_offsets (default `[24h, 2h]`), quiet_hours_start/end, created_by |
+| `profiles` | id (= auth user id), display_name, skill_level, avatar_url, timezone, notify_channel (push/email/both), mute_need_a_fourth, quiet_hours_enabled (default true), quiet_hours_start (default 21:00), quiet_hours_end (default 08:00) |
+| `clubs` | id, name, slug, visibility (public/private), timezone, reminder_offsets (default `[24h, 2h]`), created_by |
 | `club_members` | club_id, profile_id, role (host/co_organizer/member), status — unique per (club_id, profile_id) |
 | `club_invites` | club_id, token, email, phone, display_name, skill_level, invited_by, expires_at, accepted_at, accepted_by |
 
@@ -227,10 +227,21 @@ email fallback.
 
 1. **Every send is logged and deduped** on (recipient, type, subject). A job retry or
    restart cannot double-send. The same reminder arriving twice reads as broken.
-2. **Quiet hours, 9pm–8am club-local.** Non-urgent sends queue until morning.
+2. **Quiet hours are a personal setting, not a club one.** Each member controls whether
+   they apply and over what window, in **their own** timezone — defaulting to on,
+   9pm–8am. A club has no business imposing one member's schedule on another.
+
+   **Exemption:** a reminder for an event starting *during* the member's quiet window,
+   or within two hours after it ends, is sent regardless. Otherwise a club that plays
+   at 9am would have its 2-hour reminder held until 8am and delivered after it stopped
+   being useful. Suppressible sends (need-a-4th alerts, broadcasts) queue until the
+   window closes.
 3. **Per-member preferences** — channel choice (push / email / both) and a separate
    mute for need-a-4th alerts, which are the highest-frequency, lowest-urgency class.
    Reminders for events you have booked are not mutable.
+
+`reminder_offsets` stays on the club: the host decides how far ahead their events
+remind. When that send actually lands is the member's business.
 
 ## 8. Permissions and tenancy
 
