@@ -383,6 +383,14 @@ create policy profiles_select_own on public.profiles
 create policy profiles_update_own on public.profiles
   for update using (auth.uid() = id) with check (auth.uid() = id);
 
+-- RLS policies FILTER access; they do not GRANT it. Without a table-level
+-- grant the policies are unreachable and every query fails with
+-- "permission denied for table profiles". New tables are not auto-exposed
+-- to the Data API roles (see auto_expose_new_tables in supabase/config.toml,
+-- which is off here and off by default in the cloud), so every table this
+-- project creates needs a grant matching its policies — no wider.
+grant select, update on public.profiles to authenticated;
+
 -- Create a profile whenever an auth user is created, by any provider.
 create function public.handle_new_user()
 returns trigger
