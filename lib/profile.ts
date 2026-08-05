@@ -11,6 +11,17 @@ export type Profile = {
   timezone: string;
 };
 
+/**
+ * The exact select lists the client relies on, named once so the schema
+ * contract test (lib/schema-contract.test.ts) can assert the DB really
+ * answers with the shape the types above claim. Critical 1 — a `time` column
+ * arriving as `21:00:00` where the client assumed `21:00` — was invisible to
+ * both existing suites precisely because nothing crossed this boundary.
+ */
+export const PROFILE_COLUMNS = 'id, display_name, skill_level, avatar_url, timezone';
+export const PREFERENCE_COLUMNS =
+  'notify_channel, mute_need_a_fourth, quiet_hours_enabled, quiet_hours_start, quiet_hours_end';
+
 export function isCompleteProfile(profile: {
   display_name: string;
   skill_level: SkillLevel | null;
@@ -22,7 +33,7 @@ export async function fetchProfile(userId: string): Promise<Profile | null> {
   try {
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, display_name, skill_level, avatar_url, timezone')
+      .select(PROFILE_COLUMNS)
       .eq('id', userId)
       .single();
 
@@ -47,12 +58,23 @@ export async function updateProfile(
   changes: Partial<Pick<Profile, 'display_name' | 'skill_level' | 'timezone'>>,
 ): Promise<{ error: string | null }> {
   try {
-    const { error } = await supabase
+    // `.select('id')` is what makes a rejected write observable. Without it
+    // PostgREST answers 204 with `error: null` even when the update matched
+    // zero rows — which is exactly what an RLS denial or a missing profile
+    // row looks like — and the screen would report "Saved" for a write that
+    // never happened.
+    const { data, error } = await supabase
       .from('profiles')
       .update({ ...changes, updated_at: new Date().toISOString() })
-      .eq('id', userId);
+      .eq('id', userId)
+      .select('id');
 
-    return { error: error ? error.message : null };
+    if (error) return { error: error.message };
+    if (!data || data.length === 0) {
+      console.error('updateProfile failed', 'update matched no rows');
+      return { error: GENERIC_ERROR };
+    }
+    return { error: null };
   } catch (cause) {
     // The user-facing message is deliberately generic, but keep the original
     // for diagnosis — otherwise a DNS failure, a Supabase outage, and a CORS
@@ -111,9 +133,7 @@ export async function fetchPreferences(
   try {
     const { data, error } = await supabase
       .from('profiles')
-      .select(
-        'notify_channel, mute_need_a_fourth, quiet_hours_enabled, quiet_hours_start, quiet_hours_end',
-      )
+      .select(PREFERENCE_COLUMNS)
       .eq('id', userId)
       .single();
 
@@ -160,12 +180,20 @@ export async function updatePreferences(
   }
 
   try {
-    const { error } = await supabase
+    // See updateProfile: `.select('id')` is what distinguishes a real write
+    // from a 204 that matched no rows.
+    const { data, error } = await supabase
       .from('profiles')
       .update({ ...changes, updated_at: new Date().toISOString() })
-      .eq('id', userId);
+      .eq('id', userId)
+      .select('id');
 
-    return { error: error ? error.message : null };
+    if (error) return { error: error.message };
+    if (!data || data.length === 0) {
+      console.error('updatePreferences failed', 'update matched no rows');
+      return { error: GENERIC_ERROR };
+    }
+    return { error: null };
   } catch (cause) {
     // The user-facing message is deliberately generic, but keep the original
     // for diagnosis — otherwise a DNS failure, a Supabase outage, and a CORS

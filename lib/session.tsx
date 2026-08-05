@@ -30,7 +30,22 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setSession(data.session));
+    supabase.auth
+      .getSession()
+      .then(({ data }) => setSession(data.session))
+      // Corrupt persisted storage or a full storage quota makes this reject.
+      // Leaving `session` at `undefined` would hold every screen in the app on
+      // a bare ActivityIndicator with no exit — the worst possible outcome of
+      // an unhandled rejection here. Resolving to signed-out at least reaches
+      // the sign-in screen, from which the member can recover.
+      //
+      // Only if nothing has arrived yet: onAuthStateChange can win the race,
+      // and a late rejection here must not sign out a member who is already
+      // signed in.
+      .catch((cause) => {
+        console.error('SessionProvider getSession failed', cause);
+        setSession((current) => (current === undefined ? null : current));
+      });
 
     const { data: subscription } = supabase.auth.onAuthStateChange(
       (_event, nextSession) => setSession(nextSession),
