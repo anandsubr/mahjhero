@@ -35,6 +35,13 @@ export default function NotificationSettings() {
   useEffect(() => {
     if (!userId) return;
     let cancelled = false;
+    // Reset per-account load state before fetching, so an account switch
+    // cannot leave the previous member's error screen (or preferences) up
+    // with `ready` already true.
+    setReady(false);
+    setPrefs(null);
+    setSaved(false);
+    setError(null);
     fetchPreferences(userId).then((fetched) => {
       if (cancelled) return;
       // fetchPreferences never rejects — it resolves null on any failure

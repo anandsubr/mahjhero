@@ -144,11 +144,17 @@ describe.runIf(reachable || required)('profiles schema contract', () => {
     // this only replaces the defaults with the distinctive values above.
     // Seeded as the member rather than as service_role, which the migration
     // deliberately grants nothing on public.profiles.
-    const { error: seedError } = await supabase
+    // `.select('id')` for the same reason the app's writes carry it: PostgREST
+    // answers 204 with error: null when an update matches nothing, so without
+    // it a zero-row seed would sail through here and surface later as a
+    // baffling value mismatch in an unrelated assertion.
+    const { data: seeded, error: seedError } = await supabase
       .from('profiles')
       .update(SEEDED)
-      .eq('id', userId);
+      .eq('id', userId)
+      .select('id');
     expect(seedError, `seeding the profile failed: ${seedError?.message}`).toBeNull();
+    expect(seeded, 'seeding the profile matched no rows').toHaveLength(1);
   });
 
   afterAll(async () => {

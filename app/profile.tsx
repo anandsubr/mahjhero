@@ -39,6 +39,14 @@ export default function ProfileScreen() {
   useEffect(() => {
     if (!userId) return;
     let cancelled = false;
+    // Reset per-account load state before fetching. Without this an account
+    // switch after a failed load leaves the previous member's error screen up
+    // over the new member's profile, with `ready` already true so the spinner
+    // never reappears.
+    setReady(false);
+    setLoadFailed(false);
+    setSaved(false);
+    setError(null);
     fetchProfile(userId).then((profile) => {
       if (cancelled) return;
       if (profile) {
