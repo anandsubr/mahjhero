@@ -24,9 +24,22 @@ type TimeFieldProps = {
  * "to" between the two fields — around the inputs, not on them); aria-label
  * is what a screen reader announces, same role as the native side's
  * accessibilityLabel.
+ *
+ * A cleared <input type="time"> reports "" — the one way this control could
+ * still hand back a malformed value, unlike the native Date-based pickers,
+ * which can't produce one at all. "" would flow straight through to
+ * isValidQuietWindow and come back rejected with the same generic message
+ * used for equal start/end, telling a member who tapped clear nothing about
+ * what went wrong. There's also no meaningful "unset" for one bound alone:
+ * the way to stop quiet hours is the enable toggle, which already omits
+ * both bounds from the save payload (see app/notifications.tsx's onSave).
+ * So an empty value here is simply ignored, keeping the previous value —
+ * which makes the invalid state unreachable on web too, not just rejected
+ * with a clearer message.
  */
 export default function TimeField({ value, onChange, label }: TimeFieldProps) {
   function handleChange(event: ChangeEvent<HTMLInputElement>) {
+    if (event.target.value === '') return;
     onChange(event.target.value);
   }
 

@@ -3,7 +3,7 @@ import DateTimePicker, {
 } from '@react-native-community/datetimepicker';
 import { useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
-import { dateToTimeString, timeStringToDate } from '../lib/time';
+import { dateToTimeString, formatTimeLabel, timeStringToDate } from '../lib/time';
 
 type TimeFieldProps = {
   value: string; // "HH:MM"
@@ -59,12 +59,7 @@ export default function TimeField({ value, onChange, label }: TimeFieldProps) {
           accessibilityRole="button"
           accessibilityLabel={label}
         >
-          <Text style={styles.androidButtonText}>
-            {date.toLocaleTimeString(undefined, {
-              hour: 'numeric',
-              minute: '2-digit',
-            })}
-          </Text>
+          <Text style={styles.androidButtonText}>{formatTimeLabel(date)}</Text>
         </Pressable>
         {open ? (
           <DateTimePicker

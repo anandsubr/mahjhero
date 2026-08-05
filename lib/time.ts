@@ -54,3 +54,25 @@ export function dateToTimeString(date: Date): string {
   const minutes = String(date.getMinutes()).padStart(2, '0');
   return `${hours}:${minutes}`;
 }
+
+/**
+ * A human-readable confirmation of the time a member just picked, e.g.
+ * "9:00 PM". Used by components/TimeField.tsx's Android button — Android's
+ * <DateTimePicker> is not itself a visible control (see that file's doc), so
+ * something has to show the member what they selected.
+ *
+ * Pulled out as its own pure function specifically so it's unit-testable:
+ * 12-hour AM/PM formatting has a classic trap at its two boundaries — noon
+ * and midnight both display as "12", not "0" — and that logic would
+ * otherwise only run inside a native picker this project's test suite has
+ * no way to render (see lib/time.test.ts).
+ *
+ * `locale` defaults to the device's own setting (undefined, passed straight
+ * to toLocaleTimeString) so the displayed format follows whatever 12-/24-hour
+ * preference the member already has — same reasoning as TimeField leaving
+ * `is24Hour` unset. Tests pass an explicit locale so the expected string is
+ * deterministic regardless of the machine running them.
+ */
+export function formatTimeLabel(date: Date, locale?: string): string {
+  return date.toLocaleTimeString(locale, { hour: 'numeric', minute: '2-digit' });
+}
