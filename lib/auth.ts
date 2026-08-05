@@ -6,7 +6,7 @@ import * as QueryParams from 'expo-auth-session/build/QueryParams';
 import { Platform } from 'react-native';
 import { supabase } from './supabase';
 
-const GENERIC_ERROR =
+export const GENERIC_ERROR =
   'Could not reach MahjHero. Check your connection and try again.';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

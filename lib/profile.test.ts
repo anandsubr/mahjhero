@@ -10,6 +10,18 @@ vi.mock('./supabase', () => ({
   },
 }));
 
+// lib/profile.ts imports GENERIC_ERROR from ./auth, which transitively pulls
+// in expo-linking and expo-web-browser. Both crash at import time under
+// Vitest/Node (no native `expo` global) — see the same mocks in
+// lib/auth.test.ts for the full explanation.
+vi.mock('expo-linking', () => ({
+  createURL: vi.fn(() => 'https://mahjhero.test/auth/callback'),
+}));
+
+vi.mock('expo-web-browser', () => ({
+  openAuthSessionAsync: vi.fn(),
+}));
+
 import { isCompleteProfile, updateProfile } from './profile';
 
 describe('isCompleteProfile', () => {

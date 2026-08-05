@@ -1,7 +1,5 @@
+import { GENERIC_ERROR } from './auth';
 import { supabase } from './supabase';
-
-const GENERIC_ERROR =
-  'Could not reach MahjHero. Check your connection and try again.';
 
 export type SkillLevel = 'beginner' | 'intermediate' | 'advanced';
 

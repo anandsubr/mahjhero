@@ -22,6 +22,7 @@ export default function ProfileScreen() {
   const [skillLevel, setSkillLevel] = useState<SkillLevel | null>(null);
   const [ready, setReady] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!session) return;
@@ -54,10 +55,19 @@ export default function ProfileScreen() {
 
   async function onSave() {
     if (!session) return;
-    await updateProfile(session.user.id, {
+    setError(null);
+    // updateProfile reports failure through `error` rather than throwing, so
+    // the caller MUST read it. Setting `saved` unconditionally would show
+    // "Saved" after a failed write and leave the member believing their
+    // skill level persisted when it did not.
+    const { error: saveError } = await updateProfile(session.user.id, {
       display_name: displayName,
       skill_level: skillLevel,
     });
+    if (saveError) {
+      setError(saveError);
+      return;
+    }
     setSaved(true);
   }
 
@@ -72,6 +82,7 @@ export default function ProfileScreen() {
         onChangeText={(value) => {
           setDisplayName(value);
           setSaved(false);
+          setError(null);
         }}
         placeholder="How your club knows you"
         accessibilityLabel="Display name"
@@ -81,31 +92,35 @@ export default function ProfileScreen() {
       <Text style={styles.help}>
         Hosts use this to seat you at the right table.
       </Text>
-      {LEVELS.map((level) => (
-        <Pressable
-          key={level}
-          style={[
-            styles.option,
-            skillLevel === level ? styles.optionSelected : null,
-          ]}
-          onPress={() => {
-            setSkillLevel(level);
-            setSaved(false);
-          }}
-          accessibilityRole="radio"
-          accessibilityState={{ selected: skillLevel === level }}
-        >
-          <Text style={styles.optionText}>
-            {level.charAt(0).toUpperCase() + level.slice(1)}
-          </Text>
-        </Pressable>
-      ))}
+      <View accessibilityRole="radiogroup" style={styles.radioGroup}>
+        {LEVELS.map((level) => (
+          <Pressable
+            key={level}
+            style={[
+              styles.option,
+              skillLevel === level ? styles.optionSelected : null,
+            ]}
+            onPress={() => {
+              setSkillLevel(level);
+              setSaved(false);
+              setError(null);
+            }}
+            accessibilityRole="radio"
+            accessibilityState={{ selected: skillLevel === level }}
+          >
+            <Text style={styles.optionText}>
+              {level.charAt(0).toUpperCase() + level.slice(1)}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
 
       {isCompleteProfile({ display_name: displayName, skill_level: skillLevel }) ? null : (
         <Text style={styles.help}>
           Add your name and skill level so hosts can seat you at the right table.
         </Text>
       )}
+      {error ? <Text style={styles.error}>{error}</Text> : null}
       <Pressable
         style={[
           styles.button,
@@ -149,6 +164,12 @@ const styles = StyleSheet.create({
   heading: { fontSize: 28, fontWeight: '600', marginBottom: 8 },
   label: { fontSize: 18, fontWeight: '600', marginTop: 12 },
   help: { fontSize: 16, color: '#666' },
+  error: { color: '#b3261e', fontSize: 18 },
+  // Wrapping the radio options in an accessibilityRole="radiogroup" View
+  // (so screen readers announce one grouped choice, not three unrelated
+  // radios) removes them from the container's own `gap: 12` between direct
+  // children — reapply it here so the visual spacing is unchanged.
+  radioGroup: { gap: 12 },
   input: {
     borderWidth: 1,
     borderColor: '#999',
