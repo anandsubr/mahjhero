@@ -27,8 +27,7 @@ not.
 and `<Text>` from `react-native` resolve to plain DOM elements (`<div>`,
 `<h1>` with `role="heading"`, etc.) under Vitest. `@testing-library/react`
 queries that DOM directly with `render`/`screen.getByText`/`screen.getByRole`,
-and both spike assertions passed once a `cleanup()` call was added after each
-test (see below).
+and both spike assertions pass with cleanup registered globally (see below).
 
 `@testing-library/react-native` does not go through that DOM at all — it
 renders through `react-test-renderer` against the real, native `react-native`
@@ -63,11 +62,17 @@ One other finding from the spike, unrelated to which library won:
 `@testing-library/react`'s automatic per-test cleanup only registers when it
 detects a global `afterEach` function (`typeof afterEach === 'function'` in
 its own source). This repo's Vitest config does not set `test.globals: true`,
-so that global does not exist, and without an explicit `afterEach(cleanup)`
+so that global does not exist, and without cleanup being registered somewhere
 DOM nodes from one test leak into the next, causing spurious "found multiple
-elements" failures. Every component test file using
-`@testing-library/react` must import `cleanup` and register it in
-`afterEach` itself.
+elements" failures.
+
+Cleanup is registered once, globally, in `vitest.setup.ts` (wired in via
+`test.setupFiles` in `vitest.config.mts`) — component test authors do not
+need to do anything themselves. `test.globals: true` was deliberately not
+used for this, since it would inject Jest-style ambient globals across the
+whole suite, including the existing `lib/` tests; `setupFiles` runs a single
+module before each test file and registers one hook, with no such blast
+radius.
 
 ## Running
 

@@ -1,13 +1,6 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { Text, View } from 'react-native';
-import { cleanup, render as renderDom, screen } from '@testing-library/react';
-
-// @testing-library/react's automatic afterEach cleanup only registers when it
-// detects a global `afterEach` (see cleanup-after-each in its source: `typeof
-// afterEach === 'function'`). This repo's vitest.config.mts does not set
-// `test.globals: true`, so no such global exists and DOM nodes from one test
-// leak into the next unless cleanup() is called explicitly here.
-afterEach(cleanup);
+import { render as renderDom, screen } from '@testing-library/react';
 
 function Probe() {
   return (
