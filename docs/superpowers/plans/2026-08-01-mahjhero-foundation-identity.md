@@ -1352,10 +1352,19 @@ export default function ProfileScreen() {
 
   async function onSave() {
     if (!session) return;
-    await updateProfile(session.user.id, {
+    setError(null);
+    // updateProfile reports failure through `error` rather than throwing, so
+    // the caller MUST read it. Setting `saved` unconditionally would show
+    // "Saved" after a failed write and leave the member believing their
+    // skill level persisted when it did not.
+    const { error: saveError } = await updateProfile(session.user.id, {
       display_name: displayName,
       skill_level: skillLevel,
     });
+    if (saveError) {
+      setError(saveError);
+      return;
+    }
     setSaved(true);
   }
 
