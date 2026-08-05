@@ -1,3 +1,4 @@
+import { Redirect } from 'expo-router';
 import { useState } from 'react';
 import {
   ActivityIndicator,
@@ -10,8 +11,10 @@ import {
 } from 'react-native';
 import { availableProviders, isValidEmail, sendMagicLink, signInWithProvider } from '../lib/auth';
 import type { OAuthProvider } from '../lib/auth';
+import { useSession } from '../lib/session';
 
 export default function SignIn() {
+  const { session, loading } = useSession();
   const [email, setEmail] = useState('');
   const [status, setStatus] = useState<'idle' | 'sending' | 'sent'>('idle');
   const [pendingProvider, setPendingProvider] = useState<OAuthProvider | null>(
@@ -54,6 +57,21 @@ export default function SignIn() {
       setPendingProvider(null);
     }
   }
+
+  // This screen has to watch the session itself. app/index.tsx is the only
+  // other place a session changes the route, and it has already unmounted by
+  // the time anyone is standing here.
+  //
+  // Warm path: the member is on "Check your email", taps the link, the app
+  // foregrounds, useAuthDeepLink establishes the session — and without this
+  // the screen would go on saying "Check your email" forever. Cold path: the
+  // link launches the app, index.tsx resolves a null session first and sends
+  // the member here, and the session then lands on a screen not watching for
+  // it. Web hid both, because there the redirect is a fresh page load through
+  // index.tsx.
+  //
+  // It fixes the same latent gap for OAuth, which never navigated either.
+  if (!loading && session) return <Redirect href="/profile" />;
 
   if (status === 'sent') {
     return (
