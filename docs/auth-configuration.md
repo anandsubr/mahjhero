@@ -11,11 +11,15 @@ environment (Authentication → Providers / Sign In).
 | Setting | Value | Why |
 |---|---|---|
 | Email provider | Enabled, **magic link only** | The spec forbids passwords |
-| Phone provider | Enabled (OTP) | Second passwordless route |
 | Google provider | Enabled | Requested sign-in method |
 | Apple provider | Enabled | Mandatory on iOS once Google is offered — App Store Review Guideline 4.8 |
 | Confirm email | Enabled | Linking depends on the address being verified |
 | Manual linking | Disabled | Leaves automatic linking on verified email in place |
+
+Phone OTP was listed here as a required setting, but the app has no phone path:
+nothing in `app/` or `lib/` collects a number or verifies an SMS code. Enabling a
+provider no client can reach only widens the auth surface, so it is dropped until
+a plan actually adds that route.
 
 ## Why this matters
 
