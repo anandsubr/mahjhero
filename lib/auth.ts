@@ -4,10 +4,8 @@ import * as WebBrowser from 'expo-web-browser';
 // this deep import is the path documented in Supabase's own Expo guide.
 import * as QueryParams from 'expo-auth-session/build/QueryParams';
 import { Platform } from 'react-native';
+import { GENERIC_ERROR } from './constants';
 import { supabase } from './supabase';
-
-export const GENERIC_ERROR =
-  'Could not reach MahjHero. Check your connection and try again.';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -35,9 +33,7 @@ export async function sendMagicLink(
     // for diagnosis — otherwise a DNS failure, a Supabase outage, and a CORS
     // misconfiguration are indistinguishable from the outside.
     console.error('sendMagicLink failed', cause);
-    return {
-      error: 'Could not reach MahjHero. Check your connection and try again.',
-    };
+    return { error: GENERIC_ERROR };
   }
 }
 

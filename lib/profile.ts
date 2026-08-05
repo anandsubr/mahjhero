@@ -1,4 +1,4 @@
-import { GENERIC_ERROR } from './auth';
+import { GENERIC_ERROR } from './constants';
 import { supabase } from './supabase';
 
 export type SkillLevel = 'beginner' | 'intermediate' | 'advanced';

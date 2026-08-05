@@ -56,6 +56,11 @@ export default function ProfileScreen() {
   async function onSave() {
     if (!session) return;
     setError(null);
+    // Also clear a prior "Saved" state before this attempt resolves — a
+    // retry (or double-tap) that fails after a previous success must not
+    // leave the screen showing both the new error and a stale "Saved"
+    // button label, which would look like the failed write persisted.
+    setSaved(false);
     // updateProfile reports failure through `error` rather than throwing, so
     // the caller MUST read it. Setting `saved` unconditionally would show
     // "Saved" after a failed write and leave the member believing their
