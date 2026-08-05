@@ -36,8 +36,12 @@ export default function Card({
 
 const styles = StyleSheet.create({
   base: {
+    // .card { padding: var(--space-3); gap: var(--space-2);
+    //   border-radius: calc(var(--radius-lg) * 1.15) } — this is the base
+    // default; most design instances override padding inline (usually to
+    // space-4), which callers do via the `style` prop.
     borderRadius: radius.card,
-    padding: space[4],
+    padding: space[3],
     gap: space[2],
   },
   column: {

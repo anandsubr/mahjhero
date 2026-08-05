@@ -19,6 +19,8 @@ export default function TextField({ label, ...inputProps }: TextFieldProps) {
       <TextInput
         style={styles.input}
         placeholderTextColor={colors.textMuted}
+        cursorColor={colors.accentColor}
+        selectionColor={colors.accentColor}
         {...inputProps}
       />
     </View>
@@ -30,13 +32,30 @@ const styles = StyleSheet.create({
     gap: space[2],
   },
   label: {
-    fontFamily: type.bodySemiBold,
+    // .field > label { font-size: 12px; margin-bottom: 5px;
+    //   color: color-mix(in srgb, text 70%, transparent) } — the 12px base
+    // is overridden inline to 16px/margin-bottom 8px throughout the design
+    // (and 16 is this app's helper-text floor besides); the 70%-text colour
+    // is not overridden anywhere, so it carries through as colors.textLabel.
+    // No font-weight override in the design's `.field > label` rule (nor
+    // in any inline label markup in 1C-variant.html), so this stays at the
+    // body font's regular weight rather than semibold.
+    fontFamily: type.bodyRegular,
     fontSize: type.size.helper,
-    color: colors.text,
+    color: colors.textLabel,
   },
   input: {
+    // .input { min-height: 36px; padding: 6px 14px; font-size: 14px;
+    //   background: var(--color-surface);
+    //   border: 1px solid var(--color-divider); border-radius: 999px;
+    //   caret-color: var(--color-accent) }
+    // The 36px/14px base is what .bigin (58px/19px) and this app's 18pt
+    // floor scale up from; every other rule here (surface bg, divider
+    // border, pill radius, accent caret) carries through unscaled.
     borderRadius: radius.pill,
     backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.divider,
     minHeight: 58,
     paddingHorizontal: space[5],
     fontFamily: type.bodyRegular,

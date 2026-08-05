@@ -255,7 +255,12 @@ const styles = StyleSheet.create({
     color: colors.accent[800],
   },
   settingsCard: {
+    // Design: `padding: var(--space-3) var(--space-4); gap: var(--space-1);`
+    // — overrides Card's own base-.card default (space-3 all sides).
     marginTop: space[2],
+    paddingVertical: space[3],
+    paddingHorizontal: space[4],
+    gap: space[1],
   },
   settingsRow: {
     flexDirection: 'row',
@@ -271,7 +276,9 @@ const styles = StyleSheet.create({
     padding: space[1],
   },
   editLinkText: {
-    fontFamily: type.bodySemiBold,
+    // Styled as the design's `btn btn-ghost` ("Edit"): no font-family
+    // override in the mock, so it inherits .btn's base heading face.
+    fontFamily: type.heading,
     fontSize: type.size.helper,
     color: colors.accentColor,
   },

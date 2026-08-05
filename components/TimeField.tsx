@@ -103,8 +103,12 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   androidButton: {
+    // Matches components/TextField.tsx's `.input` treatment: surface
+    // background, divider border, pill radius, "big" sizing.
     borderRadius: radius.pill,
     backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.divider,
     minHeight: 58,
     paddingHorizontal: space[5],
     alignItems: 'center',

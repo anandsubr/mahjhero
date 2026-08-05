@@ -63,7 +63,7 @@ export default function TimeField({ value, onChange, label }: TimeFieldProps) {
 // background, pill radius, 19px/58px sizing) so this reads as the same
 // control on web as the native picker does on iOS/Android.
 const webInputStyle: CSSProperties = {
-  border: 'none',
+  border: `1px solid ${colors.divider}`,
   borderRadius: radius.pill,
   backgroundColor: colors.surface,
   padding: `0 ${space[5]}px`,
@@ -73,4 +73,5 @@ const webInputStyle: CSSProperties = {
   width: '100%',
   boxSizing: 'border-box',
   fontFamily: 'inherit',
+  caretColor: colors.accentColor,
 };

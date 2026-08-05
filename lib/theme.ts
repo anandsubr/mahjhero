@@ -60,6 +60,10 @@ export const colors = {
   // safe here because muted text is only ever placed directly on the page
   // background, never on a card or accent surface.
   textMuted: '#807a71',
+  // .field > label { color: color-mix(in srgb, text 70%, transparent) }.
+  // Same flattening approach as textMuted: 0.70*text + 0.30*bg per channel
+  // = 0.70*(32,30,29) + 0.30*(245,234,216) = (96,91,85).
+  textLabel: '#605b55',
   accentColor: '#c67139',
   accent2Color: '#7a8a5e',
   // 16% of --color-text (#201e1d) over the background — kept as rgba

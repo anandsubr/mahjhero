@@ -197,7 +197,7 @@ export default function NotificationSettings() {
         ) : null}
       </Card>
 
-      <Card row style={styles.rowBetween}>
+      <Card row style={[styles.muteCard, styles.rowBetween]}>
         <Text style={[styles.cardLabel, styles.muteLabel]}>Mute "need a 4th" alerts</Text>
         <Switch
           value={prefs.mute_need_a_fourth}
@@ -288,7 +288,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accentColor,
   },
   quietCard: {
+    // Design: `padding: var(--space-4); gap: var(--space-2);` — overrides
+    // Card's base-.card default (space-3 all sides).
     marginTop: space[2],
+    padding: space[4],
+  },
+  muteCard: {
+    // Design: `padding: var(--space-4);` on this card.
+    padding: space[4],
   },
   rowBetween: {
     flexDirection: 'row',
