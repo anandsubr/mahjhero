@@ -59,6 +59,18 @@ describe('sendMagicLink', () => {
       error: 'Could not reach MahjHero. Check your connection and try again.',
     });
   });
+
+  it('asks GoTrue to redirect to the app deep link, not the project Site URL', async () => {
+    // Without emailRedirectTo the emailed link lands on the Site URL, a web
+    // address. On iOS/Android that opens a browser and the app never sees the
+    // session, so "Check your email" becomes a permanent dead end.
+    await sendMagicLink('  jane@example.com  ');
+
+    expect(supabase.auth.signInWithOtp).toHaveBeenLastCalledWith({
+      email: 'jane@example.com',
+      options: { emailRedirectTo: 'https://mahjhero.test/auth/callback' },
+    });
+  });
 });
 
 describe('availableProviders', () => {

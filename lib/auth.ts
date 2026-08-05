@@ -26,6 +26,13 @@ export async function sendMagicLink(
   try {
     const { error } = await supabase.auth.signInWithOtp({
       email: email.trim(),
+      options: {
+        // Without this, GoTrue redirects to the project Site URL, which is a
+        // web address. On iOS/Android that opens a browser and the app never
+        // sees the session, so the "Check your email" screen is a dead end.
+        // The deep link is caught by lib/auth-deep-link.ts at app root.
+        emailRedirectTo: Linking.createURL('auth/callback'),
+      },
     });
     return { error: error ? error.message : null };
   } catch (cause) {
@@ -34,6 +41,101 @@ export async function sendMagicLink(
     // misconfiguration are indistinguishable from the outside.
     console.error('sendMagicLink failed', cause);
     return { error: GENERIC_ERROR };
+  }
+}
+
+export type AuthRedirectResult = {
+  /**
+   * `false` means the URL carried nothing for auth (an ordinary deep link, or
+   * one this module has already consumed) and the caller should leave the
+   * session alone. `true` means it was an auth redirect; read `error`.
+   */
+  handled: boolean;
+  error: string | null;
+};
+
+/**
+ * Auth redirects can reach this module twice for one sign-in: on Android,
+ * `WebBrowser.openAuthSessionAsync` resolves with the redirect URL *and* the
+ * OS may deliver the same URL to `Linking`'s listener. Replaying it would call
+ * `setSession` a second time with an already-rotated refresh token, which
+ * GoTrue rejects — turning a successful sign-in into a spurious error. Keyed
+ * on the full URL because the tokens in it are what make it single-use.
+ */
+const consumedRedirectUrls = new Set<string>();
+const CONSUMED_URL_LIMIT = 20;
+
+/**
+ * Test-only. The dedupe set is module state that outlives an individual test,
+ * so a suite reusing a redirect URL across cases must clear it between them.
+ */
+export function __resetConsumedRedirectUrls(): void {
+  consumedRedirectUrls.clear();
+}
+
+/**
+ * The single place a Supabase auth redirect URL is turned into a session.
+ *
+ * Both routes home land here: the OAuth flow (where
+ * `WebBrowser.openAuthSessionAsync` hands back the redirect in-process) and
+ * the magic-link flow (where the OS delivers it as a deep link, cold or warm).
+ * They must not drift apart, hence one function rather than two copies.
+ *
+ * The client runs GoTrue's implicit flow (auth-js's default `flowType`), so a
+ * successful redirect carries `access_token`/`refresh_token` in the URL
+ * fragment. `getQueryParams` reads the fragment and the query string alike.
+ * A PKCE `?code=` redirect would need `exchangeCodeForSession` instead; it
+ * cannot occur unless the client's `flowType` is changed.
+ *
+ * Never rejects, for the same reason as sendMagicLink.
+ */
+export async function completeAuthRedirect(
+  url: string,
+): Promise<AuthRedirectResult> {
+  try {
+    if (consumedRedirectUrls.has(url)) {
+      return { handled: false, error: null };
+    }
+
+    const { params, errorCode } = QueryParams.getQueryParams(url);
+    // `errorCode` is expo-auth-session's own convention (a literal
+    // `errorCode` param). Supabase/GoTrue's redirect-with-error instead
+    // uses `error` / `error_code` / `error_description`, so both are
+    // checked — this path is unverified against a real GoTrue error
+    // redirect, see task report.
+    const failureCode = errorCode ?? params.error_code ?? params.error;
+    const { access_token: accessToken, refresh_token: refreshToken } = params;
+    const hasTokens = Boolean(accessToken && refreshToken);
+
+    if (!failureCode && !hasTokens) {
+      // Not an auth redirect. Deep links are a shared channel — a future
+      // `mahjhero://game/123` must fall through here untouched.
+      return { handled: false, error: null };
+    }
+
+    if (consumedRedirectUrls.size >= CONSUMED_URL_LIMIT) {
+      // Only the most recent redirect can plausibly be replayed; an unbounded
+      // set would leak access tokens for the life of the process.
+      consumedRedirectUrls.clear();
+    }
+    consumedRedirectUrls.add(url);
+
+    if (failureCode) {
+      return { handled: true, error: params.error_description ?? GENERIC_ERROR };
+    }
+
+    const { error } = await supabase.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+    if (error) {
+      console.error('completeAuthRedirect failed', error);
+      return { handled: true, error: error.message };
+    }
+    return { handled: true, error: null };
+  } catch (cause) {
+    console.error('completeAuthRedirect failed', cause);
+    return { handled: true, error: GENERIC_ERROR };
   }
 }
 
@@ -103,27 +205,15 @@ export async function signInWithProvider(
       return { error: null };
     }
 
-    const { params, errorCode } = QueryParams.getQueryParams(result.url);
-    // `errorCode` is expo-auth-session's own convention (a literal
-    // `errorCode` param). Supabase/GoTrue's redirect-with-error instead
-    // uses `error` / `error_code` / `error_description`, so both are
-    // checked — this path is unverified against a real GoTrue error
-    // redirect, see task report.
-    const failureCode = errorCode ?? params.error_code ?? params.error;
-    if (failureCode) {
-      return { error: params.error_description ?? GENERIC_ERROR };
-    }
-
-    const { access_token: accessToken, refresh_token: refreshToken } = params;
-    if (!accessToken || !refreshToken) {
+    const { handled, error: redirectError } = await completeAuthRedirect(
+      result.url,
+    );
+    if (!handled) {
+      // The auth session reported success but the URL carried neither tokens
+      // nor an error code. Nothing to recover from, and nothing to explain.
       return { error: GENERIC_ERROR };
     }
-
-    const { error: sessionError } = await supabase.auth.setSession({
-      access_token: accessToken,
-      refresh_token: refreshToken,
-    });
-    return { error: sessionError ? sessionError.message : null };
+    return { error: redirectError };
   } catch (cause) {
     // The user-facing message is deliberately generic, but keep the original
     // for diagnosis — otherwise a DNS failure, a Supabase outage, and a CORS

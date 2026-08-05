@@ -34,7 +34,7 @@ vi.mock('expo-web-browser', () => ({
   openAuthSessionAsync: vi.fn(),
 }));
 
-import { signInWithProvider } from './auth';
+import { signInWithProvider, __resetConsumedRedirectUrls } from './auth';
 import { supabase } from './supabase';
 import * as WebBrowser from 'expo-web-browser';
 
@@ -42,6 +42,9 @@ beforeEach(() => {
   vi.mocked(supabase.auth.signInWithOAuth).mockReset();
   vi.mocked(supabase.auth.setSession).mockReset();
   vi.mocked(WebBrowser.openAuthSessionAsync).mockReset();
+  // completeAuthRedirect refuses to replay a redirect URL it has already
+  // consumed, and that set is module state outliving a single test.
+  __resetConsumedRedirectUrls();
 });
 
 describe('signInWithProvider on native (iOS)', () => {
@@ -121,6 +124,23 @@ describe('signInWithProvider on native (iOS)', () => {
 
     await expect(signInWithProvider('google')).resolves.toEqual({
       error: 'User denied access',
+    });
+
+    expect(supabase.auth.setSession).not.toHaveBeenCalled();
+  });
+
+  it('reports the generic error when the auth session returns a URL carrying nothing', async () => {
+    vi.mocked(supabase.auth.signInWithOAuth).mockResolvedValue({
+      data: { provider: 'google', url: 'https://accounts.google.com/authorize' },
+      error: null,
+    } as never);
+    vi.mocked(WebBrowser.openAuthSessionAsync).mockResolvedValue({
+      type: 'success',
+      url: 'mahjhero://auth/callback',
+    } as never);
+
+    await expect(signInWithProvider('google')).resolves.toEqual({
+      error: 'Could not reach MahjHero. Check your connection and try again.',
     });
 
     expect(supabase.auth.setSession).not.toHaveBeenCalled();

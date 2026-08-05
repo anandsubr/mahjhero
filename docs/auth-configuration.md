@@ -23,3 +23,15 @@ If two providers produce two profiles for one person, they appear twice on a clu
 roster, their bookings split across both, and a host cannot tell which to remove.
 `supabase/tests/database/identity_linking.test.sql` asserts this cannot happen; run
 it against any environment whose auth settings change.
+
+## Redirect URLs
+
+Magic-link and OAuth redirects must be on the allow-list or GoTrue silently falls
+back to the Site URL — which on iOS and Android means the link opens a browser and
+the app never receives a session. Add `mahjhero://auth/callback` (what
+`Linking.createURL('auth/callback')` produces in a standalone or dev-client build)
+to **Authentication → URL Configuration → Redirect URLs** in every environment. The
+local equivalent lives in `supabase/config.toml`'s `additional_redirect_urls`.
+
+Expo Go instead produces a machine-specific `exp://<lan-ip>:8081/--/auth/callback`,
+which each developer adds for their own address rather than committing.
