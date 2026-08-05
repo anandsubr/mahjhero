@@ -69,6 +69,26 @@ projects (Phase 7).
   - `vitest`: `lib/` logic + web + React Native Testing Library component tests
   - schema-contract test
   - pgTAP db tests against ephemeral local Supabase
+  - **visual regression** on the web target — Playwright screenshots of each
+    screen at 375px and 1440px, diffed against committed baselines
+
+### Why visual regression is in the gate, not a later phase
+
+Three real defects were found by a human opening the app after the full suite
+(89 Vitest + 6 contract + 11 pgTAP) passed green: a missing back button that
+stranded users on the notifications screen, a toggle knob rendering in a colour
+absent from the palette, and a time label truncating inside its field. A fourth,
+the layout stretching edge-to-edge on desktop, was found the same way.
+
+Of those four, RNTL catches exactly one (the missing element). Maestro drives
+flows, not pixels. pgTAP and the logic tests are structurally blind to all of
+them. **Colour, truncation, and layout have no coverage anywhere else in this
+pyramid** — and they are where every rendering defect on this project has
+actually landed so far.
+
+`expo export -p web` already produces a real DOM, so this runs on the same Linux
+runner as the rest of `ci.yml` with no macOS minutes. Baselines are committed and
+reviewed like code; an intentional design change updates them in the same PR.
 - **`e2e-mobile.yml`** — only on the `develop`→`main` promotion PR, macOS runner:
   boot iOS simulator, `expo prebuild`, run **Maestro** smoke flows for critical
   journeys. Reserved for promotion so everyday PRs stay fast/cheap.
@@ -122,7 +142,12 @@ repo** parameterized by project refs/domains. Not built up front.
 0. **Provision** — create prod Supabase project; DNS for `mahjhero.app` /
    `dev.mahjhero.app`; create `develop` branch; set Vercel production branch;
    load secrets + GitHub Environments (`dev`, `prod`).
-1. **CI test gate** (`ci.yml`).
+1. **CI test gate** (`ci.yml`), built in two steps:
+   1a. **Component-test harness** — RNTL under Vitest (validate the risk above
+       first), plus Playwright visual regression on the web target. Buildable
+       today against the four existing screens; needs none of Phase 0.
+   1b. **Wire both into `ci.yml`** alongside typecheck, schema-contract, and
+       pgTAP, once the repo has `develop` and the GitHub Environments.
 2. **Migration promotion + web deploy** (dev on `develop`, prod on `main`).
 3. **Mobile E2E** (Maestro, promotion PR) — once real flows exist.
 4. **Feedback widget + `/api/feedback`.**
@@ -141,3 +166,18 @@ repo** parameterized by project refs/domains. Not built up front.
 - **Agent cost:** `agent-go` is the only trigger; monitor token/CI spend before
   considering auto-triage (a future graduation to two-stage).
 - **macOS runner minutes:** E2E gated to promotion PRs to bound cost.
+- **RNTL is a Jest-first library, and this repo runs Vitest.** `vitest.config.mts`
+  aliases `react-native` → `react-native-web`, which hardcodes
+  `Platform.OS === 'web'`; RNTL expects to render real React Native through
+  `react-test-renderer`. Those assumptions may not compose — the likely failure
+  mode is quietly testing DOM output (really `@testing-library/react` territory)
+  while believing native components are under test. **Prove this with one
+  throwaway test before building a suite on it.** If it does not hold, the fork
+  is either a Jest project alongside Vitest for component tests, or accepting
+  `@testing-library/react` against the web render and leaning on Maestro for
+  native behaviour.
+- **Visual-regression flakiness:** font loading (Caprasimo/Figtree are fetched),
+  antialiasing, and scrollbar width all shift pixels between environments. Pin
+  the browser version, wait on `document.fonts.ready`, and mask any genuinely
+  non-deterministic region rather than raising the diff threshold until the
+  tests stop meaning anything.
