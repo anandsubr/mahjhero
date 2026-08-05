@@ -1,21 +1,17 @@
 import { Link, Redirect } from 'expo-router';
 import { useEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import Button from '../components/Button';
+import Card from '../components/Card';
+import ErrorBanner from '../components/ErrorBanner';
+import SkillLevelPicker from '../components/SkillLevelPicker';
+import TextField from '../components/TextField';
 import { GENERIC_ERROR } from '../lib/constants';
 import { fetchProfile, isCompleteProfile, updateProfile } from '../lib/profile';
 import type { SkillLevel } from '../lib/profile';
 import { useSession } from '../lib/session';
 import { supabase } from '../lib/supabase';
-
-const LEVELS: SkillLevel[] = ['beginner', 'intermediate', 'advanced'];
+import { colors, space, type } from '../lib/theme';
 
 export default function ProfileScreen() {
   const { session, loading } = useSession();
@@ -148,10 +144,10 @@ export default function ProfileScreen() {
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.heading}>Your profile</Text>
+      <Text style={styles.subheading}>Two things and you're ready to sit down at a table.</Text>
 
-      <Text style={styles.label}>Name</Text>
-      <TextInput
-        style={styles.input}
+      <TextField
+        label="Name"
         value={displayName}
         onChangeText={(value) => {
           setDisplayName(value);
@@ -162,31 +158,16 @@ export default function ProfileScreen() {
         accessibilityLabel="Display name"
       />
 
-      <Text style={styles.label}>Skill level</Text>
-      <Text style={styles.help}>
-        Hosts use this to seat you at the right table.
-      </Text>
-      <View accessibilityRole="radiogroup" style={styles.radioGroup}>
-        {LEVELS.map((level) => (
-          <Pressable
-            key={level}
-            style={[
-              styles.option,
-              skillLevel === level ? styles.optionSelected : null,
-            ]}
-            onPress={() => {
-              setSkillLevel(level);
-              setSaved(false);
-              setError(null);
-            }}
-            accessibilityRole="radio"
-            accessibilityState={{ selected: skillLevel === level }}
-          >
-            <Text style={styles.optionText}>
-              {level.charAt(0).toUpperCase() + level.slice(1)}
-            </Text>
-          </Pressable>
-        ))}
+      <View style={styles.skillSection}>
+        <Text style={styles.help}>Skill level — hosts use this to seat you at the right table.</Text>
+        <SkillLevelPicker
+          value={skillLevel}
+          onChange={(level) => {
+            setSkillLevel(level);
+            setSaved(false);
+            setError(null);
+          }}
+        />
       </View>
 
       {complete ? null : (
@@ -194,82 +175,108 @@ export default function ProfileScreen() {
           Add your name and skill level so hosts can seat you at the right table.
         </Text>
       )}
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-      <Pressable
-        style={[styles.button, canSave ? null : styles.buttonDisabled]}
+      {error ? <ErrorBanner message={error} /> : null}
+      <Button
+        variant="primary"
+        block
         onPress={onSave}
         // Disabled while the write is in flight: a second tap would start a
         // second overlapping update whose result races the first.
         disabled={!canSave}
-        accessibilityRole="button"
-        accessibilityState={{ disabled: !canSave, busy: saving }}
+        loading={saving}
+        accessibilityLabel={saved ? 'Saved' : 'Save'}
       >
-        {saving ? (
-          <ActivityIndicator color="white" accessibilityLabel="Saving your profile" />
-        ) : (
-          <Text style={styles.buttonText}>{saved ? 'Saved' : 'Save'}</Text>
-        )}
-      </Pressable>
+        {saved ? 'Saved' : 'Save'}
+      </Button>
 
-      <Link href="/notifications" style={styles.linkRow}>
-        <Text style={styles.link}>Notification settings</Text>
-      </Link>
+      {/* The design also shows a "Friends" card here, but that feature does
+          not exist yet — omitted rather than linking somewhere with nothing
+          behind it. */}
+      <Card style={styles.settingsCard}>
+        <View style={styles.settingsRow}>
+          <Text style={styles.settingsLabel}>Notifications</Text>
+          <Link href="/notifications" style={styles.editLink}>
+            <Text style={styles.editLinkText}>Edit</Text>
+          </Link>
+        </View>
+        <Text style={styles.help}>Push and email, plus quiet hours</Text>
+      </Card>
 
-      <Pressable
-        style={styles.signOut}
+      <Button
+        variant="ghost"
+        big={false}
         onPress={onSignOut}
         disabled={signingOut}
-        accessibilityRole="button"
-        accessibilityState={{ disabled: signingOut, busy: signingOut }}
+        loading={signingOut}
+        accessibilityLabel="Sign out"
+        style={styles.signOut}
       >
-        {signingOut ? (
-          <ActivityIndicator accessibilityLabel="Signing out" />
-        ) : (
-          <Text style={styles.signOutText}>Sign out</Text>
-        )}
-      </Pressable>
+        Sign out
+      </Button>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 24, gap: 12 },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  heading: { fontSize: 28, fontWeight: '600', marginBottom: 8 },
-  label: { fontSize: 18, fontWeight: '600', marginTop: 12 },
-  help: { fontSize: 16, color: '#666' },
-  error: { color: '#b3261e', fontSize: 18 },
-  // Wrapping the radio options in an accessibilityRole="radiogroup" View
-  // (so screen readers announce one grouped choice, not three unrelated
-  // radios) removes them from the container's own `gap: 12` between direct
-  // children — reapply it here so the visual spacing is unchanged.
-  radioGroup: { gap: 12 },
-  input: {
-    borderWidth: 1,
-    borderColor: '#999',
-    borderRadius: 8,
-    padding: 16,
-    fontSize: 18,
+  container: {
+    padding: space[6],
+    gap: space[4],
+    backgroundColor: colors.bg,
   },
-  option: {
-    borderWidth: 1,
-    borderColor: '#999',
-    borderRadius: 8,
-    padding: 18,
-  },
-  optionSelected: { borderColor: '#1f6feb', borderWidth: 3 },
-  optionText: { fontSize: 18 },
-  button: {
-    backgroundColor: '#1f6feb',
-    borderRadius: 8,
-    padding: 18,
+  centered: {
+    flex: 1,
     alignItems: 'center',
-    marginTop: 16,
+    justifyContent: 'center',
+    backgroundColor: colors.bg,
   },
-  buttonDisabled: { backgroundColor: '#9db8e8' },
-  buttonText: { color: 'white', fontSize: 18, fontWeight: '600' },
-  linkRow: { marginTop: 24 },
-  link: { fontSize: 18, color: '#1f6feb' },
-  signOut: { marginTop: 32, alignItems: 'center' },
-  signOutText: { fontSize: 18, color: '#b3261e' },
+  heading: {
+    fontFamily: type.heading,
+    fontSize: type.size.h2,
+    color: colors.text,
+  },
+  subheading: {
+    fontFamily: type.bodyRegular,
+    fontSize: type.size.body,
+    color: colors.textMuted,
+    marginTop: -space[2],
+  },
+  skillSection: {
+    gap: space[2],
+  },
+  help: {
+    fontFamily: type.bodyRegular,
+    fontSize: type.size.helper,
+    lineHeight: 22,
+    color: colors.textMuted,
+  },
+  error: {
+    fontFamily: type.bodyRegular,
+    fontSize: type.size.body,
+    color: colors.accent[800],
+  },
+  settingsCard: {
+    marginTop: space[2],
+  },
+  settingsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  settingsLabel: {
+    fontFamily: type.bodyBold,
+    fontSize: type.size.body,
+    color: colors.text,
+  },
+  editLink: {
+    padding: space[1],
+  },
+  editLinkText: {
+    fontFamily: type.bodySemiBold,
+    fontSize: type.size.helper,
+    color: colors.accentColor,
+  },
+  signOut: {
+    alignSelf: 'flex-start',
+    marginTop: space[2],
+  },
 });

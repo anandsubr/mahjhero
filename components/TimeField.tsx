@@ -4,6 +4,7 @@ import DateTimePicker, {
 import { useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { dateToTimeString, formatTimeLabel, timeStringToDate } from '../lib/time';
+import { colors, radius, space, type } from '../lib/theme';
 
 type TimeFieldProps = {
   value: string; // "HH:MM"
@@ -83,6 +84,12 @@ export default function TimeField({ value, onChange, label }: TimeFieldProps) {
         onValueChange={handleValueChange}
         accessibilityLabel={label}
         style={styles.iosPicker}
+        // Tints the native compact picker's button with the design system's
+        // accent colour. This is the one styling hook the native control
+        // exposes — its chrome is otherwise system-drawn and cannot be
+        // themed further (radius, background, etc. are not visible until
+        // the popover opens, which iOS draws itself).
+        accentColor={colors.accentColor}
       />
     </View>
   );
@@ -96,14 +103,18 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   androidButton: {
-    borderWidth: 1,
-    borderColor: '#999',
-    borderRadius: 8,
-    padding: 16,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    minHeight: 58,
+    paddingHorizontal: space[5],
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  // 18pt minimum body text (see app/notifications.tsx's other styles for
-  // the same rule) — this is exactly what the member reads to confirm the
-  // time they picked.
-  androidButtonText: { fontSize: 18 },
+  // The app's "big" input size (19px, 58px min-height) — matches
+  // components/TextField.tsx so this reads as the same input treatment.
+  androidButtonText: {
+    fontFamily: type.bodyRegular,
+    fontSize: type.size.bodyLarge,
+    color: colors.text,
+  },
 });

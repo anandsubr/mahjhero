@@ -9,13 +9,22 @@ import {
   Text,
   View,
 } from 'react-native';
+import Button from '../components/Button';
+import Card from '../components/Card';
+import ErrorBanner from '../components/ErrorBanner';
 import TimeField from '../components/TimeField';
 import { GENERIC_ERROR } from '../lib/constants';
 import { fetchPreferences, updatePreferences } from '../lib/profile';
 import type { NotificationPreferences, NotifyChannel } from '../lib/profile';
 import { useSession } from '../lib/session';
+import { colors, radius, space, type } from '../lib/theme';
 
 const CHANNELS: NotifyChannel[] = ['push', 'email', 'both'];
+const CHANNEL_LABEL: Record<NotifyChannel, string> = {
+  both: 'Push and email',
+  push: 'Push only',
+  email: 'Email only',
+};
 
 export default function NotificationSettings() {
   const { session, loading } = useSession();
@@ -135,113 +144,186 @@ export default function NotificationSettings() {
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.heading}>Notifications</Text>
 
-      <Text style={styles.label}>How should we reach you?</Text>
-      {CHANNELS.map((channel) => (
-        <Pressable
-          key={channel}
-          style={[
-            styles.option,
-            prefs.notify_channel === channel ? styles.optionSelected : null,
-          ]}
-          onPress={() => change({ notify_channel: channel })}
-          accessibilityRole="radio"
-          accessibilityState={{ selected: prefs.notify_channel === channel }}
-        >
-          <Text style={styles.optionText}>
-            {channel === 'both' ? 'Push and email' : channel === 'push' ? 'Push only' : 'Email only'}
-          </Text>
-        </Pressable>
-      ))}
-
-      <View style={styles.row}>
-        <Text style={styles.label}>Quiet hours</Text>
-        <Switch
-          value={prefs.quiet_hours_enabled}
-          onValueChange={(value) => change({ quiet_hours_enabled: value })}
-          accessibilityLabel="Enable quiet hours"
-        />
+      <Text style={styles.sectionLabel}>How should we reach you?</Text>
+      <View style={styles.channelGroup}>
+        {CHANNELS.map((channel) => {
+          const selected = prefs.notify_channel === channel;
+          return (
+            <Pressable
+              key={channel}
+              style={[styles.channelOption, selected ? styles.channelOptionSelected : null]}
+              onPress={() => change({ notify_channel: channel })}
+              accessibilityRole="radio"
+              accessibilityState={{ selected }}
+            >
+              <Text style={styles.channelOptionText}>{CHANNEL_LABEL[channel]}</Text>
+              <View style={styles.radioOuter}>
+                {selected ? <View style={styles.radioInner} /> : null}
+              </View>
+            </Pressable>
+          );
+        })}
       </View>
-      <Text style={styles.help}>
-        We hold non-urgent notifications during these hours, in your own time zone.
-        Reminders for games you have booked still come through.
-      </Text>
 
-      {prefs.quiet_hours_enabled ? (
-        <View style={styles.row}>
-          <TimeField
-            value={prefs.quiet_hours_start}
-            onChange={(value) => change({ quiet_hours_start: value })}
-            label="Quiet hours start"
-          />
-          <Text style={styles.optionText}>to</Text>
-          <TimeField
-            value={prefs.quiet_hours_end}
-            onChange={(value) => change({ quiet_hours_end: value })}
-            label="Quiet hours end"
+      <Card style={styles.quietCard}>
+        <View style={styles.rowBetween}>
+          <Text style={styles.cardLabel}>Quiet hours</Text>
+          <Switch
+            value={prefs.quiet_hours_enabled}
+            onValueChange={(value) => change({ quiet_hours_enabled: value })}
+            accessibilityLabel="Enable quiet hours"
+            trackColor={{ false: colors.neutral[400], true: colors.accentColor }}
+            thumbColor={colors.bg}
           />
         </View>
-      ) : null}
+        <Text style={styles.help}>
+          Held in your own time zone. Reminders for games you've booked still come through.
+        </Text>
 
-      <View style={styles.row}>
-        <Text style={styles.label}>Mute "need a 4th" alerts</Text>
+        {prefs.quiet_hours_enabled ? (
+          <View style={styles.timeRow}>
+            <TimeField
+              value={prefs.quiet_hours_start}
+              onChange={(value) => change({ quiet_hours_start: value })}
+              label="Quiet hours start"
+            />
+            <Text style={styles.toText}>to</Text>
+            <TimeField
+              value={prefs.quiet_hours_end}
+              onChange={(value) => change({ quiet_hours_end: value })}
+              label="Quiet hours end"
+            />
+          </View>
+        ) : null}
+      </Card>
+
+      <Card row style={styles.rowBetween}>
+        <Text style={[styles.cardLabel, styles.muteLabel]}>Mute "need a 4th" alerts</Text>
         <Switch
           value={prefs.mute_need_a_fourth}
           onValueChange={(value) => change({ mute_need_a_fourth: value })}
           accessibilityLabel="Mute need a fourth alerts"
+          trackColor={{ false: colors.neutral[400], true: colors.accentColor }}
+          thumbColor={colors.bg}
         />
-      </View>
+      </Card>
 
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {error ? <ErrorBanner message={error} /> : null}
 
-      <Pressable
-        style={[styles.button, saving ? styles.buttonDisabled : null]}
+      <Button
+        variant="primary"
+        block
         onPress={onSave}
         // Disabled while the write is in flight: a second tap would start a
         // second overlapping update whose result races the first.
         disabled={saving}
-        accessibilityRole="button"
-        accessibilityState={{ disabled: saving, busy: saving }}
+        loading={saving}
+        accessibilityLabel={saved ? 'Saved' : 'Save'}
       >
-        {saving ? (
-          <ActivityIndicator
-            color="white"
-            accessibilityLabel="Saving your notification settings"
-          />
-        ) : (
-          <Text style={styles.buttonText}>{saved ? 'Saved' : 'Save'}</Text>
-        )}
-      </Pressable>
+        {saved ? 'Saved' : 'Save'}
+      </Button>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 24, gap: 12 },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  heading: { fontSize: 28, fontWeight: '600', marginBottom: 8 },
-  label: { fontSize: 18, fontWeight: '600' },
-  help: { fontSize: 16, color: '#666', lineHeight: 22 },
-  row: {
+  container: {
+    padding: space[6],
+    gap: space[3],
+    backgroundColor: colors.bg,
+  },
+  centered: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.bg,
+  },
+  heading: {
+    fontFamily: type.heading,
+    fontSize: type.size.h2,
+    color: colors.text,
+  },
+  sectionLabel: {
+    fontFamily: type.bodyBold,
+    fontSize: type.size.body,
+    color: colors.text,
+    marginTop: space[2],
+  },
+  channelGroup: {
+    gap: space[2],
+  },
+  channelOption: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 12,
-    marginTop: 16,
+    minHeight: 56,
+    paddingHorizontal: space[5],
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    borderWidth: 2,
+    borderColor: 'transparent',
   },
-  option: { borderWidth: 1, borderColor: '#999', borderRadius: 8, padding: 18 },
-  optionSelected: { borderColor: '#1f6feb', borderWidth: 3 },
-  optionText: { fontSize: 18 },
-  button: {
-    backgroundColor: '#1f6feb',
-    borderRadius: 8,
-    padding: 18,
+  channelOptionSelected: {
+    borderColor: colors.accentColor,
+    backgroundColor: colors.accent[100],
+  },
+  channelOptionText: {
+    fontFamily: type.bodySemiBold,
+    fontSize: type.size.body,
+    color: colors.text,
+  },
+  radioOuter: {
+    width: 24,
+    height: 24,
+    borderRadius: 999,
+    borderWidth: 2,
+    borderColor: colors.divider,
     alignItems: 'center',
-    marginTop: 24,
+    justifyContent: 'center',
   },
-  buttonDisabled: { backgroundColor: '#9db8e8' },
-  buttonText: { color: 'white', fontSize: 18, fontWeight: '600' },
-  // 18pt is the app-wide minimum body text size (this player base skews
-  // older); the brief's 16pt here was raised to match app/profile.tsx's
-  // precedent for error text, which the member must be able to read.
-  error: { color: '#b3261e', fontSize: 18 },
+  radioInner: {
+    width: 14,
+    height: 14,
+    borderRadius: 999,
+    backgroundColor: colors.accentColor,
+  },
+  quietCard: {
+    marginTop: space[2],
+  },
+  rowBetween: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: space[3],
+  },
+  cardLabel: {
+    fontFamily: type.bodyBold,
+    fontSize: type.size.body,
+    color: colors.text,
+  },
+  muteLabel: {
+    flex: 1,
+    maxWidth: 220,
+  },
+  help: {
+    fontFamily: type.bodyRegular,
+    fontSize: type.size.helper,
+    lineHeight: 22,
+    color: colors.textMuted,
+  },
+  timeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[2],
+  },
+  toText: {
+    fontFamily: type.bodyRegular,
+    fontSize: type.size.bodyLarge,
+    color: colors.textMuted,
+  },
+  error: {
+    fontFamily: type.bodyRegular,
+    fontSize: type.size.body,
+    color: colors.accent[800],
+  },
 });

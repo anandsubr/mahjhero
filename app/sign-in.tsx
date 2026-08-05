@@ -1,17 +1,19 @@
 import { Redirect } from 'expo-router';
 import { useState } from 'react';
-import {
-  ActivityIndicator,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Platform, StyleSheet, Text, View } from 'react-native';
+import Button from '../components/Button';
+import ErrorBanner from '../components/ErrorBanner';
+import { MailIcon } from '../components/icons';
+import TextField from '../components/TextField';
 import { availableProviders, isValidEmail, sendMagicLink, signInWithProvider } from '../lib/auth';
 import type { OAuthProvider } from '../lib/auth';
 import { useSession } from '../lib/session';
+import { colors, space, type } from '../lib/theme';
+
+const PROVIDER_LABEL: Record<OAuthProvider, string> = {
+  google: 'Continue with Google',
+  apple: 'Continue with Apple',
+};
 
 export default function SignIn() {
   const { session, loading } = useSession();
@@ -75,29 +77,40 @@ export default function SignIn() {
 
   if (status === 'sent') {
     return (
-      <View style={styles.container}>
+      <View style={styles.checkContainer}>
+        <View style={styles.mailWell}>
+          <MailIcon />
+        </View>
         <Text style={styles.heading}>Check your email</Text>
         <Text style={styles.body}>
-          We sent a sign-in link to {email.trim()}. Open it on this device.
+          We sent a sign-in link to <Text style={styles.bodyStrong}>{email.trim()}</Text>. Open it
+          on this device and you're in.
         </Text>
-        {/* Without this the screen is a one-way door: a member who mistyped
-            their address has no route back short of force-quitting the app. */}
-        <Pressable
-          style={styles.providerButton}
-          onPress={() => setStatus('idle')}
-          accessibilityRole="button"
-        >
-          <Text style={styles.providerButtonText}>Use a different address</Text>
-        </Pressable>
+        {/* The design's mock also shows an "I opened the link" button, but
+            in the real app the redirect to /profile happens automatically
+            once useAuthDeepLink establishes the session (see the redirect
+            above) — there is nothing left for a manual button to do, so it
+            is omitted rather than shipped as a dead control.
+            "Use a different email" is real: without it the screen is a
+            one-way door for a member who mistyped their address, with no
+            route back short of force-quitting the app. */}
+        <Button variant="ghost" big={false} onPress={() => setStatus('idle')}>
+          Use a different email
+        </Button>
       </View>
     );
   }
 
+  const providers = availableProviders(Platform.OS);
+
   return (
     <View style={styles.container}>
       <Text style={styles.heading}>Sign in to MahjHero</Text>
-      <TextInput
-        style={styles.input}
+      <Text style={styles.body}>
+        No password to remember. We'll email you a link that signs you straight in.
+      </Text>
+      <TextField
+        label="Email address"
         value={email}
         onChangeText={setEmail}
         placeholder="you@example.com"
@@ -107,79 +120,96 @@ export default function SignIn() {
         textContentType="emailAddress"
         accessibilityLabel="Email address"
       />
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-      <Pressable
-        style={[styles.button, busy ? styles.buttonDisabled : null]}
+      {error ? <ErrorBanner message={error} /> : null}
+      <Button
+        variant="primary"
+        block
         onPress={onSubmit}
         disabled={busy}
-        accessibilityRole="button"
-        accessibilityState={{ disabled: busy, busy: status === 'sending' }}
+        loading={status === 'sending'}
+        accessibilityLabel="Email me a sign-in link"
       >
-        {status === 'sending' ? (
-          <ActivityIndicator accessibilityLabel="Sending your sign-in link" />
-        ) : (
-          <Text style={styles.buttonText}>Email me a sign-in link</Text>
-        )}
-      </Pressable>
-      <Text style={styles.divider}>or</Text>
-      {availableProviders(Platform.OS).map((provider) => (
-        <Pressable
-          key={provider}
-          style={[styles.providerButton, busy ? styles.providerButtonDisabled : null]}
-          onPress={() => onProviderPress(provider)}
-          disabled={busy}
-          accessibilityRole="button"
-          accessibilityState={{
-            disabled: busy,
-            busy: pendingProvider === provider,
-          }}
-        >
-          {pendingProvider === provider ? (
-            <ActivityIndicator
-              accessibilityLabel={`Opening ${provider === 'google' ? 'Google' : 'Apple'} sign-in`}
-            />
-          ) : (
-            <Text style={styles.providerButtonText}>
-              Continue with {provider === 'google' ? 'Google' : 'Apple'}
-            </Text>
-          )}
-        </Pressable>
-      ))}
+        Email me a sign-in link
+      </Button>
+      <View style={styles.dividerRow}>
+        <View style={styles.dividerLine} />
+        <Text style={styles.dividerText}>or</Text>
+        <View style={styles.dividerLine} />
+      </View>
+      <View style={styles.providerGroup}>
+        {providers.map((provider) => (
+          <Button
+            key={provider}
+            variant={provider === 'apple' ? 'dark' : 'secondary'}
+            block
+            onPress={() => onProviderPress(provider)}
+            disabled={busy}
+            loading={pendingProvider === provider}
+            accessibilityLabel={PROVIDER_LABEL[provider]}
+          >
+            {PROVIDER_LABEL[provider]}
+          </Button>
+        ))}
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', padding: 24, gap: 16 },
-  heading: { fontSize: 28, fontWeight: '600' },
-  body: { fontSize: 18, lineHeight: 26 },
-  input: {
-    borderWidth: 1,
-    borderColor: '#999',
-    borderRadius: 8,
-    padding: 16,
-    fontSize: 18,
+  container: {
+    flex: 1,
+    justifyContent: 'center',
+    padding: space[6],
+    gap: space[4],
+    backgroundColor: colors.bg,
   },
-  button: {
-    backgroundColor: '#1f6feb',
-    borderRadius: 8,
-    padding: 18,
+  checkContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'flex-start',
+    padding: space[6],
+    gap: space[5],
+    backgroundColor: colors.bg,
+  },
+  mailWell: {
+    width: 72,
+    height: 96,
+    borderRadius: 20,
+    backgroundColor: colors.surface,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  buttonDisabled: { backgroundColor: '#9db8e8' },
-  buttonText: { color: 'white', fontSize: 18, fontWeight: '600' },
-  error: { color: '#b3261e', fontSize: 18 },
-  // The brief specified fontSize: 16 for the divider, but this app's
-  // 18pt minimum body-text floor (older player base) applies to all
-  // visible text, so it is raised to 18 here.
-  divider: { textAlign: 'center', fontSize: 18, color: '#666' },
-  providerButton: {
-    borderWidth: 1,
-    borderColor: '#999',
-    borderRadius: 8,
-    padding: 18,
+  heading: {
+    fontFamily: type.heading,
+    fontSize: type.size.h1,
+    color: colors.text,
+  },
+  body: {
+    fontFamily: type.bodyRegular,
+    fontSize: type.size.bodyLarge,
+    lineHeight: 28,
+    color: colors.textMuted,
+  },
+  bodyStrong: {
+    fontFamily: type.bodyBold,
+    color: colors.text,
+  },
+  dividerRow: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: space[4],
   },
-  providerButtonDisabled: { borderColor: '#ccc' },
-  providerButtonText: { fontSize: 18, fontWeight: '600' },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: colors.divider,
+  },
+  dividerText: {
+    fontFamily: type.bodyRegular,
+    fontSize: type.size.helper,
+    color: colors.textMuted,
+  },
+  providerGroup: {
+    gap: space[3],
+  },
 });

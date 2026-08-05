@@ -1,5 +1,6 @@
 import type { ChangeEvent, CSSProperties } from 'react';
 import { View } from 'react-native';
+import { colors, radius, space, type } from '../lib/theme';
 
 type TimeFieldProps = {
   value: string; // "HH:MM"
@@ -58,15 +59,17 @@ export default function TimeField({ value, onChange, label }: TimeFieldProps) {
 
 // Plain DOM style object (px units required — unlike React Native's
 // StyleSheet, a raw <input> does not treat bare numbers as pixels), matching
-// the visual weight of the timeInput style it replaces in
-// app/notifications.tsx.
+// components/TextField.tsx's "big" pill input treatment (surface
+// background, pill radius, 19px/58px sizing) so this reads as the same
+// control on web as the native picker does on iOS/Android.
 const webInputStyle: CSSProperties = {
-  border: '1px solid #999',
-  borderRadius: 8,
-  padding: 16,
-  // 18pt minimum body text app-wide (this player base skews older) — this
-  // is exactly what the member reads to confirm the time they picked.
-  fontSize: 18,
+  border: 'none',
+  borderRadius: radius.pill,
+  backgroundColor: colors.surface,
+  padding: `0 ${space[5]}px`,
+  minHeight: 58,
+  fontSize: type.size.bodyLarge,
+  color: colors.text,
   width: '100%',
   boxSizing: 'border-box',
   fontFamily: 'inherit',
