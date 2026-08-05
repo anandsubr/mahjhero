@@ -4,8 +4,8 @@
     {
       "name": "mahjhero-web",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["expo", "start", "--web"],
-      "port": 8082,
+      "runtimeArgs": ["expo", "start", "--web", "--port", "8090"],
+      "port": 8090,
       "autoPort": true
     }
   ]

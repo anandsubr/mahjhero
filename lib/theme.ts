@@ -169,5 +169,23 @@ export const type = {
   },
 } as const;
 
-export const theme = { colors, space, radius, shadow, type };
+// ---------------------------------------------------------------------------
+// Layout
+// ---------------------------------------------------------------------------
+
+export const layout = {
+  // The source design is a 390px phone frame with 28px horizontal padding,
+  // so its content column is ~334px — but that's a mobile viewport, not a
+  // target width. The web build is a permanent target (club invite links
+  // open it directly in a desktop browser), so on wide viewports the
+  // content needs its own comfortable column rather than stretching
+  // edge-to-edge or staying phone-narrow. 440 sits in the middle of the
+  // ~430–480px range the design's proportions suggest once you allow the
+  // extra breathing room a desktop pointer (vs. a thumb) affords, and it's
+  // roomy enough for this app's "big" 58px controls without feeling like a
+  // form crammed into a phone-shaped column.
+  contentMaxWidth: 440,
+} as const;
+
+export const theme = { colors, space, radius, shadow, type, layout };
 export default theme;

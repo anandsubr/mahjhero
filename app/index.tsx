@@ -1,5 +1,6 @@
 import { Redirect } from 'expo-router';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, StyleSheet } from 'react-native';
+import Screen from '../components/Screen';
 import { useSession } from '../lib/session';
 import { colors } from '../lib/theme';
 
@@ -8,9 +9,9 @@ export default function Index() {
 
   if (loading) {
     return (
-      <View style={styles.centered}>
+      <Screen center contentStyle={styles.centered}>
         <ActivityIndicator color={colors.accentColor} />
-      </View>
+      </Screen>
     );
   }
 
@@ -19,9 +20,6 @@ export default function Index() {
 
 const styles = StyleSheet.create({
   centered: {
-    flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.bg,
   },
 });

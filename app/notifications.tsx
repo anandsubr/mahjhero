@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
-  ScrollView,
   StyleSheet,
   Switch,
   Text,
@@ -12,6 +11,7 @@ import {
 import Button from '../components/Button';
 import Card from '../components/Card';
 import ErrorBanner from '../components/ErrorBanner';
+import Screen from '../components/Screen';
 import TimeField from '../components/TimeField';
 import { GENERIC_ERROR } from '../lib/constants';
 import { fetchPreferences, updatePreferences } from '../lib/profile';
@@ -67,9 +67,9 @@ export default function NotificationSettings() {
 
   if (loading) {
     return (
-      <View style={styles.centered}>
+      <Screen center contentStyle={styles.centered}>
         <ActivityIndicator />
-      </View>
+      </Screen>
     );
   }
 
@@ -77,17 +77,17 @@ export default function NotificationSettings() {
 
   if (!ready) {
     return (
-      <View style={styles.centered}>
+      <Screen center contentStyle={styles.centered}>
         <ActivityIndicator />
-      </View>
+      </Screen>
     );
   }
 
   if (!prefs) {
     return (
-      <View style={styles.centered}>
+      <Screen center contentStyle={styles.centered}>
         <Text style={styles.error}>{GENERIC_ERROR}</Text>
-      </View>
+      </Screen>
     );
   }
 
@@ -141,7 +141,7 @@ export default function NotificationSettings() {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <Screen scroll contentStyle={styles.container}>
       <Text style={styles.heading}>Notifications</Text>
 
       <Text style={styles.sectionLabel}>How should we reach you?</Text>
@@ -222,7 +222,7 @@ export default function NotificationSettings() {
       >
         {saved ? 'Saved' : 'Save'}
       </Button>
-    </ScrollView>
+    </Screen>
   );
 }
 
@@ -230,13 +230,9 @@ const styles = StyleSheet.create({
   container: {
     padding: space[6],
     gap: space[3],
-    backgroundColor: colors.bg,
   },
   centered: {
-    flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.bg,
   },
   heading: {
     fontFamily: type.heading,

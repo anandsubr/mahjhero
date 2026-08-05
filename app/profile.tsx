@@ -1,9 +1,10 @@
 import { Link, Redirect } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import Button from '../components/Button';
 import Card from '../components/Card';
 import ErrorBanner from '../components/ErrorBanner';
+import Screen from '../components/Screen';
 import SkillLevelPicker from '../components/SkillLevelPicker';
 import TextField from '../components/TextField';
 import { GENERIC_ERROR } from '../lib/constants';
@@ -66,9 +67,9 @@ export default function ProfileScreen() {
 
   if (loading) {
     return (
-      <View style={styles.centered}>
+      <Screen center contentStyle={styles.centered}>
         <ActivityIndicator />
-      </View>
+      </Screen>
     );
   }
 
@@ -76,17 +77,17 @@ export default function ProfileScreen() {
 
   if (!ready) {
     return (
-      <View style={styles.centered}>
+      <Screen center contentStyle={styles.centered}>
         <ActivityIndicator />
-      </View>
+      </Screen>
     );
   }
 
   if (loadFailed) {
     return (
-      <View style={styles.centered}>
+      <Screen center contentStyle={styles.centered}>
         <Text style={styles.error}>{GENERIC_ERROR}</Text>
-      </View>
+      </Screen>
     );
   }
 
@@ -142,7 +143,7 @@ export default function ProfileScreen() {
   const canSave = complete && !saving;
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <Screen scroll contentStyle={styles.container}>
       <Text style={styles.heading}>Your profile</Text>
       <Text style={styles.subheading}>Two things and you're ready to sit down at a table.</Text>
 
@@ -213,7 +214,7 @@ export default function ProfileScreen() {
       >
         Sign out
       </Button>
-    </ScrollView>
+    </Screen>
   );
 }
 
@@ -221,13 +222,9 @@ const styles = StyleSheet.create({
   container: {
     padding: space[6],
     gap: space[4],
-    backgroundColor: colors.bg,
   },
   centered: {
-    flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.bg,
   },
   heading: {
     fontFamily: type.heading,

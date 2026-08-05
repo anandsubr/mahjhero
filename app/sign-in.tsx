@@ -4,6 +4,7 @@ import { Platform, StyleSheet, Text, View } from 'react-native';
 import Button from '../components/Button';
 import ErrorBanner from '../components/ErrorBanner';
 import { MailIcon } from '../components/icons';
+import Screen from '../components/Screen';
 import TextField from '../components/TextField';
 import { availableProviders, isValidEmail, sendMagicLink, signInWithProvider } from '../lib/auth';
 import type { OAuthProvider } from '../lib/auth';
@@ -77,7 +78,7 @@ export default function SignIn() {
 
   if (status === 'sent') {
     return (
-      <View style={styles.checkContainer}>
+      <Screen center contentStyle={styles.checkContent}>
         <View style={styles.mailWell}>
           <MailIcon />
         </View>
@@ -97,14 +98,14 @@ export default function SignIn() {
         <Button variant="ghost" big={false} onPress={() => setStatus('idle')}>
           Use a different email
         </Button>
-      </View>
+      </Screen>
     );
   }
 
   const providers = availableProviders(Platform.OS);
 
   return (
-    <View style={styles.container}>
+    <Screen center contentStyle={styles.content}>
       <Text style={styles.heading}>Sign in to MahjHero</Text>
       <Text style={styles.body}>
         No password to remember. We'll email you a link that signs you straight in.
@@ -151,25 +152,19 @@ export default function SignIn() {
           </Button>
         ))}
       </View>
-    </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
+  content: {
     padding: space[6],
     gap: space[4],
-    backgroundColor: colors.bg,
   },
-  checkContainer: {
-    flex: 1,
-    justifyContent: 'center',
+  checkContent: {
     alignItems: 'flex-start',
     padding: space[6],
     gap: space[5],
-    backgroundColor: colors.bg,
   },
   mailWell: {
     width: 72,
