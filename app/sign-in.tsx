@@ -9,13 +9,23 @@ import {
   View,
 } from 'react-native';
 import { availableProviders, isValidEmail, sendMagicLink, signInWithProvider } from '../lib/auth';
+import type { OAuthProvider } from '../lib/auth';
 
 export default function SignIn() {
   const [email, setEmail] = useState('');
   const [status, setStatus] = useState<'idle' | 'sending' | 'sent'>('idle');
+  const [pendingProvider, setPendingProvider] = useState<OAuthProvider | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
 
+  // One in-flight auth attempt at a time, whichever route started it. On
+  // native `openAuthSessionAsync` takes seconds, and a second tap opens a
+  // second auth session on top of the first.
+  const busy = status === 'sending' || pendingProvider !== null;
+
   async function onSubmit() {
+    if (busy) return;
     if (!isValidEmail(email)) {
       setError('Please check that email address.');
       return;
@@ -31,6 +41,20 @@ export default function SignIn() {
     setStatus('sent');
   }
 
+  async function onProviderPress(provider: OAuthProvider) {
+    if (busy) return;
+    // Clear any prior error before starting, exactly as onSubmit does —
+    // otherwise a stale message sits under a button that is now working.
+    setError(null);
+    setPendingProvider(provider);
+    try {
+      const { error: providerError } = await signInWithProvider(provider);
+      if (providerError) setError(providerError);
+    } finally {
+      setPendingProvider(null);
+    }
+  }
+
   if (status === 'sent') {
     return (
       <View style={styles.container}>
@@ -38,6 +62,15 @@ export default function SignIn() {
         <Text style={styles.body}>
           We sent a sign-in link to {email.trim()}. Open it on this device.
         </Text>
+        {/* Without this the screen is a one-way door: a member who mistyped
+            their address has no route back short of force-quitting the app. */}
+        <Pressable
+          style={styles.providerButton}
+          onPress={() => setStatus('idle')}
+          accessibilityRole="button"
+        >
+          <Text style={styles.providerButtonText}>Use a different address</Text>
+        </Pressable>
       </View>
     );
   }
@@ -58,10 +91,11 @@ export default function SignIn() {
       />
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <Pressable
-        style={styles.button}
+        style={[styles.button, busy ? styles.buttonDisabled : null]}
         onPress={onSubmit}
-        disabled={status === 'sending'}
+        disabled={busy}
         accessibilityRole="button"
+        accessibilityState={{ disabled: busy, busy: status === 'sending' }}
       >
         {status === 'sending' ? (
           <ActivityIndicator accessibilityLabel="Sending your sign-in link" />
@@ -73,16 +107,24 @@ export default function SignIn() {
       {availableProviders(Platform.OS).map((provider) => (
         <Pressable
           key={provider}
-          style={styles.providerButton}
-          onPress={async () => {
-            const { error: providerError } = await signInWithProvider(provider);
-            if (providerError) setError(providerError);
-          }}
+          style={[styles.providerButton, busy ? styles.providerButtonDisabled : null]}
+          onPress={() => onProviderPress(provider)}
+          disabled={busy}
           accessibilityRole="button"
+          accessibilityState={{
+            disabled: busy,
+            busy: pendingProvider === provider,
+          }}
         >
-          <Text style={styles.providerButtonText}>
-            Continue with {provider === 'google' ? 'Google' : 'Apple'}
-          </Text>
+          {pendingProvider === provider ? (
+            <ActivityIndicator
+              accessibilityLabel={`Opening ${provider === 'google' ? 'Google' : 'Apple'} sign-in`}
+            />
+          ) : (
+            <Text style={styles.providerButtonText}>
+              Continue with {provider === 'google' ? 'Google' : 'Apple'}
+            </Text>
+          )}
         </Pressable>
       ))}
     </View>
@@ -106,6 +148,7 @@ const styles = StyleSheet.create({
     padding: 18,
     alignItems: 'center',
   },
+  buttonDisabled: { backgroundColor: '#9db8e8' },
   buttonText: { color: 'white', fontSize: 18, fontWeight: '600' },
   error: { color: '#b3261e', fontSize: 18 },
   // The brief specified fontSize: 16 for the divider, but this app's
@@ -119,5 +162,6 @@ const styles = StyleSheet.create({
     padding: 18,
     alignItems: 'center',
   },
+  providerButtonDisabled: { borderColor: '#ccc' },
   providerButtonText: { fontSize: 18, fontWeight: '600' },
 });

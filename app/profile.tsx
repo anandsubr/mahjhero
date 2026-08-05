@@ -9,6 +9,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { GENERIC_ERROR } from '../lib/constants';
 import { fetchProfile, isCompleteProfile, updateProfile } from '../lib/profile';
 import type { SkillLevel } from '../lib/profile';
 import { useSession } from '../lib/session';
@@ -21,19 +22,43 @@ export default function ProfileScreen() {
   const [displayName, setDisplayName] = useState('');
   const [skillLevel, setSkillLevel] = useState<SkillLevel | null>(null);
   const [ready, setReady] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Keyed on the user id, NOT on `session`. lib/session.tsx hands out a fresh
+  // Session object on every onAuthStateChange — including TOKEN_REFRESHED,
+  // which fires within the hour, and web tab focus. Depending on the object
+  // would re-run this fetch and overwrite whatever the member was mid-way
+  // through typing. The id only changes on a real account switch, which is
+  // the one case where a refetch is correct.
+  const userId = session?.user.id;
+
   useEffect(() => {
-    if (!session) return;
-    fetchProfile(session.user.id).then((profile) => {
+    if (!userId) return;
+    let cancelled = false;
+    fetchProfile(userId).then((profile) => {
+      if (cancelled) return;
       if (profile) {
         setDisplayName(profile.display_name);
         setSkillLevel(profile.skill_level);
+      } else {
+        // fetchProfile never rejects — it resolves null on any failure
+        // (network error, RLS denial, missing row). Falling through to a
+        // blank but editable form here is a data-loss path: the member
+        // re-types their name over a profile that loaded fine on the server
+        // and saves it, destroying the real one. app/notifications.tsx
+        // already refuses to render its form in this case; mirror that.
+        setLoadFailed(true);
       }
       setReady(true);
     });
-  }, [session]);
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
 
   if (loading) {
     return (
@@ -53,28 +78,64 @@ export default function ProfileScreen() {
     );
   }
 
+  if (loadFailed) {
+    return (
+      <View style={styles.centered}>
+        <Text style={styles.error}>{GENERIC_ERROR}</Text>
+      </View>
+    );
+  }
+
   async function onSave() {
-    if (!session) return;
+    if (!session || saving) return;
     setError(null);
     // Also clear a prior "Saved" state before this attempt resolves — a
     // retry (or double-tap) that fails after a previous success must not
     // leave the screen showing both the new error and a stale "Saved"
     // button label, which would look like the failed write persisted.
     setSaved(false);
-    // updateProfile reports failure through `error` rather than throwing, so
-    // the caller MUST read it. Setting `saved` unconditionally would show
-    // "Saved" after a failed write and leave the member believing their
-    // skill level persisted when it did not.
-    const { error: saveError } = await updateProfile(session.user.id, {
-      display_name: displayName,
-      skill_level: skillLevel,
-    });
-    if (saveError) {
-      setError(saveError);
-      return;
+    setSaving(true);
+    try {
+      // updateProfile reports failure through `error` rather than throwing, so
+      // the caller MUST read it. Setting `saved` unconditionally would show
+      // "Saved" after a failed write and leave the member believing their
+      // skill level persisted when it did not.
+      const { error: saveError } = await updateProfile(session.user.id, {
+        display_name: displayName,
+        skill_level: skillLevel,
+      });
+      if (saveError) {
+        setError(saveError);
+        return;
+      }
+      setSaved(true);
+    } finally {
+      setSaving(false);
     }
-    setSaved(true);
   }
+
+  async function onSignOut() {
+    if (signingOut) return;
+    setError(null);
+    setSigningOut(true);
+    try {
+      // Fire-and-forget here left an unhandled rejection on failure and the
+      // member still signed in with nothing on screen to say so.
+      const { error: signOutError } = await supabase.auth.signOut();
+      if (signOutError) setError(signOutError.message);
+    } catch (cause) {
+      console.error('signOut failed', cause);
+      setError(GENERIC_ERROR);
+    } finally {
+      setSigningOut(false);
+    }
+  }
+
+  const complete = isCompleteProfile({
+    display_name: displayName,
+    skill_level: skillLevel,
+  });
+  const canSave = complete && !saving;
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
@@ -120,32 +181,26 @@ export default function ProfileScreen() {
         ))}
       </View>
 
-      {isCompleteProfile({ display_name: displayName, skill_level: skillLevel }) ? null : (
+      {complete ? null : (
         <Text style={styles.help}>
           Add your name and skill level so hosts can seat you at the right table.
         </Text>
       )}
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <Pressable
-        style={[
-          styles.button,
-          isCompleteProfile({ display_name: displayName, skill_level: skillLevel })
-            ? null
-            : styles.buttonDisabled,
-        ]}
+        style={[styles.button, canSave ? null : styles.buttonDisabled]}
         onPress={onSave}
-        disabled={
-          !isCompleteProfile({ display_name: displayName, skill_level: skillLevel })
-        }
+        // Disabled while the write is in flight: a second tap would start a
+        // second overlapping update whose result races the first.
+        disabled={!canSave}
         accessibilityRole="button"
-        accessibilityState={{
-          disabled: !isCompleteProfile({
-            display_name: displayName,
-            skill_level: skillLevel,
-          }),
-        }}
+        accessibilityState={{ disabled: !canSave, busy: saving }}
       >
-        <Text style={styles.buttonText}>{saved ? 'Saved' : 'Save'}</Text>
+        {saving ? (
+          <ActivityIndicator color="white" accessibilityLabel="Saving your profile" />
+        ) : (
+          <Text style={styles.buttonText}>{saved ? 'Saved' : 'Save'}</Text>
+        )}
       </Pressable>
 
       <Link href="/notifications" style={styles.linkRow}>
@@ -154,10 +209,16 @@ export default function ProfileScreen() {
 
       <Pressable
         style={styles.signOut}
-        onPress={() => supabase.auth.signOut()}
+        onPress={onSignOut}
+        disabled={signingOut}
         accessibilityRole="button"
+        accessibilityState={{ disabled: signingOut, busy: signingOut }}
       >
-        <Text style={styles.signOutText}>Sign out</Text>
+        {signingOut ? (
+          <ActivityIndicator accessibilityLabel="Signing out" />
+        ) : (
+          <Text style={styles.signOutText}>Sign out</Text>
+        )}
       </Pressable>
     </ScrollView>
   );

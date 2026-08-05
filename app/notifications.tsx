@@ -23,10 +23,20 @@ export default function NotificationSettings() {
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // Keyed on the user id, NOT on `session`. lib/session.tsx hands out a fresh
+  // Session object on every onAuthStateChange — including TOKEN_REFRESHED,
+  // which fires within the hour, and web tab focus. Depending on the object
+  // would re-run this fetch and silently discard the quiet hours the member
+  // was mid-way through editing.
+  const userId = session?.user.id;
 
   useEffect(() => {
-    if (!session) return;
-    fetchPreferences(session.user.id).then((fetched) => {
+    if (!userId) return;
+    let cancelled = false;
+    fetchPreferences(userId).then((fetched) => {
+      if (cancelled) return;
       // fetchPreferences never rejects — it resolves null on any failure
       // (network error, RLS denial, ...). Setting `ready` regardless of the
       // outcome is what lets the screen fall through to the "could not
@@ -34,7 +44,10 @@ export default function NotificationSettings() {
       setPrefs(fetched);
       setReady(true);
     });
-  }, [session]);
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
 
   if (loading) {
     return (
@@ -69,7 +82,7 @@ export default function NotificationSettings() {
   }
 
   async function onSave() {
-    if (!session || !prefs) return;
+    if (!session || !prefs || saving) return;
     setError(null);
     // Also clear a prior "Saved" state before this attempt resolves — a
     // retry (or double-tap) that fails after a previous success must not
@@ -91,16 +104,24 @@ export default function NotificationSettings() {
           mute_need_a_fourth: prefs.mute_need_a_fourth,
           quiet_hours_enabled: prefs.quiet_hours_enabled,
         };
-    // updatePreferences reports failure through `error` rather than
-    // throwing, so the caller MUST read it. Setting `saved` unconditionally
-    // would show "Saved" after a failed write and leave the member
-    // believing their quiet hours persisted when they did not.
-    const { error: saveError } = await updatePreferences(session.user.id, payload);
-    if (saveError) {
-      setError(saveError);
-      return;
+    setSaving(true);
+    try {
+      // updatePreferences reports failure through `error` rather than
+      // throwing, so the caller MUST read it. Setting `saved` unconditionally
+      // would show "Saved" after a failed write and leave the member
+      // believing their quiet hours persisted when they did not.
+      const { error: saveError } = await updatePreferences(
+        session.user.id,
+        payload,
+      );
+      if (saveError) {
+        setError(saveError);
+        return;
+      }
+      setSaved(true);
+    } finally {
+      setSaving(false);
     }
-    setSaved(true);
   }
 
   return (
@@ -169,8 +190,23 @@ export default function NotificationSettings() {
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
-      <Pressable style={styles.button} onPress={onSave} accessibilityRole="button">
-        <Text style={styles.buttonText}>{saved ? 'Saved' : 'Save'}</Text>
+      <Pressable
+        style={[styles.button, saving ? styles.buttonDisabled : null]}
+        onPress={onSave}
+        // Disabled while the write is in flight: a second tap would start a
+        // second overlapping update whose result races the first.
+        disabled={saving}
+        accessibilityRole="button"
+        accessibilityState={{ disabled: saving, busy: saving }}
+      >
+        {saving ? (
+          <ActivityIndicator
+            color="white"
+            accessibilityLabel="Saving your notification settings"
+          />
+        ) : (
+          <Text style={styles.buttonText}>{saved ? 'Saved' : 'Save'}</Text>
+        )}
       </Pressable>
     </ScrollView>
   );
@@ -207,6 +243,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 24,
   },
+  buttonDisabled: { backgroundColor: '#9db8e8' },
   buttonText: { color: 'white', fontSize: 18, fontWeight: '600' },
   // 18pt is the app-wide minimum body text size (this player base skews
   // older); the brief's 16pt here was raised to match app/profile.tsx's
