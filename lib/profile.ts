@@ -61,3 +61,95 @@ export async function updateProfile(
     return { error: GENERIC_ERROR };
   }
 }
+
+export type NotifyChannel = 'push' | 'email' | 'both';
+
+export type NotificationPreferences = {
+  notify_channel: NotifyChannel;
+  mute_need_a_fourth: boolean;
+  quiet_hours_enabled: boolean;
+  quiet_hours_start: string;
+  quiet_hours_end: string;
+};
+
+const TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
+/**
+ * Quiet windows normally cross midnight (the default is 21:00–08:00), so any
+ * distinct pair of valid times is a legal window. Only equal times are rejected,
+ * because a zero-length window silently disables the feature.
+ */
+export function isValidQuietWindow(start: string, end: string): boolean {
+  if (!TIME_PATTERN.test(start) || !TIME_PATTERN.test(end)) return false;
+  return start !== end;
+}
+
+/**
+ * Never rejects, for the same reason as fetchProfile above: the notification
+ * settings screen awaits this directly and an escaping rejection would leave
+ * it stuck on a spinner with no way to explain why.
+ */
+export async function fetchPreferences(
+  userId: string,
+): Promise<NotificationPreferences | null> {
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select(
+        'notify_channel, mute_need_a_fourth, quiet_hours_enabled, quiet_hours_start, quiet_hours_end',
+      )
+      .eq('id', userId)
+      .single();
+
+    if (error) {
+      console.error('fetchPreferences failed', error);
+      return null;
+    }
+    return data as NotificationPreferences;
+  } catch (cause) {
+    console.error('fetchPreferences failed', cause);
+    return null;
+  }
+}
+
+/**
+ * Never rejects, for the same reason as updateProfile above: the notification
+ * settings screen awaits this directly and an escaping rejection would strand
+ * the user mid-save with no message explaining why.
+ */
+export async function updatePreferences(
+  userId: string,
+  changes: Partial<NotificationPreferences>,
+): Promise<{ error: string | null }> {
+  const touchesStart = changes.quiet_hours_start !== undefined;
+  const touchesEnd = changes.quiet_hours_end !== undefined;
+
+  // Both bounds must travel together. Accepting one alone would let a caller
+  // slip past validation and store a window this module considers invalid.
+  if (touchesStart !== touchesEnd) {
+    return { error: 'Quiet hours must be changed as a pair.' };
+  }
+
+  if (
+    touchesStart &&
+    touchesEnd &&
+    !isValidQuietWindow(changes.quiet_hours_start!, changes.quiet_hours_end!)
+  ) {
+    return { error: 'Those quiet hours do not make sense.' };
+  }
+
+  try {
+    const { error } = await supabase
+      .from('profiles')
+      .update({ ...changes, updated_at: new Date().toISOString() })
+      .eq('id', userId);
+
+    return { error: error ? error.message : null };
+  } catch (cause) {
+    // The user-facing message is deliberately generic, but keep the original
+    // for diagnosis — otherwise a DNS failure, a Supabase outage, and a CORS
+    // misconfiguration are indistinguishable from the outside.
+    console.error('updatePreferences failed', cause);
+    return { error: GENERIC_ERROR };
+  }
+}
