@@ -44,23 +44,50 @@ export async function sendMagicLink(
   }
 }
 
+/**
+ * Four genuinely different outcomes, because two callers need to tell them
+ * apart and a boolean cannot:
+ *
+ *  - `signed-in`      — tokens parsed, `setSession` succeeded.
+ *  - `failed`         — it was an auth redirect and it went wrong; read `error`.
+ *  - `already-signed-in` — this exact URL already produced a session, via the
+ *    other arrival path. A *success*, not a no-op: see the Android note below.
+ *  - `ignored`        — not an auth redirect at all. Leave the session alone.
+ */
+export type AuthRedirectStatus =
+  | 'signed-in'
+  | 'failed'
+  | 'already-signed-in'
+  | 'ignored';
+
 export type AuthRedirectResult = {
-  /**
-   * `false` means the URL carried nothing for auth (an ordinary deep link, or
-   * one this module has already consumed) and the caller should leave the
-   * session alone. `true` means it was an auth redirect; read `error`.
-   */
-  handled: boolean;
+  status: AuthRedirectStatus;
   error: string | null;
 };
 
 /**
- * Auth redirects can reach this module twice for one sign-in: on Android,
- * `WebBrowser.openAuthSessionAsync` resolves with the redirect URL *and* the
- * OS may deliver the same URL to `Linking`'s listener. Replaying it would call
- * `setSession` a second time with an already-rotated refresh token, which
- * GoTrue rejects — turning a successful sign-in into a spurious error. Keyed
- * on the full URL because the tokens in it are what make it single-use.
+ * Auth redirects reach this module twice for one sign-in on Android, and the
+ * order is the opposite of what it looks like.
+ *
+ * `expo-web-browser` has no native auth session on Android: it opens a Custom
+ * Tab and polyfills `openAuthSessionAsync` with its own `Linking` listener,
+ * registered at tap time. `useAuthDeepLink`'s listener is registered at root
+ * mount, so it is *first* in line — it consumes the redirect and establishes
+ * the session before `openAuthSessionAsync` has even resolved. Only then does
+ * `signInWithProvider` call in with the same URL.
+ *
+ * So the second arrival is the normal case, not the exception, and it must
+ * report success. Reporting "not handled" would show the member
+ * "Could not reach MahjHero" on every successful Android sign-in.
+ *
+ * Only URLs that actually produced a session are recorded, which is what makes
+ * `already-signed-in` safe to treat as success. A redirect whose `setSession`
+ * failed is deliberately left un-consumed so the other path can retry it —
+ * burning it on a transient failure would strand the member permanently.
+ *
+ * Keyed on the full URL because the tokens in it are what make it single-use:
+ * replaying one means presenting an already-rotated refresh token, which
+ * GoTrue rejects.
  */
 const consumedRedirectUrls = new Set<string>();
 const CONSUMED_URL_LIMIT = 20;
@@ -94,7 +121,7 @@ export async function completeAuthRedirect(
 ): Promise<AuthRedirectResult> {
   try {
     if (consumedRedirectUrls.has(url)) {
-      return { handled: false, error: null };
+      return { status: 'already-signed-in', error: null };
     }
 
     const { params, errorCode } = QueryParams.getQueryParams(url);
@@ -110,7 +137,27 @@ export async function completeAuthRedirect(
     if (!failureCode && !hasTokens) {
       // Not an auth redirect. Deep links are a shared channel — a future
       // `mahjhero://game/123` must fall through here untouched.
-      return { handled: false, error: null };
+      return { status: 'ignored', error: null };
+    }
+
+    if (failureCode) {
+      // Deliberately not recorded as consumed: nothing was spent, and if the
+      // same error redirect arrives twice both callers should say so.
+      return {
+        status: 'failed',
+        error: params.error_description ?? GENERIC_ERROR,
+      };
+    }
+
+    const { error } = await supabase.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+    if (error) {
+      // Left un-consumed on purpose. A transient setSession failure must not
+      // burn the redirect — the other arrival path is the member's retry.
+      console.error('completeAuthRedirect failed', error);
+      return { status: 'failed', error: error.message };
     }
 
     if (consumedRedirectUrls.size >= CONSUMED_URL_LIMIT) {
@@ -120,22 +167,10 @@ export async function completeAuthRedirect(
     }
     consumedRedirectUrls.add(url);
 
-    if (failureCode) {
-      return { handled: true, error: params.error_description ?? GENERIC_ERROR };
-    }
-
-    const { error } = await supabase.auth.setSession({
-      access_token: accessToken,
-      refresh_token: refreshToken,
-    });
-    if (error) {
-      console.error('completeAuthRedirect failed', error);
-      return { handled: true, error: error.message };
-    }
-    return { handled: true, error: null };
+    return { status: 'signed-in', error: null };
   } catch (cause) {
     console.error('completeAuthRedirect failed', cause);
-    return { handled: true, error: GENERIC_ERROR };
+    return { status: 'failed', error: GENERIC_ERROR };
   }
 }
 
@@ -205,14 +240,17 @@ export async function signInWithProvider(
       return { error: null };
     }
 
-    const { handled, error: redirectError } = await completeAuthRedirect(
+    const { status, error: redirectError } = await completeAuthRedirect(
       result.url,
     );
-    if (!handled) {
+    if (status === 'ignored') {
       // The auth session reported success but the URL carried neither tokens
       // nor an error code. Nothing to recover from, and nothing to explain.
       return { error: GENERIC_ERROR };
     }
+    // `already-signed-in` is the ordinary Android outcome, not a failure:
+    // useAuthDeepLink's listener beat openAuthSessionAsync's polyfilled one to
+    // the same URL and the session is already live. See completeAuthRedirect.
     return { error: redirectError };
   } catch (cause) {
     // The user-facing message is deliberately generic, but keep the original

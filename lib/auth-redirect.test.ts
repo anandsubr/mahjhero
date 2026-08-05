@@ -29,7 +29,7 @@ beforeEach(() => {
 describe('completeAuthRedirect', () => {
   it('turns a fragment carrying tokens into a session', async () => {
     await expect(completeAuthRedirect(TOKEN_URL)).resolves.toEqual({
-      handled: true,
+      status: 'signed-in',
       error: null,
     });
 
@@ -43,7 +43,7 @@ describe('completeAuthRedirect', () => {
     // Deep links are a shared channel. A future mahjhero://game/123 must pass
     // through here without touching the session.
     await expect(completeAuthRedirect('mahjhero://game/123')).resolves.toEqual({
-      handled: false,
+      status: 'ignored',
       error: null,
     });
 
@@ -56,7 +56,7 @@ describe('completeAuthRedirect', () => {
         'mahjhero://auth/callback#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired',
       ),
     ).resolves.toEqual({
-      handled: true,
+      status: 'failed',
       error: 'Email link is invalid or has expired',
     });
 
@@ -66,17 +66,18 @@ describe('completeAuthRedirect', () => {
   it('falls back to the generic message when an error carries no description', async () => {
     await expect(
       completeAuthRedirect('mahjhero://auth/callback#error_code=otp_expired'),
-    ).resolves.toEqual({ handled: true, error: GENERIC_ERROR });
+    ).resolves.toEqual({ status: 'failed', error: GENERIC_ERROR });
   });
 
-  it('does not replay a URL it has already consumed', async () => {
-    // The case this exists for: on Android the OS can deliver the same
-    // redirect to Linking that openAuthSessionAsync already handled. Calling
-    // setSession twice would present an already-rotated refresh token, and
-    // GoTrue rejecting it would turn a successful sign-in into an error.
+  it('reports a URL that already produced a session as already-signed-in, not as a replay', async () => {
+    // The case this exists for: on Android both arrival paths see the same
+    // redirect. Calling setSession twice would present an already-rotated
+    // refresh token, and GoTrue rejecting it would turn a successful sign-in
+    // into an error — so the second caller is told the session already exists
+    // rather than being allowed to replay it.
     await completeAuthRedirect(TOKEN_URL);
     await expect(completeAuthRedirect(TOKEN_URL)).resolves.toEqual({
-      handled: false,
+      status: 'already-signed-in',
       error: null,
     });
 
@@ -89,7 +90,7 @@ describe('completeAuthRedirect', () => {
     } as never);
 
     await expect(completeAuthRedirect(TOKEN_URL)).resolves.toEqual({
-      handled: true,
+      status: 'failed',
       error: 'Invalid refresh token',
     });
   });
@@ -98,7 +99,40 @@ describe('completeAuthRedirect', () => {
     vi.mocked(supabase.auth.setSession).mockRejectedValue(new Error('network down'));
 
     await expect(completeAuthRedirect(TOKEN_URL)).resolves.toEqual({
-      handled: true,
+      status: 'failed',
+      error: GENERIC_ERROR,
+    });
+  });
+
+  it('does not burn a redirect whose setSession failed, so the other path can retry', async () => {
+    // The two arrival paths (openAuthSessionAsync and the deep-link listener)
+    // are each other's retry. Marking the URL consumed on a transient failure
+    // would spend the member's only link on a blip.
+    vi.mocked(supabase.auth.setSession).mockResolvedValueOnce({
+      error: { message: 'temporary failure' },
+    } as never);
+
+    await expect(completeAuthRedirect(TOKEN_URL)).resolves.toEqual({
+      status: 'failed',
+      error: 'temporary failure',
+    });
+
+    await expect(completeAuthRedirect(TOKEN_URL)).resolves.toEqual({
+      status: 'signed-in',
+      error: null,
+    });
+    expect(supabase.auth.setSession).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not record an error redirect as consumed', async () => {
+    // Nothing was spent, so if the same error arrives down both paths both
+    // callers should be able to report it rather than the second seeing a
+    // phantom success.
+    const errorUrl = 'mahjhero://auth/callback#error_code=otp_expired';
+
+    await completeAuthRedirect(errorUrl);
+    await expect(completeAuthRedirect(errorUrl)).resolves.toEqual({
+      status: 'failed',
       error: GENERIC_ERROR,
     });
   });
