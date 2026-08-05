@@ -72,7 +72,23 @@ export type NotificationPreferences = {
   quiet_hours_end: string;
 };
 
-const TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
+export const TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
+/**
+ * `quiet_hours_start` / `quiet_hours_end` are Postgres `time` columns, which
+ * PostgREST serializes as `"21:00:00"` — seconds included. The client's whole
+ * surface is HH:MM: the text inputs, their `21:00` placeholder, TIME_PATTERN,
+ * and every value a member can type.
+ *
+ * Normalizing here, on the way in, is what keeps a single canonical shape in
+ * circulation. Widening TIME_PATTERN instead would leave two shapes alive and
+ * push the difference into every future comparison.
+ *
+ * Left alone if it is already HH:MM, so this is safe to apply twice.
+ */
+export function normalizeTime(value: string): string {
+  return value.slice(0, 5);
+}
 
 /**
  * Quiet windows normally cross midnight (the default is 21:00–08:00), so any
@@ -105,7 +121,12 @@ export async function fetchPreferences(
       console.error('fetchPreferences failed', error);
       return null;
     }
-    return data as NotificationPreferences;
+    const row = data as NotificationPreferences;
+    return {
+      ...row,
+      quiet_hours_start: normalizeTime(row.quiet_hours_start),
+      quiet_hours_end: normalizeTime(row.quiet_hours_end),
+    };
   } catch (cause) {
     console.error('fetchPreferences failed', cause);
     return null;
