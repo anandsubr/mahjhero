@@ -74,4 +74,31 @@ describe('updatePreferences', () => {
       error: GENERIC_ERROR,
     });
   });
+
+  it('accepts a payload with neither quiet-hours bound', async () => {
+    // Mirrors what the notifications screen submits when quiet hours are
+    // disabled: the start/end fields are omitted entirely rather than sent
+    // stale. Neither bound present means touchesStart === touchesEnd, so
+    // this must clear pair validation and reach the network call — which
+    // the shared mock makes reject, surfacing as GENERIC_ERROR rather than
+    // the pair-mismatch message. That distinguishes "validation passed,
+    // network failed" from "validation itself rejected the payload".
+    await expect(
+      updatePreferences('user-1', {
+        notify_channel: 'email',
+        mute_need_a_fourth: true,
+        quiet_hours_enabled: false,
+      }),
+    ).resolves.toEqual({
+      error: GENERIC_ERROR,
+    });
+  });
+
+  it('rejects a payload carrying only one quiet-hours bound', async () => {
+    await expect(
+      updatePreferences('user-1', { quiet_hours_start: '21:00' }),
+    ).resolves.toEqual({
+      error: 'Quiet hours must be changed as a pair.',
+    });
+  });
 });

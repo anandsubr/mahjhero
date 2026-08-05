@@ -10,6 +10,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { GENERIC_ERROR } from '../lib/constants';
 import { fetchPreferences, updatePreferences } from '../lib/profile';
 import type { NotificationPreferences, NotifyChannel } from '../lib/profile';
 import { useSession } from '../lib/session';
@@ -19,12 +20,20 @@ const CHANNELS: NotifyChannel[] = ['push', 'email', 'both'];
 export default function NotificationSettings() {
   const { session, loading } = useSession();
   const [prefs, setPrefs] = useState<NotificationPreferences | null>(null);
+  const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     if (!session) return;
-    fetchPreferences(session.user.id).then(setPrefs);
+    fetchPreferences(session.user.id).then((fetched) => {
+      // fetchPreferences never rejects — it resolves null on any failure
+      // (network error, RLS denial, ...). Setting `ready` regardless of the
+      // outcome is what lets the screen fall through to the "could not
+      // load" message below instead of spinning forever.
+      setPrefs(fetched);
+      setReady(true);
+    });
   }, [session]);
 
   if (loading) {
@@ -37,10 +46,18 @@ export default function NotificationSettings() {
 
   if (!session) return <Redirect href="/sign-in" />;
 
-  if (!prefs) {
+  if (!ready) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator />
+      </View>
+    );
+  }
+
+  if (!prefs) {
+    return (
+      <View style={styles.centered}>
+        <Text style={styles.error}>{GENERIC_ERROR}</Text>
       </View>
     );
   }
@@ -59,11 +76,26 @@ export default function NotificationSettings() {
     // leave the screen showing both the new error and a stale "Saved"
     // button label, which would look like the failed write persisted.
     setSaved(false);
+    // When quiet hours are off, the start/end inputs are not even rendered
+    // (see below), so their values are stale and unverified — possibly not
+    // valid HH:MM at all. Submitting them anyway would make updatePreferences
+    // run pair validation against fields the member can no longer see or
+    // fix, failing every future save (e.g. a channel-only change) with an
+    // error that points at a field that isn't on screen. Omitting both
+    // together keeps the pair check satisfied and leaves the stored values
+    // untouched, which is harmless since they're unused while disabled.
+    const payload: Partial<NotificationPreferences> = prefs.quiet_hours_enabled
+      ? prefs
+      : {
+          notify_channel: prefs.notify_channel,
+          mute_need_a_fourth: prefs.mute_need_a_fourth,
+          quiet_hours_enabled: prefs.quiet_hours_enabled,
+        };
     // updatePreferences reports failure through `error` rather than
     // throwing, so the caller MUST read it. Setting `saved` unconditionally
     // would show "Saved" after a failed write and leave the member
     // believing their quiet hours persisted when they did not.
-    const { error: saveError } = await updatePreferences(session.user.id, prefs);
+    const { error: saveError } = await updatePreferences(session.user.id, payload);
     if (saveError) {
       setError(saveError);
       return;
