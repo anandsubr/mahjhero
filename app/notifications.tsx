@@ -7,9 +7,9 @@ import {
   StyleSheet,
   Switch,
   Text,
-  TextInput,
   View,
 } from 'react-native';
+import TimeField from '../components/TimeField';
 import { GENERIC_ERROR } from '../lib/constants';
 import { fetchPreferences, updatePreferences } from '../lib/profile';
 import type { NotificationPreferences, NotifyChannel } from '../lib/profile';
@@ -168,20 +168,16 @@ export default function NotificationSettings() {
 
       {prefs.quiet_hours_enabled ? (
         <View style={styles.row}>
-          <TextInput
-            style={styles.timeInput}
+          <TimeField
             value={prefs.quiet_hours_start}
-            onChangeText={(value) => change({ quiet_hours_start: value })}
-            placeholder="21:00"
-            accessibilityLabel="Quiet hours start"
+            onChange={(value) => change({ quiet_hours_start: value })}
+            label="Quiet hours start"
           />
           <Text style={styles.optionText}>to</Text>
-          <TextInput
-            style={styles.timeInput}
+          <TimeField
             value={prefs.quiet_hours_end}
-            onChangeText={(value) => change({ quiet_hours_end: value })}
-            placeholder="08:00"
-            accessibilityLabel="Quiet hours end"
+            onChange={(value) => change({ quiet_hours_end: value })}
+            label="Quiet hours end"
           />
         </View>
       ) : null}
@@ -235,14 +231,6 @@ const styles = StyleSheet.create({
   option: { borderWidth: 1, borderColor: '#999', borderRadius: 8, padding: 18 },
   optionSelected: { borderColor: '#1f6feb', borderWidth: 3 },
   optionText: { fontSize: 18 },
-  timeInput: {
-    borderWidth: 1,
-    borderColor: '#999',
-    borderRadius: 8,
-    padding: 16,
-    fontSize: 18,
-    flex: 1,
-  },
   button: {
     backgroundColor: '#1f6feb',
     borderRadius: 8,
