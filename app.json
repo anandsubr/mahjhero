@@ -18,6 +18,10 @@
       "bundler": "metro",
       "output": "single"
     },
-    "plugins": ["expo-router", "expo-apple-authentication"]
+    "plugins": [
+      "expo-router",
+      "expo-apple-authentication",
+      "expo-web-browser"
+    ]
   }
 }

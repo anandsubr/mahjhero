@@ -1,6 +1,15 @@
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  define: {
+    // expo-modules-core (pulled in transitively by expo-linking /
+    // expo-web-browser, used by lib/auth.ts's OAuth flow) references the
+    // bare global `__DEV__`, which Metro injects at bundle time in a real
+    // Expo app but which does not exist under Vitest/Node. Without this,
+    // importing lib/auth.ts throws `ReferenceError: __DEV__ is not defined`
+    // before any test in the file can run.
+    __DEV__: 'true',
+  },
   resolve: {
     alias: {
       // React Native's own package ships Flow-typed source that Vitest's
