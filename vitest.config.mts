@@ -28,6 +28,7 @@ export default defineConfig({
     },
   },
   test: {
+    environment: 'jsdom',
     env: {
       // Placeholder values so lib/supabase.ts's env-var guard is satisfied
       // when it is imported transitively during unit tests. Real values
