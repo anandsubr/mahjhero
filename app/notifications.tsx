@@ -1,25 +1,24 @@
-import { Redirect } from 'expo-router';
+import { Redirect, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  StyleSheet,
-  Switch,
-  Text,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import Button from '../components/Button';
 import Card from '../components/Card';
 import ErrorBanner from '../components/ErrorBanner';
 import Screen from '../components/Screen';
 import TimeField from '../components/TimeField';
+import Toggle from '../components/Toggle';
+import { ChevronLeftIcon } from '../components/icons';
 import { GENERIC_ERROR } from '../lib/constants';
 import { fetchPreferences, updatePreferences } from '../lib/profile';
 import type { NotificationPreferences, NotifyChannel } from '../lib/profile';
 import { useSession } from '../lib/session';
 import { colors, radius, space, type } from '../lib/theme';
 
-const CHANNELS: NotifyChannel[] = ['push', 'email', 'both'];
+// Display order matches the design (default channel first, then the two
+// single-channel options), which also happens to read naturally. This is a
+// presentation-only ordering — NotifyChannel and everything stored is
+// untouched.
+const CHANNELS: NotifyChannel[] = ['both', 'push', 'email'];
 const CHANNEL_LABEL: Record<NotifyChannel, string> = {
   both: 'Push and email',
   push: 'Push only',
@@ -28,6 +27,7 @@ const CHANNEL_LABEL: Record<NotifyChannel, string> = {
 
 export default function NotificationSettings() {
   const { session, loading } = useSession();
+  const router = useRouter();
   const [prefs, setPrefs] = useState<NotificationPreferences | null>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -142,6 +142,20 @@ export default function NotificationSettings() {
 
   return (
     <Screen scroll contentStyle={styles.container}>
+      {/* Without this the screen was a dead end on native: nothing else on
+          it navigates away, so a member who opened it had no way off short
+          of the OS back gesture (web) or force-quitting (there is no
+          equivalent on a phone). */}
+      <Button
+        variant="ghost"
+        big={false}
+        onPress={() => router.push('/profile')}
+        icon={<ChevronLeftIcon color={colors.accentColor} />}
+        accessibilityLabel="Back to profile"
+        style={styles.backButton}
+      >
+        Profile
+      </Button>
       <Text style={styles.heading}>Notifications</Text>
 
       <Text style={styles.sectionLabel}>How should we reach you?</Text>
@@ -168,12 +182,10 @@ export default function NotificationSettings() {
       <Card style={styles.quietCard}>
         <View style={styles.rowBetween}>
           <Text style={styles.cardLabel}>Quiet hours</Text>
-          <Switch
+          <Toggle
             value={prefs.quiet_hours_enabled}
             onValueChange={(value) => change({ quiet_hours_enabled: value })}
             accessibilityLabel="Enable quiet hours"
-            trackColor={{ false: colors.neutral[400], true: colors.accentColor }}
-            thumbColor={colors.bg}
           />
         </View>
         <Text style={styles.help}>
@@ -181,30 +193,44 @@ export default function NotificationSettings() {
         </Text>
 
         {prefs.quiet_hours_enabled ? (
-          <View style={styles.timeRow}>
-            <TimeField
-              value={prefs.quiet_hours_start}
-              onChange={(value) => change({ quiet_hours_start: value })}
-              label="Quiet hours start"
-            />
-            <Text style={styles.toText}>to</Text>
-            <TimeField
-              value={prefs.quiet_hours_end}
-              onChange={(value) => change({ quiet_hours_end: value })}
-              label="Quiet hours end"
-            />
+          // Stacked, not the design's side-by-side row with a "to" between
+          // the two fields: the design assumed narrow free-text inputs, but
+          // this app keeps native time pickers (a deliberate, required
+          // deviation — see components/TimeField.tsx), and a picker renders
+          // wider than a text field always has room for at any of this
+          // app's supported widths. Stacking removes the width pressure
+          // entirely rather than shrinking below the 18pt floor to force a
+          // fit. The accessibilityLabel on each TimeField is unchanged
+          // ("Quiet hours start"/"Quiet hours end"), so a screen reader
+          // still announces the full context even though the visible
+          // "Starts"/"Ends" labels here are shorter.
+          <View style={styles.timeStack}>
+            <View style={styles.timeField}>
+              <Text style={styles.timeLabel}>Starts</Text>
+              <TimeField
+                value={prefs.quiet_hours_start}
+                onChange={(value) => change({ quiet_hours_start: value })}
+                label="Quiet hours start"
+              />
+            </View>
+            <View style={styles.timeField}>
+              <Text style={styles.timeLabel}>Ends</Text>
+              <TimeField
+                value={prefs.quiet_hours_end}
+                onChange={(value) => change({ quiet_hours_end: value })}
+                label="Quiet hours end"
+              />
+            </View>
           </View>
         ) : null}
       </Card>
 
       <Card row style={[styles.muteCard, styles.rowBetween]}>
         <Text style={[styles.cardLabel, styles.muteLabel]}>Mute "need a 4th" alerts</Text>
-        <Switch
+        <Toggle
           value={prefs.mute_need_a_fourth}
           onValueChange={(value) => change({ mute_need_a_fourth: value })}
           accessibilityLabel="Mute need a fourth alerts"
-          trackColor={{ false: colors.neutral[400], true: colors.accentColor }}
-          thumbColor={colors.bg}
         />
       </Card>
 
@@ -233,6 +259,9 @@ const styles = StyleSheet.create({
   },
   centered: {
     alignItems: 'center',
+  },
+  backButton: {
+    alignSelf: 'flex-start',
   },
   heading: {
     fontFamily: type.heading,
@@ -314,15 +343,18 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     color: colors.textMuted,
   },
-  timeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  timeStack: {
+    gap: space[3],
+  },
+  timeField: {
     gap: space[2],
   },
-  toText: {
+  timeLabel: {
+    // Matches components/TextField.tsx's label treatment exactly, so this
+    // reads as the same input pattern.
     fontFamily: type.bodyRegular,
-    fontSize: type.size.bodyLarge,
-    color: colors.textMuted,
+    fontSize: type.size.helper,
+    color: colors.textLabel,
   },
   error: {
     fontFamily: type.bodyRegular,
