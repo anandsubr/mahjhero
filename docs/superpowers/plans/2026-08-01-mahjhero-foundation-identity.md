@@ -23,6 +23,14 @@ Every task's requirements implicitly include these. Values are taken from the sp
 - **The app never reproduces NMJL card content**, in any phase.
 - **Quiet hours are per-member, in the member's own timezone** — never a club setting.
 
+## Lessons carried forward to plans 2–6
+
+Two Critical defects reached the end of this plan because each task's spec was internally consistent but never cross-checked against its neighbours. Both live on axes the task decomposition hides.
+
+1. **Trace every data field end to end: migration → library type → screen.** `quiet_hours_start` was declared `time` in Task 3; PostgREST serialises that as `"21:00:00"`; Task 9's validator required `HH:MM`. Result: no member could save any notification preference. Neither test suite could see it — pgTAP never leaves SQL, Vitest asserts against hand-written literals. **A schema-contract test that reads a row through supabase-js and asserts the shape the client types claim is now the highest-value test in the project.** Add one per new table.
+
+2. **A feature is not done until the member sees it work on every target platform.** Magic-link sign-in passed nine reviews while being completely dead on iOS and Android — no `emailRedirectTo`, no deep-link handler. Then the *fix* passed its own review while still leaving the symptom intact, because the session arrived and no screen navigated. Web hid both, since its redirect is a fresh page load. When a plan says three platforms, each task that touches a user-visible flow must say what happens on each of the three.
+
 ---
 
 ### Task 1: Scaffold the Expo application
