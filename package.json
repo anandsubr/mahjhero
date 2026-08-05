@@ -32,7 +32,8 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:contract": "REQUIRE_LOCAL_SUPABASE=1 vitest run lib/schema-contract.test.ts"
   },
   "private": true
 }
