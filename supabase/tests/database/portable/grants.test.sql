@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(56);
+select plan(57);
 
 /*
  * Guards the privileges themselves, not the policies.
@@ -74,30 +74,62 @@ select ok(
 -- existed. Supabase's hosted bootstrap grants ALL — including TRUNCATE,
 -- which RLS never filters — to `authenticated` on every new table in
 -- `public`, and no table in this schema has an `anon` policy. These two
--- assertions catch a table that inherits either default, the same way the
--- function catch-all further down catches an unguarded function. Restricted
--- to `relkind = 'r'` (ordinary tables) so views and other relations in
--- `public` do not create noise.
+-- assertions catch a relation that inherits either default, the same way the
+-- function catch-all further down catches an unguarded function.
+--
+-- `relkind in ('r','p','v','m','f')` — ordinary, partitioned and foreign
+-- tables, views and materialized views. A prior version restricted this to
+-- `relkind = 'r'` on the theory that views only add noise; that was false
+-- and the false rationale hid a live hole. `public` has no views today, so
+-- the restriction filtered nothing, and `has_table_privilege` already
+-- returns false for an index (the only other relkind actually present) — the
+-- filter bought nothing. What it cost: `create view public.leaky_v as select
+-- * from public.profiles; grant select on public.leaky_v to anon;` left this
+-- suite green while `set local role anon; select * from public.leaky_v`
+-- returned every row. A postgres-owned view without `security_invoker`
+-- bypasses both the grant on the underlying table and its RLS, so the view
+-- case is not theoretical noise-avoidance, it is the exact shape of the
+-- profiles leak this file exists to catch. Matviews and partitioned tables
+-- have the identical blind spot. The relkind is appended to each offending
+-- name in the diagnostic so a failure says which kind of relation it found,
+-- e.g. `have: leaky_v [v]`.
+--
+-- The anon probe checks the full privilege list, not just SELECT — the
+-- comma-separated form of `has_table_privilege` is OR, not AND. A previous
+-- version checked SELECT alone, which the hosted bootstrap's default ALL
+-- grant always trips, so it happened to catch every real case seen so far —
+-- but `grant insert, update, delete on public.events to anon;` (no SELECT)
+-- passed clean, and a hand-written migration that grants a specific verb
+-- instead of relying on ALL is exactly the shape that slips through a
+-- SELECT-only probe.
 -- ---------------------------------------------------------------------------
 
 select is(
-  (select coalesce(string_agg(c.relname, ', ' order by c.relname), '')
+  (select coalesce(
+     string_agg(
+       c.relname || ' [' || c.relkind::text || ']', ', ' order by c.relname),
+     '')
    from pg_class c
    join pg_namespace n on n.oid = c.relnamespace
    where n.nspname = 'public'
-     and c.relkind = 'r'
+     and c.relkind in ('r', 'p', 'v', 'm', 'f')
      and has_table_privilege('authenticated', c.oid, 'TRUNCATE')),
   '',
   'no table in schema public is TRUNCATE-able by authenticated'
 );
 
 select is(
-  (select coalesce(string_agg(c.relname, ', ' order by c.relname), '')
+  (select coalesce(
+     string_agg(
+       c.relname || ' [' || c.relkind::text || ']', ', ' order by c.relname),
+     '')
    from pg_class c
    join pg_namespace n on n.oid = c.relnamespace
    where n.nspname = 'public'
-     and c.relkind = 'r'
-     and has_table_privilege('anon', c.oid, 'SELECT')),
+     and c.relkind in ('r', 'p', 'v', 'm', 'f')
+     and has_table_privilege(
+       'anon', c.oid,
+       'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER')),
   '',
   'no table in schema public is reachable by anon'
 );
@@ -427,54 +459,118 @@ select ok(
  * series_occurrence_dates shipped reachable on hosted while local looked
  * clean.
  *
- * Asserts equality, not "nothing extra beyond this list". A `not in (...)`
- * check only ever proves half of that: it stays green if a name is silently
- * revoked, which is exactly the shape of bug it should also catch — revoking
- * `is_club_organizer` breaks `events_select_member` for every organizer, a
- * live outage a subset check would wave through. List every function
- * `authenticated` is SUPPOSED to reach; the reachable set must equal this
- * list exactly, in either direction. `reset_event_to_series` belongs in it —
- * Task 6 already grants it and asserts the positive case above.
+ * Asserts equality, not "nothing extra beyond this list" — split into two
+ * directional assertions rather than one combined array comparison. A
+ * `not in (...)` check only ever proves half of "equality": it stays green
+ * if a name is silently revoked, which is exactly the shape of bug it
+ * should also catch — revoking `is_club_organizer` breaks
+ * `events_select_member` for every organizer, a live outage a subset check
+ * would wave through. List every function `authenticated` is SUPPOSED to
+ * reach; the reachable set must equal this list exactly, in both
+ * directions. `reset_event_to_series` belongs in it — Task 6 already grants
+ * it and asserts the positive case above.
  *
- * Compares by `p.oid::regprocedure`, not `p.proname`: a same-named overload
- * (e.g. a future `create_event()` alongside `create_event(uuid, ...)`) has a
+ * The single-array-comparison form that used to do this bidirectionally
+ * printed two ~900-character arrays of 19 quoted signatures each, differing
+ * by one element buried in the middle — technically correct, but nobody
+ * reading `not ok` could find the offender by eye. Splitting into "every
+ * EXPECTED function is still reachable" and "no UNEXPECTED function is
+ * reachable" means each failure names only the one signature that changed.
+ *
+ * Compares by regprocedure, not `p.proname`: a same-named overload (e.g. a
+ * future `create_event()` alongside `create_event(uuid, ...)`) has a
  * different signature and so is not silently absorbed into the allowed set
- * the way a name-only comparison would absorb it. The expected list below is
- * cast through `::regprocedure::text` too, so both sides go through the same
- * canonicalization and a reader sees the actual mismatched signature in the
- * `is()` diff rather than a decoded name.
+ * the way a name-only comparison would absorb it.
+ *
+ * The expected list is resolved with `to_regprocedure(...)`, not a bare
+ * `::regprocedure` cast. The cast raises a hard error — and aborts the
+ * whole transaction, losing every assertion after it — the moment any one
+ * signature in the list stops resolving, which is exactly what a rename
+ * does: `alter function public.search_venues(uuid,text) rename to
+ * search_venues_v2` turned this file's only drift-reporting assertion into
+ * the thing that kills the run instead. `to_regprocedure` returns NULL for
+ * a signature that no longer exists rather than erroring, so a rename
+ * reports cleanly in both directions: the old name shows up as
+ * unexpectedly-missing, the new one shows up as unexpectedly-present.
  */
+
+-- Direction 1: nothing on the allowlist has quietly lost EXECUTE.
 select is(
   (select coalesce(
-     array_agg(p.oid::regprocedure::text order by p.oid::regprocedure::text),
-     '{}')
+     string_agg(expected.label, ', ' order by expected.label), '')
+   from (
+     select f as label, to_regprocedure(f) as sig
+     from unnest(array[
+       'public.is_club_member(uuid)',
+       'public.is_club_organizer(uuid)',
+       'public.create_club(text, text)',
+       'public.accept_club_invite(text)',
+       'public.club_roster(uuid)',
+       'public.create_venue(text, text, text, text, text, uuid, boolean)',
+       'public.update_venue(uuid, text, text, text, text, text)',
+       'public.archive_venue(uuid)',
+       'public.search_venues(uuid, text)',
+       'public.create_event(uuid, text, uuid, text, timestamptz, timestamptz, int)',
+       'public.update_event(uuid, text, uuid, text, timestamptz, timestamptz)',
+       'public.cancel_event(uuid)',
+       'public.add_event_table(uuid)',
+       'public.update_event_table(uuid, text, public.skill_tier)',
+       'public.remove_event_table(uuid)',
+       'public.create_event_series(uuid, text, uuid, text, public.series_frequency, smallint, smallint, time, int, int, date, date)',
+       'public.update_event_series(uuid, text, uuid, text, time, int, int, date, boolean)',
+       'public.end_event_series(uuid, boolean)',
+       'public.reset_event_to_series(uuid)'
+     ]) as f
+   ) expected
+   where not exists (
+     select 1
+     from pg_proc p
+     join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public'
+       and has_function_privilege('authenticated', p.oid, 'EXECUTE')
+       and p.oid::regprocedure = expected.sig
+   )),
+  '',
+  'every EXPECTED function is still reachable by authenticated'
+);
+
+-- Direction 2: nothing beyond the allowlist has picked up EXECUTE.
+select is(
+  (select coalesce(
+     string_agg(
+       p.oid::regprocedure::text, ', ' order by p.oid::regprocedure::text),
+     '')
    from pg_proc p
    join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public'
-     and has_function_privilege('authenticated', p.oid, 'EXECUTE')),
-  (select array_agg(x::regprocedure::text order by x::regprocedure::text)
-   from unnest(array[
-     'public.is_club_member(uuid)',
-     'public.is_club_organizer(uuid)',
-     'public.create_club(text, text)',
-     'public.accept_club_invite(text)',
-     'public.club_roster(uuid)',
-     'public.create_venue(text, text, text, text, text, uuid, boolean)',
-     'public.update_venue(uuid, text, text, text, text, text)',
-     'public.archive_venue(uuid)',
-     'public.search_venues(uuid, text)',
-     'public.create_event(uuid, text, uuid, text, timestamptz, timestamptz, int)',
-     'public.update_event(uuid, text, uuid, text, timestamptz, timestamptz)',
-     'public.cancel_event(uuid)',
-     'public.add_event_table(uuid)',
-     'public.update_event_table(uuid, text, public.skill_tier)',
-     'public.remove_event_table(uuid)',
-     'public.create_event_series(uuid, text, uuid, text, public.series_frequency, smallint, smallint, time, int, int, date, date)',
-     'public.update_event_series(uuid, text, uuid, text, time, int, int, date, boolean)',
-     'public.end_event_series(uuid, boolean)',
-     'public.reset_event_to_series(uuid)'
-   ]) as x),
-  'authenticated can execute exactly the expected set of functions'
+     and has_function_privilege('authenticated', p.oid, 'EXECUTE')
+     and not exists (
+       select 1
+       from unnest(array[
+         'public.is_club_member(uuid)',
+         'public.is_club_organizer(uuid)',
+         'public.create_club(text, text)',
+         'public.accept_club_invite(text)',
+         'public.club_roster(uuid)',
+         'public.create_venue(text, text, text, text, text, uuid, boolean)',
+         'public.update_venue(uuid, text, text, text, text, text)',
+         'public.archive_venue(uuid)',
+         'public.search_venues(uuid, text)',
+         'public.create_event(uuid, text, uuid, text, timestamptz, timestamptz, int)',
+         'public.update_event(uuid, text, uuid, text, timestamptz, timestamptz)',
+         'public.cancel_event(uuid)',
+         'public.add_event_table(uuid)',
+         'public.update_event_table(uuid, text, public.skill_tier)',
+         'public.remove_event_table(uuid)',
+         'public.create_event_series(uuid, text, uuid, text, public.series_frequency, smallint, smallint, time, int, int, date, date)',
+         'public.update_event_series(uuid, text, uuid, text, time, int, int, date, boolean)',
+         'public.end_event_series(uuid, boolean)',
+         'public.reset_event_to_series(uuid)'
+       ]) as f
+       where to_regprocedure(f) = p.oid::regprocedure
+     )),
+  '',
+  'no UNEXPECTED function is reachable by authenticated'
 );
 
 select * from finish();
