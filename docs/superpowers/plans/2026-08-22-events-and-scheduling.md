@@ -665,12 +665,12 @@ $$;
  * parameter on the general edit path.
  */
 create function public.update_venue(
-  target_venue  uuid,
-  venue_name    text default null,
-  address_line  text default null,
-  locality      text default null,
-  region        text default null,
-  postal_code   text default null
+  target_venue     uuid,
+  venue_name       text default null,
+  new_address_line text default null,
+  new_locality     text default null,
+  new_region       text default null,
+  new_postal_code  text default null
 )
 returns boolean
 language plpgsql
@@ -689,12 +689,16 @@ begin
 
   perform public.assert_club_organizer(steward);
 
+  -- Every parameter is prefixed `new_` because plpgsql resolves a bare name
+  -- against the table's columns first inside UPDATE ... SET: `address_line =
+  -- coalesce(address_line, address_line)` is 42702, ambiguous column
+  -- reference, not the no-op it looks like.
   update public.venues set
     name         = coalesce(nullif(trim(coalesce(venue_name, '')), ''), name),
-    address_line = coalesce(address_line, address_line),
-    locality     = coalesce(locality, locality),
-    region       = coalesce(region, region),
-    postal_code  = coalesce(postal_code, postal_code)
+    address_line = coalesce(new_address_line, address_line),
+    locality     = coalesce(new_locality, locality),
+    region       = coalesce(new_region, region),
+    postal_code  = coalesce(new_postal_code, postal_code)
   where id = target_venue;
 
   return true;
