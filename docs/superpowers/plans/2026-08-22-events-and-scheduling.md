@@ -30,6 +30,7 @@ Every task's requirements implicitly include these.
 - **Times are club-local wall clock plus the club's timezone, never a fixed UTC offset.** Any code that adds or subtracts hours to convert a timezone is wrong.
 - **The existing suites must keep passing:** 132 Vitest, 6 schema-contract, 74 pgTAP local, 23 pgTAP hosted, typecheck clean.
 - **Visual baselines are reviewed like code.** An intentional design change updates them in the same PR.
+- **Mutation-check every assertion you add.** Task 6 shipped 17 green assertions that killed **one of eight** mutants — the past-occurrence boundary, the cancelled-week guard, the selective override-clearing rule, and the entire synchronous-materialization requirement would all have passed while broken, as would the exact reflow "fix" the design forbids. For each rule a test claims to protect, break the implementation inside a transaction, confirm the suite goes red, and roll back. A green suite is not evidence; a suite that goes red on the right mutation is.
 - Local stack start command:
   `npx supabase start -x studio,storage-api,imgproxy,edge-runtime,logflare,vector,supavisor,realtime,mailpit`
 
@@ -1214,7 +1215,11 @@ create table public.event_series (
   table_count          int not null default 1
                          check (table_count between 1 and 20),
   starts_on            date not null,
+  -- What the host PLANS: stop repeating after this date. Null = open-ended.
   ends_on              date,
+  -- That the host STOPPED it. A different fact from ends_on, and the only
+  -- thing that means "this series is over" — see end_event_series.
+  ended_at             timestamptz,
   materialized_through date,
   created_by           uuid not null references public.profiles(id),
   created_at           timestamptz not null default now(),
@@ -1837,7 +1842,8 @@ begin
     select es.*, c.timezone as club_timezone
     from public.event_series es
     join public.clubs c on c.id = es.club_id
-    where es.ends_on is null or es.ends_on >= current_date
+    where es.ended_at is null
+      and (es.ends_on is null or es.ends_on >= current_date)
   loop
     -- Floored at today. Without it, a series whose starts_on is in the past
     -- materializes every occurrence back to that date: a weekly series
@@ -3201,9 +3207,19 @@ end;
 $$;
 
 /*
- * Stopping a series. `ends_on` is set to today rather than a separate
- * "archived" flag, so there is exactly one way to express "this series is
- * over" and exactly one place materialization has to look.
+ * Stopping a series.
+ *
+ * Sets `ended_at` and does NOT touch `ends_on`. Conflating the two did not
+ * survive contact with a series that has not started yet: writing
+ * `ends_on = current_date` violates event_series_ends_after_start, and the
+ * obvious patch — `greatest(current_date, starts_on)` — makes a series ended
+ * today read as still running until its own start date, up to a year away.
+ * The nightly sweep walks it every night, and every `ends_on < current_date`
+ * predicate calls it active.
+ *
+ * Two different facts, two columns: `ends_on` is what the host planned,
+ * `ended_at` is that the host stopped it. Materialization skips any series
+ * with `ended_at is not null`.
  */
 create function public.end_event_series(
   target_series uuid,
@@ -3226,7 +3242,7 @@ begin
   perform public.assert_club_organizer(owning_club);
 
   update public.event_series
-    set ends_on = current_date,
+    set ended_at = now(),
         materialized_through = least(materialized_through, current_date)
     where id = target_series;
 
