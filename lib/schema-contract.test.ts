@@ -101,6 +101,55 @@ if (!reachable && !required) {
   );
 }
 
+/**
+ * Creates a fresh user and signs the shared `supabase` client in as them via
+ * a magic link — the same passwordless flow the app uses — so a caller of
+ * this helper runs its queries through the `authenticated` role and real RLS
+ * policies, never a service-role bypass that would hide a missing grant.
+ *
+ * `select` on events/event_series/event_tables/venues is granted to
+ * `authenticated` only, not `anon` (see e.g. 20260822192000's closing
+ * `grant select on public.venues to authenticated`), so the column-contract
+ * checks below need a signed-in caller even though they read zero rows.
+ * Factored out because both the events/venues column contract and (in a
+ * separate file section) any future authenticated probe need the identical
+ * dance the profiles block above already performs inline.
+ */
+async function signInFreshUser(): Promise<{
+  admin: SupabaseClient;
+  userId: string;
+}> {
+  const admin = createClient(local.url, local.serviceRoleKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
+  });
+
+  const email = `contract-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@mahjhero.test`;
+  const { data: created, error: createError } = await admin.auth.admin.createUser({
+    email,
+    email_confirm: true,
+  });
+  expect(createError, `createUser failed: ${createError?.message}`).toBeNull();
+  const userId = created!.user!.id;
+
+  const { data: link, error: linkError } = await admin.auth.admin.generateLink({
+    type: 'magiclink',
+    email,
+  });
+  expect(linkError, `generateLink failed: ${linkError?.message}`).toBeNull();
+
+  const { error: verifyError } = await supabase.auth.verifyOtp({
+    token_hash: link!.properties!.hashed_token,
+    type: 'magiclink',
+  });
+  expect(verifyError, `verifyOtp failed: ${verifyError?.message}`).toBeNull();
+
+  return { admin, userId };
+}
+
 describe.runIf(reachable || required)('profiles schema contract', () => {
   let admin: SupabaseClient;
   let userId: string;
@@ -276,3 +325,251 @@ describe.runIf(reachable || required)('profiles schema contract', () => {
     expect(await fetchProfile(other)).toBeNull();
   });
 });
+
+describe.runIf(reachable || required)('events schema contract', () => {
+  let admin: SupabaseClient;
+  let userId: string;
+
+  beforeAll(async () => {
+    expect(
+      reachable,
+      `Local Supabase stack not reachable at ${local.url}. Run \`npx supabase start\`.`,
+    ).toBe(true);
+    // A signed-in caller, not anon: `select` on these tables is granted only
+    // to `authenticated` (see signInFreshUser's doc comment above), and this
+    // block runs after the profiles block's own afterAll has already signed
+    // that session out — so this needs its own, not a borrowed one.
+    ({ admin, userId } = await signInFreshUser());
+  });
+
+  afterAll(async () => {
+    await supabase.auth.signOut();
+    if (admin && userId) await admin.auth.admin.deleteUser(userId);
+  });
+
+  it('exposes every column lib/events.ts names on events', async () => {
+    const { error } = await supabase
+      .from('events')
+      .select(
+        'id, club_id, series_id, title, venue_id, notes, starts_at, ' +
+          'ends_at, status, occurrence_date, overrides',
+      )
+      .limit(0);
+    expect(error).toBeNull();
+  });
+
+  it('exposes every column lib/events.ts names on event_series, including ended_at', async () => {
+    // ended_at is the fact the brief's snapshot of the schema predates: the
+    // host STOPPED the series, distinct from ends_on (the host's PLAN to
+    // stop repeating after a date). Task 15's edit screen needs both, so
+    // both belong in the contract.
+    const { error } = await supabase
+      .from('event_series')
+      .select(
+        'id, club_id, title, venue_id, notes, frequency, weekday, ' +
+          'nth_week, start_time, duration_minutes, table_count, ' +
+          'starts_on, ends_on, ended_at',
+      )
+      .limit(0);
+    expect(error).toBeNull();
+  });
+
+  it('exposes every column lib/events.ts names on event_tables', async () => {
+    const { error } = await supabase
+      .from('event_tables')
+      .select('id, label, skill_tier, capacity, position')
+      .limit(0);
+    expect(error).toBeNull();
+  });
+
+  it('exposes every column lib/venues.ts names on venues', async () => {
+    const { error } = await supabase
+      .from('venues')
+      .select(
+        'id, name, address_line, locality, region, postal_code, visibility',
+      )
+      .limit(0);
+    expect(error).toBeNull();
+  });
+
+  it('embeds the venue name the event list renders', async () => {
+    const { error } = await supabase
+      .from('events')
+      .select('id, venues(name), event_tables(id)')
+      .limit(0);
+    expect(error).toBeNull();
+  });
+});
+
+/*
+ * ---------------------------------------------------------------------------
+ * RPC argument-name contract.
+ * ---------------------------------------------------------------------------
+ *
+ * PostgREST resolves `supabase.rpc(name, args)` by matching `args`' KEYS
+ * against a function's parameter names, not by position and not by type. Get
+ * one name wrong — `target_club` where the function expects `club_id` — and
+ * PostgREST cannot find a matching overload at all. That failure has a
+ * specific, checkable shape: `PGRST202`, "Could not find the function ... in
+ * the schema cache". It happened for real once already: 20260822193000
+ * documents update_venue's parameters being renamed out from under every
+ * call site, silently, until this exact class of test would have caught it.
+ *
+ * A mocked Vitest suite cannot see this at all — the mock answers to
+ * whatever shape the test hands it, so a call built with the wrong argument
+ * names looks identical to one built with the right ones. Only a real
+ * PostgREST server can refuse to resolve a call, so this suite deliberately
+ * makes every one of these calls for real, against the local stack.
+ *
+ * Deliberately anonymous — no sign-in here. Every function below has EXECUTE
+ * revoked from anon and granted only to authenticated (see e.g. 20260822192000's
+ * closing grants), so every one of these calls is expected to fail. That is
+ * fine and is the point: the only thing under test is the SHAPE of that
+ * failure, not whether it succeeds. PostgREST resolves the function (and
+ * therefore checks the argument names) before it evaluates whether the
+ * caller may execute it, so an anonymous 42501 ("permission denied") already
+ * proves the names matched; a PGRST202 proves they did not.
+ *
+ * Verified by mutation: renaming target_club to target_klub in the
+ * search_venues case below turns that one test red with a PGRST202 failure
+ * message naming search_venues, and every other case stays green. See the
+ * task report for the full mutation log.
+ */
+describe.runIf(reachable || required)(
+  'venues and events RPC argument-name contract',
+  () => {
+    const DUMMY_UUID = '00000000-0000-0000-0000-000000000000';
+
+    beforeAll(async () => {
+      expect(
+        reachable,
+        `Local Supabase stack not reachable at ${local.url}. Run \`npx supabase start\`.`,
+      ).toBe(true);
+      // Independent of whatever the profiles describe block above left
+      // behind — this block's whole premise is an anonymous caller, so it
+      // asserts that starting condition rather than assuming it.
+      await supabase.auth.signOut();
+    });
+
+    // Each pair is a function name and the EXACT argument object the
+    // corresponding lib/venues.ts or lib/events.ts function passes to
+    // `supabase.rpc(...)` — same keys, same casing, nothing added or
+    // dropped. Values are shaped to satisfy each parameter's type (uuid,
+    // text, timestamptz, time, date, boolean, int) so a resolved call fails
+    // on authorization or business logic, never on a malformed literal.
+    const rpcCalls: Array<[string, Record<string, unknown>]> = [
+      // lib/venues.ts
+      ['search_venues', { target_club: DUMMY_UUID, q: 'hall' }],
+      [
+        'create_venue',
+        {
+          venue_name: 'Contract Test Hall',
+          address_line: '1 Main St',
+          locality: 'Springfield',
+          region: 'IL',
+          postal_code: '62701',
+          target_club: DUMMY_UUID,
+          share_publicly: false,
+        },
+      ],
+      [
+        'update_venue',
+        {
+          target_venue: DUMMY_UUID,
+          venue_name: 'Renamed Hall',
+          address_line: '2 Main St',
+          locality: 'Springfield',
+          region: 'IL',
+          postal_code: '62701',
+        },
+      ],
+      ['archive_venue', { target_venue: DUMMY_UUID }],
+      // lib/events.ts
+      [
+        'create_event',
+        {
+          target_club: DUMMY_UUID,
+          event_title: 'Tuesday Mahjong',
+          target_venue: DUMMY_UUID,
+          event_notes: 'bring snacks',
+          event_starts: '2027-09-07T23:00:00Z',
+          event_ends: '2027-09-08T02:00:00Z',
+          table_count: 2,
+        },
+      ],
+      [
+        'update_event',
+        {
+          target_event: DUMMY_UUID,
+          new_title: 'Renamed game',
+          new_venue_id: DUMMY_UUID,
+          new_notes: 'updated notes',
+          new_starts_at: '2027-09-07T23:00:00Z',
+          new_ends_at: '2027-09-08T02:00:00Z',
+        },
+      ],
+      ['cancel_event', { target_event: DUMMY_UUID }],
+      ['reset_event_to_series', { target_event: DUMMY_UUID }],
+      ['add_event_table', { target_event: DUMMY_UUID }],
+      [
+        'update_event_table',
+        {
+          target_table: DUMMY_UUID,
+          new_label: 'Table 2',
+          new_tier: 'mixed',
+        },
+      ],
+      ['remove_event_table', { target_table: DUMMY_UUID }],
+      [
+        'create_event_series',
+        {
+          target_club: DUMMY_UUID,
+          series_title: 'Weekly game',
+          target_venue: DUMMY_UUID,
+          series_notes: '',
+          freq: 'weekly',
+          weekday: 2,
+          nth_week: null,
+          start_time: '19:00:00',
+          duration_minutes: 180,
+          table_count: 1,
+          starts_on: '2027-01-01',
+          ends_on: null,
+        },
+      ],
+      [
+        'update_event_series',
+        {
+          target_series: DUMMY_UUID,
+          new_title: 'Weekly game v2',
+          new_venue_id: DUMMY_UUID,
+          new_notes: 'updated',
+          new_start_time: '19:30:00',
+          new_duration: 150,
+          new_table_count: 2,
+          new_ends_on: '2027-12-31',
+          include_overridden: false,
+        },
+      ],
+      ['end_event_series', { target_series: DUMMY_UUID, cancel_future: true }],
+    ];
+
+    it.each(rpcCalls)('resolves %s by its argument names', async (fn, args) => {
+      const { error } = await supabase.rpc(fn, args);
+
+      expect(
+        error,
+        `${fn} unexpectedly succeeded for an anonymous, unauthorized caller — ` +
+          'expected a permission or validation error instead.',
+      ).not.toBeNull();
+
+      expect(
+        error?.code,
+        `${fn} returned PGRST202 ("Could not find the function ${fn} in the ` +
+          'schema cache") — the argument names this test (mirroring the ' +
+          'lib/ call site) sent do not match the deployed function\'s ' +
+          `parameters. Postgres message: ${error?.message}`,
+      ).not.toBe('PGRST202');
+    });
+  },
+);
