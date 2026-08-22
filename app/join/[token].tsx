@@ -1,13 +1,13 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import Button from '../../components/Button';
 import ErrorBanner from '../../components/ErrorBanner';
 import Screen from '../../components/Screen';
-import { acceptInvite } from '../../lib/clubs';
+import { PENDING_INVITE_KEY, acceptInvite } from '../../lib/clubs';
 import { useSession } from '../../lib/session';
-import { colors, type } from '../../lib/theme';
+import { colors, space, type } from '../../lib/theme';
 
 /**
  * Where an invite link lands.
@@ -15,7 +15,8 @@ import { colors, type } from '../../lib/theme';
  * Most people opening one have never used MahjHero. They arrive signed out, so
  * the token is parked in storage, they sign in, and `app/index.tsx` sends them
  * back here to redeem it. Losing the invite across sign-in would mean asking
- * the host to send another.
+ * the host to send another. See `PENDING_INVITE_KEY` in `lib/clubs.ts` for
+ * where that storage key lives and why.
  *
  * Storage is `@react-native-async-storage/async-storage`, not
  * `globalThis.localStorage`. React Native has no `localStorage` global; a
@@ -27,14 +28,11 @@ import { colors, type } from '../../lib/theme';
  * web, iOS, and Android, so it is used here unconditionally rather than
  * branching on `Platform.OS`.
  */
-export const PENDING_INVITE_KEY = 'mahjhero.pending-invite';
-
 export default function JoinScreen() {
   const { token } = useLocalSearchParams<{ token: string }>();
   const { session, loading } = useSession();
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
-  const [working, setWorking] = useState(true);
 
   useEffect(() => {
     if (loading || !token) return;
@@ -62,7 +60,6 @@ export default function JoinScreen() {
       });
       if (acceptError || !clubId) {
         setError(acceptError ?? 'That invite link is no longer valid.');
-        setWorking(false);
         return;
       }
       router.replace(`/clubs/${clubId}`);
@@ -75,7 +72,7 @@ export default function JoinScreen() {
 
   if (error) {
     return (
-      <Screen>
+      <Screen contentStyle={styles.container}>
         <Text style={styles.heading}>That link did not work</Text>
         <ErrorBanner message={error} />
         <Button
@@ -86,11 +83,9 @@ export default function JoinScreen() {
     );
   }
 
-  if (!working) return <Redirect href="/clubs" />;
-
   return (
-    <Screen>
-      <View style={styles.centered}>
+    <Screen center contentStyle={styles.centered}>
+      <View style={styles.spinnerGroup}>
         <ActivityIndicator
           color={colors.accentColor}
           accessibilityLabel="Joining the club"
@@ -102,10 +97,15 @@ export default function JoinScreen() {
 }
 
 const styles = StyleSheet.create({
+  container: {
+    padding: space[6],
+    gap: space[4],
+  },
   centered: {
-    flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',
+  },
+  spinnerGroup: {
+    alignItems: 'center',
     gap: 16,
   },
   heading: {

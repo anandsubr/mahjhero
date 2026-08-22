@@ -270,6 +270,20 @@ export async function createInvite(
 }
 
 /**
+ * Where `app/join/[token].tsx` parks an invite token for a signed-out
+ * member, and where `app/index.tsx` looks for one after sign-in completes.
+ *
+ * Most people opening an invite link have never used MahjHero: they arrive
+ * signed out, so the token is stored under this key, they sign in, and
+ * `app/index.tsx` sends them back to `/join/<token>` to redeem it. Losing
+ * the invite across sign-in would mean asking the host to send another.
+ *
+ * Lives here (not in `app/join/[token].tsx`) so `app/index.tsx` can import
+ * just the string without pulling in the whole route module.
+ */
+export const PENDING_INVITE_KEY = 'mahjhero.pending-invite';
+
+/**
  * Redeems an invite token.
  *
  * The RPC is a `security definer` function (Task 3) because the member is by
