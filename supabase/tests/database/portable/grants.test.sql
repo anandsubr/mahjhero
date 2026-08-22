@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(34);
+select plan(35);
 
 /*
  * Guards the privileges themselves, not the policies.
@@ -265,6 +265,14 @@ select ok(
   not has_function_privilege(
     'authenticated', 'public.reflow_events_for_timezone()', 'EXECUTE'),
   'authenticated cannot execute reflow_events_for_timezone'
+);
+
+-- Task 14 puts a "Reset to the series" button on the event screen, so this
+-- one is called by a signed-in host directly, not by a trigger.
+select ok(
+  has_function_privilege(
+    'authenticated', 'public.reset_event_to_series(uuid)', 'EXECUTE'),
+  'authenticated can still execute reset_event_to_series'
 );
 
 select * from finish();

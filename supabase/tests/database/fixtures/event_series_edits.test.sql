@@ -3,10 +3,60 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(17);
+select plan(74);
+
+/*
+ * Series creation, series editing, resetting one week, ending a series, and
+ * what a club-timezone correction does to events that already exist.
+ *
+ * The recurrence SHAPE is not editable: frequency, weekday, nth_week and
+ * starts_on have no parameters in update_event_series. Changing the rhythm
+ * means ending this series and starting another.
+ *
+ * ---------------------------------------------------------------------------
+ * How this fixture is built, and why it is built this way.
+ * ---------------------------------------------------------------------------
+ *
+ * The first version of this file passed 17/17 against seven of eight
+ * deliberately broken versions of the functions it was supposed to be
+ * testing. Every one of those escapes traced back to the same thing: the
+ * fixture never put the code near a boundary. So the shape below is chosen
+ * boundary-first.
+ *
+ *   - The series starts 28 days in the PAST and its horizon reaches forward,
+ *     so there are occurrences on both sides of `now()`. The old fixture
+ *     started its series 365 days out, which meant the `starts_at > now()`
+ *     predicate -- the centrepiece of the propagation rule -- had literally
+ *     nothing to exclude.
+ *   - The customised week holds THREE overrides and the toggle-on edit
+ *     touches exactly ONE of them, so "fields this edit did not touch keep
+ *     their overrides" is actually observable. The old fixture's week held
+ *     one override and the edit touched that one.
+ *   - The timezone change happens while the series still has a live future
+ *     week whose time was hand-set, a live future week that was not, a past
+ *     week, and a cancelled week. The old fixture had cancelled every
+ *     occurrence before it got there and reflowed only a fresh one-off.
+ *   - Materialization is asserted IMMEDIATELY after create_event_series and
+ *     before any sweep runs, and a second, deliberately unmaterialized series
+ *     sits alongside it -- so "did creation materialize?" and "did creation
+ *     materialize only its own series?" are two separate, failing-if-wrong
+ *     questions.
+ *
+ * Series A is identified throughout by `starts_on = current_date - 28`.
+ * `starts_on` is immutable (no function offers a parameter for it), so that
+ * is a stable handle across every edit below. Its occurrences are identified
+ * by `occurrence_date`; only series A ever materializes here, which the
+ * fixture asserts rather than assumes.
+ *
+ * Series A's occurrence dates, referred to below as o1..o6 and p1..p2:
+ *   p1 = current_date - 11   p2 = current_date - 4    (past, inserted by hand)
+ *   o1 = current_date + 3    o2 = current_date + 10   o3 = current_date + 17
+ *   o4 = current_date + 24   o5 = current_date + 31   o6 = current_date + 38
+ */
 
 insert into auth.users (id, email) values
-  ('aaaaaaaa-0000-0000-0000-000000000001', 'alice@example.com');
+  ('aaaaaaaa-0000-0000-0000-000000000001', 'alice@example.com'),
+  ('aaaaaaaa-0000-0000-0000-000000000002', 'bob@example.com');
 
 insert into public.clubs (id, name, slug, timezone, created_by) values
   ('c1c1c1c1-0000-0000-0000-000000000001', 'Riverside', 'riverside',
@@ -14,7 +64,9 @@ insert into public.clubs (id, name, slug, timezone, created_by) values
 
 insert into public.club_members (club_id, profile_id, role) values
   ('c1c1c1c1-0000-0000-0000-000000000001',
-   'aaaaaaaa-0000-0000-0000-000000000001', 'host');
+   'aaaaaaaa-0000-0000-0000-000000000001', 'host'),
+  ('c1c1c1c1-0000-0000-0000-000000000001',
+   'aaaaaaaa-0000-0000-0000-000000000002', 'member');
 
 insert into public.venues (id, name, added_by_club_id, created_by) values
   ('11111111-0000-0000-0000-000000000001', 'The Hall',
@@ -22,177 +74,693 @@ insert into public.venues (id, name, added_by_club_id, created_by) values
    'aaaaaaaa-0000-0000-0000-000000000001'),
   ('11111111-0000-0000-0000-000000000002', 'Marie''s place',
    'c1c1c1c1-0000-0000-0000-000000000001',
+   'aaaaaaaa-0000-0000-0000-000000000001'),
+  ('11111111-0000-0000-0000-000000000003', 'The Annex',
+   'c1c1c1c1-0000-0000-0000-000000000001',
    'aaaaaaaa-0000-0000-0000-000000000001');
 
-set local role authenticated;
-set local request.jwt.claims =
-  '{"sub": "aaaaaaaa-0000-0000-0000-000000000001", "role": "authenticated"}';
-
--- A weekly Tuesday series a year out, so every occurrence is "future" no
--- matter when the suite runs.
-select lives_ok(
-  $$select public.create_event_series(
-      'c1c1c1c1-0000-0000-0000-000000000001', 'Weekly game',
-      '11111111-0000-0000-0000-000000000001', '',
-      'weekly', 2::smallint, null, '19:00'::time, 180, 2,
-      (current_date + 365), (current_date + 400))$$,
-  'an organizer can create a series'
+/*
+ * The sibling series, inserted directly so it has never been materialized
+ * and its `materialized_through` is null. A nightly sweep WOULD materialize
+ * it -- it starts inside the 42-day horizon -- which is the whole point: it
+ * is the tripwire for a create_event_series that reaches for the sweep
+ * instead of materializing its own series.
+ *
+ * It doubles as the not-yet-started series that end_event_series has to cope
+ * with, further down.
+ */
+insert into public.event_series (
+  id, club_id, title, venue_id, notes, frequency, weekday, nth_week,
+  start_time, duration_minutes, table_count, starts_on, ends_on, created_by
+) values (
+  '55555555-0000-0000-0000-000000000003',
+  'c1c1c1c1-0000-0000-0000-000000000001', 'Sunday social',
+  '11111111-0000-0000-0000-000000000001', '',
+  'weekly', extract(dow from current_date + 5)::smallint, null,
+  '14:00'::time, 120, 1, current_date + 5, current_date + 90,
+  'aaaaaaaa-0000-0000-0000-000000000001'
 );
 
--- Creation materializes in the same transaction, so a host never sees an
--- empty series. The horizon is six weeks, and the series starts beyond it —
--- so nothing is materialized yet, which is correct and is asserted so the
--- next assertion's zero is not mistaken for a bug.
-select is(
-  (select count(*)::int from public.events
-   where club_id = 'c1c1c1c1-0000-0000-0000-000000000001'),
-  0,
-  'a series starting beyond the horizon materializes nothing yet'
-);
-
--- Bring the horizon out to cover it.
-set local role postgres;
-select public.materialize_event_series(420);
-
-select cmp_ok(
-  (select count(*)::int from public.events
-   where series_id = (select id from public.event_series limit 1)),
-  '>=',
-  5,
-  'the series materializes once the horizon reaches it'
-);
-
--- Override the venue on exactly one occurrence.
-set local role authenticated;
-set local request.jwt.claims =
-  '{"sub": "aaaaaaaa-0000-0000-0000-000000000001", "role": "authenticated"}';
-
-select lives_ok(
-  $$select public.update_event(
-      (select id from public.events order by starts_at limit 1),
-      null, '11111111-0000-0000-0000-000000000002', null, null, null)$$,
-  'one occurrence is moved to a different venue'
-);
-
--- Cancel a different one, to prove cancellation is never touched.
-select lives_ok(
-  $$select public.cancel_event(
-      (select id from public.events order by starts_at offset 1 limit 1))$$,
-  'a different occurrence is cancelled'
-);
-
--- ---------------------------------------------------------------------
--- The default: skip the overridden field, reach everything else.
--- ---------------------------------------------------------------------
-select lives_ok(
-  $$select public.update_event_series(
-      (select id from public.event_series limit 1),
-      'Renamed game', null, null, '18:30'::time, null, null, null, false)$$,
-  'the series title and start time are changed'
-);
-
-select is(
-  (select venue_id from public.events order by starts_at limit 1),
-  '11111111-0000-0000-0000-000000000002'::uuid,
-  'the relocated week keeps its venue'
-);
-
-select is(
-  (select title from public.events order by starts_at limit 1),
-  'Renamed game',
-  'the relocated week still takes the new title'
-);
-
-select is(
-  (select to_char(starts_at at time zone 'America/New_York', 'HH24:MI')
-   from public.events order by starts_at limit 1),
-  '18:30',
-  'the relocated week still takes the new start time'
-);
-
-select is(
-  (select title from public.events order by starts_at offset 1 limit 1),
-  'Weekly game',
-  'the cancelled week is not touched'
-);
-
-select is(
-  (select count(*)::int from public.events
-   where to_char(starts_at at time zone 'America/New_York', 'HH24:MI')
-         <> '18:30'
-     and status <> 'cancelled'),
-  0,
-  'every live occurrence moved to the new time'
-);
-
--- ---------------------------------------------------------------------
--- The opt-in: apply to the overridden ones too, and clear only the fields
--- this edit touched.
--- ---------------------------------------------------------------------
-select lives_ok(
-  $$select public.update_event_series(
-      (select id from public.event_series limit 1),
-      null, '11111111-0000-0000-0000-000000000001', null, null, null, null,
-      null, true)$$,
-  'the series venue is changed with the override toggle on'
-);
-
-select is(
-  (select venue_id from public.events order by starts_at limit 1),
-  '11111111-0000-0000-0000-000000000001'::uuid,
-  'the relocated week is pulled back to the series venue'
-);
-
-select results_eq(
-  $$select overrides from public.events order by starts_at limit 1$$,
-  $$values (array[]::text[])$$,
-  'and its venue override is cleared'
-);
-
--- ---------------------------------------------------------------------
--- Ending a series.
--- ---------------------------------------------------------------------
-select lives_ok(
-  $$select public.end_event_series(
-      (select id from public.event_series limit 1), true)$$,
-  'an organizer can end a series and cancel its future occurrences'
-);
-
-select is(
-  (select count(*)::int from public.events
-   where starts_at > now() and status <> 'cancelled'),
-  0,
-  'no live future occurrence survives ending the series'
-);
-
--- ---------------------------------------------------------------------
--- The club-timezone reflow: wall clock is preserved, everywhere.
--- ---------------------------------------------------------------------
-set local role postgres;
-
--- A fresh one-off, rather than resurrecting a cancelled occurrence: the
--- cancelled week never took the series' new 18:30, so un-cancelling it would
--- make this assertion fail against perfectly correct code. A one-off is also
--- the case the wall-clock rule exists for — it has no series rule to
--- recompute from, so an implementation that recomputed from the series would
--- silently skip it.
+-- A one-off event, with no series at all. It is what the wall-clock rule
+-- exists for (nothing to recompute it from) and it is also the thing
+-- reset_event_to_series must refuse.
 insert into public.events
   (id, club_id, title, venue_id, starts_at, ends_at, created_by) values
   ('e9e9e9e9-0000-0000-0000-000000000009',
    'c1c1c1c1-0000-0000-0000-000000000001', 'One-off game',
    '11111111-0000-0000-0000-000000000001',
-   ((current_date + 400) + time '18:30') at time zone 'America/New_York',
-   ((current_date + 400) + time '21:30') at time zone 'America/New_York',
+   ((current_date + 45) + time '18:30') at time zone 'America/New_York',
+   ((current_date + 45) + time '21:30') at time zone 'America/New_York',
    'aaaaaaaa-0000-0000-0000-000000000001');
+
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "aaaaaaaa-0000-0000-0000-000000000001", "role": "authenticated"}';
+
+-- ---------------------------------------------------------------------------
+-- 1. Creation materializes, synchronously, and only this series.
+-- ---------------------------------------------------------------------------
+
+select lives_ok(
+  $$select public.create_event_series(
+      'c1c1c1c1-0000-0000-0000-000000000001', 'Weekly game',
+      '11111111-0000-0000-0000-000000000001', 'Bring your own tiles',
+      'weekly', extract(dow from current_date + 3)::smallint, null,
+      '19:00'::time, 180, 2,
+      current_date - 28, current_date + 120)$$,
+  'an organizer can create a series'
+);
+
+-- Asserted HERE, before anything sweeps, because a later sweep would satisfy
+-- these numbers just as well and the question is whether the host's own
+-- request materialized. The window is [current_date, current_date + 42] and
+-- the rule lands on +3, +10, +17, +24, +31, +38: six, exactly.
+select is(
+  (select count(*)::int from public.events
+   where occurrence_date is not null),
+  6,
+  'creating a series materializes its horizon in the same transaction'
+);
+
+select is(
+  (select count(*)::int from public.event_tables t
+   join public.events e on e.id = t.event_id
+   where e.occurrence_date is not null),
+  12,
+  'and gives each of those six occurrences its two tables'
+);
+
+select is(
+  (select count(*)::int from public.events
+   where series_id = '55555555-0000-0000-0000-000000000003'),
+  0,
+  'creation materializes its own series only, never every series in the system'
+);
+
+-- ---------------------------------------------------------------------------
+-- 2. Two occurrences in the past, and three customised or cancelled weeks.
+-- ---------------------------------------------------------------------------
+
+set local role postgres;
+
+-- Materialization floors its window at current_date on purpose (it does not
+-- invent games that never happened), so history has to be planted by hand.
+-- Both dates are genuine dates of this series' own rule.
+insert into public.events
+  (club_id, series_id, title, venue_id, notes,
+   starts_at, ends_at, occurrence_date, created_by)
+select
+  'c1c1c1c1-0000-0000-0000-000000000001',
+  (select id from public.event_series where starts_on = current_date - 28),
+  'Weekly game', '11111111-0000-0000-0000-000000000001',
+  'Bring your own tiles',
+  (d + time '19:00') at time zone 'America/New_York',
+  (d + time '22:00') at time zone 'America/New_York',
+  d, 'aaaaaaaa-0000-0000-0000-000000000001'
+from (values (current_date - 11), (current_date - 4)) v(d);
+
+select is(
+  (select count(*)::int from public.events
+   where occurrence_date is not null and starts_at < now()),
+  2,
+  'the series now has occurrences on both sides of now'
+);
+
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "aaaaaaaa-0000-0000-0000-000000000001", "role": "authenticated"}';
+
+-- o1 is customised three ways at once, so a later edit can touch exactly one
+-- of its overrides and leave the other two to be observed.
+select lives_ok(
+  $$select public.update_event(
+      (select id from public.events where occurrence_date = current_date + 3),
+      null,
+      '11111111-0000-0000-0000-000000000002',
+      'Cake this week',
+      ((current_date + 3) + time '18:00') at time zone 'America/New_York',
+      ((current_date + 3) + time '21:00') at time zone 'America/New_York')$$,
+  'one week is customised: venue, notes and time'
+);
+
+select results_eq(
+  $$select overrides from public.events
+    where occurrence_date = current_date + 3$$,
+  $$values (array['notes', 'starts_at', 'venue_id']::text[])$$,
+  'and records exactly those three overrides'
+);
+
+-- o4 is customised on the venue only.
+select lives_ok(
+  $$select public.update_event(
+      (select id from public.events where occurrence_date = current_date + 24),
+      null, '11111111-0000-0000-0000-000000000002', null, null, null)$$,
+  'another week is moved to a different venue, and nothing else'
+);
+
+-- o2 is cancelled.
+select lives_ok(
+  $$select public.cancel_event(
+      (select id from public.events where occurrence_date = current_date + 10))$$,
+  'a third week is cancelled'
+);
+
+-- ---------------------------------------------------------------------------
+-- 3. The default: a title and time edit skips the fields that were
+--    overridden, skips cancelled weeks, and never rewrites history.
+-- ---------------------------------------------------------------------------
+
+select lives_ok(
+  $$select public.update_event_series(
+      (select id from public.event_series where starts_on = current_date - 28),
+      'Renamed game', null, null, '18:30'::time, null, null, null, false)$$,
+  'the series title and start time are changed, toggle off'
+);
+
+select is(
+  (select title from public.events where occurrence_date = current_date + 17),
+  'Renamed game',
+  'an un-customised week takes the new title'
+);
+
+select is(
+  (select to_char(starts_at at time zone 'America/New_York', 'HH24:MI')
+   from public.events where occurrence_date = current_date + 17),
+  '18:30',
+  'and the new start time'
+);
+
+select is(
+  (select to_char(starts_at at time zone 'America/New_York', 'HH24:MI')
+   from public.events where occurrence_date = current_date + 3),
+  '18:00',
+  'the hand-set week keeps the time its host set'
+);
+
+select is(
+  (select title from public.events where occurrence_date = current_date + 3),
+  'Renamed game',
+  'but still takes the title it never overrode'
+);
+
+select is(
+  (select venue_id from public.events where occurrence_date = current_date + 3),
+  '11111111-0000-0000-0000-000000000002'::uuid,
+  'and keeps the venue this edit did not touch'
+);
+
+select is(
+  (select title from public.events where occurrence_date = current_date + 10),
+  'Weekly game',
+  'a cancelled week is not retitled'
+);
+
+select is(
+  (select to_char(starts_at at time zone 'America/New_York', 'HH24:MI')
+   from public.events where occurrence_date = current_date + 10),
+  '19:00',
+  'nor re-timed'
+);
+
+select is(
+  (select title from public.events where occurrence_date = current_date - 4),
+  'Weekly game',
+  'a past occurrence is history and keeps its title'
+);
+
+select is(
+  (select to_char(starts_at at time zone 'America/New_York', 'HH24:MI')
+   from public.events where occurrence_date = current_date - 4),
+  '19:00',
+  'and keeps its time'
+);
+
+select is(
+  (select count(*)::int from public.events
+   where occurrence_date is not null
+     and starts_at > now()
+     and status <> 'cancelled'
+     and to_char(starts_at at time zone 'America/New_York', 'HH24:MI')
+         <> '18:30'),
+  1,
+  'exactly one live future week -- the hand-set one -- is off the new time'
+);
+
+-- ---------------------------------------------------------------------------
+-- 4. The default, again, on the venue. This is the edit the old fixture never
+--    made: a venue change with the toggle OFF, while weeks hold venue
+--    overrides.
+-- ---------------------------------------------------------------------------
+
+select lives_ok(
+  $$select public.update_event_series(
+      (select id from public.event_series where starts_on = current_date - 28),
+      null, '11111111-0000-0000-0000-000000000003', null, null, null, null,
+      null, false)$$,
+  'the series moves to a new venue, toggle off'
+);
+
+select is(
+  (select venue_id from public.events where occurrence_date = current_date + 17),
+  '11111111-0000-0000-0000-000000000003'::uuid,
+  'an un-customised week follows the series to the new venue'
+);
+
+select is(
+  (select venue_id from public.events where occurrence_date = current_date + 24),
+  '11111111-0000-0000-0000-000000000002'::uuid,
+  'a week whose venue was overridden is left where its host put it'
+);
+
+select is(
+  (select venue_id from public.events where occurrence_date = current_date + 3),
+  '11111111-0000-0000-0000-000000000002'::uuid,
+  'and so is the week that overrode venue among other things'
+);
+
+select is(
+  (select venue_id from public.events where occurrence_date = current_date + 10),
+  '11111111-0000-0000-0000-000000000001'::uuid,
+  'a cancelled week does not follow the series to the new venue'
+);
+
+select is(
+  (select venue_id from public.events where occurrence_date = current_date - 4),
+  '11111111-0000-0000-0000-000000000001'::uuid,
+  'nor does a past one'
+);
+
+select results_eq(
+  $$select overrides from public.events
+    where occurrence_date = current_date + 24$$,
+  $$values (array['venue_id']::text[])$$,
+  'and with the toggle off nothing is cleared from any overrides'
+);
+
+-- ---------------------------------------------------------------------------
+-- 5. The opt-in. One field of three is edited on a week that overrode all
+--    three. The other two must survive -- value AND override.
+-- ---------------------------------------------------------------------------
+
+select lives_ok(
+  $$select public.update_event_series(
+      (select id from public.event_series where starts_on = current_date - 28),
+      null, null, null, '17:45'::time, null, null, null, true)$$,
+  'the start time moves again, this time with the override toggle on'
+);
+
+select is(
+  (select to_char(starts_at at time zone 'America/New_York', 'HH24:MI')
+   from public.events where occurrence_date = current_date + 3),
+  '17:45',
+  'the hand-set week is pulled onto the series'' new time'
+);
+
+select results_eq(
+  $$select overrides from public.events
+    where occurrence_date = current_date + 3$$,
+  $$values (array['notes', 'venue_id']::text[])$$,
+  'and loses only the starts_at override, keeping the two it did not touch'
+);
+
+select is(
+  (select venue_id from public.events where occurrence_date = current_date + 3),
+  '11111111-0000-0000-0000-000000000002'::uuid,
+  'its hand-set venue survives the toggle'
+);
+
+select is(
+  (select notes from public.events where occurrence_date = current_date + 3),
+  'Cake this week',
+  'and so do its hand-written notes'
+);
+
+select is(
+  (select status::text from public.events
+   where occurrence_date = current_date + 10),
+  'cancelled',
+  'the toggle does not un-cancel a week'
+);
+
+select is(
+  (select to_char(starts_at at time zone 'America/New_York', 'HH24:MI')
+   from public.events where occurrence_date = current_date + 10),
+  '19:00',
+  'nor re-time one'
+);
+
+select is(
+  (select to_char(starts_at at time zone 'America/New_York', 'HH24:MI')
+   from public.events where occurrence_date = current_date - 4),
+  '19:00',
+  'and it does not reach into the past either'
+);
+
+-- ---------------------------------------------------------------------------
+-- 6. The gate itself. The edit screen sends every field on every save, so a
+--    save that changes nothing must change nothing -- toggle or no toggle.
+--    This is the assertion that stops the toggle from becoming a global
+--    reset.
+-- ---------------------------------------------------------------------------
+
+select lives_ok(
+  $$select public.update_event_series(
+      (select id from public.event_series where starts_on = current_date - 28),
+      'Renamed game',
+      '11111111-0000-0000-0000-000000000003',
+      'Bring your own tiles',
+      '17:45'::time, 180, 2, (current_date + 120), true)$$,
+  'a save that resends every field unchanged, toggle on, is accepted'
+);
+
+select results_eq(
+  $$select overrides from public.events
+    where occurrence_date = current_date + 3$$,
+  $$values (array['notes', 'venue_id']::text[])$$,
+  'and clears nothing: the toggle applies an edit, it is not a reset button'
+);
+
+select is(
+  (select venue_id from public.events where occurrence_date = current_date + 3),
+  '11111111-0000-0000-0000-000000000002'::uuid,
+  'the customised week keeps its venue through it'
+);
+
+select is(
+  (select notes from public.events where occurrence_date = current_date + 3),
+  'Cake this week',
+  'and its notes'
+);
+
+-- ---------------------------------------------------------------------------
+-- 7. reset_event_to_series: the control that undoing one week actually needs.
+-- ---------------------------------------------------------------------------
+
+select lives_ok(
+  $$select public.reset_event_to_series(
+      (select id from public.events where occurrence_date = current_date + 3))$$,
+  'an organizer resets one week to its series'
+);
+
+select is(
+  (select title from public.events where occurrence_date = current_date + 3),
+  'Renamed game',
+  'the reset week takes the series title'
+);
+
+select is(
+  (select venue_id from public.events where occurrence_date = current_date + 3),
+  '11111111-0000-0000-0000-000000000003'::uuid,
+  'the series venue'
+);
+
+select is(
+  (select notes from public.events where occurrence_date = current_date + 3),
+  'Bring your own tiles',
+  'the series notes'
+);
+
+select is(
+  (select to_char(starts_at at time zone 'America/New_York', 'HH24:MI')
+   from public.events where occurrence_date = current_date + 3),
+  '17:45',
+  'its start recomputed from its own date and the series'' local time'
+);
+
+select is(
+  (select to_char(ends_at at time zone 'America/New_York', 'HH24:MI')
+   from public.events where occurrence_date = current_date + 3),
+  '20:45',
+  'and its end from the series'' duration'
+);
+
+select results_eq(
+  $$select overrides from public.events
+    where occurrence_date = current_date + 3$$,
+  $$values (array[]::text[])$$,
+  'with every override cleared'
+);
+
+select throws_ok(
+  $$select public.reset_event_to_series(
+      'e9e9e9e9-0000-0000-0000-000000000009')$$,
+  '42501',
+  'this event is not part of a series',
+  'a one-off event has no series to reset to'
+);
+
+select throws_ok(
+  $$select public.reset_event_to_series(
+      (select id from public.events where occurrence_date = current_date + 10))$$,
+  '42501',
+  'a cancelled event cannot be edited',
+  'and a cancelled week is not quietly brought back by a reset'
+);
+
+-- ---------------------------------------------------------------------------
+-- 8. table_count applies to occurrences materialized later, never to ones
+--    that already exist.
+-- ---------------------------------------------------------------------------
+
+select lives_ok(
+  $$select public.update_event_series(
+      (select id from public.event_series where starts_on = current_date - 28),
+      null, null, null, null, null, 4, null, false)$$,
+  'the series table count is raised from two to four'
+);
+
+select is(
+  (select count(*)::int from public.event_tables
+   where event_id = (select id from public.events
+                     where occurrence_date = current_date + 17)),
+  2,
+  'an occurrence that already exists keeps the tables it was materialized with'
+);
+
+set local role postgres;
+select public.materialize_one_series(
+  (select id from public.event_series where starts_on = current_date - 28), 70);
+
+select is(
+  (select count(*)::int from public.event_tables
+   where event_id = (select id from public.events
+                     where occurrence_date = current_date + 45)),
+  4,
+  'an occurrence materialized afterwards gets the new count'
+);
+
+-- ---------------------------------------------------------------------------
+-- 9. Every one of these is organizer-only.
+-- ---------------------------------------------------------------------------
+
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "aaaaaaaa-0000-0000-0000-000000000002", "role": "authenticated"}';
+
+select throws_ok(
+  $$select public.create_event_series(
+      'c1c1c1c1-0000-0000-0000-000000000001', 'Bob''s game',
+      '11111111-0000-0000-0000-000000000001')$$,
+  '42501',
+  'not an organizer of this club',
+  'a plain member cannot create a series'
+);
+
+select throws_ok(
+  $$select public.update_event_series(
+      (select id from public.event_series where starts_on = current_date - 28),
+      'Bob was here')$$,
+  '42501',
+  'not an organizer of this club',
+  'nor edit one'
+);
+
+select throws_ok(
+  $$select public.end_event_series(
+      (select id from public.event_series where starts_on = current_date - 28))$$,
+  '42501',
+  'not an organizer of this club',
+  'nor end one'
+);
+
+select throws_ok(
+  $$select public.reset_event_to_series(
+      (select id from public.events where occurrence_date = current_date + 17))$$,
+  '42501',
+  'not an organizer of this club',
+  'nor reset a week to its series'
+);
+
+-- ---------------------------------------------------------------------------
+-- 10. The club-timezone reflow. A correction of interpretation reaches every
+--     live future event, hand-set ones and one-offs included, and stops at
+--     cancelled events and at history.
+-- ---------------------------------------------------------------------------
+
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "aaaaaaaa-0000-0000-0000-000000000001", "role": "authenticated"}';
+
+-- Hand-set one live future week's time, immediately before the change, so
+-- the reflow meets an occurrence carrying a `starts_at` override.
+select lives_ok(
+  $$select public.update_event(
+      (select id from public.events where occurrence_date = current_date + 31),
+      null, null, null,
+      ((current_date + 31) + time '16:15') at time zone 'America/New_York',
+      ((current_date + 31) + time '19:15') at time zone 'America/New_York')$$,
+  'one live future week has its time hand-set, just before the correction'
+);
+
+set local role postgres;
 
 update public.clubs set timezone = 'America/Chicago'
   where id = 'c1c1c1c1-0000-0000-0000-000000000001';
 
 select is(
   (select to_char(starts_at at time zone 'America/Chicago', 'HH24:MI')
+   from public.events where occurrence_date = current_date + 31),
+  '16:15',
+  'a correction reflows a week whose time was set by hand'
+);
+
+select is(
+  (select to_char(ends_at at time zone 'America/Chicago', 'HH24:MI')
+   from public.events where occurrence_date = current_date + 31),
+  '19:15',
+  'both of its instants'
+);
+
+select is(
+  (select to_char(starts_at at time zone 'America/Chicago', 'HH24:MI')
+   from public.events where occurrence_date = current_date + 17),
+  '17:45',
+  'and a week whose time was not'
+);
+
+select is(
+  (select to_char(starts_at at time zone 'America/Chicago', 'HH24:MI')
    from public.events where id = 'e9e9e9e9-0000-0000-0000-000000000009'),
   '18:30',
-  'a timezone correction preserves the wall clock, one-off events included'
+  'one-off events, which have no series rule to recompute from, included'
+);
+
+select is(
+  (select to_char(starts_at at time zone 'America/New_York', 'HH24:MI')
+   from public.events where occurrence_date = current_date + 10),
+  '19:00',
+  'a cancelled event is left at the instant it always had'
+);
+
+select is(
+  (select to_char(starts_at at time zone 'America/New_York', 'HH24:MI')
+   from public.events where occurrence_date = current_date - 4),
+  '19:00',
+  'and so is a past one'
+);
+
+-- ---------------------------------------------------------------------------
+-- 11. Ending a series. `ends_on` is what the host planned; `ended_at` is the
+--     host stopping it. Materialization looks at the second.
+-- ---------------------------------------------------------------------------
+
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "aaaaaaaa-0000-0000-0000-000000000001", "role": "authenticated"}';
+
+-- The sibling series has not started yet. Writing `ends_on = current_date`
+-- here would be earlier than its own `starts_on` and die on
+-- event_series_ends_after_start.
+select lives_ok(
+  $$select public.end_event_series(
+      '55555555-0000-0000-0000-000000000003', true)$$,
+  'a host can end a series whose first game has not happened yet'
+);
+
+select is(
+  (select ends_on from public.event_series
+   where id = '55555555-0000-0000-0000-000000000003'),
+  current_date + 90,
+  'ending a series does not move the last date its host planned'
+);
+
+select ok(
+  (select ended_at is not null from public.event_series
+   where id = '55555555-0000-0000-0000-000000000003'),
+  'it records the moment the host stopped it instead'
+);
+
+set local role postgres;
+select public.materialize_event_series(90);
+
+select is(
+  (select count(*)::int from public.events
+   where series_id = '55555555-0000-0000-0000-000000000003'),
+  0,
+  'and the nightly sweep no longer generates anything for it'
+);
+
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "aaaaaaaa-0000-0000-0000-000000000001", "role": "authenticated"}';
+
+select lives_ok(
+  $$select public.update_event_series(
+      '55555555-0000-0000-0000-000000000003', 'Renamed social')$$,
+  'an ended series can still be renamed'
+);
+
+select is(
+  (select count(*)::int from public.events
+   where series_id = '55555555-0000-0000-0000-000000000003'),
+  0,
+  'and editing it does not materialize a fresh occurrence'
+);
+
+select ok(
+  (select ended_at is not null from public.event_series
+   where id = '55555555-0000-0000-0000-000000000003'),
+  'nor does editing it un-end it'
+);
+
+-- ---------------------------------------------------------------------------
+-- 12. Ending the live series still cancels its future, and still leaves
+--     history alone.
+-- ---------------------------------------------------------------------------
+
+select lives_ok(
+  $$select public.end_event_series(
+      (select id from public.event_series where starts_on = current_date - 28),
+      true)$$,
+  'an organizer ends the live series and cancels its future occurrences'
+);
+
+select is(
+  (select count(*)::int from public.events
+   where occurrence_date is not null
+     and starts_at > now() and status <> 'cancelled'),
+  0,
+  'no live future occurrence survives it'
+);
+
+select is(
+  (select count(*)::int from public.events
+   where occurrence_date is not null
+     and starts_at < now() and status = 'cancelled'),
+  0,
+  'and no past occurrence is cancelled by it'
+);
+
+select is(
+  (select ends_on from public.event_series where starts_on = current_date - 28),
+  current_date + 120,
+  'its planned ends_on is untouched here too'
+);
+
+select ok(
+  (select ended_at is not null from public.event_series
+   where starts_on = current_date - 28),
+  'and its ended_at is set'
 );
 
 select * from finish();
