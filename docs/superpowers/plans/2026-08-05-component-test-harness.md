@@ -182,6 +182,66 @@ git commit -m "test: establish the component testing library empirically"
 
 **Why these four.** Each corresponds to a defect that actually shipped and was found by a person opening the app. A regression test that cannot fail against the pre-fix code is worthless — Step 4 proves each one can.
 
+- [ ] **Step 0: Stub the Flow-shipping native modules**
+
+Task 1's spike rendered a trivial inline component and passed. Importing a **real screen** fails, because two third-party packages ship untranspiled Flow that Vitest cannot parse:
+
+- `app/notifications.tsx` → `components/TimeField` → `@react-native-community/datetimepicker`
+  → `SyntaxError` at `datetimepicker.js:1` (`@flow strict-local`)
+- `app/profile.tsx` → `components/SkillLevelPicker` → `components/icons` → `react-native-svg`
+  → `SyntaxError: Unexpected token 'typeof'`
+
+Stub both, the same way `react-native` is already aliased to `react-native-web`. These are third-party rendering internals; the component layer's job is screen structure, navigation, and state, and the Playwright visual layer covers how they actually paint.
+
+Create `test/stubs/datetimepicker.tsx`:
+
+```tsx
+// @react-native-community/datetimepicker ships untranspiled Flow, which
+// Vitest cannot parse. Component tests care that TimeField renders and
+// reports a value, not how the platform picker paints — Playwright's
+// visual layer covers that.
+export default function DateTimePicker() {
+  return null;
+}
+```
+
+Create `test/stubs/react-native-svg.tsx`:
+
+```tsx
+// react-native-svg reaches into react-native internals that the
+// react-native-web alias does not intercept. Icons carry no behaviour worth
+// asserting here; the visual layer verifies they render.
+import type { ReactNode } from 'react';
+
+const Noop = ({ children }: { children?: ReactNode }) => <>{children}</>;
+
+export default Noop;
+export const Svg = Noop;
+export const Circle = Noop;
+export const Path = Noop;
+export const Rect = Noop;
+export const G = Noop;
+export const Line = Noop;
+```
+
+Add both to `resolve.alias` in `vitest.config.mts`, alongside the existing `react-native` entry:
+
+```ts
+      '@react-native-community/datetimepicker': new URL(
+        './test/stubs/datetimepicker.tsx', import.meta.url,
+      ).pathname,
+      'react-native-svg': new URL(
+        './test/stubs/react-native-svg.tsx', import.meta.url,
+      ).pathname,
+```
+
+Then confirm a screen imports cleanly before writing any assertions:
+
+Run: `npx vitest run app/__tests__ 2>&1 | tail -5`
+Expected: the `SyntaxError` failures are gone. Assertion failures at this point are fine — Steps 1–3 fix those.
+
+**If another Flow-shipping module surfaces, stub it the same way and record it.** If stubbing proves insufficient — for instance a screen genuinely cannot render without the real module — stop and report BLOCKED rather than deleting assertions to get green.
+
 - [ ] **Step 1: Write the notifications tests**
 
 Create `app/__tests__/notifications.test.tsx`:
