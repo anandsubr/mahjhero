@@ -188,7 +188,21 @@ looks like a wrong-platform import, this option is the first thing to check.
     npm test              # logic + component
     npm run test:contract # schema contract (needs the local stack)
     npm run test:visual   # visual regression (needs the local stack)
-    npx supabase test db --local   # pgTAP
+    npm run test:db       # pgTAP, local (needs the local stack)
+    npm run test:db:remote # pgTAP, against the linked project
+
+`test:db:remote` runs only `supabase/tests/database/portable/` — the files that
+assert privileges rather than behaviour. Those are the ones worth running
+against the real project, because grants drift on hosted in ways they cannot
+locally: Supabase's default privileges, dashboard changes and extension
+installs all alter them with no migration to review. The `TRUNCATE`-bypasses-RLS
+hole this project shipped for a week was invisible to every policy test and
+would have been caught here.
+
+The rest of the suite lives in `fixtures/` and runs locally only, because
+creating a signed-in member means inserting into `auth.users` and the linked
+project denies that. See `supabase/tests/database/README.md` for why granting
+it would be the wrong fix.
 
 ## Prerequisites
 
