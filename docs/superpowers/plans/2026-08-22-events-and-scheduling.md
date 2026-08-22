@@ -204,7 +204,7 @@ git commit -m "feat(db): enable pg_cron, verified on local and hosted"
 
 **Interfaces:**
 - Consumes: `public.clubs`, `public.profiles`, and `public.is_club_member(uuid)` from plan 2.
-- Produces: enum `public.venue_visibility` (`club`/`public`); table `public.venues`; functions `public.create_venue(text, text, text, text, text, uuid, boolean) returns uuid`, `public.update_venue(uuid, text, text, text, text, text) returns boolean`, `public.archive_venue(uuid) returns boolean`, `public.search_venues(uuid, text) returns table(...)`. Task 3's `events` and `event_series` both reference `venues(id)`.
+- Produces: enum `public.venue_visibility` (`club`/`public`); table `public.venues`; functions `public.create_venue(text, text, text, text, text, uuid, boolean) returns uuid`, `public.update_venue(uuid, text, text, text, text, text) returns boolean`, `public.archive_venue(uuid) returns boolean`, `public.search_venues(uuid, text) returns table(...)`, and the shared guard `public.assert_club_organizer(uuid) returns void`, which every mutation in Tasks 5 and 6 opens with. Task 3's `events` and `event_series` both reference `venues(id)`.
 
 **Why venues come before events.** Both event tables carry a `not null venue_id` referencing this table, so it has to exist first.
 
@@ -222,12 +222,14 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(27);
+select plan(28);
 
 -- Structure
 select has_table('public', 'venues', 'venues table exists');
 select has_function('public', 'is_club_organizer', array['uuid'],
   'is_club_organizer exists');
+select has_function('public', 'assert_club_organizer', array['uuid'],
+  'assert_club_organizer exists');
 select has_function('public', 'search_venues', array['uuid', 'text'],
   'search_venues exists');
 
@@ -568,6 +570,26 @@ as $$
   );
 $$;
 
+/*
+ * The guard every mutation opens with, in one place.
+ *
+ * Not folded into is_club_organizer, which is also called from inside RLS
+ * policies where a raise would be wrong — a policy wants false, a function
+ * wants 42501. Two names for the two jobs.
+ */
+create function public.assert_club_organizer(target_club uuid)
+returns void
+language plpgsql
+stable
+set search_path = public
+as $$
+begin
+  if not public.is_club_organizer(target_club) then
+    raise exception 'not an organizer of this club' using errcode = '42501';
+  end if;
+end;
+$$;
+
 alter table public.venues enable row level security;
 
 -- The cross-club read. Public venues are visible to every signed-in member;
@@ -606,10 +628,7 @@ as $$
 declare
   new_id uuid;
 begin
-  if not public.is_club_organizer(target_club) then
-    raise exception 'not an organizer of this club'
-      using errcode = '42501';
-  end if;
+  perform public.assert_club_organizer(target_club);
 
   if length(trim(coalesce(venue_name, ''))) = 0 then
     raise exception 'venue name is required' using errcode = '23514';
@@ -668,10 +687,7 @@ begin
     raise exception 'no such venue' using errcode = 'P0002';
   end if;
 
-  if not public.is_club_organizer(steward) then
-    raise exception 'not an organizer of the club that added this venue'
-      using errcode = '42501';
-  end if;
+  perform public.assert_club_organizer(steward);
 
   update public.venues set
     name         = coalesce(nullif(trim(coalesce(venue_name, '')), ''), name),
@@ -705,10 +721,7 @@ begin
     raise exception 'no such venue' using errcode = 'P0002';
   end if;
 
-  if not public.is_club_organizer(steward) then
-    raise exception 'not an organizer of the club that added this venue'
-      using errcode = '42501';
-  end if;
+  perform public.assert_club_organizer(steward);
 
   update public.venues set archived_at = now() where id = target_venue;
   return true;
@@ -774,6 +787,10 @@ grant select on public.venues to authenticated;
 revoke execute on function public.is_club_organizer(uuid) from public, anon;
 grant  execute on function public.is_club_organizer(uuid) to authenticated;
 
+-- Not granted to authenticated: it is only ever called from inside the
+-- definer functions below, which run as their owner.
+revoke execute on function public.assert_club_organizer(uuid) from public, anon;
+
 revoke execute on function public.create_venue(text, text, text, text, text, uuid, boolean)
   from public, anon;
 grant  execute on function public.create_venue(text, text, text, text, text, uuid, boolean)
@@ -805,7 +822,7 @@ Expected: every migration applies, including this one.
 npm run test:db
 ```
 
-Expected: 27 passing in `venues.test.sql`, and every pre-existing test still green.
+Expected: 28 passing in `venues.test.sql`, and every pre-existing test still green.
 
 - [ ] **Step 6: Prove the isolation test can actually fail**
 
@@ -1749,7 +1766,7 @@ git commit -m "feat(db): materialize recurring events with DST-correct instants"
 
 **Two guards that are not decorative.**
 
-1. **`is_club_organizer` against the *event's own* club.** Not "does the caller organize something". This is `club_members_insert_self` again in a new place.
+1. **`assert_club_organizer` against the *event's own* club.** Not "does the caller organize something". This is `club_members_insert_self` again in a new place. The shared helper is defined in Task 2's migration; every mutation here opens with `perform public.assert_club_organizer(<the row's club>)`, and the **argument** is the part to read carefully — a helper cannot protect you from handing it the wrong club.
 2. **The venue must be reachable by that club** — its own, or public. Without this check a host could attach another club's private venue to their event, and its name and address would then render for every member of their club. That is the privacy promise of `visibility = 'club'` leaking out through a side door.
 
 **A null argument means "leave this alone", never "clear this".** A screen that edits only the title would otherwise wipe the notes. Clearing a text field is done by passing `''`, which is non-null and therefore an intentional change.
@@ -2041,10 +2058,11 @@ npx supabase migration new event_mutations
  * complete list of things that can change them. Two guards repeat in every
  * function and neither is decorative:
  *
- *   1. is_club_organizer against the row's OWN club — not "does the caller
- *      organize something". Plan 2 shipped a policy that constrained who a
- *      row was about and not which club it belonged to, and any member could
- *      make themselves host of any club.
+ *   1. assert_club_organizer against the row's OWN club — not "does the
+ *      caller organize something". Plan 2 shipped a policy that constrained
+ *      who a row was about and not which club it belonged to, and any member
+ *      could make themselves host of any club. The helper raises; the
+ *      argument is what matters.
  *
  *   2. The venue must be reachable by that club: its own, or public. Without
  *      it, a host could attach another club's private venue to their event
@@ -2091,10 +2109,7 @@ as $$
 declare
   new_id uuid;
 begin
-  if not public.is_club_organizer(target_club) then
-    raise exception 'not an organizer of this club' using errcode = '42501';
-  end if;
-
+  perform public.assert_club_organizer(target_club);
   perform public.assert_venue_available(target_club, target_venue);
 
   if length(trim(coalesce(event_title, ''))) = 0 then
@@ -2161,9 +2176,7 @@ begin
   if ev.id is null then
     raise exception 'no such event' using errcode = 'P0002';
   end if;
-  if not public.is_club_organizer(ev.club_id) then
-    raise exception 'not an organizer of this club' using errcode = '42501';
-  end if;
+  perform public.assert_club_organizer(ev.club_id);
   -- Cancelling is a different kind of statement from customising, and
   -- un-cancelling by editing would be a nasty surprise for everyone who was
   -- told the game was off.
@@ -2245,9 +2258,7 @@ begin
   if owning_club is null then
     raise exception 'no such event' using errcode = 'P0002';
   end if;
-  if not public.is_club_organizer(owning_club) then
-    raise exception 'not an organizer of this club' using errcode = '42501';
-  end if;
+  perform public.assert_club_organizer(owning_club);
 
   update public.events set status = 'cancelled' where id = target_event;
   return true;
@@ -2270,9 +2281,7 @@ begin
   if owning_club is null then
     raise exception 'no such event' using errcode = 'P0002';
   end if;
-  if not public.is_club_organizer(owning_club) then
-    raise exception 'not an organizer of this club' using errcode = '42501';
-  end if;
+  perform public.assert_club_organizer(owning_club);
 
   select coalesce(max(position), 0) + 1 into next_pos
   from public.event_tables where event_id = target_event;
@@ -2314,9 +2323,7 @@ begin
   if owning_club is null then
     raise exception 'no such table' using errcode = 'P0002';
   end if;
-  if not public.is_club_organizer(owning_club) then
-    raise exception 'not an organizer of this club' using errcode = '42501';
-  end if;
+  perform public.assert_club_organizer(owning_club);
 
   update public.event_tables set
     label      = coalesce(nullif(trim(coalesce(new_label, '')), ''), label),
@@ -2351,9 +2358,7 @@ begin
   if owning_club is null then
     raise exception 'no such table' using errcode = 'P0002';
   end if;
-  if not public.is_club_organizer(owning_club) then
-    raise exception 'not an organizer of this club' using errcode = '42501';
-  end if;
+  perform public.assert_club_organizer(owning_club);
 
   select count(*)::int into remaining
   from public.event_tables where event_id = owning_event;
@@ -2704,10 +2709,7 @@ as $$
 declare
   new_id uuid;
 begin
-  if not public.is_club_organizer(target_club) then
-    raise exception 'not an organizer of this club' using errcode = '42501';
-  end if;
-
+  perform public.assert_club_organizer(target_club);
   perform public.assert_venue_available(target_club, target_venue);
 
   if length(trim(coalesce(series_title, ''))) = 0 then
@@ -2782,9 +2784,7 @@ begin
   if se.id is null then
     raise exception 'no such series' using errcode = 'P0002';
   end if;
-  if not public.is_club_organizer(se.club_id) then
-    raise exception 'not an organizer of this club' using errcode = '42501';
-  end if;
+  perform public.assert_club_organizer(se.club_id);
 
   select timezone into club_tz from public.clubs where id = se.club_id;
 
@@ -2911,9 +2911,7 @@ begin
   if owning_club is null then
     raise exception 'no such series' using errcode = 'P0002';
   end if;
-  if not public.is_club_organizer(owning_club) then
-    raise exception 'not an organizer of this club' using errcode = '42501';
-  end if;
+  perform public.assert_club_organizer(owning_club);
 
   update public.event_series
     set ends_on = current_date,
@@ -3049,7 +3047,7 @@ git commit -m "feat(db): add series edits with the override toggle, and the time
 
 - [ ] **Step 1: Add the grant and ACL assertions**
 
-In `supabase/tests/database/portable/grants.test.sql`, raise the plan count from 22 to 38 and append before `select * from finish();`:
+In `supabase/tests/database/portable/grants.test.sql`, raise the plan count from 22 to 39 and append before `select * from finish();`:
 
 ```sql
 -- The four tables plan 3 adds. Same reasoning as the four above: ALL is the
@@ -3129,6 +3127,11 @@ select ok(
   not has_function_privilege('anon', 'public.search_venues(uuid, text)',
     'EXECUTE'),
   'anon cannot execute search_venues'
+);
+select ok(
+  not has_function_privilege('authenticated',
+    'public.assert_club_organizer(uuid)', 'EXECUTE'),
+  'authenticated cannot execute assert_club_organizer'
 );
 
 -- The sweep function takes no club argument and checks no membership,
