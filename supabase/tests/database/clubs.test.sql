@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(17);
+select plan(21);
 
 -- Structure
 select has_table('public', 'clubs', 'clubs table exists');
@@ -185,6 +185,46 @@ select is(
   (select count(distinct token)::int from invite_tokens),
   2,
   'two invites inserted without a token in the same transaction do not collide'
+);
+
+-- Invite acceptance. Bob redeems an invite to Alice's club.
+set local role postgres;
+reset request.jwt.claims;
+
+insert into public.club_invites (club_id, token, invited_by, expires_at) values
+  ('c1c1c1c1-0000-0000-0000-000000000001', 'good-token',
+   'aaaaaaaa-0000-0000-0000-000000000001', now() + interval '7 days'),
+  ('c1c1c1c1-0000-0000-0000-000000000001', 'stale-token',
+   'aaaaaaaa-0000-0000-0000-000000000001', now() - interval '1 day');
+
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "bbbbbbbb-0000-0000-0000-000000000002", "role": "authenticated"}';
+
+select is(
+  public.accept_club_invite('good-token'),
+  'c1c1c1c1-0000-0000-0000-000000000001'::uuid,
+  'a valid token returns the club id'
+);
+
+select is(
+  (select count(*)::int from public.club_members
+   where club_id = 'c1c1c1c1-0000-0000-0000-000000000001'
+     and profile_id = 'bbbbbbbb-0000-0000-0000-000000000002'),
+  1,
+  'redeeming an invite creates the membership'
+);
+
+select is(
+  public.accept_club_invite('good-token'),
+  null,
+  'a token cannot be redeemed twice'
+);
+
+select is(
+  public.accept_club_invite('stale-token'),
+  null,
+  'an expired token is refused'
 );
 
 select * from finish();
