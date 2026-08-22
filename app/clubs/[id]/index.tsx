@@ -7,20 +7,30 @@ import ErrorBanner from '../../../components/ErrorBanner';
 import Screen from '../../../components/Screen';
 import Tag from '../../../components/Tag';
 import { ChevronLeftIcon } from '../../../components/icons';
-import { canInvite, createInvite, fetchClub, fetchRoster } from '../../../lib/clubs';
-import type { Club, ClubMember } from '../../../lib/clubs';
+import {
+  canInvite,
+  createInvite,
+  fetchClub,
+  fetchPendingInvites,
+  fetchRoster,
+} from '../../../lib/clubs';
+import type { Club, ClubInvite, ClubMember } from '../../../lib/clubs';
 import { GENERIC_ERROR } from '../../../lib/constants';
 import { useSession } from '../../../lib/session';
 import { colors, space, type } from '../../../lib/theme';
 
 export default function ClubDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, imported } = useLocalSearchParams<{
+    id: string;
+    imported?: string;
+  }>();
   const { session, loading } = useSession();
   const userId = session?.user.id;
   const router = useRouter();
 
   const [club, setClub] = useState<Club | null>(null);
   const [roster, setRoster] = useState<ClubMember[]>([]);
+  const [invites, setInvites] = useState<ClubInvite[]>([]);
   const [ready, setReady] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
@@ -29,15 +39,21 @@ export default function ClubDetailScreen() {
   useEffect(() => {
     if (!userId || !id) return;
     let cancelled = false;
-    Promise.all([fetchClub(id), fetchRoster(id)]).then(([c, r]) => {
-      if (cancelled) return;
-      if (c === null || r === null) setLoadFailed(true);
-      else {
-        setClub(c);
-        setRoster(r);
-      }
-      setReady(true);
-    });
+    Promise.all([fetchClub(id), fetchRoster(id), fetchPendingInvites(id)]).then(
+      ([c, r, i]) => {
+        if (cancelled) return;
+        // `i` is null only on a real failure. A plain member gets `[]` —
+        // `club_invites_select_organizer` filters them out — which is the
+        // right answer, not an error.
+        if (c === null || r === null || i === null) setLoadFailed(true);
+        else {
+          setClub(c);
+          setRoster(r);
+          setInvites(i);
+        }
+        setReady(true);
+      },
+    );
     return () => {
       cancelled = true;
     };
@@ -72,6 +88,15 @@ export default function ClubDetailScreen() {
   const me = roster.find((m) => m.profile_id === userId);
   const mayInvite = me ? canInvite(me.role) : false;
 
+  // `app/clubs/[id]/import.tsx` redirects here with `?imported=<n>` after a
+  // successful import. This screen ignored the parameter entirely, so a host
+  // who pasted forty people landed on a page that still said "1 member" and
+  // showed no trace of the import — no visible effect at all for the whole
+  // feature. Parsed defensively because it arrives from a URL.
+  const parsedImported = Number.parseInt(imported ?? '', 10);
+  const importedCount =
+    Number.isFinite(parsedImported) && parsedImported > 0 ? parsedImported : null;
+
   async function onInvite() {
     if (!session || !id) return;
     setError(null);
@@ -87,7 +112,7 @@ export default function ClubDetailScreen() {
       setError('Invite links can only be created from the web app for now.');
       return;
     }
-    const { token, error: inviteError } = await createInvite(id, session.user.id);
+    const { token, error: inviteError } = await createInvite(id);
     if (inviteError || !token) {
       setError(inviteError ?? GENERIC_ERROR);
       return;
@@ -113,17 +138,39 @@ export default function ClubDetailScreen() {
         <Text style={styles.help}>{club.rhythm}</Text>
       ) : null}
 
+      {importedCount !== null ? (
+        <Card>
+          <Text style={styles.confirmation}>
+            {importedCount === 1
+              ? '1 invitation sent.'
+              : `${importedCount} invitations sent.`}{' '}
+            They appear under Invited until each person joins.
+          </Text>
+        </Card>
+      ) : null}
+
       <Text style={styles.sectionTitle}>
         {roster.length} {roster.length === 1 ? 'member' : 'members'}
       </Text>
 
+      {/*
+        Every row here is somebody who has signed in. `club_members` rows are
+        written only by `create_club` and `accept_club_invite`, both of which
+        require `auth.uid()`, so there is no such thing as a roster row for a
+        person who has not. This used to render "Invited — not signed in yet"
+        for an empty display_name, which could never mean what it said — and
+        since a magic-link signup starts with `display_name = ''` and nothing
+        forces a member to set one, it had begun labelling real, present
+        members as absent. Genuinely-invited people are the separate section
+        below, read from `club_invites`.
+      */}
       {roster.map((member) => (
         <Card key={member.profile_id}>
           <View style={styles.row}>
             <Text style={styles.memberName}>
               {member.display_name.trim().length > 0
                 ? member.display_name
-                : 'Invited — not signed in yet'}
+                : 'Member'}
             </Text>
             {member.role !== 'member' ? (
               <Tag>{member.role === 'host' ? 'Host' : 'Co-organizer'}</Tag>
@@ -137,6 +184,38 @@ export default function ClubDetailScreen() {
           ) : null}
         </Card>
       ))}
+
+      {/*
+        Keyed on invite id, not email: `club_invites.email` is nullable (a
+        plain "create an invite link" invite has none) and nothing stops a
+        host inviting the same address twice.
+      */}
+      {invites.length > 0 ? (
+        <>
+          <Text style={styles.sectionTitle}>
+            {invites.length} invited
+          </Text>
+          {invites.map((invite) => (
+            <Card key={invite.id}>
+              <View style={styles.row}>
+                <Text style={styles.memberName}>
+                  {invite.display_name && invite.display_name.trim().length > 0
+                    ? invite.display_name
+                    : (invite.email ?? 'Invite link')}
+                </Text>
+                <Tag>Invited</Tag>
+              </View>
+              <Text style={styles.help}>
+                {invite.display_name &&
+                invite.display_name.trim().length > 0 &&
+                invite.email
+                  ? invite.email
+                  : 'Has not joined yet'}
+              </Text>
+            </Card>
+          ))}
+        </>
+      ) : null}
 
       {mayInvite ? (
         <>
@@ -210,6 +289,12 @@ const styles = StyleSheet.create({
     fontFamily: type.bodyRegular,
     fontSize: type.size.helper,
     color: colors.textMuted,
+    lineHeight: 24,
+  },
+  confirmation: {
+    fontFamily: type.bodyRegular,
+    fontSize: type.size.body,
+    color: colors.text,
     lineHeight: 24,
   },
   inviteUrl: {

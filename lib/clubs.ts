@@ -21,6 +21,18 @@ export type ClubMember = {
   skill_level: SkillLevel | null;
 };
 
+/**
+ * An invite that has been sent but not yet redeemed. Distinct from
+ * `ClubMember`: nobody is behind it yet, so there is no profile id and the
+ * email may be all the club knows about them.
+ */
+export type ClubInvite = {
+  id: string;
+  email: string | null;
+  display_name: string | null;
+  skill_level: SkillLevel | null;
+};
+
 export type RosterRow = {
   display_name: string;
   email: string;
@@ -30,8 +42,17 @@ export type RosterRow = {
 export type RosterError = { row: number; message: string };
 
 const CLUB_COLUMNS = 'id, name, slug, rhythm, visibility, timezone';
+const INVITE_COLUMNS = 'id, email, display_name, skill_level';
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const SKILL_LEVELS: SkillLevel[] = ['beginner', 'intermediate', 'advanced'];
+
+/**
+ * Refused rather than truncated, so a host who pastes the wrong thing is told
+ * so instead of quietly importing a prefix of it. The number is a guard
+ * against a single unbounded INSERT, not a product limit — a real club roster
+ * is tens of people, and a paste in the thousands is a mistake.
+ */
+export const MAX_ROSTER_ROWS = 500;
 
 /**
  * Client-side precheck only — "does this name have at least one letter or
@@ -62,6 +83,55 @@ export function canInvite(role: ClubRole): boolean {
 }
 
 /**
+ * Splits one CSV line into cells, honouring quoted fields.
+ *
+ * `line.split(',')` was wrong for the actual input this screen exists to
+ * accept. Google Sheets and Excel quote any field containing a comma, and
+ * `"Last, First"` is the single most common way a roster spreadsheet stores a
+ * name — so every affected row parsed one cell short, the email landed in the
+ * wrong column, and the host was told their file was broken when it was the
+ * parser that was. A `""` pair inside a quoted field is an escaped quote.
+ *
+ * Deliberately not a CSV dependency: this grammar is a dozen lines and fully
+ * specified, while a package here is another install to keep working across
+ * web, iOS and Android.
+ *
+ * The one part of RFC 4180 this does not implement is a newline *inside* a
+ * quoted field, because `parseRoster` splits on newlines before calling this.
+ * A name or email never contains one, and supporting it would mean a
+ * character-level parser over the whole document for no case that occurs.
+ */
+function splitCsvLine(line: string): string[] {
+  const cells: string[] = [];
+  let cell = '';
+  let quoted = false;
+
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+    if (quoted) {
+      if (ch !== '"') {
+        cell += ch;
+      } else if (line[i + 1] === '"') {
+        cell += '"';
+        i += 1;
+      } else {
+        quoted = false;
+      }
+    } else if (ch === '"') {
+      quoted = true;
+    } else if (ch === ',') {
+      cells.push(cell);
+      cell = '';
+    } else {
+      cell += ch;
+    }
+  }
+
+  cells.push(cell);
+  return cells;
+}
+
+/**
  * Parses a roster CSV into rows plus per-row errors.
  *
  * Returns errors rather than throwing, and never silently drops a row: a host
@@ -75,7 +145,22 @@ export function parseRoster(csv: string): { rows: RosterRow[]; errors: RosterErr
     return { rows: [], errors: [{ row: 0, message: 'The file is empty' }] };
   }
 
-  const header = lines[0].split(',').map((h) => h.trim().toLowerCase());
+  // Before parsing, not after: the point is to never build the array at all.
+  if (lines.length - 1 > MAX_ROSTER_ROWS) {
+    return {
+      rows: [],
+      errors: [
+        {
+          row: 0,
+          message:
+            `That is ${lines.length - 1} rows. Import at most ` +
+            `${MAX_ROSTER_ROWS} people at a time.`,
+        },
+      ],
+    };
+  }
+
+  const header = splitCsvLine(lines[0]).map((h) => h.trim().toLowerCase());
   const emailIdx = header.indexOf('email');
   const nameIdx = header.indexOf('name');
   const skillIdx = header.indexOf('skill');
@@ -91,7 +176,7 @@ export function parseRoster(csv: string): { rows: RosterRow[]; errors: RosterErr
   const errors: RosterError[] = [];
 
   for (let i = 1; i < lines.length; i += 1) {
-    const cells = lines[i].split(',').map((c) => c.trim());
+    const cells = splitCsvLine(lines[i]).map((c) => c.trim());
     const email = cells[emailIdx] ?? '';
 
     if (!EMAIL_PATTERN.test(email)) {
@@ -156,30 +241,71 @@ export async function fetchClub(clubId: string): Promise<Club | null> {
   }
 }
 
+/**
+ * Reads the roster through the `club_roster` security definer function rather
+ * than selecting `club_members` with an embedded `profiles(...)` join.
+ *
+ * The join worked because the `profiles` select policy had been widened to
+ * "own row OR any co-member's row" — but a policy is per-row and cannot be
+ * per-column, so that let a co-member read the *whole* profile: quiet hours,
+ * notification channel, timezone. Anyone in your club learned what hours you
+ * sleep. Column-level grants cannot fix it either; grants are per-role, and
+ * `authenticated` is both the self-reader and the co-member reader.
+ *
+ * So `profiles` is self-only again, and the four columns a roster actually
+ * needs are named in the function's return type — where widening them is a
+ * deliberate edit rather than the default for every column anyone adds next.
+ */
 export async function fetchRoster(clubId: string): Promise<ClubMember[] | null> {
   try {
-    const { data, error } = await supabase
-      .from('club_members')
-      .select('profile_id, role, profiles ( display_name, skill_level )')
-      .eq('club_id', clubId)
-      .eq('status', 'active');
+    const { data, error } = await supabase.rpc('club_roster', {
+      target_club: clubId,
+    });
 
     if (error) {
       console.error('fetchRoster failed', error);
       return null;
     }
 
-    return (data ?? []).map((row: Record<string, unknown>) => {
-      const profile = row.profiles as { display_name: string; skill_level: SkillLevel | null };
-      return {
-        profile_id: row.profile_id as string,
-        role: row.role as ClubRole,
-        display_name: profile?.display_name ?? '',
-        skill_level: profile?.skill_level ?? null,
-      };
-    });
+    return (data ?? []) as ClubMember[];
   } catch (cause) {
     console.error('fetchRoster failed', cause);
+    return null;
+  }
+}
+
+/**
+ * Invites that have been sent and not yet redeemed or expired.
+ *
+ * The club detail screen needs this to tell the truth about who is on the
+ * roster. `club_members` rows are only ever written by functions that require
+ * `auth.uid()`, so a roster row *always* represents someone who has signed
+ * in — meanwhile `importRoster` writes forty rows to `club_invites` that the
+ * roster never read, so a host pasting a spreadsheet saw no change at all.
+ *
+ * `club_invites_select_organizer` limits this to hosts and co-organizers, so
+ * a plain member gets an empty list rather than an error — which is the right
+ * answer for them: who has been invited but not joined is organizer business.
+ */
+export async function fetchPendingInvites(
+  clubId: string,
+): Promise<ClubInvite[] | null> {
+  try {
+    const { data, error } = await supabase
+      .from('club_invites')
+      .select(INVITE_COLUMNS)
+      .eq('club_id', clubId)
+      .is('accepted_at', null)
+      .gt('expires_at', new Date().toISOString())
+      .order('created_at');
+
+    if (error) {
+      console.error('fetchPendingInvites failed', error);
+      return null;
+    }
+    return (data ?? []) as ClubInvite[];
+  } catch (cause) {
+    console.error('fetchPendingInvites failed', cause);
     return null;
   }
 }
@@ -239,10 +365,16 @@ export async function createClub(
  * one from here would mean trusting `Math.random()`, which is not a CSPRNG,
  * for a security token. `.select('token')` reads back what the default
  * actually generated.
+ *
+ * There is no `userId` argument, for the same reason `createClub` has none:
+ * `club_invites.invited_by` now defaults to `auth.uid()` and its insert
+ * policy checks `invited_by = auth.uid()`, so attribution is decided by the
+ * session rather than by whatever the client claims. Passing it from here was
+ * unchecked — a host could have signed a whole imported batch with somebody
+ * else's profile id.
  */
 export async function createInvite(
   clubId: string,
-  userId: string,
   target?: { email: string; display_name: string; skill_level: SkillLevel | null },
 ): Promise<{ token: string | null; error: string | null }> {
   try {
@@ -250,7 +382,6 @@ export async function createInvite(
       .from('club_invites')
       .insert({
         club_id: clubId,
-        invited_by: userId,
         email: target?.email ?? null,
         display_name: target?.display_name ?? null,
         skill_level: target?.skill_level ?? null,
@@ -332,13 +463,24 @@ export async function acceptInvite(
  */
 export async function importRoster(
   clubId: string,
-  userId: string,
   rows: RosterRow[],
 ): Promise<{ created: number; error: string | null }> {
+  // Zero rows is a failure, not a no-op success. Returning
+  // `{ created: 0, error: null }` sent the host to `/clubs/<id>?imported=0`
+  // — a success redirect for an import that invited nobody.
+  if (rows.length === 0) {
+    return { created: 0, error: 'There is nobody in that file to invite.' };
+  }
+  if (rows.length > MAX_ROSTER_ROWS) {
+    return {
+      created: 0,
+      error: `Import at most ${MAX_ROSTER_ROWS} people at a time.`,
+    };
+  }
+
   try {
     const invites = rows.map((row) => ({
       club_id: clubId,
-      invited_by: userId,
       email: row.email,
       display_name: row.display_name,
       skill_level: row.skill_level,
@@ -353,7 +495,14 @@ export async function importRoster(
       console.error('importRoster failed', error);
       return { created: 0, error: GENERIC_ERROR };
     }
-    return { created: data?.length ?? 0, error: null };
+    // Same reasoning as `.select('id')` in updateProfile: an insert that wrote
+    // nothing must not be reported as a success. `rows` is non-empty here, so
+    // an empty `data` means the write did not land.
+    if (!data || data.length === 0) {
+      console.error('importRoster failed', 'insert returned no rows');
+      return { created: 0, error: GENERIC_ERROR };
+    }
+    return { created: data.length, error: null };
   } catch (cause) {
     console.error('importRoster failed', cause);
     return { created: 0, error: GENERIC_ERROR };

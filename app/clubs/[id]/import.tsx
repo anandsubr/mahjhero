@@ -7,7 +7,7 @@ import ErrorBanner from '../../../components/ErrorBanner';
 import Screen from '../../../components/Screen';
 import TextField from '../../../components/TextField';
 import { ChevronLeftIcon } from '../../../components/icons';
-import { importRoster, parseRoster } from '../../../lib/clubs';
+import { MAX_ROSTER_ROWS, importRoster, parseRoster } from '../../../lib/clubs';
 import type { RosterError, RosterRow } from '../../../lib/clubs';
 import { useSession } from '../../../lib/session';
 import { colors, space, type } from '../../../lib/theme';
@@ -44,11 +44,7 @@ export default function ImportRosterScreen() {
     if (!session || !id || !rows || importing) return;
     setError(null);
     setImporting(true);
-    const { created, error: importError } = await importRoster(
-      id,
-      session.user.id,
-      rows,
-    );
+    const { created, error: importError } = await importRoster(id, rows);
     setImporting(false);
     if (importError) {
       setError(importError);
@@ -71,7 +67,8 @@ export default function ImportRosterScreen() {
       <Text style={styles.heading}>Import a roster</Text>
       <Text style={styles.help}>
         Paste your spreadsheet, including the header row. It needs an email
-        column; name and skill are used if present.
+        column; name and skill are used if present. Up to {MAX_ROSTER_ROWS}{' '}
+        people at a time.
       </Text>
 
       <TextField
@@ -119,8 +116,16 @@ export default function ImportRosterScreen() {
 
           {errors.map((rowError) => (
             <Card key={`error-${rowError.row}`}>
+              {/*
+                Row 0 is the sentinel for a whole-file problem (empty paste,
+                too many rows) rather than a specific line, so it renders
+                without the "Row 0:" prefix a spreadsheet has no counterpart
+                for.
+              */}
               <Text style={styles.rowError}>
-                Row {rowError.row}: {rowError.message}
+                {rowError.row > 0
+                  ? `Row ${rowError.row}: ${rowError.message}`
+                  : rowError.message}
               </Text>
             </Card>
           ))}

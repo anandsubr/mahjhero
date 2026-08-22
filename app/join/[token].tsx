@@ -31,13 +31,21 @@ import { colors, space, type } from '../../lib/theme';
 export default function JoinScreen() {
   const { token } = useLocalSearchParams<{ token: string }>();
   const { session, loading } = useSession();
+  // Not `session`: supabase-js hands out a fresh session object on every
+  // token refresh, so an effect depending on the object re-runs roughly
+  // hourly. Here that meant a second `acceptInvite` on an already-spent
+  // token — which correctly reports "expired or already used" — replacing
+  // the club screen the member had just successfully joined with an error
+  // for a link that worked. The user id is what the effect actually cares
+  // about and it does not change on a refresh.
+  const userId = session?.user.id;
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (loading || !token) return;
 
-    if (!session) {
+    if (!userId) {
       // Best-effort: even if the write fails (storage quota, corrupt native
       // storage), still send the member to sign in rather than stranding them
       // here — signing in is still useful even if this particular invite ends
@@ -53,22 +61,31 @@ export default function JoinScreen() {
     }
 
     let cancelled = false;
-    acceptInvite(token).then(({ clubId, error: acceptError }) => {
-      if (cancelled) return;
-      AsyncStorage.removeItem(PENDING_INVITE_KEY).catch((cause) => {
-        console.error('Failed to clear pending invite', cause);
+    // The clear is awaited, not fired and forgotten. Navigating first left a
+    // slow or failing `removeItem` racing an unmount, so a spent token could
+    // stay parked in storage forever — and `app/index.tsx` would send the
+    // member back here to redeem it again on every cold launch, showing an
+    // "expired" screen each time. `.catch` keeps a storage failure from
+    // stranding them on the spinner: the redemption itself already
+    // succeeded, so the only right move is to carry on to the club.
+    acceptInvite(token)
+      .then(async ({ clubId, error: acceptError }) => {
+        if (cancelled) return;
+        await AsyncStorage.removeItem(PENDING_INVITE_KEY).catch((cause) => {
+          console.error('Failed to clear pending invite', cause);
+        });
+        if (cancelled) return;
+        if (acceptError || !clubId) {
+          setError(acceptError ?? 'That invite link is no longer valid.');
+          return;
+        }
+        router.replace(`/clubs/${clubId}`);
       });
-      if (acceptError || !clubId) {
-        setError(acceptError ?? 'That invite link is no longer valid.');
-        return;
-      }
-      router.replace(`/clubs/${clubId}`);
-    });
 
     return () => {
       cancelled = true;
     };
-  }, [loading, session, token, router]);
+  }, [loading, userId, token, router]);
 
   if (error) {
     return (
