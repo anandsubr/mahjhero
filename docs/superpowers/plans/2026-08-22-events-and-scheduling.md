@@ -919,7 +919,23 @@ git commit -m "feat(db): add the venue master with club-default visibility"
 
 - [ ] **Step 1: Write the failing tests**
 
-Create `supabase/tests/database/fixtures/events.test.sql`:
+Create `supabase/tests/database/fixtures/events.test.sql`. The block below is
+the core; it must ALSO cover the following, which a first draft of this plan
+omitted and which let a real data-model contradiction ship under a green
+suite — **`event_series` was never once inserted into**:
+
+- Both `event_series` check constraints — `nth_week_matches_frequency` in both
+  violating directions, and `ends_after_start`.
+- The partial unique index: two occurrences of one series on the same date are
+  rejected; two one-off events with no `occurrence_date` are fine.
+- Deleting a series that has occurrences: the events survive with `series_id`
+  and `occurrence_date` both null, and their `title` and `starts_at` intact.
+- The composite FK on **UPDATE**, not only INSERT: changing a child's
+  `club_id` alone is rejected, and changing the parent's `club_id` while
+  children exist is rejected.
+- A plain member can read a **cancelled** event (the policy comment claims it;
+  nothing tested it).
+- The `event_tables` draft rule, from both roles.
 
 ```sql
 begin;
@@ -927,7 +943,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(20);
+select plan(33);
 
 select has_table('public', 'event_series', 'event_series table exists');
 select has_table('public', 'events', 'events table exists');
@@ -1232,8 +1248,14 @@ create table public.events (
   constraint events_occurrence_requires_series check (
     (series_id is null) = (occurrence_date is null)
   ),
+  -- `<@` is containment, not set equality, so the ndims clause is doing real
+  -- work: array[array['title'], array['notes']] satisfies containment, and
+  -- array_append on a multi-dimensional array raises 2202E — a runtime error
+  -- in Task 5's update_event. (array_ndims('{}') is NULL, so an empty array
+  -- still passes, which is what we want.)
   constraint events_overrides_known_keys check (
     overrides <@ array['title', 'venue_id', 'notes', 'starts_at']
+    and array_ndims(overrides) = 1
   ),
   -- Not decorative: the target of event_tables' composite foreign key.
   constraint events_id_club_unique unique (id, club_id)
@@ -1248,8 +1270,11 @@ create unique index events_series_occurrence_idx
   on public.events (series_id, occurrence_date)
   where series_id is not null;
 
+-- No separate index on series_id alone: the partial unique index above
+-- already serves `where series_id = ?` (its predicate is implied by the
+-- lookup), and a plain index would additionally index every one-off event's
+-- NULL series_id — which will be the majority of rows.
 create index events_club_starts_idx on public.events (club_id, starts_at);
-create index events_series_idx on public.events (series_id);
 
 create table public.event_tables (
   id          uuid primary key default gen_random_uuid(),
@@ -1269,7 +1294,41 @@ create table public.event_tables (
   unique (event_id, position)
 );
 
-create index event_tables_event_idx on public.event_tables (event_id);
+-- No index on event_id alone: `unique (event_id, position)` already covers it.
+
+/*
+ * What makes `on delete set null` on events.series_id reachable at all.
+ *
+ * SET NULL nulls series_id and leaves occurrence_date populated, which
+ * violates events_occurrence_requires_series — so without this trigger, a
+ * series with any materialized occurrence can never be deleted, and the
+ * attempt fails with a confusing 23514 raised from inside the FK's own
+ * UPDATE. Nulling both columns first means the referential action finds
+ * nothing left to do.
+ *
+ * The intent being preserved: a tidied-up rule must not cancel a club's
+ * games, so its occurrences survive as ordinary one-off events — and an
+ * ordinary one-off event does not carry a vestigial occurrence_date.
+ */
+create function public.detach_events_from_series()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update public.events
+    set series_id = null, occurrence_date = null
+    where series_id = old.id;
+  return old;
+end;
+$$;
+
+create trigger event_series_detach_events
+  before delete on public.event_series
+  for each row execute function public.detach_events_from_series();
+
+revoke execute on function public.detach_events_from_series() from public, anon;
 
 alter table public.event_series enable row level security;
 alter table public.events enable row level security;
@@ -1287,8 +1346,22 @@ create policy events_select_member on public.events
     and (status <> 'draft' or public.is_club_organizer(club_id))
   );
 
+/*
+ * A table is visible exactly when its event is.
+ *
+ * Deliberately an `exists` against events rather than a copy of that table's
+ * draft carve-out: the subquery is itself subject to events' RLS for a
+ * non-definer caller, so one policy governs visibility and the two cannot
+ * drift apart. A bare `is_club_member(club_id)` here leaked a draft event's
+ * tables — its id, tier, and capacity — to plain members of the club.
+ */
 create policy event_tables_select_member on public.event_tables
-  for select using (public.is_club_member(club_id));
+  for select using (
+    public.is_club_member(club_id)
+    and exists (
+      select 1 from public.events e where e.id = event_tables.event_id
+    )
+  );
 
 /*
  * No insert, update or delete policy on any of the three, and no DML grant.
@@ -1313,7 +1386,7 @@ npx supabase db reset
 npm run test:db
 ```
 
-Expected: 20 passing in `events.test.sql`, everything else still green.
+Expected: 33 passing in `events.test.sql`, everything else still green.
 
 - [ ] **Step 5: Prove the draft assertion can fail**
 
