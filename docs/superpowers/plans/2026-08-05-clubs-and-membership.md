@@ -1166,10 +1166,9 @@ export default function ClubsScreen() {
             already play with.
           </Text>
           <Button
-            label="Start a club"
             onPress={() => router.push('/clubs/new')}
             accessibilityLabel="Start a club"
-          />
+            >Start a club</Button>
         </>
       ) : (
         <>
@@ -1184,11 +1183,10 @@ export default function ClubsScreen() {
             </Link>
           ))}
           <Button
-            label="Start another club"
             variant="secondary"
             onPress={() => router.push('/clubs/new')}
             accessibilityLabel="Start another club"
-          />
+            >Start another club</Button>
         </>
       )}
 
@@ -1240,9 +1238,9 @@ In `app/profile.tsx`, add a back link above the heading, matching the notificati
 
 ```tsx
       <Button
-        label="Clubs"
         variant="ghost"
-        icon={<ChevronLeftIcon color={colors.accentColor} />}
+        icon={<ChevronLeftIcon color={colors.accentColor}
+      >Clubs</Button>}
         onPress={() => router.push('/clubs')}
         accessibilityLabel="Back to your clubs"
       />
@@ -1326,9 +1324,9 @@ export default function NewClubScreen() {
   return (
     <Screen>
       <Button
-        label="Clubs"
         variant="ghost"
-        icon={<ChevronLeftIcon color={colors.accentColor} />}
+        icon={<ChevronLeftIcon color={colors.accentColor}
+      >Clubs</Button>}
         onPress={() => router.push('/clubs')}
         accessibilityLabel="Back to your clubs"
       />
@@ -1360,11 +1358,10 @@ export default function NewClubScreen() {
       {error ? <ErrorBanner message={error} /> : null}
 
       <Button
-        label={saving ? 'Creating…' : 'Create the club'}
         onPress={onCreate}
         disabled={saving || name.trim().length === 0}
         accessibilityLabel="Create the club"
-      />
+      >{saving ? 'Creating…' : 'Create the club'}</Button>
     </Screen>
   );
 }
@@ -1497,9 +1494,9 @@ export default function ClubDetailScreen() {
   return (
     <Screen>
       <Button
-        label="Clubs"
         variant="ghost"
-        icon={<ChevronLeftIcon color={colors.accentColor} />}
+        icon={<ChevronLeftIcon color={colors.accentColor}
+      >Clubs</Button>}
         onPress={() => router.push('/clubs')}
         accessibilityLabel="Back to your clubs"
       />
@@ -1537,11 +1534,10 @@ export default function ClubDetailScreen() {
       {mayInvite ? (
         <>
           <Button
-            label="Create an invite link"
             variant="secondary"
             onPress={onInvite}
             accessibilityLabel="Create an invite link"
-          />
+      >Create an invite link</Button>
           {inviteUrl ? (
             <Card>
               <Text style={styles.help}>
@@ -1690,10 +1686,9 @@ export default function JoinScreen() {
         <Text style={styles.heading}>That link did not work</Text>
         <ErrorBanner message={error} />
         <Button
-          label="Go to your clubs"
           onPress={() => router.replace('/clubs')}
           accessibilityLabel="Go to your clubs"
-        />
+          >Go to your clubs</Button>
       </Screen>
     );
   }
@@ -1970,9 +1965,9 @@ export default function ImportRosterScreen() {
   return (
     <Screen>
       <Button
-        label="Club"
         variant="ghost"
-        icon={<ChevronLeftIcon color={colors.accentColor} />}
+        icon={<ChevronLeftIcon color={colors.accentColor}
+      >Club</Button>}
         onPress={() => router.push(`/clubs/${id}`)}
         accessibilityLabel="Back to the club"
       />
@@ -1997,12 +1992,11 @@ export default function ImportRosterScreen() {
       />
 
       <Button
-        label="Check the file"
         variant="secondary"
         onPress={onPreview}
         disabled={csv.trim().length === 0}
         accessibilityLabel="Check the file"
-      />
+      >Check the file</Button>
 
       {rows !== null ? (
         <>
@@ -2034,12 +2028,11 @@ export default function ImportRosterScreen() {
           ))}
 
           {rows.length > 0 ? (
-            <Button
-              label={importing ? 'Importing…' : `Invite these ${rows.length}`}
+            <Button`}
               onPress={onImport}
               disabled={importing}
               accessibilityLabel={`Invite these ${rows.length} people`}
-            />
+      >{importing ? 'Importing…' : `Invite these ${rows.length}</Button>
           ) : null}
         </>
       ) : null}
@@ -2087,11 +2080,10 @@ In `app/clubs/[id]/index.tsx`, inside the `mayInvite` block alongside the invite
 
 ```tsx
           <Button
-            label="Import a roster"
             variant="secondary"
             onPress={() => router.push(`/clubs/${id}/import`)}
             accessibilityLabel="Import a roster from a spreadsheet"
-          />
+            >Import a roster</Button>
 ```
 
 - [ ] **Step 4: Add a component test for the preview gate**
