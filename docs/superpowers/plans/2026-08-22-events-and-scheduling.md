@@ -2687,6 +2687,45 @@ git commit -m "feat(db): add event and table mutations with per-field override t
 
 **A deviation from the spec, made deliberately.** The spec says the club-timezone reflow skips occurrences that have overridden `starts_at`. That is wrong on reflection and this plan does not implement it that way. A timezone change is a *correction of interpretation* — "our local times were being read in the wrong zone" — not a schedule change. An override records that this week's wall clock differs from the series', not that this week is immune to a correction. So the trigger preserves the club-local wall clock of **every** future non-cancelled event, including hand-set ones and including one-off events with no series at all, by re-resolving the same wall clock in the new zone. Update the spec to match when this task lands.
 
+### Carried in from Task 5's review — three fixes this migration must also make
+
+These are pre-existing, were deliberately not rushed into a fix pass, and land
+here because this task writes a migration in the same family and is what makes
+the first of them reachable.
+
+**1. `update_event` must only re-assert the venue when the venue is changing.**
+It currently asserts unconditionally, which has a consequence nobody intended:
+a venue that was `public` when it was booked can later be flipped to
+`visibility = 'club'` by its owning club, and every *other* club's existing
+events there become uneditable. Verified end to end — Riverside books
+Oakfield's public hall, Oakfield flips it to club-only, and Riverside can no
+longer edit its own event's title. A foreign club unilaterally froze another
+club's records.
+
+```sql
+if eff_venue is distinct from ev.venue_id then
+  perform public.assert_venue_available(ev.club_id, eff_venue);
+end if;
+```
+
+Strictly safe: the guard exists to stop you *attaching* an unreachable venue,
+and an already-attached venue was validated when it was attached, so nothing
+new is disclosed. `create_event` keeps asserting unconditionally.
+
+**2. With that conditional in place, `assert_venue_available` can finally
+refuse archived venues** — `and v.archived_at is null`. This was blocked before
+precisely because unconditional re-assertion would have made editing the title
+of an event already sitting at an archived venue impossible.
+
+**3. Compare `trim(eff_title)` against `trim(ev.title)`, not the raw column.**
+The stored title is only trimmed if it was written by `create_event` or
+`update_event`; `materialize_one_series` copies `event_series.title` verbatim,
+and the check constraints only require `length(trim(title)) > 0`. With an
+untrimmed stored title, an edit that passes `new_title => null` silently
+retitles the row *and* records a false `title` override. `create_event_series`
+below trims on write, which closes it at the source — but the comparison
+should be symmetric anyway, and it is one token.
+
 **Why the series functions call `materialize_one_series`, not the sweep.** Two reasons, both learned the hard way in Task 4. A user-facing request must not materialize every other club's series as a side effect of creating its own. And the sweep deliberately swallows a per-series failure so one club's bad data cannot roll back every tenant — which is exactly the wrong behaviour for the series the host is creating right now, where swallowing the error would leave them an empty series and a success message. `materialize_one_series` lets the error propagate, so the creation rolls back with it.
 
 - [ ] **Step 1: Write the failing tests**
