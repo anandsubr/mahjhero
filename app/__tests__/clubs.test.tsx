@@ -5,14 +5,23 @@ import ClubsScreen from '../clubs/index';
 const push = vi.fn();
 
 vi.mock('expo-router', () => ({
-  Redirect: () => null,
+  Redirect: ({ href }: { href: string }) => (
+    <div data-testid="redirect" data-href={href} />
+  ),
   Link: ({ children }: { children: React.ReactNode }) => children,
   useRouter: () => ({ push, replace: vi.fn() }),
   useLocalSearchParams: () => ({ id: 'club-1' }),
 }));
 
+const useSessionMock = vi.fn(
+  (): { session: { user: { id: string } } | null; loading: boolean } => ({
+    session: { user: { id: 'test-user' } },
+    loading: false,
+  }),
+);
+
 vi.mock('../../lib/session', () => ({
-  useSession: () => ({ session: { user: { id: 'test-user' } }, loading: false }),
+  useSession: () => useSessionMock(),
 }));
 
 const fetchMyClubs = vi.fn();
@@ -76,5 +85,26 @@ describe('roster import', () => {
     fireEvent.click(screen.getByText('Check the file'));
     expect(await screen.findByText(/1 person ready, 1 row skipped/)).toBeTruthy();
     expect(screen.getByText(/Row 3: Not a valid email address/)).toBeTruthy();
+  });
+});
+
+import ClubDetailScreen from '../clubs/[id]/index';
+
+// A guard-ordering regression: the club detail screen used to check
+// `if (loading || !ready) return <spinner>` before `if (!session) return
+// <Redirect>`. `ready` is only set inside an effect gated on a signed-in
+// `userId`, so a signed-out visitor could never make `ready` true and was
+// stuck on the spinner forever instead of being sent to sign in — the same
+// "a guard that can never resolve returns before the guard that would
+// rescue you" defect already fixed once in the notifications screen and
+// once in app/index.tsx's storage race. Invite links point at club pages,
+// so this matters for anyone opening a stale link or an expired session,
+// not just a hypothetical.
+describe('club detail screen', () => {
+  it('redirects to sign-in instead of spinning forever when signed out', async () => {
+    useSessionMock.mockReturnValueOnce({ session: null, loading: false });
+    render(<ClubDetailScreen />);
+    const redirect = await screen.findByTestId('redirect');
+    expect(redirect.getAttribute('data-href')).toBe('/sign-in');
   });
 });

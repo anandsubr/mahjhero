@@ -43,7 +43,7 @@ export default function ClubDetailScreen() {
     };
   }, [userId, id]);
 
-  if (loading || !ready) {
+  if (loading) {
     return (
       <Screen center contentStyle={styles.centered}>
         <ActivityIndicator color={colors.accentColor} />
@@ -52,6 +52,14 @@ export default function ClubDetailScreen() {
   }
 
   if (!session) return <Redirect href="/sign-in" />;
+
+  if (!ready) {
+    return (
+      <Screen center contentStyle={styles.centered}>
+        <ActivityIndicator color={colors.accentColor} />
+      </Screen>
+    );
+  }
 
   if (loadFailed || !club) {
     return (
