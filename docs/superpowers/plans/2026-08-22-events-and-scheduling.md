@@ -2687,6 +2687,37 @@ git commit -m "feat(db): add event and table mutations with per-field override t
 
 **A deviation from the spec, made deliberately.** The spec says the club-timezone reflow skips occurrences that have overridden `starts_at`. That is wrong on reflection and this plan does not implement it that way. A timezone change is a *correction of interpretation* — "our local times were being read in the wrong zone" — not a schedule change. An override records that this week's wall clock differs from the series', not that this week is immune to a correction. So the trigger preserves the club-local wall clock of **every** future non-cancelled event, including hand-set ones and including one-off events with no series at all, by re-resolving the same wall clock in the new zone. Update the spec to match when this task lands.
 
+### The propagation gate, and the Reset action that makes it workable
+
+**Propagation is gated on the value having ACTUALLY CHANGED**, compared against
+the series row as it was before this edit — not on whether the caller supplied
+the parameter. The client sends every field on every save, so gating on
+"supplied" would turn the toggle into a full re-sync, and a host who moved only
+the start time would silently lose a venue change they had made deliberately.
+The spec's rule stands: *fields this edit did not touch keep their overrides.*
+
+That leaves a real gap, and it deserves its own answer rather than an
+overloaded checkbox: under this gate there is no way to pull a customised week
+back onto the series, because the edit screen shows the series' own unchanged
+venue and "did this change?" is false.
+
+So this migration also adds:
+
+```sql
+create function public.reset_event_to_series(target_event uuid)
+returns boolean
+```
+
+It takes one occurrence back to its series in full — title, venue, notes, and
+the instants recomputed from `occurrence_date` plus the series' `start_time`
+resolved in the club's timezone — and clears `overrides` to `'{}'`. It refuses
+a cancelled event and an event with no `series_id`, guards with
+`assert_club_organizer` on the event's own club, takes `for update` on the row
+it rewrites, and is granted to `authenticated`.
+
+Two intentions, two controls: the edit screen's toggle applies **one edit** to
+customised weeks; this undoes **one week's customisation** entirely.
+
 ### Carried in from Task 5's review — three fixes this migration must also make
 
 These are pre-existing, were deliberately not rushed into a fix pass, and land
@@ -3549,7 +3580,9 @@ git commit -m "feat(db): schedule nightly materialization and assert the new gra
 **Interfaces:**
 - Consumes: every function from Tasks 2, 5, and 6, by RPC; `supabase` from `lib/supabase.ts`; `GENERIC_ERROR` from `lib/constants.ts`.
 - Produces, from `lib/venues.ts`: types `Venue`, `VenueMatch`; `searchVenues`, `fetchClubVenues`, `createVenue`, `updateVenue`, `archiveVenue`.
-  Produces, from `lib/events.ts`: types `EventStatus`, `SkillTier`, `SeriesFrequency`, `ClubEvent`, `EventTable`, `EventSeries`, `RecurrenceRule`; pure `nextOccurrences`, `formatEventWhen`, `frequencyLabel`; and `fetchUpcomingEvents`, `fetchEvent`, `fetchEventTables`, `fetchSeries`, `fetchOverriddenOccurrences`, `createEvent`, `updateEvent`, `cancelEvent`, `addEventTable`, `updateEventTable`, `removeEventTable`, `createEventSeries`, `updateEventSeries`, `endEventSeries`.
+  Produces, from `lib/events.ts`: types `EventStatus`, `SkillTier`, `SeriesFrequency`, `ClubEvent`, `EventTable`, `EventSeries`, `RecurrenceRule`; pure `nextOccurrences`, `formatEventWhen`, `frequencyLabel`; and `fetchUpcomingEvents`, `fetchEvent`, `fetchEventTables`, `fetchSeries`, `fetchOverriddenOccurrences`, `createEvent`, `updateEvent`, `cancelEvent`, `addEventTable`, `updateEventTable`, `removeEventTable`, `createEventSeries`, `updateEventSeries`, `endEventSeries`, `resetEventToSeries`.
+
+  **`addEventTable` must not surface a raw `23505`.** Two concurrent adds compute the same next position and the loser hits `unique (event_id, position)`; that is the constraint doing its job, not something to show a host. Map it to a retry or to the generic message.
   Tasks 9–14 consume these.
 
 **Times render in the club's timezone, never the device's.** A member checking Tuesday's game from a hotel in another state must see the time the game actually starts, in the club's terms. `formatEventWhen` takes the club timezone and passes it to `Intl.DateTimeFormat`; nothing here calls `toLocaleString` without one.
@@ -5849,6 +5882,16 @@ git commit -m "feat: add the create-a-game screen with a recurrence preview"
 **What a member sees, and what they do not.** Tables are listed with their tier and seat count. There is **no booking affordance and no "coming soon" badge** — badges like that age badly and seat booking is plan 4, which is next. A member reads the screen and closes it; that is the whole intended interaction for them in this plan.
 
 **Overrides are shown, quietly.** A series-linked event that has been customised says so on the field that was customised — "moved from the usual venue" — because a host looking at a week they changed three weeks ago has no other way to know why it differs, and a host looking at a week they did *not* change should not be told anything.
+
+**Customised occurrences get a Reset control.** When `event.overrides` is
+non-empty, organizers see **"Reset to the series"**, calling
+`resetEventToSeries` — it puts that week's title, venue, notes and time back to
+the series' own and clears its overrides. This is the counterpart to the edit
+screen's toggle, and the reason that toggle can keep the narrow meaning the
+spec gives it: the toggle applies one edit to customised weeks, this undoes a
+week's customisation entirely. Do not render it on a one-off event or on an
+occurrence with no overrides — there is nothing to reset, and offering it would
+imply there is.
 
 - [ ] **Step 1: Build the screen**
 
