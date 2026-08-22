@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(21);
+select plan(28);
 
 -- Structure
 select has_table('public', 'clubs', 'clubs table exists');
@@ -215,6 +215,42 @@ select is(
   'redeeming an invite creates the membership'
 );
 
+-- The granted role is the literal in the function body, never sourced from
+-- the invite row or the caller — the plan's central property. A test that
+-- only checks the row exists would still pass if that literal were 'host'.
+select is(
+  (select role::text from public.club_members
+   where club_id = 'c1c1c1c1-0000-0000-0000-000000000001'
+     and profile_id = 'bbbbbbbb-0000-0000-0000-000000000002'),
+  'member',
+  'the granted membership role is member, not whatever the caller wants'
+);
+
+select is(
+  (select status::text from public.club_members
+   where club_id = 'c1c1c1c1-0000-0000-0000-000000000001'
+     and profile_id = 'bbbbbbbb-0000-0000-0000-000000000002'),
+  'active',
+  'the granted membership is active'
+);
+
+-- Cross-club isolation: redeeming Riverside's invite must not touch Bob's
+-- existing, unrelated membership at Oakfield.
+select is(
+  (select count(*)::int from public.club_members
+   where profile_id = 'bbbbbbbb-0000-0000-0000-000000000002'),
+  2,
+  'Bob now has exactly two memberships: Oakfield plus the new Riverside one'
+);
+
+select is(
+  (select role::text from public.club_members
+   where club_id = 'c2c2c2c2-0000-0000-0000-000000000002'
+     and profile_id = 'bbbbbbbb-0000-0000-0000-000000000002'),
+  'host',
+  'Bob''s own club role is untouched by redeeming an invite elsewhere'
+);
+
 select is(
   public.accept_club_invite('good-token'),
   null,
@@ -225,6 +261,52 @@ select is(
   public.accept_club_invite('stale-token'),
   null,
   'an expired token is refused'
+);
+
+select is(
+  public.accept_club_invite('no-such-token'),
+  null,
+  'a token that was never issued is refused'
+);
+
+-- The three refused attempts above (reuse, expired, unknown) must not have
+-- written anything. This has to run after all three, not right after the
+-- successful redemption above — a write-before-validate regression on a
+-- refused path would otherwise have no assertion standing in front of it.
+select is(
+  (select count(*)::int from public.club_members
+   where club_id = 'c1c1c1c1-0000-0000-0000-000000000001'
+     and profile_id = 'bbbbbbbb-0000-0000-0000-000000000002'),
+  1,
+  'refused redemptions did not write a second membership row'
+);
+
+-- A member who was removed and later re-invited must be reactivated, not
+-- left stranded: club_members.status defaults to active and is_club_member
+-- requires it, so `on conflict do nothing` would leave a removed row
+-- removed, still burn the new invite, and return a club id the client
+-- treats as success while every row in that club stays RLS-invisible.
+set local role postgres;
+update public.club_members set status = 'removed'
+where club_id = 'c1c1c1c1-0000-0000-0000-000000000001'
+  and profile_id = 'bbbbbbbb-0000-0000-0000-000000000002';
+
+insert into public.club_invites (club_id, token, invited_by, expires_at) values
+  ('c1c1c1c1-0000-0000-0000-000000000001', 'reactivation-token',
+   'aaaaaaaa-0000-0000-0000-000000000001', now() + interval '7 days');
+
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "bbbbbbbb-0000-0000-0000-000000000002", "role": "authenticated"}';
+
+select public.accept_club_invite('reactivation-token');
+
+select is(
+  (select status::text from public.club_members
+   where club_id = 'c1c1c1c1-0000-0000-0000-000000000001'
+     and profile_id = 'bbbbbbbb-0000-0000-0000-000000000002'),
+  'active',
+  'a removed member who redeems a fresh invite is reactivated, not stranded'
 );
 
 select * from finish();
