@@ -572,9 +572,19 @@ export default defineConfig({
   },
   expect: {
     toHaveScreenshot: {
-      // Small tolerance for antialiasing differences between machines.
-      // Do not raise this to silence a real diff.
-      maxDiffPixelRatio: 0.01,
+      // An absolute pixel budget, not a ratio.
+      //
+      // A ratio scales with page size and silently swallows small elements:
+      // a 62x34 toggle knob is ~2,100px, which on a 375x812 page is 0.69% —
+      // under a 1% ratio. This suite exists *because* a toggle knob rendered
+      // in the wrong colour escaped every other test, so a threshold that
+      // masks exactly that is worse than useless. A whole-theme accent
+      // mutation was empirically shown to pass at 0.01 on notifications-mobile.
+      //
+      // 120px covers antialiasing jitter between machines while staying far
+      // below any single control. Do not raise it to silence a diff — mask a
+      // genuinely non-deterministic region instead.
+      maxDiffPixels: 120,
     },
   },
 });
@@ -690,7 +700,15 @@ Expected: six PNGs written under `e2e/visual.spec.ts-snapshots/`.
 
 - [ ] **Step 6: Prove the diff catches a real regression**
 
-Change `colors.accentColor` in `lib/theme.ts` to `#00ff00`, run `npx playwright test`, and confirm it fails with pixel diffs on multiple screens. Revert, re-run, confirm green. Record both outputs.
+Two mutations, because they test different things.
+
+**6a — whole-theme change.** Set `colors.accentColor` in `lib/theme.ts` to `#00ff00` and run `npx playwright test`. Expect **all six** to fail. Record the diff-pixel count for each. If any screen passes, the threshold is masking a change that repaints the whole palette — report it rather than accepting it.
+
+**6b — single-element change.** This is the one that matters. Revert 6a, then change only the toggle's *track* colour where `components/Toggle.tsx` renders its "on" state, so exactly one small control differs. Run `npx playwright test -g "notifications"`.
+
+Expect **both notifications baselines to fail**. A 62×34 toggle is roughly 2,100 pixels — comfortably above the 120px budget, but it would sit under a 1% *ratio* on a 375×812 page. This step is what proves the harness catches the defect class it was built for: a toggle knob in the wrong colour escaped every other layer of testing on this project.
+
+Revert, re-run, confirm green. Record all outputs and verify `git diff` is empty.
 
 - [ ] **Step 7: Commit**
 
