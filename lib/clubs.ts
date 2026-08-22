@@ -34,7 +34,14 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const SKILL_LEVELS: SkillLevel[] = ['beginner', 'intermediate', 'advanced'];
 
 /**
- * URL-safe form of a club name. May return '' — callers must handle that.
+ * Client-side precheck only — "does this name have at least one letter or
+ * number" — not the URL a club actually lives at. The stored slug is
+ * generated server-side in `create_club` with a different punctuation rule
+ * (it turns punctuation into '-' rather than stripping it) plus a random
+ * suffix, so for "Nana's Tiles!" this returns "nanas-tiles" while the row
+ * that gets created has a slug like "nana-s-tiles-<hash>". Harmless for
+ * `createClub`'s emptiness check, its only caller, but do not use this to
+ * predict or display a club's real URL.
  *
  * Punctuation like apostrophes is stripped outright rather than turned into a
  * separator ("Nana's Tiles" -> "nanas-tiles", not "nana-s-tiles"); whitespace
@@ -225,19 +232,24 @@ export async function createClub(
   }
 }
 
+/**
+ * The token is never chosen client-side: it is a bearer credential — whoever
+ * holds it can join the club via `acceptInvite` — so `club_invites.token`
+ * defaults to `encode(gen_random_bytes(24), 'hex')` in the database. Sending
+ * one from here would mean trusting `Math.random()`, which is not a CSPRNG,
+ * for a security token. `.select('token')` reads back what the default
+ * actually generated.
+ */
 export async function createInvite(
   clubId: string,
   userId: string,
   target?: { email: string; display_name: string; skill_level: SkillLevel | null },
 ): Promise<{ token: string | null; error: string | null }> {
   try {
-    const token = `${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
-
     const { data, error } = await supabase
       .from('club_invites')
       .insert({
         club_id: clubId,
-        token,
         invited_by: userId,
         email: target?.email ?? null,
         display_name: target?.display_name ?? null,
@@ -289,6 +301,21 @@ export async function acceptInvite(
   }
 }
 
+/**
+ * Deliberately all-or-nothing, not partial-success-with-a-report.
+ *
+ * `rows` has already passed through `parseRoster`, so every email is
+ * regex-valid and every skill level is one of the three enum values or null;
+ * tokens are no longer client-supplied (see `createInvite`), so there is no
+ * client-chosen value that could collide or fail a check. That leaves no
+ * plausible cause for one row in the batch to fail while its siblings
+ * succeed — the remaining failure modes (the caller is not host/co-organizer
+ * and the `with check` on `club_invites` rejects the insert, or the
+ * connection drops mid-request) both fail the whole statement identically
+ * regardless of which row triggered them. So a single `{ created, error }`
+ * is the honest shape here: unlike `parseRoster`, there is nothing per-row
+ * left to report.
+ */
 export async function importRoster(
   clubId: string,
   userId: string,
@@ -297,7 +324,6 @@ export async function importRoster(
   try {
     const invites = rows.map((row) => ({
       club_id: clubId,
-      token: `${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`,
       invited_by: userId,
       email: row.email,
       display_name: row.display_name,

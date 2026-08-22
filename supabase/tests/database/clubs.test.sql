@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(15);
+select plan(17);
 
 -- Structure
 select has_table('public', 'clubs', 'clubs table exists');
@@ -153,6 +153,38 @@ select is(
    where id = (select id from created_club)),
   1,
   'the creator can read the club they just made'
+);
+
+-- Server-generated invite tokens: the client never supplies one (see
+-- lib/clubs.ts createInvite / importRoster and the
+-- server_generated_invite_tokens migration). Still acting as Alice, host of
+-- her own club, so the insert clears club_invites_insert_organizer.
+create temporary table invite_tokens on commit drop as
+  with i1 as (
+    insert into public.club_invites (club_id, invited_by)
+    values ('c1c1c1c1-0000-0000-0000-000000000001',
+            'aaaaaaaa-0000-0000-0000-000000000001')
+    returning token
+  ), i2 as (
+    insert into public.club_invites (club_id, invited_by)
+    values ('c1c1c1c1-0000-0000-0000-000000000001',
+            'aaaaaaaa-0000-0000-0000-000000000001')
+    returning token
+  )
+  select token from i1
+  union all
+  select token from i2;
+
+select is(
+  (select count(*)::int from invite_tokens where token is null),
+  0,
+  'an invite inserted without a token gets one from the column default'
+);
+
+select is(
+  (select count(distinct token)::int from invite_tokens),
+  2,
+  'two invites inserted without a token in the same transaction do not collide'
 );
 
 select * from finish();
