@@ -55,7 +55,7 @@ migrate or throw away.
 | Venue | Required on every event; defaulted from the series | A club may play in several places, and which place is not optional information |
 | Venue storage | A `venues` master row referenced by id, not free text | The same community centre hosting three clubs should be one thing, not three spellings |
 | Venue scope | Global rows; `visibility` defaults to `club` | A member's home must never land in a directory built for public discovery |
-| Venue ownership | `owner_club_id`; only that club's organizers may edit | Answers "Club A renames the hall Club B plays in" structurally rather than in a policy written later |
+| Venue ownership | `added_by_club_id`; only that club's organizers may edit | Answers "Club A renames the hall Club B plays in" structurally rather than in a policy written later |
 | Writes | No client writes to any of the four tables; `security definer` functions only | The lesson of `club_members_insert_self` (see plan 2) |
 
 ---
@@ -82,7 +82,7 @@ can be `mixed` and a person cannot.
 | `name` | `not null`, non-empty by check |
 | `address_line`, `locality`, `region`, `postal_code` | all nullable text |
 | `visibility` | `venue_visibility not null default 'club'` |
-| `owner_club_id` | `not null → clubs(id)` — the club that created it |
+| `added_by_club_id` | `not null → clubs(id)` — the club that created it |
 | `archived_at` | `timestamptz null` — hidden from typeahead, still resolves on past events |
 | `created_by`, `created_at` | |
 
@@ -92,10 +92,26 @@ is played in members' homes, and a venue master built with future public discove
 in mind must not quietly publish "Marie's place, 42 Elm Street" as a side effect of
 scheduling Tuesday's game.
 
-**`owner_club_id` is the edit boundary.** Only organizers of the owning club may
-edit or archive a venue, including a public one. Without it, the first host to
-misspell a shared community centre's name gets to rename it for every other club
+**`added_by_club_id` is the edit boundary.** Only organizers of the club that added
+a venue may edit or archive it, including a public one. Without it, the first host
+to misspell a shared community centre's name gets to rename it for every other club
 using it, and there is no principled way to say who wins.
+
+The column is named for what it records — who typed it in — rather than
+`owner_club_id`, because that club is a **steward, not an owner**. When venue
+claiming arrives, authority transfers rather than accumulating: a claimed venue is
+editable by its claimant and **no longer** by the club that added it, since the
+claimant is the authoritative source for their own name and address. Concretely,
+`update_venue`'s guard goes from `is_club_organizer(added_by_club_id)` to
+`case when claimed then is_venue_claimant(id) else is_club_organizer(added_by_club_id) end`
+— a change to one function body, with no data migration and no policy rewrite. The
+expensive part of claiming was never the schema; it is proving that whoever clicks
+"this is my venue" actually runs the hall.
+
+One consequence to accept with open eyes: after a claim, a venue's name can change
+under a club that has been using it for years, including on events already past.
+That is correct — it is the venue's own listing — and it is why events reference a
+venue rather than copying its name.
 
 **Venues are never deleted, only archived.** Past events point at them, and a club's
 history should not develop holes because a hall closed.
@@ -330,9 +346,9 @@ Functions: `create_event`, `update_event`, `cancel_event`, `create_event_series`
 `create_venue`, `update_venue`, `archive_venue`, `search_venues`.
 
 **`venues` is the exception to the uniform club-scoped policy, and the one to read
-twice.** Its select policy is `visibility = 'public' or is_club_member(owner_club_id)`
+twice.** Its select policy is `visibility = 'public' or is_club_member(added_by_club_id)`
 — the first cross-club read in this schema. Its write functions check
-`is_club_organizer(owner_club_id)`, *not* merely that the caller organizes some
+`is_club_organizer(added_by_club_id)`, *not* merely that the caller organizes some
 club. Every RLS bug this project has had has been a tenancy bug, and this is the
 table where the next one would live.
 
