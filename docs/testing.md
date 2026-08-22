@@ -351,16 +351,40 @@ local stack and `supabase db push` both connect as).
 
 That round-trip does **not** work as `cli_login_postgres`, the restricted
 role `supabase test db --linked` provisions for pgTAP runs against the hosted
-project (see `supabase/tests/database/README.md`). It can create the
-extension and read `cron.job`, but scheduling fails with `permission denied
-for schema cron` — that role has no `USAGE` on the schema the extension owns.
-This is the same class of problem as the missing `USAGE` on `extensions`
-documented in that README, and is handled the same way: not fixed with a
-grant, because `cli_login_postgres` is deliberately narrow and widening it is
-not a trade worth making for test convenience. It does not block anything —
-migrations apply as `postgres`, which owns the `cron` schema outright as the
-role that created it, so the job scheduled in a later migration needs no
-extra grant to run.
+project (see `supabase/tests/database/README.md`). It has no `USAGE` on the
+`cron` schema the extension owns —
+`has_schema_privilege(current_user, 'cron', 'USAGE')` returns `false` — and
+scheduling fails with `permission denied for schema cron`, the same error a
+plain `select count(*) from cron.job` gets. pgTAP's own
+`has_table('cron', 'job', ...)` still passes for this role, because that
+check reads `pg_class`/`pg_namespace` directly, which every role can see
+regardless of schema `USAGE`: the row is visible in the catalog even though
+the role cannot query the table itself. An earlier draft of this section
+blurred those two facts into "can... read `cron.job`"; it cannot. The
+distinction was confirmed with a temporary pgTAP probe run via
+`npx supabase test db --linked supabase/tests/database/portable`, deleted
+after use — not checked in, since it exists to answer this one question, not
+to run on every suite invocation.
+
+This is not the same situation as the missing `USAGE` on `extensions`
+documented in that README, and does not call for the same fix. That grant was
+load-bearing: without it, `plan()` itself did not resolve, so every file in
+`portable/` failed before a single assertion ran — the whole hosted suite was
+dead without it. A `cron` grant would not do that; it would upgrade one
+already-passing suite by one convenience assertion, nothing more. It also
+would not change what actually schedules the job: `supabase db push` applies
+migrations as `postgres`, which owns the `cron` schema outright as the role
+that created it, so `cron.schedule` in a later migration needs no grant on
+`cli_login_postgres` to run. The precedent this follows instead is the `auth`
+schema one in `supabase/tests/database/README.md`: migrations are
+forward-only and apply to every environment, so a grant added purely for test
+convenience ships permanently to production, whatever it grants. There the
+stakes were high — `INSERT` on `auth.users` would be a writable path into the
+real user table. Here the stakes are much lower — `USAGE` on `cron` only
+exposes visibility into a job schedule — but the same principle applies at a
+smaller scale: a grant that exists only to make one optional assertion pass
+in an otherwise-green suite is not worth adding to every environment forever,
+so this gap stays as a documented limitation rather than a grant.
 
 The job is `materialize-event-series`, defined in
 `<timestamp>_schedule_materialize_event_series.sql`. It calls
