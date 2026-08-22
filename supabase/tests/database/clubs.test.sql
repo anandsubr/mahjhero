@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(9);
+select plan(15);
 
 -- Structure
 select has_table('public', 'clubs', 'clubs table exists');
@@ -76,6 +76,83 @@ select throws_ok(
   '42501',
   null,
   'a member cannot change roles directly'
+);
+
+-- ---------------------------------------------------------------------------
+-- WRITE isolation. Read isolation above is only half the property, and the
+-- missing half is where the real breach lives: an earlier version of this
+-- schema had `with check (auth.uid() = profile_id)` on club_members, which
+-- constrains who the row is about and nothing about which club or what role.
+-- Any authenticated user holding a club's uuid could insert themselves into
+-- it as host. Every assertion below would have caught that; none of the read
+-- assertions did.
+-- ---------------------------------------------------------------------------
+
+select throws_ok(
+  $$insert into public.club_members (club_id, profile_id, role)
+    values ('c2c2c2c2-0000-0000-0000-000000000002',
+            'aaaaaaaa-0000-0000-0000-000000000001', 'host')$$,
+  '42501',
+  null,
+  'a member cannot insert themselves into another club'
+);
+
+select throws_ok(
+  $$insert into public.club_members (club_id, profile_id, role)
+    values ('c1c1c1c1-0000-0000-0000-000000000001',
+            'aaaaaaaa-0000-0000-0000-000000000001', 'host')$$,
+  '42501',
+  null,
+  'a member cannot insert a membership even in their own club'
+);
+
+select throws_ok(
+  $$insert into public.club_invites (club_id, token, invited_by)
+    values ('c2c2c2c2-0000-0000-0000-000000000002', 'sneaky-token',
+            'aaaaaaaa-0000-0000-0000-000000000001')$$,
+  '42501',
+  null,
+  'a member cannot create an invite to another club'
+);
+
+with attempted as (
+  update public.clubs set name = 'Hijacked'
+  where id = 'c2c2c2c2-0000-0000-0000-000000000002'
+  returning 1
+)
+select is(
+  (select count(*)::int from attempted),
+  0,
+  'a member cannot update another club'
+);
+
+-- create_club is the only way a membership is created, and it seats the
+-- caller as host in the same transaction — so a club can never exist with
+-- no host, which would make it unreachable by every membership-scoped policy.
+--
+-- The call has to be its own statement. Calling create_club() inside the
+-- WHERE clause of a query against club_members cannot work: the query's
+-- snapshot is taken before the volatile function runs, so it can never see
+-- the row that function just inserted. That is a command-visibility rule,
+-- not an RLS effect — it fails the same way as superuser.
+create temporary table created_club on commit drop as
+  select public.create_club('Test Club', 'Tuesdays') as id;
+
+select is(
+  (select count(*)::int
+   from public.club_members
+   where club_id = (select id from created_club)
+     and profile_id = 'aaaaaaaa-0000-0000-0000-000000000001'
+     and role = 'host'),
+  1,
+  'create_club seats the caller as host'
+);
+
+select is(
+  (select count(*)::int from public.clubs
+   where id = (select id from created_club)),
+  1,
+  'the creator can read the club they just made'
 );
 
 select * from finish();
