@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
 
 export default defineConfig({
   define: {
@@ -40,6 +40,14 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./vitest.setup.ts'],
+    // e2e/visual.spec.ts is a Playwright spec (run via `npm run test:visual`,
+    // not Vitest) but matches Vitest's default `*.spec.ts` include glob.
+    // Without this exclude, Vitest tries to collect it, calling
+    // Playwright's `test.describe()` outside a Playwright test run and
+    // failing the whole suite even though every real Vitest test passes.
+    // Spread the built-in defaults rather than replacing them outright —
+    // `test.exclude` overrides Vitest's default array entirely otherwise.
+    exclude: [...configDefaults.exclude, 'e2e/**'],
     env: {
       // Placeholder values so lib/supabase.ts's env-var guard is satisfied
       // when it is imported transitively during unit tests. Real values

@@ -29,10 +29,12 @@
     "react-native-web": "^0.21.2"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.2",
     "@types/react": "~19.2.2",
     "jsdom": "^30.0.1",
+    "serve": "^14.2.6",
     "typescript": "~6.0.3",
     "vitest": "^4.1.10"
   },
@@ -42,7 +44,8 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "test": "TZ=America/New_York vitest run",
-    "test:contract": "TZ=America/New_York REQUIRE_LOCAL_SUPABASE=1 vitest run lib/schema-contract.test.ts"
+    "test:contract": "TZ=America/New_York REQUIRE_LOCAL_SUPABASE=1 vitest run lib/schema-contract.test.ts",
+    "test:visual": "playwright test"
   },
   "private": true
 }
