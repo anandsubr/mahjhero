@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(33);
+select plan(40);
 
 select has_table('public', 'event_series', 'event_series table exists');
 select has_table('public', 'events', 'events table exists');
@@ -398,6 +398,126 @@ select is(
                        'e1e1e1e1-0000-0000-0000-000000000002')),
   2,
   'an organizer sees tables for both the draft and the published event'
+);
+
+-- ---------------------------------------------------------------------
+-- Fix pass 2. A third club, built from scratch, because the club-cascade
+-- assertions below destroy everything they touch and club 1 is entangled
+-- with the fixtures above -- and because club 1 stewards the venue, whose
+-- `added_by_club_id` is ON DELETE NO ACTION and would block the delete for
+-- an unrelated reason. Lakeside borrows The Hall instead of adding one.
+-- ---------------------------------------------------------------------
+set local role postgres;
+
+insert into public.clubs (id, name, slug, timezone, created_by) values
+  ('c3c3c3c3-0000-0000-0000-000000000003', 'Lakeside', 'lakeside',
+   'America/New_York', 'aaaaaaaa-0000-0000-0000-000000000001');
+
+insert into public.club_members (club_id, profile_id, role) values
+  ('c3c3c3c3-0000-0000-0000-000000000003',
+   'aaaaaaaa-0000-0000-0000-000000000001', 'host');
+
+insert into public.event_series
+  (id, club_id, title, venue_id, frequency, weekday, start_time, starts_on,
+   created_by)
+values
+  ('55555555-0000-0000-0000-000000000002',
+   'c3c3c3c3-0000-0000-0000-000000000003', 'Lakeside Thursday',
+   '11111111-0000-0000-0000-000000000001', 'weekly', 4, '19:00',
+   '2026-10-01', 'aaaaaaaa-0000-0000-0000-000000000001');
+
+insert into public.events
+  (id, club_id, series_id, title, venue_id, starts_at, ends_at,
+   occurrence_date, created_by)
+values
+  ('e1e1e1e1-0000-0000-0000-000000000005',
+   'c3c3c3c3-0000-0000-0000-000000000003',
+   '55555555-0000-0000-0000-000000000002',
+   'Lakeside occurrence', '11111111-0000-0000-0000-000000000001',
+   '2026-10-01 23:00+00', '2026-10-02 02:00+00', '2026-10-01',
+   'aaaaaaaa-0000-0000-0000-000000000001');
+
+insert into public.event_tables (event_id, club_id, label, position) values
+  ('e1e1e1e1-0000-0000-0000-000000000005',
+   'c3c3c3c3-0000-0000-0000-000000000003', 'Lakeside table', 1);
+
+-- ---------------------------------------------------------------------
+-- Important (fix pass 2): the events -> event_series edge is composite, so
+-- an occurrence cannot point at another club's series. Deleting that series
+-- would otherwise have rewritten the foreign club's row through a
+-- `security definer` trigger.
+-- ---------------------------------------------------------------------
+select throws_ok(
+  $$insert into public.events
+      (club_id, series_id, title, venue_id, starts_at, ends_at,
+       occurrence_date, created_by)
+    values ('c1c1c1c1-0000-0000-0000-000000000001',
+      '55555555-0000-0000-0000-000000000002', 'Smuggled occurrence',
+      '11111111-0000-0000-0000-000000000001',
+      '2026-10-08 23:00+00', '2026-10-09 02:00+00', '2026-10-08',
+      'aaaaaaaa-0000-0000-0000-000000000001')$$,
+  '23503',
+  null,
+  'an occurrence cannot reference a series belonging to another club'
+);
+
+-- ---------------------------------------------------------------------
+-- Minor (fix pass 1, untested until now): `overrides` must be a FLAT array.
+-- The first assertion is what makes the second one mean anything -- a
+-- two-dimensional array passes the containment half of the check, so only
+-- the array_ndims half can be rejecting it.
+-- ---------------------------------------------------------------------
+select ok(
+  array[array['title'], array['notes']]
+    <@ array['title', 'venue_id', 'notes', 'starts_at'],
+  'a two-dimensional overrides array satisfies the containment test on its own'
+);
+
+select throws_ok(
+  $$insert into public.events (club_id, title, venue_id, starts_at, ends_at,
+      overrides, created_by)
+    values ('c3c3c3c3-0000-0000-0000-000000000003', 'Nested override',
+      '11111111-0000-0000-0000-000000000001',
+      '2026-10-08 23:00+00', '2026-10-09 02:00+00',
+      array[array['title'], array['notes']],
+      'aaaaaaaa-0000-0000-0000-000000000001')$$,
+  '23514',
+  null,
+  'a multi-dimensional overrides array is rejected by the shape rule'
+);
+
+-- ---------------------------------------------------------------------
+-- Critical (fix pass 2): the hole the club-cascade regression fell through.
+-- `delete from clubs` cascades to event_series first, firing the detach
+-- trigger, whose UPDATE re-validated events_club_id_fkey against a clubs
+-- row that was already gone. Nothing asserted this path, so 139 passing
+-- tests said nothing about it.
+-- ---------------------------------------------------------------------
+select lives_ok(
+  $$delete from public.clubs
+    where id = 'c3c3c3c3-0000-0000-0000-000000000003'$$,
+  'a club with a series, its occurrences and their tables can be deleted'
+);
+
+select is(
+  (select count(*)::int from public.event_series
+   where club_id = 'c3c3c3c3-0000-0000-0000-000000000003'),
+  0,
+  'deleting the club leaves no event_series rows behind'
+);
+
+select is(
+  (select count(*)::int from public.events
+   where club_id = 'c3c3c3c3-0000-0000-0000-000000000003'),
+  0,
+  'deleting the club leaves no events rows behind'
+);
+
+select is(
+  (select count(*)::int from public.event_tables
+   where club_id = 'c3c3c3c3-0000-0000-0000-000000000003'),
+  0,
+  'deleting the club leaves no event_tables rows behind'
 );
 
 select * from finish();
