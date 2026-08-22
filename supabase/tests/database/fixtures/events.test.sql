@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(20);
+select plan(33);
 
 select has_table('public', 'event_series', 'event_series table exists');
 select has_table('public', 'events', 'events table exists');
@@ -194,6 +194,210 @@ select ok(
 select ok(
   not has_table_privilege('authenticated', 'public.events', 'TRUNCATE'),
   'authenticated cannot TRUNCATE events'
+);
+
+-- ---------------------------------------------------------------------
+-- event_series: the checks that this fixture never exercised (fix pass 1).
+-- Everything below runs as the table owner unless a role switch says
+-- otherwise -- there is no insert policy on any of these tables, so
+-- fixture writes always go in as postgres.
+-- ---------------------------------------------------------------------
+set local role postgres;
+
+select throws_ok(
+  $$insert into public.event_series
+    (club_id, title, venue_id, frequency, weekday, start_time, starts_on,
+     created_by)
+    values ('c1c1c1c1-0000-0000-0000-000000000001', 'Bad monthly',
+      '11111111-0000-0000-0000-000000000001', 'monthly_nth_weekday', 2,
+      '19:00', '2026-09-01', 'aaaaaaaa-0000-0000-0000-000000000001')$$,
+  '23514',
+  null,
+  'monthly_nth_weekday requires nth_week to be set'
+);
+
+select throws_ok(
+  $$insert into public.event_series
+    (club_id, title, venue_id, frequency, weekday, nth_week, start_time,
+     starts_on, created_by)
+    values ('c1c1c1c1-0000-0000-0000-000000000001', 'Bad weekly',
+      '11111111-0000-0000-0000-000000000001', 'weekly', 2, 2,
+      '19:00', '2026-09-01', 'aaaaaaaa-0000-0000-0000-000000000001')$$,
+  '23514',
+  null,
+  'nth_week must stay null when frequency is not monthly_nth_weekday'
+);
+
+select throws_ok(
+  $$insert into public.event_series
+    (club_id, title, venue_id, frequency, weekday, start_time, starts_on,
+     ends_on, created_by)
+    values ('c1c1c1c1-0000-0000-0000-000000000001', 'Backwards series',
+      '11111111-0000-0000-0000-000000000001', 'weekly', 2, '19:00',
+      '2026-09-08', '2026-09-01', 'aaaaaaaa-0000-0000-0000-000000000001')$$,
+  '23514',
+  null,
+  'a series cannot end before it starts'
+);
+
+-- ---------------------------------------------------------------------
+-- The partial unique index that makes materialization idempotent.
+-- ---------------------------------------------------------------------
+insert into public.event_series
+  (id, club_id, title, venue_id, frequency, weekday, start_time, starts_on,
+   created_by)
+values
+  ('55555555-0000-0000-0000-000000000001',
+   'c1c1c1c1-0000-0000-0000-000000000001', 'Weekly Tuesday',
+   '11111111-0000-0000-0000-000000000001', 'weekly', 2, '19:00',
+   '2026-09-01', 'aaaaaaaa-0000-0000-0000-000000000001');
+
+insert into public.events
+  (id, club_id, series_id, title, venue_id, starts_at, ends_at,
+   occurrence_date, created_by)
+values
+  ('e1e1e1e1-0000-0000-0000-000000000003',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   '55555555-0000-0000-0000-000000000001',
+   'Materialized Tuesday', '11111111-0000-0000-0000-000000000001',
+   '2026-09-08 23:00+00', '2026-09-09 02:00+00', '2026-09-08',
+   'aaaaaaaa-0000-0000-0000-000000000001');
+
+select throws_ok(
+  $$insert into public.events
+    (club_id, series_id, title, venue_id, starts_at, ends_at,
+     occurrence_date, created_by)
+    values ('c1c1c1c1-0000-0000-0000-000000000001',
+      '55555555-0000-0000-0000-000000000001', 'Duplicate occurrence',
+      '11111111-0000-0000-0000-000000000001',
+      '2026-09-08 23:00+00', '2026-09-09 02:00+00', '2026-09-08',
+      'aaaaaaaa-0000-0000-0000-000000000001')$$,
+  '23505',
+  null,
+  'two occurrences of the same series on the same date are rejected'
+);
+
+select lives_ok(
+  $$insert into public.events (club_id, title, venue_id, starts_at, ends_at,
+      created_by)
+    values
+      ('c1c1c1c1-0000-0000-0000-000000000001', 'One-off A',
+        '11111111-0000-0000-0000-000000000001',
+        '2026-09-20 23:00+00', '2026-09-21 02:00+00',
+        'aaaaaaaa-0000-0000-0000-000000000001'),
+      ('c1c1c1c1-0000-0000-0000-000000000001', 'One-off B',
+        '11111111-0000-0000-0000-000000000001',
+        '2026-09-20 23:00+00', '2026-09-21 02:00+00',
+        'aaaaaaaa-0000-0000-0000-000000000001')$$,
+  'two one-off events (series_id null, occurrence_date null) do not collide on the partial unique index'
+);
+
+-- ---------------------------------------------------------------------
+-- Critical 1 (fix pass 1): deleting a series must not orphan the
+-- occurrence-requires-series check. Occurrences survive as one-offs.
+-- ---------------------------------------------------------------------
+select lives_ok(
+  $$delete from public.event_series
+    where id = '55555555-0000-0000-0000-000000000001'$$,
+  'a series with a materialized occurrence can be deleted'
+);
+
+select is(
+  (select count(*)::int from public.events
+   where id = 'e1e1e1e1-0000-0000-0000-000000000003'
+     and series_id is null
+     and occurrence_date is null
+     and title = 'Materialized Tuesday'
+     and starts_at = '2026-09-08 23:00+00'::timestamptz),
+  1,
+  'the occurrence survives its deleted series with series_id and occurrence_date cleared, title and starts_at intact'
+);
+
+-- ---------------------------------------------------------------------
+-- The composite FK on event_tables holds on UPDATE, not only INSERT.
+-- ---------------------------------------------------------------------
+select throws_ok(
+  $$update public.event_tables set club_id = 'c2c2c2c2-0000-0000-0000-000000000002'
+    where event_id = 'e1e1e1e1-0000-0000-0000-000000000001'
+      and position = 1$$,
+  '23503',
+  null,
+  'changing a table''s club_id alone breaks the composite foreign key'
+);
+
+select throws_ok(
+  $$update public.events set club_id = 'c2c2c2c2-0000-0000-0000-000000000002'
+    where id = 'e1e1e1e1-0000-0000-0000-000000000001'$$,
+  '23503',
+  null,
+  'changing an event''s club_id while its tables still reference the old club is rejected'
+);
+
+-- ---------------------------------------------------------------------
+-- A plain member can see a cancelled event -- the policy comment says so;
+-- nothing tested it until now.
+-- ---------------------------------------------------------------------
+insert into public.events
+  (id, club_id, title, venue_id, starts_at, ends_at, status, created_by)
+values
+  ('e1e1e1e1-0000-0000-0000-000000000004',
+   'c1c1c1c1-0000-0000-0000-000000000001', 'Cancelled game',
+   '11111111-0000-0000-0000-000000000001',
+   '2026-09-22 23:00+00', '2026-09-23 02:00+00', 'cancelled',
+   'aaaaaaaa-0000-0000-0000-000000000001');
+
+-- A table on the still-draft event, to prove Important 2's fix from both
+-- roles below.
+insert into public.event_tables (event_id, club_id, label, position) values
+  ('e1e1e1e1-0000-0000-0000-000000000002',
+   'c1c1c1c1-0000-0000-0000-000000000001', 'Draft table', 1);
+
+-- Alice was demoted to a plain member earlier in this file and stays that
+-- way for this block.
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "aaaaaaaa-0000-0000-0000-000000000001", "role": "authenticated"}';
+
+select is(
+  (select count(*)::int from public.events
+   where id = 'e1e1e1e1-0000-0000-0000-000000000004'),
+  1,
+  'a plain member can see a cancelled event'
+);
+
+-- ---------------------------------------------------------------------
+-- Important 2 (fix pass 1): event_tables visibility now follows its
+-- event's own RLS instead of duplicating the draft carve-out.
+-- ---------------------------------------------------------------------
+select is(
+  (select count(*)::int from public.event_tables
+   where event_id = 'e1e1e1e1-0000-0000-0000-000000000002'),
+  0,
+  'a plain member sees no rows for a draft event''s tables'
+);
+
+select is(
+  (select count(*)::int from public.event_tables
+   where event_id = 'e1e1e1e1-0000-0000-0000-000000000001'),
+  1,
+  'a plain member still sees rows for a published event''s tables'
+);
+
+-- Promote Alice back to organizer to check the other side of the fix.
+set local role postgres;
+update public.club_members set role = 'host'
+  where profile_id = 'aaaaaaaa-0000-0000-0000-000000000001';
+
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "aaaaaaaa-0000-0000-0000-000000000001", "role": "authenticated"}';
+
+select is(
+  (select count(*)::int from public.event_tables
+   where event_id in ('e1e1e1e1-0000-0000-0000-000000000001',
+                       'e1e1e1e1-0000-0000-0000-000000000002')),
+  2,
+  'an organizer sees tables for both the draft and the published event'
 );
 
 select * from finish();
