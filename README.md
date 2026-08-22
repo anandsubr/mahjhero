@@ -52,6 +52,12 @@ The organizing principle is that the database owns authorization and capacity, n
 app: RLS for tenant isolation, and a transactional Postgres function for every seat
 allocation.
 
+## Tests
+
+Five layers — logic, schema contract, database, component, and visual
+regression. See [docs/testing.md](docs/testing.md) for what each one covers,
+what it is blind to, and how to run them.
+
 ## Before building further
 
 Three open items, recorded here so they aren't lost:
