@@ -198,8 +198,7 @@ select lives_ok(
       null,
       '11111111-0000-0000-0000-000000000002',
       'Cake this week',
-      ((current_date + 3) + time '18:00') at time zone 'America/New_York',
-      ((current_date + 3) + time '21:00') at time zone 'America/New_York')$$,
+      null, '18:00', 180)$$,
   'one week is customised: venue, notes and time'
 );
 
@@ -214,7 +213,7 @@ select results_eq(
 select lives_ok(
   $$select public.update_event(
       (select id from public.events where occurrence_date = current_date + 24),
-      null, '11111111-0000-0000-0000-000000000002', null, null, null)$$,
+      null, '11111111-0000-0000-0000-000000000002', null, null, null, null)$$,
   'another week is moved to a different venue, and nothing else'
 );
 
@@ -618,9 +617,7 @@ set local request.jwt.claims =
 select lives_ok(
   $$select public.update_event(
       (select id from public.events where occurrence_date = current_date + 31),
-      null, null, null,
-      ((current_date + 31) + time '16:15') at time zone 'America/New_York',
-      ((current_date + 31) + time '19:15') at time zone 'America/New_York')$$,
+      null, null, null, null, '16:15', 180)$$,
   'one live future week has its time hand-set, just before the correction'
 );
 

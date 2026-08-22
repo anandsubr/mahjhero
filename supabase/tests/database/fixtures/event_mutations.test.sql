@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(53);
+select plan(72);
 
 insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-000000000001', 'alice@example.com'),
@@ -57,7 +57,7 @@ select lives_ok(
   $$select public.create_event(
       'c1c1c1c1-0000-0000-0000-000000000001', 'Tuesday game',
       '11111111-0000-0000-0000-000000000001', '',
-      '2027-09-07 23:00+00', '2027-09-08 02:00+00', 3)$$,
+      '2027-09-07', '19:00', 180, 3)$$,
   'an organizer can create an event'
 );
 
@@ -92,7 +92,7 @@ select throws_ok(
   $$select public.create_event(
       'c1c1c1c1-0000-0000-0000-000000000001', 'Smuggled venue',
       '11111111-0000-0000-0000-000000000009', '',
-      '2027-09-07 23:00+00', '2027-09-08 02:00+00', 1)$$,
+      '2027-09-07', '19:00', 180, 1)$$,
   '42501',
   null,
   'an organizer cannot attach another club''s private venue'
@@ -105,7 +105,7 @@ select lives_ok(
   $$select public.create_event(
       'c1c1c1c1-0000-0000-0000-000000000001', 'Away game',
       '11111111-0000-0000-0000-000000000003', '',
-      '2027-09-14 23:00+00', '2027-09-15 02:00+00', 1)$$,
+      '2027-09-14', '19:00', 180, 1)$$,
   'an organizer can book another club''s public venue'
 );
 
@@ -114,7 +114,7 @@ select throws_ok(
   $$select public.create_event(
       'c1c1c1c1-0000-0000-0000-000000000001', 'In the old hall',
       '11111111-0000-0000-0000-000000000004', '',
-      '2027-09-14 23:00+00', '2027-09-15 02:00+00', 1)$$,
+      '2027-09-14', '19:00', 180, 1)$$,
   '42501',
   null,
   'an organizer cannot book their own club''s archived venue'
@@ -128,7 +128,7 @@ select throws_ok(
   $$select public.create_event(
       'c1c1c1c1-0000-0000-0000-000000000001', 'Member''s event',
       '11111111-0000-0000-0000-000000000001', '',
-      '2027-09-07 23:00+00', '2027-09-08 02:00+00', 1)$$,
+      '2027-09-07', '19:00', 180, 1)$$,
   '42501',
   null,
   'a plain member cannot create an event'
@@ -142,10 +142,135 @@ select throws_ok(
   $$select public.create_event(
       'c1c1c1c1-0000-0000-0000-000000000001', 'Bob''s intrusion',
       '11111111-0000-0000-0000-000000000001', '',
-      '2027-09-07 23:00+00', '2027-09-08 02:00+00', 1)$$,
+      '2027-09-07', '19:00', 180, 1)$$,
   '42501',
   null,
   'a host of another club cannot create an event here'
+);
+
+-- ---------------------------------------------------------------------
+-- The instant itself, computed in Postgres from a club-local calendar date
+-- and a wall-clock time (20260823070000). Riverside is America/New_York.
+--
+-- Nothing above pins a single stored timestamp: every creation assertion is
+-- a lives_ok or a throws_ok, so `at time zone club_tz` could be dropped from
+-- create_event entirely -- storing the naive local timestamp as though it
+-- were UTC -- and this file would stay green. That is the shape of the bug
+-- this migration exists to remove, so it gets assertions on both sides of
+-- both 2027 US transitions: the same dates event_recurrence.test.sql
+-- already pins for the series path, because both paths now run the same
+-- expression.
+-- ---------------------------------------------------------------------
+set local request.jwt.claims =
+  '{"sub": "aaaaaaaa-0000-0000-0000-000000000001", "role": "authenticated"}';
+
+select is(
+  (select starts_at from public.events where title = 'Tuesday game'),
+  timestamptz '2027-09-07 23:00+00',
+  '19:00 on 2027-09-07 in an America/New_York club is 23:00Z (EDT, UTC-4)'
+);
+
+select is(
+  (select ends_at from public.events where title = 'Tuesday game'),
+  timestamptz '2027-09-08 02:00+00',
+  'and 180 minutes of duration ends at 02:00Z the next day'
+);
+
+-- Setup, not claims: what is asserted is where each of these lands.
+do $dst$
+begin
+  perform public.create_event(
+    'c1c1c1c1-0000-0000-0000-000000000001', 'Night before spring forward',
+    '11111111-0000-0000-0000-000000000001', '', '2027-03-13', '19:00', 180, 1);
+  perform public.create_event(
+    'c1c1c1c1-0000-0000-0000-000000000001', 'Spring forward night',
+    '11111111-0000-0000-0000-000000000001', '', '2027-03-14', '19:00', 180, 1);
+  perform public.create_event(
+    'c1c1c1c1-0000-0000-0000-000000000001', 'Night before fall back',
+    '11111111-0000-0000-0000-000000000001', '', '2027-11-06', '19:00', 180, 1);
+  perform public.create_event(
+    'c1c1c1c1-0000-0000-0000-000000000001', 'Fall back night',
+    '11111111-0000-0000-0000-000000000001', '', '2027-11-07', '19:00', 180, 1);
+  perform public.create_event(
+    'c1c1c1c1-0000-0000-0000-000000000001', 'Through the missing hour',
+    '11111111-0000-0000-0000-000000000001', '', '2027-03-14', '01:00', 180, 1);
+end
+$dst$;
+
+-- The pairs straddle a transition. An implementation that ignores DST gets
+-- one of each pair right and the other wrong by exactly an hour, so neither
+-- assertion of a pair can carry the other.
+select is(
+  (select starts_at from public.events where title = 'Night before spring forward'),
+  timestamptz '2027-03-14 00:00+00',
+  '19:00 the evening before spring forward is EST, UTC-5'
+);
+
+select is(
+  (select starts_at from public.events where title = 'Spring forward night'),
+  timestamptz '2027-03-14 23:00+00',
+  '19:00 on spring-forward day itself is EDT, UTC-4'
+);
+
+select is(
+  (select starts_at from public.events where title = 'Night before fall back'),
+  timestamptz '2027-11-06 23:00+00',
+  '19:00 the evening before fall back is still EDT, UTC-4'
+);
+
+select is(
+  (select starts_at from public.events where title = 'Fall back night'),
+  timestamptz '2027-11-08 00:00+00',
+  '19:00 on fall-back day itself is EST, UTC-5'
+);
+
+-- Duration is elapsed time, not wall-clock difference: a three-hour game
+-- starting at 01:00 on spring-forward morning ends at 05:00 on the clock,
+-- because 02:00-03:00 never happens.
+select is(
+  (select starts_at from public.events where title = 'Through the missing hour'),
+  timestamptz '2027-03-14 06:00+00',
+  'a game starting before the missing hour starts at EST'
+);
+
+select is(
+  (select to_char(ends_at at time zone 'America/New_York', 'HH24:MI')
+   from public.events where title = 'Through the missing hour'),
+  '05:00',
+  'and three hours later reads 05:00, because 02:00-03:00 did not happen'
+);
+
+-- The calendar arguments are required, and a duration has to be plausible.
+-- Both defaults are non-null in the signature, so only an explicit null or
+-- an out-of-range int can reach these.
+select throws_ok(
+  $$select public.create_event(
+      'c1c1c1c1-0000-0000-0000-000000000001', 'No date',
+      '11111111-0000-0000-0000-000000000001', '',
+      null, '19:00', 180, 1)$$,
+  '23514',
+  null,
+  'an event must have a date'
+);
+
+select throws_ok(
+  $$select public.create_event(
+      'c1c1c1c1-0000-0000-0000-000000000001', 'Too short',
+      '11111111-0000-0000-0000-000000000001', '',
+      '2027-09-07', '19:00', 5, 1)$$,
+  '23514',
+  null,
+  'a five-minute game is refused, matching event_series.duration_minutes'
+);
+
+select throws_ok(
+  $$select public.create_event(
+      'c1c1c1c1-0000-0000-0000-000000000001', 'Too long',
+      '11111111-0000-0000-0000-000000000001', '',
+      '2027-09-07', '19:00', 2000, 1)$$,
+  '23514',
+  null,
+  'and a game longer than a day is refused too'
 );
 
 -- ---------------------------------------------------------------------
@@ -198,7 +323,7 @@ set local request.jwt.claims =
 select lives_ok(
   $$select public.update_event(
       'e1e1e1e1-0000-0000-0000-000000000001', null,
-      '11111111-0000-0000-0000-000000000002', null, null, null)$$,
+      '11111111-0000-0000-0000-000000000002', null, null, null, null)$$,
   'an organizer can move one occurrence to a different venue'
 );
 
@@ -220,7 +345,7 @@ select is(
 select lives_ok(
   $$select public.update_event(
       'e1e1e1e1-0000-0000-0000-000000000001', null,
-      '11111111-0000-0000-0000-000000000001', null, null, null)$$,
+      '11111111-0000-0000-0000-000000000001', null, null, null, null)$$,
   'the venue can be changed again'
 );
 
@@ -237,7 +362,7 @@ select results_eq(
 select lives_ok(
   $$select public.update_event(
       'e1e1e1e1-0000-0000-0000-000000000001', '  Weekly game  ',
-      null, null, null, null)$$,
+      null, null, null, null, null)$$,
   'a whitespace-padded but otherwise unchanged title is accepted'
 );
 
@@ -267,7 +392,7 @@ do $edit$
 begin
   perform public.update_event(
     'e1e1e1e1-0000-0000-0000-000000000001',
-    'Weekly game, this week only', null, null, null, null);
+    'Weekly game, this week only', null, null, null, null, null);
 end
 $edit$;
 
@@ -282,7 +407,7 @@ do $edit$
 begin
   perform public.update_event(
     'e1e1e1e1-0000-0000-0000-000000000001',
-    null, null, 'bring your own tiles', null, null);
+    null, null, 'bring your own tiles', null, null, null);
 end
 $edit$;
 
@@ -297,7 +422,7 @@ do $edit$
 begin
   perform public.update_event(
     'e1e1e1e1-0000-0000-0000-000000000001',
-    null, null, null, '2027-09-07 22:30+00', null);
+    null, null, null, null, '18:30', null);
 end
 $edit$;
 
@@ -326,7 +451,7 @@ do $edit$
 begin
   perform public.update_event(
     'e1e1e1e1-0000-0000-0000-000000000002',
-    null, null, null, null, '2027-09-15 03:00+00');
+    null, null, null, null, null, 240);
 end
 $edit$;
 
@@ -345,7 +470,7 @@ select results_eq(
 select throws_ok(
   $$select public.update_event(
       'e1e1e1e1-0000-0000-0000-000000000002', null,
-      '11111111-0000-0000-0000-000000000009', null, null, null)$$,
+      '11111111-0000-0000-0000-000000000009', null, null, null, null)$$,
   '42501',
   null,
   'an organizer cannot move an occurrence to another club''s private venue'
@@ -365,7 +490,7 @@ set local request.jwt.claims =
 select lives_ok(
   $$select public.update_event(
       (select id from public.events where title = 'Away game'),
-      'Away game, retitled', null, null, null, null)$$,
+      'Away game, retitled', null, null, null, null, null)$$,
   'a title-only edit survives the venue being flipped to club-only'
 );
 
@@ -373,7 +498,7 @@ select lives_ok(
 select lives_ok(
   $$select public.update_event(
       (select id from public.events where title = 'Tuesday game'),
-      'Tuesday game, moved', null, null, null, null)$$,
+      'Tuesday game, moved', null, null, null, null, null)$$,
   'a one-off event can be edited'
 );
 
@@ -395,7 +520,7 @@ select lives_ok(
 select throws_ok(
   $$select public.update_event(
       'e1e1e1e1-0000-0000-0000-000000000001', 'Resurrected',
-      null, null, null, null)$$,
+      null, null, null, null, null)$$,
   '42501',
   null,
   'a cancelled event cannot be edited'
@@ -445,7 +570,7 @@ select lives_ok(
   $$select public.create_event(
       'c1c1c1c1-0000-0000-0000-000000000001', 'Full house',
       '11111111-0000-0000-0000-000000000001', '',
-      '2027-10-05 23:00+00', '2027-10-06 02:00+00', 20)$$,
+      '2027-10-05', '19:00', 180, 20)$$,
   'an organizer can create an event with the maximum number of tables'
 );
 
@@ -488,7 +613,7 @@ select lives_ok(
   $$select public.create_event(
       'c1c1c1c1-0000-0000-0000-000000000001', 'Called off',
       '11111111-0000-0000-0000-000000000001', '',
-      '2027-10-12 23:00+00', '2027-10-13 02:00+00', 1)$$,
+      '2027-10-12', '19:00', 180, 1)$$,
   'setup: an event to cancel'
 );
 
@@ -568,7 +693,7 @@ set local request.jwt.claims =
 select throws_ok(
   $$select public.update_event(
       'e2e2e2e2-0000-0000-0000-000000000001', 'Member''s edit',
-      null, null, null, null)$$,
+      null, null, null, null, null)$$,
   '42501', null,
   'a plain member cannot edit an event'
 );
@@ -605,7 +730,7 @@ set local request.jwt.claims =
 select throws_ok(
   $$select public.update_event(
       'e2e2e2e2-0000-0000-0000-000000000001', 'Bob''s edit',
-      null, null, null, null)$$,
+      null, null, null, null, null)$$,
   '42501', null,
   'a host of another club cannot edit this club''s event'
 );
@@ -653,6 +778,107 @@ select throws_ok(
       '7a7a7a7a-0000-0000-0000-000000000001')$$,
   '23514', null,
   'an event''s last table cannot be removed'
+);
+
+-- ---------------------------------------------------------------------
+-- Moving an occurrence to a different DATE, which is the thing the edit
+-- screen needs and the reason update_event takes calendar values too.
+--
+-- Both rows below are inserted directly, at instants chosen so that the two
+-- failure modes are distinguishable from success.
+-- ---------------------------------------------------------------------
+set local role postgres;
+
+insert into public.events (
+  id, club_id, series_id, title, venue_id, starts_at, ends_at,
+  occurrence_date, created_by
+) values (
+  -- 2027-03-13 19:00 America/New_York, i.e. EST.
+  'e3e3e3e3-0000-0000-0000-000000000001',
+  'c1c1c1c1-0000-0000-0000-000000000001',
+  '55555555-0000-0000-0000-000000000001', 'Moving week',
+  '11111111-0000-0000-0000-000000000001',
+  '2027-03-14 00:00+00', '2027-03-14 03:00+00', '2027-03-13',
+  'aaaaaaaa-0000-0000-0000-000000000001'
+), (
+  -- 01:30 on 2027-11-07 happens TWICE in America/New_York: 05:30Z while
+  -- still EDT, and 06:30Z once EST resumes. This row is the first of the
+  -- two, and `timestamp '2027-11-07 01:30' at time zone 'America/New_York'`
+  -- resolves to the second (asserted in event_recurrence.test.sql). So an
+  -- edit that round-tripped this instant through the club's zone instead of
+  -- leaving it alone would move the game an hour later and record a false
+  -- override, and both of those are visible below.
+  'e3e3e3e3-0000-0000-0000-000000000002',
+  'c1c1c1c1-0000-0000-0000-000000000001',
+  '55555555-0000-0000-0000-000000000001', 'The repeated hour',
+  '11111111-0000-0000-0000-000000000001',
+  '2027-11-07 05:30+00', '2027-11-07 08:30+00', '2027-11-07',
+  'aaaaaaaa-0000-0000-0000-000000000001'
+);
+
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "aaaaaaaa-0000-0000-0000-000000000001", "role": "authenticated"}';
+
+select lives_ok(
+  $$select public.update_event(
+      'e3e3e3e3-0000-0000-0000-000000000001',
+      null, null, null, '2027-03-14', null, null)$$,
+  'an occurrence can be moved to a different date'
+);
+
+select is(
+  (select starts_at from public.events
+   where id = 'e3e3e3e3-0000-0000-0000-000000000001'),
+  timestamptz '2027-03-14 23:00+00',
+  'moving across a spring forward keeps the wall clock, not the instant'
+);
+
+select is(
+  (select ends_at from public.events
+   where id = 'e3e3e3e3-0000-0000-0000-000000000001'),
+  timestamptz '2027-03-15 02:00+00',
+  'and carries the duration it already had, in elapsed minutes'
+);
+
+select results_eq(
+  $$select overrides from public.events
+    where id = 'e3e3e3e3-0000-0000-0000-000000000001'$$,
+  $$values (array['starts_at'])$$,
+  'a date move records the starts_at override'
+);
+
+select throws_ok(
+  $$select public.update_event(
+      'e3e3e3e3-0000-0000-0000-000000000001',
+      null, null, null, null, null, 5)$$,
+  '23514',
+  null,
+  'an edit cannot set an implausible duration either'
+);
+
+-- An edit that names no date, no time and no duration must leave both
+-- instants exactly as they are -- not recompute them from the club's zone.
+-- Inside the repeated hour those two are not the same thing.
+select lives_ok(
+  $$select public.update_event(
+      'e3e3e3e3-0000-0000-0000-000000000002', 'The repeated hour, retitled',
+      null, null, null, null, null)$$,
+  'a title-only edit of an occurrence inside the repeated hour is accepted'
+);
+
+select is(
+  (select starts_at from public.events
+   where id = 'e3e3e3e3-0000-0000-0000-000000000002'),
+  timestamptz '2027-11-07 05:30+00',
+  'and leaves its instant exactly where it was, ambiguity and all'
+);
+
+select results_eq(
+  $$select overrides from public.events
+    where id = 'e3e3e3e3-0000-0000-0000-000000000002'$$,
+  $$values (array['title'])$$,
+  'and records only the title, never a starts_at it did not change'
 );
 
 select * from finish();

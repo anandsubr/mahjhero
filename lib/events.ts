@@ -372,13 +372,27 @@ export async function fetchOverriddenOccurrences(
   }
 }
 
+/**
+ * Club-local calendar values in, an instant computed in Postgres out.
+ *
+ * `date` and `startTime` are exactly the digits the host picked — a calendar
+ * date and a wall-clock time, carrying no instant between them. `create_event`
+ * resolves them against `clubs.timezone` with the same
+ * `(date + time) at time zone club_tz` expression that materializes a series,
+ * so a one-off game and the first week of a series at 7pm land on the same
+ * instant. Nothing on this path converts a timezone in JavaScript; that is
+ * the point (see supabase/migrations/20260823070000).
+ */
 export async function createEvent(input: {
   clubId: string;
   title: string;
   venueId: string;
   notes: string;
-  startsAt: string;
-  endsAt: string;
+  /** 'YYYY-MM-DD', club-local. */
+  date: string;
+  /** 'HH:MM' wall-clock, club-local. */
+  startTime: string;
+  durationMinutes: number;
   tableCount: number;
 }): Promise<{ eventId: string | null; error: string | null }> {
   try {
@@ -390,8 +404,9 @@ export async function createEvent(input: {
       event_title: input.title.trim(),
       target_venue: input.venueId,
       event_notes: input.notes.trim(),
-      event_starts: input.startsAt,
-      event_ends: input.endsAt,
+      event_date: input.date,
+      start_time: input.startTime,
+      duration_minutes: input.durationMinutes,
       table_count: input.tableCount,
     });
 
@@ -406,15 +421,27 @@ export async function createEvent(input: {
   }
 }
 
-/** A null field means "leave this alone", matching the RPC exactly. */
+/**
+ * A null field means "leave this alone", matching the RPC exactly.
+ *
+ * Calendar values, not instants, for the same reason as `createEvent`: the
+ * edit screen must not reintroduce a second client-side implementation of the
+ * date-plus-wall-time-in-a-timezone conversion. Passing `date` alone moves the
+ * occurrence to another day and keeps its wall-clock time; passing
+ * `startTime` or `durationMinutes` alone keeps its day. Leaving all three out
+ * leaves the stored instants untouched, exactly as they are.
+ */
 export async function updateEvent(
   eventId: string,
   input: {
     title?: string | null;
     venueId?: string | null;
     notes?: string | null;
-    startsAt?: string | null;
-    endsAt?: string | null;
+    /** 'YYYY-MM-DD', club-local. */
+    date?: string | null;
+    /** 'HH:MM' wall-clock, club-local. */
+    startTime?: string | null;
+    durationMinutes?: number | null;
   },
 ): Promise<{ error: string | null }> {
   try {
@@ -423,8 +450,9 @@ export async function updateEvent(
       new_title: input.title ?? null,
       new_venue_id: input.venueId ?? null,
       new_notes: input.notes ?? null,
-      new_starts_at: input.startsAt ?? null,
-      new_ends_at: input.endsAt ?? null,
+      new_date: input.date ?? null,
+      new_start_time: input.startTime ?? null,
+      new_duration_minutes: input.durationMinutes ?? null,
     });
 
     if (error) {

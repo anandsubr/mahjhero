@@ -7,7 +7,8 @@ import { dateStringToDate, dateToDateString } from '../lib/time';
 import { colors, radius, space, type } from '../lib/theme';
 
 type DateFieldProps = {
-  value: string; // "YYYY-MM-DD"
+  /** "YYYY-MM-DD", or "" for a date the host has not chosen yet. */
+  value: string;
   onChange: (next: string) => void;
   label: string; // accessibility label, e.g. "Date"
 };
@@ -24,10 +25,18 @@ type DateFieldProps = {
  * popover, while Android's picker is not a visible control at all — mounting
  * it immediately opens the native modal dialog — so Android needs a visible
  * Pressable of its own, with the picker mounted only while it is open.
+ *
+ * An empty `value` means "no date chosen yet" — the optional "Stop repeating
+ * on" field on the create-a-game screen starts there, because the alternative
+ * (showing some date the host never picked) puts a value on screen that is
+ * not the one being sent. `dateStringToDate('')` would be an Invalid Date and
+ * the native picker cannot render one, so the picker anchors on today while
+ * the Android button says so in words rather than naming a date.
  */
 export default function DateField({ value, onChange, label }: DateFieldProps) {
   const [open, setOpen] = useState(false);
-  const date = dateStringToDate(value);
+  const hasValue = value.length > 0;
+  const date = hasValue ? dateStringToDate(value) : new Date();
 
   function handleValueChange(
     _event: DateTimePickerChangeEvent,
@@ -52,7 +61,7 @@ export default function DateField({ value, onChange, label }: DateFieldProps) {
           accessibilityState={{ expanded: open }}
         >
           <Text style={styles.androidButtonText}>
-            {date.toLocaleDateString()}
+            {hasValue ? date.toLocaleDateString() : 'Pick a date'}
           </Text>
         </Pressable>
         {open ? (

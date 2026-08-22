@@ -18,6 +18,7 @@ import {
   formatEventWhen,
   frequencyLabel,
   nextOccurrences,
+  updateEvent,
 } from './events';
 
 describe('nextOccurrences', () => {
@@ -218,10 +219,40 @@ describe('createEvent', () => {
     title: 'Tuesday Mahjong',
     venueId: 'venue-1',
     notes: '',
-    startsAt: '2027-09-07T23:00:00Z',
-    endsAt: '2027-09-08T02:00:00Z',
+    date: '2027-09-07',
+    startTime: '19:00',
+    durationMinutes: 180,
     tableCount: 2,
   };
+
+  /*
+   * The whole point of supabase/migrations/20260823070000: the date and the
+   * wall-clock time reach Postgres as the host typed them, and the instant is
+   * computed there against `clubs.timezone`. Anything that converted a
+   * timezone on the way — the two failed client-side attempts this replaced —
+   * would show up here as a `event_date` or `start_time` that is not what
+   * went in. That the resulting instant is then the RIGHT one is pinned
+   * against the real database in lib/schema-contract.test.ts, including on
+   * both 2027 DST transition dates.
+   */
+  it('sends the club-local date and wall time through to the RPC unconverted', async () => {
+    rpcMock.mockResolvedValueOnce({ data: 'event-1', error: null });
+
+    await expect(createEvent(validInput)).resolves.toEqual({
+      eventId: 'event-1',
+      error: null,
+    });
+    expect(rpcMock).toHaveBeenCalledWith('create_event', {
+      target_club: 'club-1',
+      event_title: 'Tuesday Mahjong',
+      target_venue: 'venue-1',
+      event_notes: '',
+      event_date: '2027-09-07',
+      start_time: '19:00',
+      duration_minutes: 180,
+      table_count: 2,
+    });
+  });
 
   it('rejects a blank title with a friendly message, before ever calling the RPC', async () => {
     await expect(createEvent({ ...validInput, title: '   ' })).resolves.toEqual({
@@ -242,6 +273,55 @@ describe('createEvent', () => {
       createEvent({ ...validInput, title: null as unknown as string }),
     ).resolves.toEqual({ eventId: null, error: GENERIC_ERROR });
     expect(rpcMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('updateEvent', () => {
+  beforeEach(() => {
+    rpcMock.mockReset();
+  });
+
+  /*
+   * The edit screen is Task 15, so this mapping has no other caller yet —
+   * which is exactly why it is pinned now. update_event was re-signatured to
+   * calendar values in the same migration as create_event specifically so
+   * that the edit screen cannot need a client-side conversion and reintroduce
+   * the bug through a different door.
+   */
+  it('maps the club-local calendar fields onto the RPC parameter names', async () => {
+    rpcMock.mockResolvedValueOnce({ data: true, error: null });
+
+    await expect(
+      updateEvent('event-1', {
+        date: '2027-11-07',
+        startTime: '19:00',
+        durationMinutes: 240,
+      }),
+    ).resolves.toEqual({ error: null });
+    expect(rpcMock).toHaveBeenCalledWith('update_event', {
+      target_event: 'event-1',
+      new_title: null,
+      new_venue_id: null,
+      new_notes: null,
+      new_date: '2027-11-07',
+      new_start_time: '19:00',
+      new_duration_minutes: 240,
+    });
+  });
+
+  it('sends null for every field the caller left out, meaning "leave this alone"', async () => {
+    rpcMock.mockResolvedValueOnce({ data: true, error: null });
+
+    await updateEvent('event-1', { title: 'Renamed' });
+    expect(rpcMock).toHaveBeenCalledWith('update_event', {
+      target_event: 'event-1',
+      new_title: 'Renamed',
+      new_venue_id: null,
+      new_notes: null,
+      new_date: null,
+      new_start_time: null,
+      new_duration_minutes: null,
+    });
   });
 });
 

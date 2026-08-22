@@ -238,14 +238,14 @@ select ok(
 select ok(
   has_function_privilege(
     'authenticated',
-    'public.create_event(uuid, text, uuid, text, timestamptz, timestamptz, int)',
+    'public.create_event(uuid, text, uuid, text, date, time, int, int)',
     'EXECUTE'),
   'authenticated can still execute create_event'
 );
 select ok(
   has_function_privilege(
     'authenticated',
-    'public.update_event(uuid, text, uuid, text, timestamptz, timestamptz)',
+    'public.update_event(uuid, text, uuid, text, date, time, int)',
     'EXECUTE'),
   'authenticated can still execute update_event'
 );
@@ -414,7 +414,7 @@ select ok(
 -- and "everybody has it" look identical until you assert.
 select ok(
   not has_function_privilege('anon',
-    'public.create_event(uuid, text, uuid, text, timestamptz, timestamptz, int)',
+    'public.create_event(uuid, text, uuid, text, date, time, int, int)',
     'EXECUTE'),
   'anon cannot execute create_event'
 );
@@ -510,8 +510,8 @@ select is(
        'public.update_venue(uuid, text, text, text, text, text)',
        'public.archive_venue(uuid)',
        'public.search_venues(uuid, text)',
-       'public.create_event(uuid, text, uuid, text, timestamptz, timestamptz, int)',
-       'public.update_event(uuid, text, uuid, text, timestamptz, timestamptz)',
+       'public.create_event(uuid, text, uuid, text, date, time, int, int)',
+       'public.update_event(uuid, text, uuid, text, date, time, int)',
        'public.cancel_event(uuid)',
        'public.add_event_table(uuid)',
        'public.update_event_table(uuid, text, public.skill_tier)',
@@ -556,8 +556,8 @@ select is(
          'public.update_venue(uuid, text, text, text, text, text)',
          'public.archive_venue(uuid)',
          'public.search_venues(uuid, text)',
-         'public.create_event(uuid, text, uuid, text, timestamptz, timestamptz, int)',
-         'public.update_event(uuid, text, uuid, text, timestamptz, timestamptz)',
+         'public.create_event(uuid, text, uuid, text, date, time, int, int)',
+         'public.update_event(uuid, text, uuid, text, date, time, int)',
          'public.cancel_event(uuid)',
          'public.add_event_table(uuid)',
          'public.update_event_table(uuid, text, public.skill_tier)',

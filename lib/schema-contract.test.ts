@@ -717,8 +717,9 @@ describe.runIf(reachable || required)(
             title: 'Tuesday Mahjong',
             venueId: DUMMY_UUID,
             notes: 'bring snacks',
-            startsAt: '2027-09-07T23:00:00Z',
-            endsAt: '2027-09-08T02:00:00Z',
+            date: '2027-09-07',
+            startTime: '19:00',
+            durationMinutes: 180,
             tableCount: 2,
           }),
       },
@@ -729,8 +730,9 @@ describe.runIf(reachable || required)(
             title: 'Renamed game',
             venueId: DUMMY_UUID,
             notes: 'updated notes',
-            startsAt: '2027-09-07T23:00:00Z',
-            endsAt: '2027-09-08T02:00:00Z',
+            date: '2027-09-07',
+            startTime: '19:00',
+            durationMinutes: 180,
           }),
       },
       { fnName: 'cancel_event', invoke: () => cancelEvent(DUMMY_UUID) },
@@ -822,5 +824,369 @@ describe.runIf(reachable || required)(
         ).toBe('42501');
       },
     );
+  },
+);
+
+/*
+ * ---------------------------------------------------------------------------
+ * Club-local calendar values resolve to instants — in the database.
+ * ---------------------------------------------------------------------------
+ *
+ * The create screen no longer computes an instant. It sends the calendar date
+ * and the wall-clock time the host picked, and `create_event` resolves them
+ * against `clubs.timezone` with the same `(date + time) at time zone club_tz`
+ * expression `materialize_one_series` uses for every week of a series
+ * (supabase/migrations/20260823070000).
+ *
+ * That leaves a gap no mocked suite can close. app/__tests__/events-new can
+ * only prove the right STRINGS were passed; it cannot prove those strings
+ * produce the right instant, because the conversion now happens somewhere it
+ * cannot see. A semantically different implementation would sail through it —
+ * which is exactly how the previous, wrong client-side conversion survived
+ * 205 green tests. So this block calls the real lib/events.ts functions
+ * against the real database and reads the stored instants back.
+ *
+ * Two anti-coincidence properties, both deliberate:
+ *
+ *   - Every club zone below DIFFERS from the device's. `npm test` and
+ *     `npm run test:contract` are pinned to TZ=America/New_York, and the
+ *     America/New_York cases are the only ones that share it; Asia/Tokyo
+ *     (never any DST) and Australia/Sydney (DST in the opposite half of the
+ *     year) cannot pass by borrowing the device's offset.
+ *   - The dates are the transition-adjacent ones, in pairs that straddle a
+ *     transition: 2027-03-13/14 and 2027-11-06/07 in America/New_York, and
+ *     2027-06-15/2027-11-07 in Australia/Sydney. An implementation that
+ *     ignores DST entirely gets one of each pair right and the other wrong by
+ *     an hour. Both DST dates are the ones the pgTAP recurrence fixtures
+ *     already pin, so the two suites agree about which days matter.
+ *
+ * Expected instants are computed by hand from the zone's UTC offset on that
+ * date, never by running the code under test.
+ */
+describe.runIf(reachable || required)(
+  'club-local calendar values resolve to instants',
+  () => {
+    let admin: SupabaseClient;
+    let userId: string;
+    // club timezone -> { clubId, venueId }
+    const clubs = new Map<string, { clubId: string; venueId: string }>();
+    const createdEventIds: string[] = [];
+
+    const ZONES = ['America/New_York', 'Asia/Tokyo', 'Australia/Sydney'];
+
+    beforeAll(async () => {
+      expect(
+        reachable,
+        `Local Supabase stack not reachable at ${local.url}. Run \`npx supabase start\`.`,
+      ).toBe(true);
+
+      ({ admin, userId } = await signInFreshUser());
+
+      for (const timezone of ZONES) {
+        const { data: club, error: clubError } = await admin
+          .from('clubs')
+          .insert({
+            name: `Instant Club ${timezone}`,
+            slug: `instant-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            timezone,
+            created_by: userId,
+          })
+          .select('id')
+          .single();
+        expect(
+          clubError,
+          `seeding club for ${timezone} failed: ${clubError?.message}`,
+        ).toBeNull();
+
+        const { error: memberError } = await admin.from('club_members').insert({
+          club_id: club!.id,
+          profile_id: userId,
+          role: 'host',
+          status: 'active',
+        });
+        expect(memberError, `seeding host failed: ${memberError?.message}`).toBeNull();
+
+        const { data: venue, error: venueError } = await admin
+          .from('venues')
+          .insert({
+            name: 'Instant Hall',
+            visibility: 'club',
+            added_by_club_id: club!.id,
+            created_by: userId,
+          })
+          .select('id')
+          .single();
+        expect(venueError, `seeding venue failed: ${venueError?.message}`).toBeNull();
+
+        clubs.set(timezone, { clubId: club!.id, venueId: venue!.id });
+      }
+    });
+
+    afterAll(async () => {
+      await supabase.auth.signOut();
+      if (admin) {
+        for (const eventId of createdEventIds) {
+          await admin.from('event_tables').delete().eq('event_id', eventId);
+          await admin.from('events').delete().eq('id', eventId);
+        }
+        for (const { clubId, venueId } of clubs.values()) {
+          await admin.from('events').delete().eq('club_id', clubId);
+          await admin.from('venues').delete().eq('id', venueId);
+          await admin.from('club_members').delete().eq('club_id', clubId);
+          await admin.from('clubs').delete().eq('id', clubId);
+        }
+      }
+      if (admin && userId) await admin.auth.admin.deleteUser(userId);
+    });
+
+    async function createAndRead(input: {
+      timezone: string;
+      date: string;
+      startTime: string;
+      durationMinutes: number;
+    }): Promise<{ startsAt: string; endsAt: string }> {
+      const seeded = clubs.get(input.timezone)!;
+      const { eventId, error } = await createEvent({
+        clubId: seeded.clubId,
+        title: `${input.timezone} ${input.date} ${input.startTime}`,
+        venueId: seeded.venueId,
+        notes: '',
+        date: input.date,
+        startTime: input.startTime,
+        durationMinutes: input.durationMinutes,
+        tableCount: 1,
+      });
+      expect(error, `createEvent reported: ${error}`).toBeNull();
+      expect(eventId).not.toBeNull();
+      createdEventIds.push(eventId!);
+
+      const { data, error: readError } = await supabase
+        .from('events')
+        .select('starts_at, ends_at')
+        .eq('id', eventId!)
+        .single();
+      expect(readError, `reading the event back failed: ${readError?.message}`).toBeNull();
+      return {
+        startsAt: new Date((data as { starts_at: string }).starts_at).toISOString(),
+        endsAt: new Date((data as { ends_at: string }).ends_at).toISOString(),
+      };
+    }
+
+    const cases: Array<{
+      name: string;
+      timezone: string;
+      date: string;
+      startTime: string;
+      durationMinutes: number;
+      startsAt: string;
+      endsAt: string;
+    }> = [
+      {
+        name: 'America/New_York, the day before spring forward (EST, UTC-5)',
+        timezone: 'America/New_York',
+        date: '2027-03-13',
+        startTime: '19:00',
+        durationMinutes: 180,
+        startsAt: '2027-03-14T00:00:00.000Z',
+        endsAt: '2027-03-14T03:00:00.000Z',
+      },
+      {
+        name: 'America/New_York, spring-forward day itself (EDT, UTC-4)',
+        timezone: 'America/New_York',
+        date: '2027-03-14',
+        startTime: '19:00',
+        durationMinutes: 180,
+        startsAt: '2027-03-14T23:00:00.000Z',
+        endsAt: '2027-03-15T02:00:00.000Z',
+      },
+      {
+        name: 'America/New_York, the day before fall back (EDT, UTC-4)',
+        timezone: 'America/New_York',
+        date: '2027-11-06',
+        startTime: '19:00',
+        durationMinutes: 180,
+        startsAt: '2027-11-06T23:00:00.000Z',
+        endsAt: '2027-11-07T02:00:00.000Z',
+      },
+      {
+        name: 'America/New_York, fall-back day itself (EST, UTC-5)',
+        timezone: 'America/New_York',
+        date: '2027-11-07',
+        startTime: '19:00',
+        durationMinutes: 180,
+        startsAt: '2027-11-08T00:00:00.000Z',
+        endsAt: '2027-11-08T03:00:00.000Z',
+      },
+      {
+        // The device is at America/New_York, four hours behind UTC on this
+        // date and nine behind Tokyo. A conversion that leaked the device's
+        // own offset landed this one 13 hours out.
+        name: 'Asia/Tokyo in September, device four hours from UTC (JST, UTC+9)',
+        timezone: 'Asia/Tokyo',
+        date: '2027-09-07',
+        startTime: '19:00',
+        durationMinutes: 180,
+        startsAt: '2027-09-07T10:00:00.000Z',
+        endsAt: '2027-09-07T13:00:00.000Z',
+      },
+      {
+        // Tokyo has never observed DST. On the device's own transition day
+        // the club's offset must not move at all.
+        name: 'Asia/Tokyo on the US spring-forward day (JST, UTC+9, unmoved)',
+        timezone: 'Asia/Tokyo',
+        date: '2027-03-14',
+        startTime: '19:00',
+        durationMinutes: 180,
+        startsAt: '2027-03-14T10:00:00.000Z',
+        endsAt: '2027-03-14T13:00:00.000Z',
+      },
+      {
+        // Southern-hemisphere DST, running in the opposite half of the year
+        // from the device's: Sydney is on standard time in June.
+        name: 'Australia/Sydney in June (AEST, UTC+10)',
+        timezone: 'Australia/Sydney',
+        date: '2027-06-15',
+        startTime: '19:00',
+        durationMinutes: 180,
+        startsAt: '2027-06-15T09:00:00.000Z',
+        endsAt: '2027-06-15T12:00:00.000Z',
+      },
+      {
+        // ...and on daylight time in November, the very day America/New_York
+        // goes the other way.
+        name: 'Australia/Sydney on the US fall-back day (AEDT, UTC+11)',
+        timezone: 'Australia/Sydney',
+        date: '2027-11-07',
+        startTime: '19:00',
+        durationMinutes: 180,
+        startsAt: '2027-11-07T08:00:00.000Z',
+        endsAt: '2027-11-07T11:00:00.000Z',
+      },
+      {
+        // A game that starts before a spring-forward transition and runs
+        // through it. Three hours of duration is three hours of elapsed time,
+        // so it ends at a wall clock four hours later.
+        name: 'America/New_York, a game running through the spring-forward hour',
+        timezone: 'America/New_York',
+        date: '2027-03-14',
+        startTime: '01:00',
+        durationMinutes: 180,
+        startsAt: '2027-03-14T06:00:00.000Z',
+        endsAt: '2027-03-14T09:00:00.000Z',
+      },
+    ];
+
+    it.each(cases)(
+      'create_event: $name',
+      async ({ timezone, date, startTime, durationMinutes, startsAt, endsAt }) => {
+        const stored = await createAndRead({
+          timezone,
+          date,
+          startTime,
+          durationMinutes,
+        });
+        expect(stored.startsAt).toBe(startsAt);
+        expect(stored.endsAt).toBe(endsAt);
+      },
+    );
+
+    /*
+     * update_event takes the same calendar values, for the same reason: the
+     * edit screen (Task 15) must not need a conversion of its own. Moving an
+     * occurrence to another date is the one thing it has to keep doing, and
+     * the date it moves to may sit on the other side of a transition.
+     */
+    it('update_event moves an occurrence across a DST transition and keeps its wall clock', async () => {
+      const seeded = clubs.get('America/New_York')!;
+      const { eventId, error } = await createEvent({
+        clubId: seeded.clubId,
+        title: 'Movable feast',
+        venueId: seeded.venueId,
+        notes: '',
+        date: '2027-03-13',
+        startTime: '19:00',
+        durationMinutes: 180,
+        tableCount: 1,
+      });
+      expect(error).toBeNull();
+      createdEventIds.push(eventId!);
+
+      const { error: updateError } = await updateEvent(eventId!, {
+        date: '2027-03-14',
+      });
+      expect(updateError).toBeNull();
+
+      const { data } = await supabase
+        .from('events')
+        .select('starts_at, ends_at')
+        .eq('id', eventId!)
+        .single();
+      const row = data as { starts_at: string; ends_at: string };
+      // Still 7pm on the club's wall clock, now an hour's less UTC offset
+      // away because 14 March is EDT and 13 March was EST.
+      expect(new Date(row.starts_at).toISOString()).toBe('2027-03-14T23:00:00.000Z');
+      expect(new Date(row.ends_at).toISOString()).toBe('2027-03-15T02:00:00.000Z');
+    });
+
+    it('update_event leaves the instants exactly alone when no calendar field is given', async () => {
+      const seeded = clubs.get('Australia/Sydney')!;
+      const { eventId, error } = await createEvent({
+        clubId: seeded.clubId,
+        title: 'Untouched',
+        venueId: seeded.venueId,
+        notes: '',
+        date: '2027-11-07',
+        startTime: '19:00',
+        durationMinutes: 180,
+        tableCount: 1,
+      });
+      expect(error).toBeNull();
+      createdEventIds.push(eventId!);
+
+      const { error: updateError } = await updateEvent(eventId!, {
+        title: 'Renamed, not rescheduled',
+      });
+      expect(updateError).toBeNull();
+
+      const { data } = await supabase
+        .from('events')
+        .select('title, starts_at, ends_at')
+        .eq('id', eventId!)
+        .single();
+      const row = data as { title: string; starts_at: string; ends_at: string };
+      expect(row.title).toBe('Renamed, not rescheduled');
+      expect(new Date(row.starts_at).toISOString()).toBe('2027-11-07T08:00:00.000Z');
+      expect(new Date(row.ends_at).toISOString()).toBe('2027-11-07T11:00:00.000Z');
+    });
+
+    it('update_event changes only the duration when only the duration is given', async () => {
+      const seeded = clubs.get('Asia/Tokyo')!;
+      const { eventId, error } = await createEvent({
+        clubId: seeded.clubId,
+        title: 'Longer game',
+        venueId: seeded.venueId,
+        notes: '',
+        date: '2027-09-07',
+        startTime: '19:00',
+        durationMinutes: 180,
+        tableCount: 1,
+      });
+      expect(error).toBeNull();
+      createdEventIds.push(eventId!);
+
+      const { error: updateError } = await updateEvent(eventId!, {
+        durationMinutes: 240,
+      });
+      expect(updateError).toBeNull();
+
+      const { data } = await supabase
+        .from('events')
+        .select('starts_at, ends_at')
+        .eq('id', eventId!)
+        .single();
+      const row = data as { starts_at: string; ends_at: string };
+      expect(new Date(row.starts_at).toISOString()).toBe('2027-09-07T10:00:00.000Z');
+      expect(new Date(row.ends_at).toISOString()).toBe('2027-09-07T14:00:00.000Z');
+    });
   },
 );

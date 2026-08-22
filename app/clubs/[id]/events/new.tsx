@@ -31,50 +31,23 @@ const REPEATS: { value: Repeat; label: string }[] = [
 
 const DURATIONS = [120, 180, 240];
 
-/**
- * Turns a club-local calendar date and wall-clock time into an instant, in
- * the CLUB's timezone rather than the device's.
+/*
+ * This screen converts no timezones.
  *
- * A series has a `starts_on` date and a `start_time` and lets Postgres do
- * this conversion server-side (`(occurrence_date + start_time) at time zone
- * club_tz` — see
- * supabase/migrations/20260823040000_series_propagation_gate_and_ended_at.sql).
- * A one-off event has no series row for anything to resolve from, so this is
- * the one instant this app computes client-side, and it has to agree with
- * that same Postgres expression exactly.
+ * Both paths send the club-local calendar date, the wall-clock start time and
+ * a duration in minutes, and Postgres resolves the instant against
+ * `clubs.timezone` — `(date + time) at time zone club_tz` — for a one-off game
+ * (`create_event`) exactly as it already did for every week of a series
+ * (`materialize_one_series`). One conversion, in one place.
  *
- * The task brief's sample implementation compared `local.toLocaleString(tz)`
- * against `local` directly — a single conversion. That is wrong in a way
- * `npm test` (pinned to `TZ=America/New_York`) cannot catch by accident: the
- * missing term is the DEVICE's own UTC offset, which cancels out of the
- * subtraction only when the device happens to share the club's zone (or sits
- * at UTC). For every other case — a host creating a game while travelling,
- * which is the exact scenario this function exists for — the old version was
- * off by precisely the device's offset. Confirmed by hand for
- * device=America/New_York, club=America/New_York (old code returned 19:00Z
- * for a 7pm EDT game instead of the correct 23:00Z) and again for
- * device=America/New_York, club=Asia/Tokyo (old code landed a whole day off).
- *
- * The fix builds ONE device-local instant carrying the picked digits, then
- * compares it to itself re-read through the club's zone. Both readings share
- * the same device offset, so the subtraction cancels it algebraically rather
- * than by coincidence — the result depends only on the club's offset, which
- * is what `AT TIME ZONE` uses too.
+ * There used to be a second implementation here, in JavaScript, because a
+ * one-off event had no series row for the database to resolve from. It was
+ * written twice and was wrong both times; the second attempt still disagreed
+ * with Postgres in 233 of 3,920 date/time/club-zone/device-zone combinations.
+ * supabase/migrations/20260823070000 gave `create_event` the same calendar
+ * arguments the series functions take so that there is nothing left here to
+ * disagree.
  */
-function clubInstant(date: string, time: string, timezone: string): string {
-  const [year, month, day] = date.split('-').map(Number);
-  const [hour, minute] = time.split(':').map(Number);
-  // A device-local Date whose wall-clock digits are exactly what the host
-  // picked. Its own instant is not the answer -- the device's timezone has
-  // nothing to do with what the host meant -- it exists only so the next
-  // line can measure how far the CLUB's timezone reads those same digits
-  // from here.
-  const local = new Date(year, month - 1, day, hour, minute, 0, 0);
-  const zoned = new Date(local.toLocaleString('en-US', { timeZone: timezone }));
-  const offset = local.getTime() - zoned.getTime();
-  return new Date(local.getTime() + offset).toISOString();
-}
-
 export default function NewEventScreen() {
   const { id: clubId } = useLocalSearchParams<{ id: string }>();
   const { session, loading } = useSession();
@@ -140,14 +113,6 @@ export default function NewEventScreen() {
     );
   }
 
-  // Captured into its own const rather than read as `club.timezone` inside
-  // `onSave` below: `club` is `useState`-typed as `Club | null`, and
-  // TypeScript does not carry the `if (!club) return` narrowing above into a
-  // nested function declaration (onSave could in principle run after a
-  // later render, so the narrowing isn't sound there). This const's own type
-  // is `string`, so it stays narrowed inside the closure.
-  const clubTimezone = club.timezone;
-
   const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
   // "Monthly" means "the same weekday-of-month as the date you picked" --
   // derived rather than asked, because a host who picks the 2nd Tuesday
@@ -184,17 +149,14 @@ export default function NewEventScreen() {
     setError(null);
 
     if (repeat === 'never') {
-      const startsAt = clubInstant(date, startTime, clubTimezone);
-      const endsAt = new Date(
-        new Date(startsAt).getTime() + duration * 60_000,
-      ).toISOString();
       const result = await createEvent({
         clubId,
         title,
         venueId,
         notes,
-        startsAt,
-        endsAt,
+        date,
+        startTime,
+        durationMinutes: duration,
         tableCount,
       });
       setSaving(false);
@@ -325,11 +287,16 @@ export default function NewEventScreen() {
               : 'No games would be created before that end date.'}
           </Text>
           <Text style={styles.label}>Stop repeating on (optional)</Text>
-          <DateField
-            value={endsOn.length > 0 ? endsOn : date}
-            onChange={setEndsOn}
-            label="Stop repeating on"
-          />
+          {/*
+            Empty until the host picks one, because that is what gets sent:
+            `endsOn: null`. Showing the START date here instead (which this
+            field used to do) put a date on screen the host never chose, and
+            contradicted the preview immediately above it — which, correctly,
+            listed occurrences past that date. It also made the start date the
+            one value the host could not select: a controlled input already
+            holding it fires no change event when you pick it again.
+          */}
+          <DateField value={endsOn} onChange={setEndsOn} label="Stop repeating on" />
         </>
       ) : null}
 

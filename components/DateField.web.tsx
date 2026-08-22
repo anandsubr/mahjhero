@@ -3,7 +3,8 @@ import { View } from 'react-native';
 import { colors, radius, space, type } from '../lib/theme';
 
 type DateFieldProps = {
-  value: string; // "YYYY-MM-DD"
+  /** "YYYY-MM-DD", or "" for a date the host has not chosen yet. */
+  value: string;
   onChange: (next: string) => void;
   label: string;
 };
@@ -17,10 +18,16 @@ type DateFieldProps = {
  * stores, so no Date conversion (and so no use of lib/time.ts's helpers)
  * happens on this path at all.
  *
- * A cleared input reports "". There is no meaningful "no date" for an
- * event, so an empty value is ignored and the previous one kept — which
- * makes the invalid state unreachable rather than merely rejected, the
- * same reasoning TimeField.web.tsx documents for its own empty-string case.
+ * A cleared input reports "". A date the caller is already holding is never
+ * given up for nothing — the empty change is ignored and the previous value
+ * kept — which makes the invalid state unreachable rather than merely
+ * rejected, the same reasoning TimeField.web.tsx documents for its own
+ * empty-string case. (An empty `value` passed IN is fine and means "not
+ * chosen yet": the browser renders the control's own empty state.)
+ *
+ * Covered by app/__tests__/events-new.test.tsx, which fires a "" change at
+ * the "Date" field and asserts the previously picked date is what the screen
+ * still sends. Deleting the guard below turns that test red.
  */
 export default function DateField({ value, onChange, label }: DateFieldProps) {
   function handleChange(event: ChangeEvent<HTMLInputElement>) {

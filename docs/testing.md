@@ -157,12 +157,20 @@ coverage yet.** `app/clubs/[id]/events/new.tsx` (Task 13) is the first
 screen to import `DateField`, and `app/__tests__/events-new.test.tsx`
 renders it, interacting with the "Date" and "Stop repeating on" fields
 through `screen.getByLabelText` the same way the notifications screen's test
-drives `TimeField.web.tsx`. That is real component-layer coverage of this
-file's `<input type="date">` markup and its onChange/empty-string handling.
-It is still **not** in the visual suite: no baseline screenshot exists for
-this screen yet (Task 17 adds one), so nothing has confirmed how the control
-actually paints. Check that this paragraph is still true when you next touch
-this file.
+drives `TimeField.web.tsx`. Covered, specifically: the `<input type="date">`
+markup resolves by `aria-label`; an ordinary onChange reaches the screen's
+state (every date in that file is set this way, and the value shows up in the
+`createEvent`/`createEventSeries` arguments); and the empty-string guard —
+"clearing a date field" fires a `''` change and asserts the previously picked
+date is still what the screen sends. That last one was an overclaim for one
+commit: this paragraph named empty-string handling while nothing fired a
+`''`, and deleting `if (event.target.value === '') return;` left the whole
+suite green.
+
+Not covered at this layer: how the control paints. It is still **not** in the
+visual suite — no baseline screenshot exists for this screen yet (Task 17
+adds one). Check that this paragraph is still true when you next touch this
+file.
 
 The component layer does not reach them either. `resolve.extensions` in
 `vitest.config.mts` makes Vitest resolve `.web.tsx` first, exactly as the web

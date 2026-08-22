@@ -105,19 +105,28 @@ describe('guard ordering', () => {
   });
 });
 
-// The core correctness property of this screen: a one-off event's instant
-// must be computed in the CLUB's timezone, not the device's. `npm test` runs
-// with TZ=America/New_York (package.json), so the club fixture below is
-// deliberately a DIFFERENT zone with no DST (Asia/Tokyo, always UTC+9) --
-// mirroring the same anti-accidental-pass technique app/__tests__/clubs.test
-// already uses for formatEventWhen. The expected instant is derived by hand,
-// never by calling the function under test, so a regression to the "compare
-// naive against a single toLocaleString conversion" bug (which is off by
-// exactly the DEVICE's own UTC offset, and happens to cancel out only when
-// device and club share a zone) would land 4-5 hours away from this
-// assertion under the suite's pinned America/New_York TZ.
-describe('one-off event instant', () => {
-  it('computes the instant in the club timezone, not the device timezone', async () => {
+/*
+ * This screen converts no timezones any more. Both paths send the club-local
+ * calendar date and wall-clock time the host picked, and Postgres resolves the
+ * instant against `clubs.timezone` -- `create_event` for a one-off game
+ * exactly as `materialize_one_series` already did for every week of a series
+ * (supabase/migrations/20260823070000).
+ *
+ * So what this layer can honestly check is that the digits arrive unaltered.
+ * `npm test` is pinned to TZ=America/New_York (package.json) and the club
+ * fixtures below are deliberately OTHER zones, so any reintroduced conversion
+ * shows up here as a shifted `date` or `startTime` -- and the dates chosen are
+ * the two 2027 US DST transitions, where a conversion bug moves the calendar
+ * day rather than merely the hour.
+ *
+ * That the values sent then produce the RIGHT instant is not knowable at this
+ * layer, and is not asserted here. It is pinned against the real database, on
+ * these same dates and with the device zone deliberately mismatched, in
+ * lib/schema-contract.test.ts ("club-local calendar values resolve to
+ * instants").
+ */
+describe('one-off creation sends club-local calendar values', () => {
+  it('sends the picked date and wall time unconverted for a club in another zone', async () => {
     const TOKYO_CLUB = { ...CLUB, timezone: 'Asia/Tokyo' };
     fetchClub.mockResolvedValue(TOKYO_CLUB);
     render(<NewEventScreen />);
@@ -137,32 +146,119 @@ describe('one-off event instant', () => {
 
     await vi.waitFor(() => expect(createEvent).toHaveBeenCalled());
     const call = createEvent.mock.calls[0][0];
-    // 19:00 JST on 2027-09-07 is 10:00 UTC the same day (JST is UTC+9,
-    // year-round -- no DST to complicate the arithmetic).
-    expect(call.startsAt).toBe('2027-09-07T10:00:00.000Z');
-    // Default duration is 3 hours.
-    expect(call.endsAt).toBe('2027-09-07T13:00:00.000Z');
+    expect(call.date).toBe('2027-09-07');
+    expect(call.startTime).toBe('19:00');
+    // Default duration, in minutes -- the screen no longer computes an end
+    // instant at all.
+    expect(call.durationMinutes).toBe(180);
+    expect(call).not.toHaveProperty('startsAt');
+    expect(call).not.toHaveProperty('endsAt');
   });
 
-  it('gives a different instant for the same wall-clock time in a different club timezone', async () => {
-    render(<NewEventScreen />); // CLUB.timezone === 'America/New_York'
+  it('does not shift the calendar day on the spring-forward date', async () => {
+    // 2027-03-14 is the US spring-forward date, and 02:00-03:00 does not
+    // exist that morning in America/New_York. A conversion built on the
+    // device's own offset (this suite runs at TZ=America/New_York) is exactly
+    // what used to move a date like this one.
+    render(<NewEventScreen />);
     await screen.findByText('Add a game');
     fireEvent.change(screen.getByLabelText('Date'), {
-      target: { value: '2027-09-07' },
+      target: { value: '2027-03-14' },
     });
     fireEvent.change(screen.getByLabelText('Start time'), {
-      target: { value: '19:00' },
+      target: { value: '00:30' },
     });
     pickVenue();
     fireEvent.change(screen.getByLabelText('Game name'), {
-      target: { value: 'Tuesday night' },
+      target: { value: 'Small hours' },
     });
     fireEvent.click(screen.getByText('Save'));
 
     await vi.waitFor(() => expect(createEvent).toHaveBeenCalled());
     const call = createEvent.mock.calls[0][0];
-    // 19:00 EDT (America/New_York is UTC-4 in September) is 23:00 UTC.
-    expect(call.startsAt).toBe('2027-09-07T23:00:00.000Z');
+    expect(call.date).toBe('2027-03-14');
+    expect(call.startTime).toBe('00:30');
+  });
+
+  it('does not shift the calendar day on the fall-back date', async () => {
+    // 2027-11-07: 01:00-02:00 happens twice in America/New_York. Same
+    // reasoning as above, from the other side of the year.
+    const TOKYO_CLUB = { ...CLUB, timezone: 'Asia/Tokyo' };
+    fetchClub.mockResolvedValue(TOKYO_CLUB);
+    render(<NewEventScreen />);
+    await screen.findByText('Add a game');
+    fireEvent.change(screen.getByLabelText('Date'), {
+      target: { value: '2027-11-07' },
+    });
+    fireEvent.change(screen.getByLabelText('Start time'), {
+      target: { value: '01:30' },
+    });
+    pickVenue();
+    fireEvent.change(screen.getByLabelText('Game name'), {
+      target: { value: 'The repeated hour' },
+    });
+    fireEvent.click(screen.getByText('Save'));
+
+    await vi.waitFor(() => expect(createEvent).toHaveBeenCalled());
+    const call = createEvent.mock.calls[0][0];
+    expect(call.date).toBe('2027-11-07');
+    expect(call.startTime).toBe('01:30');
+  });
+});
+
+/*
+ * A save that failed must say so and leave the host on the form with what
+ * they typed. Deleting the whole `if (result.error)` block from either path
+ * used to leave the suite green -- the host would have been navigated away
+ * from a game that was never created.
+ */
+describe('a failed save', () => {
+  it('shows the error and does not navigate away when createEvent fails', async () => {
+    createEvent.mockResolvedValue({ eventId: null, error: 'Something broke.' });
+    render(<NewEventScreen />);
+    await screen.findByText('Add a game');
+    pickVenue();
+    fireEvent.change(screen.getByLabelText('Game name'), {
+      target: { value: 'Doomed game' },
+    });
+    fireEvent.click(screen.getByText('Save'));
+
+    expect(await screen.findByText('Something broke.')).toBeTruthy();
+    expect(replace).not.toHaveBeenCalled();
+    // Still on the form, with the typed name intact.
+    expect(
+      (screen.getByLabelText('Game name') as HTMLInputElement).value,
+    ).toBe('Doomed game');
+  });
+
+  it('shows the error and does not navigate away when createEventSeries fails', async () => {
+    createEventSeries.mockResolvedValue({
+      seriesId: null,
+      error: 'Something broke.',
+    });
+    render(<NewEventScreen />);
+    await screen.findByText('Add a game');
+    fireEvent.click(screen.getByText('Every week'));
+    pickVenue();
+    fireEvent.change(screen.getByLabelText('Game name'), {
+      target: { value: 'Doomed series' },
+    });
+    fireEvent.click(screen.getByText('Save'));
+
+    expect(await screen.findByText('Something broke.')).toBeTruthy();
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it('navigates to the club once the save actually succeeds', async () => {
+    render(<NewEventScreen />);
+    await screen.findByText('Add a game');
+    pickVenue();
+    fireEvent.change(screen.getByLabelText('Game name'), {
+      target: { value: 'Real game' },
+    });
+    fireEvent.click(screen.getByText('Save'));
+
+    await vi.waitFor(() => expect(replace).toHaveBeenCalledWith('/clubs/club-1'));
   });
 });
 
@@ -247,21 +343,64 @@ describe('monthly recurrence and the preview', () => {
       await screen.findByText(/Next: 2027-08-31, 2027-11-30, 2028-02-29/),
     ).toBeTruthy();
 
-    // Stop the series between the 1st and 2nd occurrence. The "Stop
-    // repeating on" field's shown value already defaults to the picked
-    // start date (2027-08-31) when `endsOn` is unset, so setting it back to
-    // that SAME value would look like a no-op to React's controlled-input
-    // change tracking and never fire onChange -- picking a distinct date
-    // is what actually proves the screen threads `endsOn` state into
-    // `nextOccurrences` at all, which is the one thing this test checks
-    // (the exact inclusive-boundary clamp itself is already covered
-    // exhaustively at the pure-function level in lib/events.test.ts).
+    // The field shows nothing until the host chooses an end date, because
+    // nothing is what gets sent (`endsOn: null`). It used to show the START
+    // date instead -- a value the host never picked, contradicting the
+    // preview immediately above it.
+    expect(
+      (screen.getByLabelText('Stop repeating on') as HTMLInputElement).value,
+    ).toBe('');
+
+    // And because it shows nothing, the start date is now selectable. While
+    // the field pre-filled 2027-08-31, that one date fired no change event
+    // when picked -- a controlled input already holding a value sees no
+    // change -- so the single most likely end date a host would choose was
+    // the one the screen ignored. Picking it here both proves the fix and
+    // clamps the preview to exactly one occurrence.
     fireEvent.change(screen.getByLabelText('Stop repeating on'), {
-      target: { value: '2027-10-01' },
+      target: { value: '2027-08-31' },
     });
 
     const preview = await screen.findByText(/^The 5th Tuesday of the month\. Next: 2027-08-31$/);
     expect(preview.textContent).not.toMatch(/2027-11-30/);
+
+    pickVenue();
+    fireEvent.change(screen.getByLabelText('Game name'), {
+      target: { value: 'Monthly game' },
+    });
+    fireEvent.click(screen.getByText('Save'));
+
+    await vi.waitFor(() => expect(createEventSeries).toHaveBeenCalled());
+    // What is shown is what is sent.
+    expect(createEventSeries.mock.calls[0][0].endsOn).toBe('2027-08-31');
+  });
+});
+
+/*
+ * components/DateField.web.tsx ignores an empty change and keeps the value it
+ * already has: a cleared <input type="date"> reports "", and there is no
+ * meaningful "no date" for the game's own date. Deleting that guard left the
+ * whole suite green, so this fires the "" and checks what the screen actually
+ * sends afterwards -- not merely that the control still renders.
+ */
+describe('clearing a date field', () => {
+  it('keeps the date already picked rather than sending an empty one', async () => {
+    render(<NewEventScreen />);
+    await screen.findByText('Add a game');
+
+    const dateInput = screen.getByLabelText('Date') as HTMLInputElement;
+    fireEvent.change(dateInput, { target: { value: '2027-08-31' } });
+    fireEvent.change(dateInput, { target: { value: '' } });
+    expect(dateInput.value).toBe('2027-08-31');
+
+    pickVenue();
+    fireEvent.change(screen.getByLabelText('Game name'), {
+      target: { value: 'Still dated' },
+    });
+    fireEvent.click(screen.getByText('Save'));
+
+    await vi.waitFor(() => expect(createEvent).toHaveBeenCalled());
+    expect(createEvent.mock.calls[0][0].date).toBe('2027-08-31');
   });
 });
 
