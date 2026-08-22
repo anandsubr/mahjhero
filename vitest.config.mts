@@ -25,6 +25,16 @@ export default defineConfig({
       // vi.mock('react-native', () => ({ Platform: { OS: 'ios' } })).
       // Asserting native behaviour without that override silently tests web.
       'react-native': 'react-native-web',
+      // Both ship untranspiled Flow (or reach into react-native internals
+      // the alias above does not intercept) and cannot be parsed by
+      // Vitest. See test/stubs/*.tsx for what each stub covers and why the
+      // real module isn't needed for component tests.
+      '@react-native-community/datetimepicker': new URL(
+        './test/stubs/datetimepicker.tsx', import.meta.url,
+      ).pathname,
+      'react-native-svg': new URL(
+        './test/stubs/react-native-svg.tsx', import.meta.url,
+      ).pathname,
     },
   },
   test: {
