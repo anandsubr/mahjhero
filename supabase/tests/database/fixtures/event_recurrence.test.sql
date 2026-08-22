@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(37);
+select plan(40);
 
 insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-000000000001', 'alice@example.com');
@@ -51,6 +51,22 @@ select results_eq(
       '2027-02-01', '2027-02-28')$$,
   $$values ('2027-02-02'::date), ('2027-02-16')$$,
   'a later window keeps the same fortnight, it does not restart it'
+);
+
+-- Both windows above open ON the fortnight (2027-01-01 is starts_on itself,
+-- and 2027-02-01 is a Monday whose next Tuesday, the 2nd, is on the
+-- fortnight either way), so anchoring on the WINDOW instead of on starts_on
+-- produced identical dates and neither assertion could tell the difference —
+-- verified: rewriting the anchor to lower_bound left both green. This window
+-- opens mid-fortnight. The rule's Tuesdays are the 5th and 19th of January;
+-- a window opening on the 10th must skip to the 19th, not restart on the
+-- 12th.
+select results_eq(
+  $$select * from public.series_occurrence_dates(
+      'biweekly', 2::smallint, null, '2027-01-01', null,
+      '2027-01-10', '2027-02-10')$$,
+  $$values ('2027-01-19'::date), ('2027-02-02')$$,
+  'a window opening mid-fortnight keeps starts_on''s fortnight'
 );
 
 -- The 5th Tuesday exists in March, June and August 2027 and nowhere else in
@@ -187,6 +203,24 @@ select is(
   'the cancelled week stays cancelled'
 );
 
+-- Idempotency is answered by the partial unique index, not by
+-- materialized_through's bookkeeping. The sweep hides that distinction: it
+-- wraps each series in an exception block, so an insert that raised on a
+-- duplicate would be swallowed and still report "created 0". Re-run the
+-- SINGLE-series path, which propagates, over dates that already have rows.
+-- Removing `on conflict ... do nothing` entirely, or turning it into a
+-- `do update` that returns the existing id and so re-inserts that event's
+-- tables, both left every other assertion in this file green.
+update public.event_series set materialized_through = null
+  where id = '55555555-0000-0000-0000-000000000001';
+
+select lives_ok(
+  $$select public.materialize_one_series(
+      '55555555-0000-0000-0000-000000000001',
+      (date '2027-03-31' - current_date)::int)$$,
+  'the propagating path re-walks materialized dates without raising'
+);
+
 -- ---------------------------------------------------------------------
 -- DST. The whole reason the rule is stored club-local.
 -- ---------------------------------------------------------------------
@@ -286,6 +320,47 @@ select results_eq(
   $$values ('2027-09-11'::date), ('2027-10-09'), ('2027-11-13'),
            ('2027-12-11')$$,
   'the monthly series lands on the second Saturday of each month'
+);
+
+-- The fortnight must survive a horizon extended in TWO steps. Every biweekly
+-- assertion above materializes in one go, and the second step is the only
+-- thing that ever hands the date function a window opening mid-fortnight
+-- (window_start is materialized_through + 1). Verified: passing window_start
+-- to the function as the anchor instead of starts_on left the whole file
+-- green, and would have moved this club's game to 06-22, 07-06 and 07-20.
+insert into public.event_series (
+  id, club_id, title, venue_id, frequency, weekday, start_time,
+  duration_minutes, table_count, starts_on, ends_on, created_by
+) values (
+  '55555555-0000-0000-0000-000000000008',
+  'c1c1c1c1-0000-0000-0000-000000000001', 'Fortnightly, in two steps',
+  '11111111-0000-0000-0000-000000000001',
+  'biweekly', 2::smallint, '19:00', 180, 1,
+  '2027-06-01', '2027-07-31',
+  'aaaaaaaa-0000-0000-0000-000000000001'
+);
+
+-- Setup, not assertions: a short horizon that stops on 2027-06-20, then one
+-- that reaches ends_on. The second run's window opens on 2027-06-21, a
+-- Monday, and the next Tuesday after it is the 22nd -- the wrong fortnight.
+do $two_steps$
+begin
+  perform public.materialize_one_series(
+    '55555555-0000-0000-0000-000000000008',
+    (date '2027-06-20' - current_date)::int);
+  perform public.materialize_one_series(
+    '55555555-0000-0000-0000-000000000008',
+    (date '2027-07-31' - current_date)::int);
+end
+$two_steps$;
+
+select results_eq(
+  $$select occurrence_date from public.events
+     where series_id = '55555555-0000-0000-0000-000000000008'
+     order by occurrence_date$$,
+  $$values ('2027-06-01'::date), ('2027-06-15'), ('2027-06-29'),
+           ('2027-07-13'), ('2027-07-27')$$,
+  'extending the horizon in two steps yields the dates one step would have'
 );
 
 -- ---------------------------------------------------------------------
