@@ -3694,7 +3694,7 @@ git commit -m "feat(db): schedule nightly materialization and assert the new gra
   **`addEventTable` must not surface a raw `23505`.** Two concurrent adds compute the same next position and the loser hits `unique (event_id, position)`; that is the constraint doing its job, not something to show a host. Map it to a retry or to the generic message.
   Tasks 9–14 consume these.
 
-**Times render in the club's timezone, never the device's.** A member checking Tuesday's game from a hotel in another state must see the time the game actually starts, in the club's terms. `formatEventWhen` takes the club timezone and passes it to `Intl.DateTimeFormat`; nothing here calls `toLocaleString` without one.
+**The client never converts a timezone.** It sends club-local calendar values and renders stored instants through `formatEventWhen`. Both directions are the database's job. **Times render in the club's timezone, never the device's.** A member checking Tuesday's game from a hotel in another state must see the time the game actually starts, in the club's terms. `formatEventWhen` takes the club timezone and passes it to `Intl.DateTimeFormat`; nothing here calls `toLocaleString` without one.
 
 **`nextOccurrences` must agree with `series_occurrence_dates`.** It is the create screen's preview — "Tue 25 Aug, Tue 1 Sep, Tue 8 Sep" — and a preview that disagrees with what the database will generate is worse than no preview. Same weekday encoding (0–6, Sunday = 0), same "a month with no fifth Tuesday yields nothing" rule, same biweekly anchor.
 
@@ -6510,10 +6510,19 @@ export default function EditEventScreen() {
         return;
       }
     } else {
-      // A per-occurrence time edit reuses the occurrence's own date with the
-      // new wall clock, resolved in the club's timezone — the same rule the
-      // series path uses, so a hand-edited week and a series-edited week
-      // agree about what 6:30pm means.
+      /*
+       * NO CLIENT-SIDE TIMEZONE CONVERSION. `update_event` takes club-local
+       * calendar values — date, wall time, duration — and resolves them in
+       * Postgres with the same expression `materialize_one_series` uses.
+       *
+       * An earlier draft of this screen converted here, duplicating what the
+       * database already does for the series path. Two implementations of one
+       * conversion, required to agree; both attempts were wrong, the second
+       * still mismatching Postgres in 219 of 3,920 combinations at ordinary
+       * unambiguous wall clocks. Send calendar values and let the database
+       * decide what 6:30pm means. If you find yourself reaching for
+       * `toLocaleString` or an offset subtraction, stop.
+       */
       const localDate =
         event.occurrence_date ??
         dateToDateString(dateStringToDate(event.starts_at.slice(0, 10)));
@@ -6531,10 +6540,9 @@ export default function EditEventScreen() {
         title,
         venueId,
         notes,
-        startsAt,
-        endsAt: new Date(
-          new Date(startsAt).getTime() + durationMs,
-        ).toISOString(),
+        date: localDate,
+        startTime,
+        durationMinutes,
       });
       setSaving(false);
       if (result.error) {
