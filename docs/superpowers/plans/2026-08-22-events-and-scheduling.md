@@ -222,7 +222,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(28);
+select plan(32);
 
 -- Structure
 select has_table('public', 'venues', 'venues table exists');
@@ -425,6 +425,48 @@ select is(
    where id = '11111111-0000-0000-0000-000000000001'),
   1,
   'an archived venue still exists and still resolves'
+);
+
+-- ---------------------------------------------------------------------
+-- The publish path. Deliberately tested from both ends: the default being
+-- `club` is the easy half, and it is asserted three times above. The half
+-- that carries the actual privacy risk is `share_publicly => true`, and
+-- because there is no un-publish function a defect there is unrecoverable
+-- through the API — the row would be readable by every authenticated user of
+-- every club, permanently.
+-- ---------------------------------------------------------------------
+select lives_ok(
+  $$select public.create_venue(
+      'The Parish Rooms', null, 'Newton', null, null,
+      'c1c1c1c1-0000-0000-0000-000000000001', true)$$,
+  'a venue can be shared deliberately'
+);
+
+select is(
+  (select visibility::text from public.venues where name = 'The Parish Rooms'),
+  'public',
+  'share_publicly => true actually publishes it'
+);
+
+set local request.jwt.claims =
+  '{"sub": "bbbbbbbb-0000-0000-0000-000000000002", "role": "authenticated"}';
+
+select is(
+  (select count(*)::int from public.venues where name = 'The Parish Rooms'),
+  1,
+  'and another club can then see it'
+);
+
+-- create_venue's own cross-club guard. update_venue and archive_venue each
+-- have one above; without this the asymmetry is what a future refactor slips
+-- through.
+select throws_ok(
+  $$select public.create_venue(
+      'Bob''s intrusion', null, null, null, null,
+      'c1c1c1c1-0000-0000-0000-000000000001', false)$$,
+  '42501',
+  null,
+  'a host of another club cannot create a venue attributed to this one'
 );
 
 -- ---------------------------------------------------------------------
@@ -665,12 +707,12 @@ $$;
  * parameter on the general edit path.
  */
 create function public.update_venue(
-  target_venue     uuid,
-  venue_name       text default null,
-  new_address_line text default null,
-  new_locality     text default null,
-  new_region       text default null,
-  new_postal_code  text default null
+  target_venue  uuid,
+  venue_name    text default null,
+  address_line  text default null,
+  locality      text default null,
+  region        text default null,
+  postal_code   text default null
 )
 returns boolean
 language plpgsql
@@ -689,16 +731,22 @@ begin
 
   perform public.assert_club_organizer(steward);
 
-  -- Every parameter is prefixed `new_` because plpgsql resolves a bare name
-  -- against the table's columns first inside UPDATE ... SET: `address_line =
-  -- coalesce(address_line, address_line)` is 42702, ambiguous column
-  -- reference, not the no-op it looks like.
+  -- Qualified on BOTH sides, and not simplifiable.
+  --
+  -- A bare `address_line = coalesce(address_line, address_line)` raises 42702:
+  -- plpgsql cannot tell the parameter from the column of the same name. The
+  -- obvious escape — renaming the parameters to `new_address_line` — is worse
+  -- than the bug, because PostgREST resolves RPC by argument NAME. Renaming
+  -- them breaks `supabase.rpc('update_venue', { address_line, ... })` with a
+  -- PGRST202 the mocked client tests cannot see, which is precisely the class
+  -- of failure lib/schema-contract.test.ts exists to catch. So the parameter
+  -- names are part of the public interface: disambiguate, never rename.
   update public.venues set
     name         = coalesce(nullif(trim(coalesce(venue_name, '')), ''), name),
-    address_line = coalesce(new_address_line, address_line),
-    locality     = coalesce(new_locality, locality),
-    region       = coalesce(new_region, region),
-    postal_code  = coalesce(new_postal_code, postal_code)
+    address_line = coalesce(update_venue.address_line, venues.address_line),
+    locality     = coalesce(update_venue.locality,     venues.locality),
+    region       = coalesce(update_venue.region,       venues.region),
+    postal_code  = coalesce(update_venue.postal_code,  venues.postal_code)
   where id = target_venue;
 
   return true;
@@ -826,7 +874,7 @@ Expected: every migration applies, including this one.
 npm run test:db
 ```
 
-Expected: 28 passing in `venues.test.sql`, and every pre-existing test still green.
+Expected: 32 passing in `venues.test.sql`, and every pre-existing test still green.
 
 - [ ] **Step 6: Prove the isolation test can actually fail**
 
