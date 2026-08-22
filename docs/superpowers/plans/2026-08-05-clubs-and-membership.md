@@ -1239,11 +1239,12 @@ In `app/profile.tsx`, add a back link above the heading, matching the notificati
 ```tsx
       <Button
         variant="ghost"
-        icon={<ChevronLeftIcon color={colors.accentColor}
-      >Clubs</Button>}
+        icon={<ChevronLeftIcon color={colors.accentColor} />}
         onPress={() => router.push('/clubs')}
         accessibilityLabel="Back to your clubs"
-      />
+      >
+        Clubs
+      </Button>
 ```
 
 Profile is no longer the landing screen, so without this it becomes the dead end that notifications used to be.
@@ -1325,11 +1326,12 @@ export default function NewClubScreen() {
     <Screen>
       <Button
         variant="ghost"
-        icon={<ChevronLeftIcon color={colors.accentColor}
-      >Clubs</Button>}
+        icon={<ChevronLeftIcon color={colors.accentColor} />}
         onPress={() => router.push('/clubs')}
         accessibilityLabel="Back to your clubs"
-      />
+      >
+        Clubs
+      </Button>
 
       <Text style={styles.heading}>Start a club</Text>
       <Text style={styles.help}>
@@ -1495,11 +1497,12 @@ export default function ClubDetailScreen() {
     <Screen>
       <Button
         variant="ghost"
-        icon={<ChevronLeftIcon color={colors.accentColor}
-      >Clubs</Button>}
+        icon={<ChevronLeftIcon color={colors.accentColor} />}
         onPress={() => router.push('/clubs')}
         accessibilityLabel="Back to your clubs"
-      />
+      >
+        Clubs
+      </Button>
 
       <Text style={styles.heading}>{club.name}</Text>
       {club.rhythm.length > 0 ? (
@@ -1966,11 +1969,12 @@ export default function ImportRosterScreen() {
     <Screen>
       <Button
         variant="ghost"
-        icon={<ChevronLeftIcon color={colors.accentColor}
-      >Club</Button>}
+        icon={<ChevronLeftIcon color={colors.accentColor} />}
         onPress={() => router.push(`/clubs/${id}`)}
         accessibilityLabel="Back to the club"
-      />
+      >
+        Club
+      </Button>
 
       <Text style={styles.heading}>Import a roster</Text>
       <Text style={styles.help}>
