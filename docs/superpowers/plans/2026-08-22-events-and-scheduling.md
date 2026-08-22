@@ -2716,10 +2716,19 @@ returns boolean
 
 It takes one occurrence back to its series in full — title, venue, notes, and
 the instants recomputed from `occurrence_date` plus the series' `start_time`
-resolved in the club's timezone — and clears `overrides` to `'{}'`. It refuses
-a cancelled event and an event with no `series_id`, guards with
+resolved in the club's timezone — and clears `overrides` to `'{}'`.
+
+It refuses a cancelled event, an event with no `series_id`, and — importantly —
+a **past** occurrence. This is one button that would otherwise replace a game
+which already happened with whatever the series looks like today, after it may
+since have been renamed, moved and re-timed. Past occurrences are history. The
+guard lives in the function rather than in the screen's show-condition, because
+the screen is the wrong place to enforce it. It guards with
 `assert_club_organizer` on the event's own club, takes `for update` on the row
 it rewrites, and is granted to `authenticated`.
+
+(`update_event` deliberately keeps no past guard — a host typing values for one
+specific event is a different act from a one-click revert.)
 
 Two intentions, two controls: the edit screen's toggle applies **one edit** to
 customised weeks; this undoes **one week's customisation** entirely.
