@@ -34,6 +34,7 @@ const fetchClub = vi.fn();
 const fetchRoster = vi.fn();
 const fetchPendingInvites = vi.fn();
 const importRoster = vi.fn();
+const fetchUpcomingEvents = vi.fn();
 
 // One partial mock for the whole file, not one per describe block. Two
 // `vi.mock` calls for the same specifier are both hoisted and only one
@@ -54,6 +55,17 @@ vi.mock('../../lib/clubs', async (importOriginal) => {
   };
 });
 
+// Same pattern as the lib/clubs mock above: `formatEventWhen` stays real
+// (it is pure, and the whole point of the timezone test below is to exercise
+// its actual Intl formatting), only `fetchUpcomingEvents` is stubbed.
+vi.mock('../../lib/events', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/events')>();
+  return {
+    ...actual,
+    fetchUpcomingEvents: (...args: unknown[]) => fetchUpcomingEvents(...args),
+  };
+});
+
 const CLUB = {
   id: 'club-1',
   name: 'Riverside Mah Jongg',
@@ -70,6 +82,7 @@ beforeEach(() => {
   fetchClub.mockResolvedValue(CLUB);
   fetchRoster.mockResolvedValue([]);
   fetchPendingInvites.mockResolvedValue([]);
+  fetchUpcomingEvents.mockResolvedValue([]);
   importRoster.mockResolvedValue({ created: 2, error: null });
 });
 
@@ -130,6 +143,7 @@ describe('roster import', () => {
 });
 
 import ClubDetailScreen from '../clubs/[id]/index';
+import { formatEventWhen } from '../../lib/events';
 
 // A guard-ordering regression: the club detail screen used to check
 // `if (loading || !ready) return <spinner>` before `if (!session) return
@@ -192,5 +206,137 @@ describe('club detail screen', () => {
     ]);
     render(<ClubDetailScreen />);
     expect(await screen.findByText(/40 invitations sent/)).toBeTruthy();
+  });
+});
+
+function escapeForRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+describe('club detail screen upcoming events', () => {
+  // This club's timezone is Asia/Tokyo, deliberately NOT America/New_York —
+  // the value `TZ` is pinned to for the whole suite (package.json's `test`
+  // script). If the screen ever stopped threading `club.timezone` through to
+  // `formatEventWhen` and fell back to whatever timezone the process (or a
+  // bare `toLocaleString()`) resolves to by default, Node would render this
+  // event in the suite's own America/New_York timezone instead — a
+  // completely different clock hour and, for this instant, a different
+  // calendar day too. A same-timezone fixture (e.g. reusing plain `CLUB`,
+  // whose timezone already happens to be America/New_York) would pass either
+  // way and prove nothing; that is the trap this branch's report already
+  // flagged twice. Checked concretely below by asserting the Tokyo and
+  // New-York renderings of the same instant actually differ, and separately
+  // by rerunning this file with `TZ=Pacific/Auckland npm test -- clubs.test`
+  // (a third timezone, matching neither the club's nor the default suite
+  // env) — still green, because the expected string is computed through the
+  // real `formatEventWhen('Asia/Tokyo')` call, never off the process clock.
+  const TOKYO_CLUB = { ...CLUB, timezone: 'Asia/Tokyo' };
+
+  const EVENT = {
+    id: 'event-1',
+    club_id: 'club-1',
+    series_id: null,
+    title: 'Thursday Mahjong',
+    venue_id: 'venue-1',
+    venue_name: 'The Annexe',
+    notes: '',
+    starts_at: '2026-09-03T13:00:00.000Z',
+    ends_at: '2026-09-03T16:00:00.000Z',
+    status: 'published' as const,
+    occurrence_date: null,
+    overrides: [],
+    table_count: 3,
+  };
+
+  beforeEach(() => {
+    fetchClub.mockResolvedValue(TOKYO_CLUB);
+  });
+
+  it('renders the event start time in the club timezone, not the device/process one', async () => {
+    fetchRoster.mockResolvedValue([
+      { profile_id: 'test-user', role: 'member', display_name: 'Ada', skill_level: null },
+    ]);
+    fetchUpcomingEvents.mockResolvedValue([EVENT]);
+
+    const tokyoWhen = formatEventWhen(EVENT.starts_at, 'Asia/Tokyo');
+    const newYorkWhen = formatEventWhen(EVENT.starts_at, 'America/New_York');
+    // Guards the fixture itself: if these ever matched, the assertion below
+    // would pass regardless of which timezone the screen actually used.
+    expect(tokyoWhen).not.toBe(newYorkWhen);
+
+    render(<ClubDetailScreen />);
+
+    expect(await screen.findByText('Thursday Mahjong')).toBeTruthy();
+    expect(
+      screen.getByText(new RegExp(escapeForRegExp(tokyoWhen))),
+    ).toBeTruthy();
+    expect(screen.queryByText(new RegExp(escapeForRegExp(newYorkWhen)))).toBeNull();
+  });
+
+  it('gives the event card an accessible name including the club-timezone time', async () => {
+    fetchRoster.mockResolvedValue([
+      { profile_id: 'test-user', role: 'member', display_name: 'Ada', skill_level: null },
+    ]);
+    fetchUpcomingEvents.mockResolvedValue([EVENT]);
+    render(<ClubDetailScreen />);
+
+    const tokyoWhen = formatEventWhen(EVENT.starts_at, 'Asia/Tokyo');
+    expect(
+      await screen.findByRole('button', {
+        name: new RegExp(`Thursday Mahjong, ${escapeForRegExp(tokyoWhen)}`),
+      }),
+    ).toBeTruthy();
+  });
+
+  it('hides the add-game control and the venues link from a plain member', async () => {
+    fetchRoster.mockResolvedValue([
+      { profile_id: 'test-user', role: 'member', display_name: 'Ada', skill_level: null },
+    ]);
+    fetchUpcomingEvents.mockResolvedValue([]);
+    render(<ClubDetailScreen />);
+
+    await screen.findByText(/No games scheduled yet\.$/);
+    expect(screen.queryByText('Add a game')).toBeNull();
+    expect(screen.queryByText('Venues')).toBeNull();
+  });
+
+  it('shows the host the add-game control and the venues link', async () => {
+    fetchRoster.mockResolvedValue([
+      { profile_id: 'test-user', role: 'host', display_name: 'Ada', skill_level: null },
+    ]);
+    fetchUpcomingEvents.mockResolvedValue([]);
+    render(<ClubDetailScreen />);
+
+    expect(
+      await screen.findByText('No games scheduled yet. Add one and everyone in the club will see it.'),
+    ).toBeTruthy();
+    expect(screen.getByText('Add a game')).toBeTruthy();
+    expect(screen.getByText('Venues')).toBeTruthy();
+  });
+
+  it('marks a cancelled event without implying it can still be booked', async () => {
+    fetchRoster.mockResolvedValue([
+      { profile_id: 'test-user', role: 'host', display_name: 'Ada', skill_level: null },
+    ]);
+    fetchUpcomingEvents.mockResolvedValue([{ ...EVENT, status: 'cancelled' as const }]);
+    render(<ClubDetailScreen />);
+
+    expect(await screen.findByText('Cancelled')).toBeTruthy();
+  });
+
+  // Seat booking is a later plan, not this one. A member reading the list
+  // and tapping through to the event screen is the whole interaction this
+  // task builds — no "Book a seat" affordance and no "coming soon" badge
+  // should appear anywhere, for an organizer or a member.
+  it('offers no booking affordance and no coming-soon badge', async () => {
+    fetchRoster.mockResolvedValue([
+      { profile_id: 'test-user', role: 'host', display_name: 'Ada', skill_level: null },
+    ]);
+    fetchUpcomingEvents.mockResolvedValue([EVENT]);
+    render(<ClubDetailScreen />);
+
+    await screen.findByText('Thursday Mahjong');
+    expect(screen.queryByText(/book/i)).toBeNull();
+    expect(screen.queryByText(/coming soon/i)).toBeNull();
   });
 });

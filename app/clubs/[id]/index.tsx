@@ -1,6 +1,13 @@
-import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
+import { Link, Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Platform, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import Button from '../../../components/Button';
 import Card from '../../../components/Card';
 import ErrorBanner from '../../../components/ErrorBanner';
@@ -16,6 +23,8 @@ import {
 } from '../../../lib/clubs';
 import type { Club, ClubInvite, ClubMember } from '../../../lib/clubs';
 import { GENERIC_ERROR } from '../../../lib/constants';
+import { fetchUpcomingEvents, formatEventWhen } from '../../../lib/events';
+import type { ClubEvent } from '../../../lib/events';
 import { useSession } from '../../../lib/session';
 import { colors, space, type } from '../../../lib/theme';
 
@@ -31,6 +40,7 @@ export default function ClubDetailScreen() {
   const [club, setClub] = useState<Club | null>(null);
   const [roster, setRoster] = useState<ClubMember[]>([]);
   const [invites, setInvites] = useState<ClubInvite[]>([]);
+  const [events, setEvents] = useState<ClubEvent[]>([]);
   const [ready, setReady] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
@@ -54,6 +64,11 @@ export default function ClubDetailScreen() {
         setReady(true);
       },
     );
+    fetchUpcomingEvents(id).then((result) => {
+      if (cancelled) return;
+      if (result === null) setLoadFailed(true);
+      else setEvents(result);
+    });
     return () => {
       cancelled = true;
     };
@@ -86,6 +101,14 @@ export default function ClubDetailScreen() {
   }
 
   const me = roster.find((m) => m.profile_id === userId);
+  // The roster is already loaded for the member list, so the viewer's role
+  // costs nothing extra. `canInvite` is exactly the host-or-co-organizer
+  // test the event functions enforce in SQL, so the UI and the database
+  // agree about who may invite, create games, and manage venues rather than
+  // each deciding separately. The brief for this task named a second,
+  // identically-computed `isOrganizer` for gating the events UI — same
+  // roster, same role, same `canInvite` call — so this reuses `mayInvite`
+  // instead of duplicating the lookup.
   const mayInvite = me ? canInvite(me.role) : false;
 
   // `app/clubs/[id]/import.tsx` redirects here with `?imported=<n>` after a
@@ -136,6 +159,67 @@ export default function ClubDetailScreen() {
       <Text style={styles.heading}>{club.name}</Text>
       {club.rhythm.length > 0 ? (
         <Text style={styles.help}>{club.rhythm}</Text>
+      ) : null}
+
+      <Text style={styles.sectionTitle}>Upcoming</Text>
+
+      {events.length === 0 ? (
+        <Text style={styles.help}>
+          {mayInvite
+            ? 'No games scheduled yet. Add one and everyone in the club will see it.'
+            : 'No games scheduled yet.'}
+        </Text>
+      ) : (
+        events.map((event) => (
+          <Link
+            key={event.id}
+            href={`/clubs/${id}/events/${event.id}`}
+            asChild
+          >
+            {/*
+              Pressable rather than Card, for the reason app/clubs/index.tsx
+              documents at length: Card is a plain function component that
+              neither declares accessibility props nor spreads unrecognised
+              ones onto its View, so `Link asChild` cloning onto it drops the
+              handler and leaves the card inert.
+            */}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`${event.title}, ${formatEventWhen(
+                event.starts_at,
+                club.timezone,
+              )}`}
+            >
+              <Card>
+                <View style={styles.row}>
+                  <Text style={styles.memberName}>{event.title}</Text>
+                  {event.status === 'cancelled' ? (
+                    <Tag>Cancelled</Tag>
+                  ) : null}
+                </View>
+                <Text style={styles.help}>
+                  {formatEventWhen(event.starts_at, club.timezone)}
+                  {' · '}
+                  {event.venue_name}
+                </Text>
+                <Text style={styles.help}>
+                  {event.table_count}{' '}
+                  {event.table_count === 1 ? 'table' : 'tables'}
+                </Text>
+              </Card>
+            </Pressable>
+          </Link>
+        ))
+      )}
+
+      {mayInvite ? (
+        <Button
+          variant="secondary"
+          onPress={() => router.push(`/clubs/${id}/events/new`)}
+          accessibilityLabel="Add a game"
+        >
+          Add a game
+        </Button>
       ) : null}
 
       {importedCount !== null ? (
@@ -243,6 +327,9 @@ export default function ClubDetailScreen() {
               </Text>
             </Card>
           ) : null}
+          <Link href={`/clubs/${id}/venues`} style={styles.linkRow}>
+            <Text style={styles.link}>Venues</Text>
+          </Link>
         </>
       ) : null}
 
@@ -300,6 +387,12 @@ const styles = StyleSheet.create({
   inviteUrl: {
     fontFamily: type.bodyRegular,
     fontSize: type.size.helper,
+    color: colors.accentColor,
+  },
+  linkRow: { marginTop: space[6] },
+  link: {
+    fontFamily: type.bodySemiBold,
+    fontSize: type.size.body,
     color: colors.accentColor,
   },
 });
