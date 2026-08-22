@@ -215,10 +215,17 @@ production:
 Neither is reachable by a club that plays in the evening, which is why the correct
 response is a test that pins the behaviour, not a feature that resolves it.
 
-**Club timezone changes rewrite future occurrences.** A trigger on
-`clubs.timezone` recomputes `starts_at`/`ends_at` for every future, non-cancelled
-occurrence that has not overridden `starts_at`. A club correcting New York to
-Chicago must not end up with new events right and every existing one an hour wrong.
+**Club timezone changes rewrite future events.** A trigger on `clubs.timezone`
+preserves the club-local **wall clock** of every future, non-cancelled event by
+re-resolving it in the new zone. A club correcting New York to Chicago must not end
+up with new events right and every existing one an hour wrong.
+
+Two consequences of stating it as a wall-clock rule rather than a recompute-from-the-
+series-rule one. It covers **one-off events**, which have no rule to recompute from
+and would otherwise be silently skipped. And it covers **occurrences that have
+overridden `starts_at`**: a timezone change is a correction of interpretation, not a
+schedule change, and an override records that this week's wall clock differs from the
+series' — not that this week is immune to being read in the right zone.
 
 ---
 
