@@ -23,7 +23,14 @@ export type VenueMatch = {
   is_own_club: boolean;
 };
 
-const VENUE_COLUMNS =
+/**
+ * The exact select list the client relies on, named once so the schema
+ * contract test (lib/schema-contract.test.ts) can import it directly rather
+ * than retyping it — see lib/profile.ts's PROFILE_COLUMNS for the pattern
+ * this follows. A column dropped here without the test noticing is exactly
+ * the drift the contract suite exists to catch.
+ */
+export const VENUE_COLUMNS =
   'id, name, address_line, locality, region, postal_code, visibility';
 
 /**
@@ -90,10 +97,10 @@ export async function createVenue(input: {
   postalCode?: string;
   sharePublicly?: boolean;
 }): Promise<{ venueId: string | null; error: string | null }> {
-  if (input.name.trim().length === 0) {
-    return { venueId: null, error: 'Give the venue a name.' };
-  }
   try {
+    if (input.name.trim().length === 0) {
+      return { venueId: null, error: 'Give the venue a name.' };
+    }
     const { data, error } = await supabase.rpc('create_venue', {
       venue_name: input.name.trim(),
       address_line: input.addressLine ?? null,

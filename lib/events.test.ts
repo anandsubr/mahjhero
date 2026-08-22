@@ -13,6 +13,8 @@ vi.mock('./supabase', () => ({
 import { GENERIC_ERROR } from './constants';
 import {
   addEventTable,
+  createEvent,
+  createEventSeries,
   formatEventWhen,
   frequencyLabel,
   nextOccurrences,
@@ -77,6 +79,92 @@ describe('nextOccurrences', () => {
     ).toEqual(['2027-01-26', '2027-02-23', '2027-03-30']);
   });
 
+  it('clamps to endsOn inclusive: weekly Tuesday ends exactly on an occurrence', () => {
+    // Verified against the live series_occurrence_dates: weekly Tuesday,
+    // starts_on 2027-01-05, ends_on 2027-01-12 -> exactly two dates. Before
+    // the clamp this returned three, overstating the series on the very
+    // screen that collects the end date.
+    expect(
+      nextOccurrences(
+        {
+          frequency: 'weekly',
+          weekday: 2,
+          nthWeek: null,
+          startsOn: '2027-01-05',
+          endsOn: '2027-01-12',
+        },
+        3,
+      ),
+    ).toEqual(['2027-01-05', '2027-01-12']);
+  });
+
+  it('clamps to endsOn when it falls between two occurrences', () => {
+    // Verified against series_occurrence_dates with the same rule and
+    // ends_on 2027-01-10 (between the Jan 5 and Jan 12 Tuesdays) -> one date.
+    expect(
+      nextOccurrences(
+        {
+          frequency: 'weekly',
+          weekday: 2,
+          nthWeek: null,
+          startsOn: '2027-01-05',
+          endsOn: '2027-01-10',
+        },
+        3,
+      ),
+    ).toEqual(['2027-01-05']);
+  });
+
+  it('clamps biweekly occurrences to endsOn inclusive', () => {
+    // Verified against series_occurrence_dates: biweekly Tuesday, starts_on
+    // 2027-01-01, ends_on 2027-01-19 -> two dates (Jan 5 and Jan 19).
+    expect(
+      nextOccurrences(
+        {
+          frequency: 'biweekly',
+          weekday: 2,
+          nthWeek: null,
+          startsOn: '2027-01-01',
+          endsOn: '2027-01-19',
+        },
+        3,
+      ),
+    ).toEqual(['2027-01-05', '2027-01-19']);
+  });
+
+  it('clamps monthly_nth_weekday occurrences to endsOn between two occurrences', () => {
+    // Verified against series_occurrence_dates: 5th Tuesday, starts_on
+    // 2027-01-01, ends_on 2027-07-01 -> March 30 and June 29 only (August 31
+    // falls after the end date).
+    expect(
+      nextOccurrences(
+        {
+          frequency: 'monthly_nth_weekday',
+          weekday: 2,
+          nthWeek: 5,
+          startsOn: '2027-01-01',
+          endsOn: '2027-07-01',
+        },
+        3,
+      ),
+    ).toEqual(['2027-03-30', '2027-06-29']);
+  });
+
+  it('does not clamp when endsOn is null', () => {
+    expect(
+      nextOccurrences(
+        {
+          frequency: 'weekly',
+          weekday: 2,
+          nthWeek: null,
+          startsOn: '2027-01-01',
+          endsOn: null,
+        },
+        3,
+      ),
+    ).toEqual(['2027-01-05', '2027-01-12', '2027-01-19']);
+  });
+
   it('does not drift across a DST boundary', () => {
     // The dates are club-local calendar dates and carry no instant, so the
     // sequence must be unaffected by the machine's timezone or by the US
@@ -117,6 +205,79 @@ describe('frequencyLabel', () => {
     expect(frequencyLabel('monthly_nth_weekday', 2, -1)).toBe(
       'The last Tuesday of the month',
     );
+  });
+});
+
+describe('createEvent', () => {
+  beforeEach(() => {
+    rpcMock.mockReset();
+  });
+
+  const validInput = {
+    clubId: 'club-1',
+    title: 'Tuesday Mahjong',
+    venueId: 'venue-1',
+    notes: '',
+    startsAt: '2027-09-07T23:00:00Z',
+    endsAt: '2027-09-08T02:00:00Z',
+    tableCount: 2,
+  };
+
+  it('rejects a blank title with a friendly message, before ever calling the RPC', async () => {
+    await expect(createEvent({ ...validInput, title: '   ' })).resolves.toEqual({
+      eventId: null,
+      error: 'Give the game a name.',
+    });
+    expect(rpcMock).not.toHaveBeenCalled();
+  });
+
+  // MINOR 7: title is validated with `.trim()` before the RPC call. The
+  // create screen only ever supplies a string, but a caller further from
+  // TypeScript's checking (or a stale/untyped bundle) could hand this a
+  // `null` — and lib/'s never-rejects convention (see the block comment
+  // above toClubEvent) means that must come back as `{ error }`, not an
+  // unhandled rejection that strands the screen on a spinner.
+  it('never rejects, even when title is not actually a string at runtime', async () => {
+    await expect(
+      createEvent({ ...validInput, title: null as unknown as string }),
+    ).resolves.toEqual({ eventId: null, error: GENERIC_ERROR });
+    expect(rpcMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('createEventSeries', () => {
+  beforeEach(() => {
+    rpcMock.mockReset();
+  });
+
+  const validInput = {
+    clubId: 'club-1',
+    title: 'Weekly Mahjong',
+    venueId: 'venue-1',
+    notes: '',
+    frequency: 'weekly' as const,
+    weekday: 2,
+    nthWeek: null,
+    startTime: '19:00:00',
+    durationMinutes: 180,
+    tableCount: 1,
+    startsOn: '2027-01-01',
+    endsOn: null,
+  };
+
+  it('rejects a blank title with a friendly message, before ever calling the RPC', async () => {
+    await expect(createEventSeries({ ...validInput, title: '   ' })).resolves.toEqual({
+      seriesId: null,
+      error: 'Give the game a name.',
+    });
+    expect(rpcMock).not.toHaveBeenCalled();
+  });
+
+  it('never rejects, even when title is not actually a string at runtime', async () => {
+    await expect(
+      createEventSeries({ ...validInput, title: null as unknown as string }),
+    ).resolves.toEqual({ seriesId: null, error: GENERIC_ERROR });
+    expect(rpcMock).not.toHaveBeenCalled();
   });
 });
 
@@ -163,6 +324,22 @@ describe('addEventTable', () => {
     expect(result.error).toBe(GENERIC_ERROR);
     expect(result.error).not.toContain('23505');
     expect(result.error).not.toMatch(/duplicate|constraint/i);
+  });
+
+  it('maps the table cap (23514) to a message that says so, not "Something went wrong"', async () => {
+    // add_event_table raises 23514 ('too many tables') at 20 tables. A host
+    // at the cap deserves to be told that, the way createVenue's 23505
+    // mapping tells a host about a duplicate name — not the generic
+    // catch-all, and not retried like the 23505 race.
+    rpcMock.mockResolvedValueOnce({
+      data: null,
+      error: { code: '23514', message: 'too many tables' },
+    });
+
+    const result = await addEventTable('event-1');
+    expect(result.error).not.toBe(GENERIC_ERROR);
+    expect(result.error).toMatch(/20 tables|maximum/i);
+    expect(rpcMock).toHaveBeenCalledTimes(1);
   });
 
   it('maps any other error straight to the generic message, without retrying', async () => {

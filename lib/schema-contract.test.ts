@@ -23,7 +23,7 @@
  */
 import { createClient } from '@supabase/supabase-js';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 // Defaults are the Supabase CLI's fixed local development keys — they are the
 // same on every machine and carry no access to anything real. Override via env
@@ -61,9 +61,37 @@ import {
   TIME_PATTERN,
 } from './profile';
 import { supabase } from './supabase';
+import {
+  addEventTable,
+  cancelEvent,
+  createEvent,
+  createEventSeries,
+  EVENT_COLUMNS,
+  EVENT_TABLE_COLUMNS,
+  endEventSeries,
+  fetchEventTables,
+  removeEventTable,
+  resetEventToSeries,
+  SERIES_COLUMNS,
+  updateEvent,
+  updateEventSeries,
+  updateEventTable,
+} from './events';
+import {
+  archiveVenue,
+  createVenue,
+  fetchClubVenues,
+  searchVenues,
+  updateVenue,
+  VENUE_COLUMNS,
+} from './venues';
 
 const SKILL_LEVELS = ['beginner', 'intermediate', 'advanced'];
 const NOTIFY_CHANNELS = ['push', 'email', 'both'];
+
+// A well-formed UUID that matches no row. Used wherever a contract check
+// needs a plausible id but must not depend on — or mutate — real data.
+const DUMMY_UUID = '00000000-0000-0000-0000-000000000000';
 
 // Values chosen to differ from every column default, so a query that silently
 // read the wrong row (or no row) cannot pass by coincidence.
@@ -329,6 +357,10 @@ describe.runIf(reachable || required)('profiles schema contract', () => {
 describe.runIf(reachable || required)('events schema contract', () => {
   let admin: SupabaseClient;
   let userId: string;
+  let clubId: string;
+  let venueId: string;
+  let eventId: string;
+  let seriesId: string;
 
   beforeAll(async () => {
     expect(
@@ -340,64 +372,235 @@ describe.runIf(reachable || required)('events schema contract', () => {
     // block runs after the profiles block's own afterAll has already signed
     // that session out — so this needs its own, not a borrowed one.
     ({ admin, userId } = await signInFreshUser());
+
+    // Real, non-empty rows via the service-role client (which has full DML
+    // by default privilege — see 20260822180200 — and BYPASSRLS), so the
+    // checks below fetch a genuine row rather than an empty `.limit(0)`
+    // result. That distinction matters: a `.select` that merely OMITS a
+    // column from its list never errors, so `.limit(0)` alone cannot catch
+    // a column silently dropped from EVENT_COLUMNS / SERIES_COLUMNS — only
+    // comparing the fetched row's actual key set against what the type
+    // promises can. See the task report for the ended_at / overrides
+    // mutation proof this closes.
+    const { data: club, error: clubError } = await admin
+      .from('clubs')
+      .insert({
+        name: 'Contract Club',
+        slug: `contract-club-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        created_by: userId,
+      })
+      .select('id')
+      .single();
+    expect(clubError, `seeding club failed: ${clubError?.message}`).toBeNull();
+    clubId = club!.id;
+
+    const { error: memberError } = await admin.from('club_members').insert({
+      club_id: clubId,
+      profile_id: userId,
+      role: 'host',
+      status: 'active',
+    });
+    expect(memberError, `seeding club_members failed: ${memberError?.message}`).toBeNull();
+
+    const { data: venue, error: venueError } = await admin
+      .from('venues')
+      .insert({
+        name: 'Contract Hall',
+        address_line: '1 Main St',
+        locality: 'Springfield',
+        region: 'IL',
+        postal_code: '62701',
+        visibility: 'club',
+        added_by_club_id: clubId,
+        created_by: userId,
+      })
+      .select('id')
+      .single();
+    expect(venueError, `seeding venue failed: ${venueError?.message}`).toBeNull();
+    venueId = venue!.id;
+
+    const { data: event, error: eventError } = await admin
+      .from('events')
+      .insert({
+        club_id: clubId,
+        title: 'Tuesday Mahjong',
+        venue_id: venueId,
+        notes: 'bring snacks',
+        starts_at: '2027-09-07T23:00:00Z',
+        ends_at: '2027-09-08T02:00:00Z',
+        status: 'published',
+        overrides: ['title'],
+        created_by: userId,
+      })
+      .select('id')
+      .single();
+    expect(eventError, `seeding event failed: ${eventError?.message}`).toBeNull();
+    eventId = event!.id;
+
+    const { error: tableError } = await admin.from('event_tables').insert({
+      event_id: eventId,
+      club_id: clubId,
+      label: 'Table 1',
+      skill_tier: 'mixed',
+      capacity: 4,
+      position: 1,
+    });
+    expect(tableError, `seeding event_tables failed: ${tableError?.message}`).toBeNull();
+
+    const { data: series, error: seriesError } = await admin
+      .from('event_series')
+      .insert({
+        club_id: clubId,
+        title: 'Weekly Mahjong',
+        venue_id: venueId,
+        notes: '',
+        frequency: 'weekly',
+        weekday: 2,
+        start_time: '19:00:00',
+        duration_minutes: 180,
+        table_count: 1,
+        starts_on: '2027-01-01',
+        ends_on: '2027-12-31',
+        // Distinct from ends_on and non-null, so a query that dropped this
+        // column from its select list cannot pass by coincidence.
+        ended_at: '2027-06-01T00:00:00Z',
+        created_by: userId,
+      })
+      .select('id')
+      .single();
+    expect(seriesError, `seeding event_series failed: ${seriesError?.message}`).toBeNull();
+    seriesId = series!.id;
   });
 
   afterAll(async () => {
     await supabase.auth.signOut();
+    // Explicit, dependency-ordered cleanup rather than relying on cascade —
+    // this suite runs against the persistent local stack, not a throwaway
+    // database, so leftover rows would accumulate across runs.
+    if (admin) {
+      if (eventId) await admin.from('event_tables').delete().eq('event_id', eventId);
+      if (eventId) await admin.from('events').delete().eq('id', eventId);
+      if (seriesId) await admin.from('event_series').delete().eq('id', seriesId);
+      if (venueId) await admin.from('venues').delete().eq('id', venueId);
+      if (clubId) await admin.from('club_members').delete().eq('club_id', clubId);
+      if (clubId) await admin.from('clubs').delete().eq('id', clubId);
+    }
     if (admin && userId) await admin.auth.admin.deleteUser(userId);
   });
 
-  it('exposes every column lib/events.ts names on events', async () => {
-    const { error } = await supabase
+  // These four import EVENT_COLUMNS / SERIES_COLUMNS / EVENT_TABLE_COLUMNS /
+  // VENUE_COLUMNS from the libraries themselves rather than retyping the
+  // select lists — see PROFILE_COLUMNS above for why a retyped copy is not a
+  // contract at all. Each fetches the real seeded row and asserts the EXACT
+  // key set, the same pattern the profiles block above uses — not merely
+  // "the query didn't error", which a dropped (not renamed) column would
+  // sail through.
+  it('exposes exactly the columns lib/events.ts names on events, including the venue/table embeds', async () => {
+    const { data, error } = await supabase
       .from('events')
-      .select(
-        'id, club_id, series_id, title, venue_id, notes, starts_at, ' +
-          'ends_at, status, occurrence_date, overrides',
-      )
-      .limit(0);
+      .select(EVENT_COLUMNS)
+      .eq('id', eventId)
+      .single();
     expect(error).toBeNull();
+    const row = data as unknown as Record<string, unknown>;
+
+    expect(Object.keys(row).sort()).toEqual(
+      [
+        'id', 'club_id', 'series_id', 'title', 'venue_id', 'notes',
+        'starts_at', 'ends_at', 'status', 'occurrence_date', 'overrides',
+        'venues', 'event_tables',
+      ].sort(),
+    );
+    expect(row.title).toBe('Tuesday Mahjong');
+    expect(row.overrides).toEqual(['title']);
+    expect((row.venues as { name: string }).name).toBe('Contract Hall');
+    expect((row.event_tables as unknown[]).length).toBe(1);
   });
 
-  it('exposes every column lib/events.ts names on event_series, including ended_at', async () => {
+  it('exposes exactly the columns lib/events.ts names on event_series, including ended_at', async () => {
     // ended_at is the fact the brief's snapshot of the schema predates: the
     // host STOPPED the series, distinct from ends_on (the host's PLAN to
     // stop repeating after a date). Task 15's edit screen needs both, so
-    // both belong in the contract.
-    const { error } = await supabase
+    // both belong in the contract — and, because dropping a column from a
+    // select list never errors, only a real row's key set can prove it is
+    // still there.
+    const { data, error } = await supabase
       .from('event_series')
-      .select(
-        'id, club_id, title, venue_id, notes, frequency, weekday, ' +
-          'nth_week, start_time, duration_minutes, table_count, ' +
-          'starts_on, ends_on, ended_at',
-      )
-      .limit(0);
+      .select(SERIES_COLUMNS)
+      .eq('id', seriesId)
+      .single();
     expect(error).toBeNull();
+    const row = data as unknown as Record<string, unknown>;
+
+    expect(Object.keys(row).sort()).toEqual(
+      [
+        'id', 'club_id', 'title', 'venue_id', 'notes', 'frequency',
+        'weekday', 'nth_week', 'start_time', 'duration_minutes',
+        'table_count', 'starts_on', 'ends_on', 'ended_at',
+      ].sort(),
+    );
+    expect(row.ends_on).toBe('2027-12-31');
+    expect(row.ended_at).toBe('2027-06-01T00:00:00+00:00');
   });
 
-  it('exposes every column lib/events.ts names on event_tables', async () => {
-    const { error } = await supabase
+  it('exposes exactly the columns lib/events.ts names on event_tables', async () => {
+    const { data, error } = await supabase
       .from('event_tables')
-      .select('id, label, skill_tier, capacity, position')
-      .limit(0);
+      .select(EVENT_TABLE_COLUMNS)
+      .eq('event_id', eventId)
+      .single();
     expect(error).toBeNull();
+    const row = data as unknown as Record<string, unknown>;
+
+    expect(Object.keys(row).sort()).toEqual(
+      ['id', 'label', 'skill_tier', 'capacity', 'position'].sort(),
+    );
+    expect(row.label).toBe('Table 1');
   });
 
-  it('exposes every column lib/venues.ts names on venues', async () => {
-    const { error } = await supabase
+  it('exposes exactly the columns lib/venues.ts names on venues', async () => {
+    const { data, error } = await supabase
       .from('venues')
-      .select(
-        'id, name, address_line, locality, region, postal_code, visibility',
-      )
-      .limit(0);
+      .select(VENUE_COLUMNS)
+      .eq('id', venueId)
+      .single();
     expect(error).toBeNull();
+    const row = data as unknown as Record<string, unknown>;
+
+    expect(Object.keys(row).sort()).toEqual(
+      [
+        'id', 'name', 'address_line', 'locality', 'region', 'postal_code',
+        'visibility',
+      ].sort(),
+    );
+    expect(row.name).toBe('Contract Hall');
   });
 
-  it('embeds the venue name the event list renders', async () => {
-    const { error } = await supabase
-      .from('events')
-      .select('id, venues(name), event_tables(id)')
-      .limit(0);
-    expect(error).toBeNull();
+  /*
+   * MINOR 5: added_by_club_id and archived_at (venues) and event_id
+   * (event_tables) appear only in .eq()/.is() filters in lib/venues.ts and
+   * lib/events.ts — never in a checked select list, so nothing above would
+   * notice a rename. Rather than naming them in a second hand-typed string
+   * (which would have exactly the snapshot problem Important 1 fixes),
+   * these two call the real library functions against the real seeded club
+   * and event, and check they find exactly the seeded row. If either
+   * column were renamed in the library, the real PostgREST query would
+   * fail with 42703 (undefined column) and the function — which catches
+   * internally, per the lib/ never-rejects convention — would return null
+   * instead of the row; if the filter silently matched nothing the row
+   * would still fail to appear.
+   */
+  it('fetchClubVenues resolves against the filter columns it actually sends (added_by_club_id, archived_at)', async () => {
+    const result = await fetchClubVenues(clubId);
+    expect(result).not.toBeNull();
+    expect(result!.map((v) => v.id)).toContain(venueId);
+  });
+
+  it('fetchEventTables resolves against the filter column it actually sends (event_id)', async () => {
+    const result = await fetchEventTables(eventId);
+    expect(result).not.toBeNull();
+    expect(result!.length).toBe(1);
+    expect(result![0]!.label).toBe('Table 1');
   });
 });
 
@@ -421,6 +624,18 @@ describe.runIf(reachable || required)('events schema contract', () => {
  * PostgREST server can refuse to resolve a call, so this suite deliberately
  * makes every one of these calls for real, against the local stack.
  *
+ * This block does NOT hand-type a copy of each argument object (an earlier
+ * version did, and a reviewer proved that copy could drift silently from the
+ * library — see the task report for the three-way mutation proof). Instead
+ * it calls the REAL exported lib/venues.ts / lib/events.ts functions and
+ * spies on `supabase.rpc` with `vi.spyOn`, which by default calls through to
+ * the genuine implementation. That gives two things no hand-typed copy can:
+ * the function name and argument object are read back from the actual call
+ * the library made (so a rename inside the library changes what the test
+ * sees, with nothing to keep in sync by hand), and the spy's own return
+ * value is the real PostgREST response for that exact call, which is used
+ * below for the 42501 assertion (MINOR 4) without needing a second request.
+ *
  * Deliberately anonymous — no sign-in here. Every function below has EXECUTE
  * revoked from anon and granted only to authenticated (see e.g. 20260822192000's
  * closing grants), so every one of these calls is expected to fail. That is
@@ -428,18 +643,22 @@ describe.runIf(reachable || required)('events schema contract', () => {
  * failure, not whether it succeeds. PostgREST resolves the function (and
  * therefore checks the argument names) before it evaluates whether the
  * caller may execute it, so an anonymous 42501 ("permission denied") already
- * proves the names matched; a PGRST202 proves they did not.
+ * proves the names matched. Verified against the live stack by curl: all 14
+ * functions return exactly 42501 for an anonymous caller — never PGRST202
+ * (unresolved name), never PGRST203 (ambiguous overload) — so asserting the
+ * exact code (rather than merely `.not.toBe('PGRST202')`) additionally
+ * catches a grant regression or an overload collision that a one-code
+ * denylist would miss while staying green.
  *
- * Verified by mutation: renaming target_club to target_klub in the
- * search_venues case below turns that one test red with a PGRST202 failure
- * message naming search_venues, and every other case stays green. See the
- * task report for the full mutation log.
+ * Verified by mutation: renaming target_club to target_klub inside
+ * searchVenues in lib/venues.ts turns that one case red with a PGRST202
+ * failure naming search_venues, and every other case stays green — because
+ * the test is reading the argument names back from the mutated library
+ * itself, not from a copy. See the task report for the full mutation log.
  */
 describe.runIf(reachable || required)(
   'venues and events RPC argument-name contract',
   () => {
-    const DUMMY_UUID = '00000000-0000-0000-0000-000000000000';
-
     beforeAll(async () => {
       expect(
         reachable,
@@ -451,125 +670,157 @@ describe.runIf(reachable || required)(
       await supabase.auth.signOut();
     });
 
-    // Each pair is a function name and the EXACT argument object the
-    // corresponding lib/venues.ts or lib/events.ts function passes to
-    // `supabase.rpc(...)` — same keys, same casing, nothing added or
-    // dropped. Values are shaped to satisfy each parameter's type (uuid,
-    // text, timestamptz, time, date, boolean, int) so a resolved call fails
-    // on authorization or business logic, never on a malformed literal.
-    const rpcCalls: Array<[string, Record<string, unknown>]> = [
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    // Each case is the Postgres function name expected to be called and a
+    // thunk that invokes the REAL lib/venues.ts or lib/events.ts function —
+    // never a hand-typed argument object. Inputs are shaped to satisfy each
+    // parameter's TypeScript type (uuid, text, ISO timestamp, time, date,
+    // boolean, int) so the call resolves and fails on authorization, never
+    // on a malformed literal.
+    const rpcCases: Array<{ fnName: string; invoke: () => Promise<unknown> }> = [
       // lib/venues.ts
-      ['search_venues', { target_club: DUMMY_UUID, q: 'hall' }],
-      [
-        'create_venue',
-        {
-          venue_name: 'Contract Test Hall',
-          address_line: '1 Main St',
-          locality: 'Springfield',
-          region: 'IL',
-          postal_code: '62701',
-          target_club: DUMMY_UUID,
-          share_publicly: false,
-        },
-      ],
-      [
-        'update_venue',
-        {
-          target_venue: DUMMY_UUID,
-          venue_name: 'Renamed Hall',
-          address_line: '2 Main St',
-          locality: 'Springfield',
-          region: 'IL',
-          postal_code: '62701',
-        },
-      ],
-      ['archive_venue', { target_venue: DUMMY_UUID }],
+      { fnName: 'search_venues', invoke: () => searchVenues(DUMMY_UUID, 'hall') },
+      {
+        fnName: 'create_venue',
+        invoke: () =>
+          createVenue({
+            clubId: DUMMY_UUID,
+            name: 'Contract Test Hall',
+            addressLine: '1 Main St',
+            locality: 'Springfield',
+            region: 'IL',
+            postalCode: '62701',
+            sharePublicly: false,
+          }),
+      },
+      {
+        fnName: 'update_venue',
+        invoke: () =>
+          updateVenue(DUMMY_UUID, {
+            name: 'Renamed Hall',
+            addressLine: '2 Main St',
+            locality: 'Springfield',
+            region: 'IL',
+            postalCode: '62701',
+          }),
+      },
+      { fnName: 'archive_venue', invoke: () => archiveVenue(DUMMY_UUID) },
       // lib/events.ts
-      [
-        'create_event',
-        {
-          target_club: DUMMY_UUID,
-          event_title: 'Tuesday Mahjong',
-          target_venue: DUMMY_UUID,
-          event_notes: 'bring snacks',
-          event_starts: '2027-09-07T23:00:00Z',
-          event_ends: '2027-09-08T02:00:00Z',
-          table_count: 2,
-        },
-      ],
-      [
-        'update_event',
-        {
-          target_event: DUMMY_UUID,
-          new_title: 'Renamed game',
-          new_venue_id: DUMMY_UUID,
-          new_notes: 'updated notes',
-          new_starts_at: '2027-09-07T23:00:00Z',
-          new_ends_at: '2027-09-08T02:00:00Z',
-        },
-      ],
-      ['cancel_event', { target_event: DUMMY_UUID }],
-      ['reset_event_to_series', { target_event: DUMMY_UUID }],
-      ['add_event_table', { target_event: DUMMY_UUID }],
-      [
-        'update_event_table',
-        {
-          target_table: DUMMY_UUID,
-          new_label: 'Table 2',
-          new_tier: 'mixed',
-        },
-      ],
-      ['remove_event_table', { target_table: DUMMY_UUID }],
-      [
-        'create_event_series',
-        {
-          target_club: DUMMY_UUID,
-          series_title: 'Weekly game',
-          target_venue: DUMMY_UUID,
-          series_notes: '',
-          freq: 'weekly',
-          weekday: 2,
-          nth_week: null,
-          start_time: '19:00:00',
-          duration_minutes: 180,
-          table_count: 1,
-          starts_on: '2027-01-01',
-          ends_on: null,
-        },
-      ],
-      [
-        'update_event_series',
-        {
-          target_series: DUMMY_UUID,
-          new_title: 'Weekly game v2',
-          new_venue_id: DUMMY_UUID,
-          new_notes: 'updated',
-          new_start_time: '19:30:00',
-          new_duration: 150,
-          new_table_count: 2,
-          new_ends_on: '2027-12-31',
-          include_overridden: false,
-        },
-      ],
-      ['end_event_series', { target_series: DUMMY_UUID, cancel_future: true }],
+      {
+        fnName: 'create_event',
+        invoke: () =>
+          createEvent({
+            clubId: DUMMY_UUID,
+            title: 'Tuesday Mahjong',
+            venueId: DUMMY_UUID,
+            notes: 'bring snacks',
+            startsAt: '2027-09-07T23:00:00Z',
+            endsAt: '2027-09-08T02:00:00Z',
+            tableCount: 2,
+          }),
+      },
+      {
+        fnName: 'update_event',
+        invoke: () =>
+          updateEvent(DUMMY_UUID, {
+            title: 'Renamed game',
+            venueId: DUMMY_UUID,
+            notes: 'updated notes',
+            startsAt: '2027-09-07T23:00:00Z',
+            endsAt: '2027-09-08T02:00:00Z',
+          }),
+      },
+      { fnName: 'cancel_event', invoke: () => cancelEvent(DUMMY_UUID) },
+      { fnName: 'reset_event_to_series', invoke: () => resetEventToSeries(DUMMY_UUID) },
+      { fnName: 'add_event_table', invoke: () => addEventTable(DUMMY_UUID) },
+      {
+        fnName: 'update_event_table',
+        invoke: () => updateEventTable(DUMMY_UUID, { label: 'Table 2', tier: 'mixed' }),
+      },
+      { fnName: 'remove_event_table', invoke: () => removeEventTable(DUMMY_UUID) },
+      {
+        fnName: 'create_event_series',
+        invoke: () =>
+          createEventSeries({
+            clubId: DUMMY_UUID,
+            title: 'Weekly game',
+            venueId: DUMMY_UUID,
+            notes: '',
+            frequency: 'weekly',
+            weekday: 2,
+            nthWeek: null,
+            startTime: '19:00:00',
+            durationMinutes: 180,
+            tableCount: 1,
+            startsOn: '2027-01-01',
+            endsOn: null,
+          }),
+      },
+      {
+        fnName: 'update_event_series',
+        invoke: () =>
+          updateEventSeries(DUMMY_UUID, {
+            title: 'Weekly game v2',
+            venueId: DUMMY_UUID,
+            notes: 'updated',
+            startTime: '19:30:00',
+            durationMinutes: 150,
+            tableCount: 2,
+            endsOn: '2027-12-31',
+            includeOverridden: false,
+          }),
+      },
+      {
+        fnName: 'end_event_series',
+        invoke: () => endEventSeries(DUMMY_UUID, true),
+      },
     ];
 
-    it.each(rpcCalls)('resolves %s by its argument names', async (fn, args) => {
-      const { error } = await supabase.rpc(fn, args);
+    it.each(rpcCases)(
+      '$fnName: the library resolves it by the argument names it actually sends',
+      async ({ fnName, invoke }) => {
+        // Calls through to the real supabase-js implementation by default —
+        // this only observes the call, it does not replace it.
+        const rpcSpy = vi.spyOn(supabase, 'rpc');
 
-      expect(
-        error,
-        `${fn} unexpectedly succeeded for an anonymous, unauthorized caller — ` +
-          'expected a permission or validation error instead.',
-      ).not.toBeNull();
+        await invoke();
 
-      expect(
-        error?.code,
-        `${fn} returned PGRST202 ("Could not find the function ${fn} in the ` +
-          'schema cache") — the argument names this test (mirroring the ' +
-          'lib/ call site) sent do not match the deployed function\'s ' +
-          `parameters. Postgres message: ${error?.message}`,
-      ).not.toBe('PGRST202');
-    });
+        expect(
+          rpcSpy,
+          `${fnName}: expected the library function to call supabase.rpc exactly once`,
+        ).toHaveBeenCalledTimes(1);
+        const [calledName] = rpcSpy.mock.calls[0]!;
+        expect(
+          calledName,
+          `expected lib/ to call RPC function "${fnName}", but it called "${calledName}"`,
+        ).toBe(fnName);
+
+        // The spy's own return value IS the real PostgREST response for
+        // this exact call — reusing it (rather than issuing a second
+        // request) is what ties the assertion below to the argument names
+        // the library actually sent, not a reconstruction of them.
+        const { error } = (await rpcSpy.mock.results[0]!.value) as {
+          error: { code?: string; message?: string } | null;
+        };
+
+        expect(
+          error,
+          `${fnName} unexpectedly succeeded for an anonymous, unauthorized caller — ` +
+            'expected a permission error instead.',
+        ).not.toBeNull();
+
+        expect(
+          error?.code,
+          `${fnName} returned ${error?.code} instead of 42501 ("permission denied") ` +
+            `— Postgres message: ${error?.message}. A PGRST202 here means the ` +
+            `argument names lib/ sends do not match ${fnName}'s deployed ` +
+            'parameters; a PGRST203 means an ambiguous overload; anything ' +
+            'else means the grant this test relies on has regressed.',
+        ).toBe('42501');
+      },
+    );
   },
 );

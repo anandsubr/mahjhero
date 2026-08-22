@@ -65,14 +65,32 @@ export type RecurrenceRule = {
   nthWeek: number | null;
   /** 'YYYY-MM-DD', a club-local calendar date carrying no instant. */
   startsOn: string;
+  /**
+   * 'YYYY-MM-DD', inclusive, or null/undefined for "repeats indefinitely".
+   * Mirrors `series_occurrence_dates`'s `upper_bound := least(window_end,
+   * coalesce(ends_on, window_end))`: a date exactly on `endsOn` is still a
+   * valid occurrence, one after it is not. Omitting this from the preview is
+   * how the create screen used to promise games the database would never
+   * materialize past the host's own stated end date.
+   */
+  endsOn?: string | null;
 };
 
-const EVENT_COLUMNS =
+/**
+ * The exact select lists the client relies on, named once so the schema
+ * contract test (lib/schema-contract.test.ts) can import them directly
+ * rather than retyping them — see lib/profile.ts's PROFILE_COLUMNS for the
+ * pattern this follows. A column dropped here without the test noticing is
+ * exactly the drift the contract suite exists to catch.
+ */
+export const EVENT_COLUMNS =
   'id, club_id, series_id, title, venue_id, notes, starts_at, ends_at, ' +
   'status, occurrence_date, overrides, venues(name), event_tables(id)';
 
-const SERIES_COLUMNS =
+export const SERIES_COLUMNS =
   'id, club_id, title, venue_id, notes, frequency, weekday, nth_week, start_time, duration_minutes, table_count, starts_on, ends_on, ended_at';
+
+export const EVENT_TABLE_COLUMNS = 'id, label, skill_tier, capacity, position';
 
 const WEEKDAY_NAMES = [
   'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday',
@@ -142,12 +160,20 @@ function nthWeekdayOfMonth(
  */
 export function nextOccurrences(rule: RecurrenceRule, count = 3): string[] {
   const start = parseDate(rule.startsOn);
+  // `series_occurrence_dates` clamps with
+  // `least(window_end, coalesce(ends_on, window_end))` — inclusive of
+  // ends_on itself. This preview has no window_end (it just asks for the
+  // next `count` dates), so the only clamp that applies here is: stop once a
+  // candidate date is past endsOn. A candidate landing exactly on endsOn is
+  // still included.
+  const endsOn = rule.endsOn ? parseDate(rule.endsOn) : null;
   const out: string[] = [];
 
   if (rule.frequency === 'weekly' || rule.frequency === 'biweekly') {
     const step = rule.frequency === 'weekly' ? 7 : 14;
     let cursor = firstMatch(start, rule.weekday);
     while (out.length < count) {
+      if (endsOn && cursor.getTime() > endsOn.getTime()) break;
       out.push(formatDate(cursor));
       cursor = addDays(cursor, step);
     }
@@ -163,6 +189,9 @@ export function nextOccurrences(rule: RecurrenceRule, count = 3): string[] {
   for (let i = 0; i < 60 && out.length < count; i += 1) {
     const candidate = nthWeekdayOfMonth(month, rule.weekday, rule.nthWeek ?? 1);
     if (candidate && candidate.getTime() >= start.getTime()) {
+      // Months only increase, so once one candidate lands past endsOn every
+      // later one will too — safe to stop rather than skip.
+      if (endsOn && candidate.getTime() > endsOn.getTime()) break;
       out.push(formatDate(candidate));
     }
     month = new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + 1, 1));
@@ -276,7 +305,7 @@ export async function fetchEventTables(
   try {
     const { data, error } = await supabase
       .from('event_tables')
-      .select('id, label, skill_tier, capacity, position')
+      .select(EVENT_TABLE_COLUMNS)
       .eq('event_id', eventId)
       .order('position');
 
@@ -352,10 +381,10 @@ export async function createEvent(input: {
   endsAt: string;
   tableCount: number;
 }): Promise<{ eventId: string | null; error: string | null }> {
-  if (input.title.trim().length === 0) {
-    return { eventId: null, error: 'Give the game a name.' };
-  }
   try {
+    if (input.title.trim().length === 0) {
+      return { eventId: null, error: 'Give the game a name.' };
+    }
     const { data, error } = await supabase.rpc('create_event', {
       target_club: input.clubId,
       event_title: input.title.trim(),
@@ -483,6 +512,12 @@ export async function addEventTable(
         continue;
       }
       console.error('addEventTable failed', error);
+      // The table cap (20) is a real answer a host can act on — stop adding
+      // tables — not a system fault, so it does not get the generic message.
+      // Mirrors createVenue's 23505 mapping in lib/venues.ts.
+      if (error.code === '23514') {
+        return { error: 'This game already has the maximum of 20 tables.' };
+      }
       return { error: GENERIC_ERROR };
     } catch (cause) {
       console.error('addEventTable failed', cause);
@@ -545,10 +580,10 @@ export async function createEventSeries(input: {
   startsOn: string;
   endsOn: string | null;
 }): Promise<{ seriesId: string | null; error: string | null }> {
-  if (input.title.trim().length === 0) {
-    return { seriesId: null, error: 'Give the game a name.' };
-  }
   try {
+    if (input.title.trim().length === 0) {
+      return { seriesId: null, error: 'Give the game a name.' };
+    }
     const { data, error } = await supabase.rpc('create_event_series', {
       target_club: input.clubId,
       series_title: input.title.trim(),
