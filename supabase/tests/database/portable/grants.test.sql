@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(22);
+select plan(30);
 
 /*
  * Guards the privileges themselves, not the policies.
@@ -136,6 +136,69 @@ select ok(
 select ok(
   has_function_privilege('authenticated', 'public.accept_club_invite(text)', 'EXECUTE'),
   'authenticated can still execute accept_club_invite'
+);
+
+-- ---------------------------------------------------------------------------
+-- Event/table mutation ACLs (fix pass 1).
+--
+-- Only observable against hosted: this suite runs with --linked, and the
+-- local stack grants nothing to authenticated by default, which is exactly
+-- why local passed even before assert_venue_available's revoke was added.
+-- Supabase's hosted bootstrap grants EXECUTE directly to authenticated at
+-- function-creation time, and `revoke ... from public` never clears a
+-- direct grant, so the negative assertions below are the only thing that
+-- actually proves the hardening took.
+-- ---------------------------------------------------------------------------
+
+select ok(
+  not has_function_privilege(
+    'authenticated', 'public.assert_venue_available(uuid, uuid)', 'EXECUTE'),
+  'authenticated cannot execute assert_venue_available'
+);
+select ok(
+  not has_function_privilege(
+    'authenticated', 'public.assert_club_organizer(uuid)', 'EXECUTE'),
+  'authenticated cannot execute assert_club_organizer'
+);
+
+-- The positive cases, so the two assertions above cannot pass by revoking
+-- everything: the six client-facing event/table mutations must still be
+-- reachable.
+select ok(
+  has_function_privilege(
+    'authenticated',
+    'public.create_event(uuid, text, uuid, text, timestamptz, timestamptz, int)',
+    'EXECUTE'),
+  'authenticated can still execute create_event'
+);
+select ok(
+  has_function_privilege(
+    'authenticated',
+    'public.update_event(uuid, text, uuid, text, timestamptz, timestamptz)',
+    'EXECUTE'),
+  'authenticated can still execute update_event'
+);
+select ok(
+  has_function_privilege(
+    'authenticated', 'public.cancel_event(uuid)', 'EXECUTE'),
+  'authenticated can still execute cancel_event'
+);
+select ok(
+  has_function_privilege(
+    'authenticated', 'public.add_event_table(uuid)', 'EXECUTE'),
+  'authenticated can still execute add_event_table'
+);
+select ok(
+  has_function_privilege(
+    'authenticated',
+    'public.update_event_table(uuid, text, public.skill_tier)',
+    'EXECUTE'),
+  'authenticated can still execute update_event_table'
+);
+select ok(
+  has_function_privilege(
+    'authenticated', 'public.remove_event_table(uuid)', 'EXECUTE'),
+  'authenticated can still execute remove_event_table'
 );
 
 -- ---------------------------------------------------------------------------

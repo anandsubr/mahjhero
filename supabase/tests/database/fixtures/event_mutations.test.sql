@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(20);
+select plan(32);
 
 insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-000000000001', 'alice@example.com'),
@@ -186,6 +186,30 @@ select results_eq(
   'the override list does not accumulate duplicates'
 );
 
+-- A whitespace-padded but otherwise unchanged title is not a real change,
+-- and must not register a false override — the column is always stored
+-- trimmed, and the comparison has to match that.
+select lives_ok(
+  $$select public.update_event(
+      'e1e1e1e1-0000-0000-0000-000000000001', '  Weekly game  ',
+      null, null, null, null)$$,
+  'a whitespace-padded but otherwise unchanged title is accepted'
+);
+
+select is(
+  (select title from public.events
+   where id = 'e1e1e1e1-0000-0000-0000-000000000001'),
+  'Weekly game',
+  'the title is stored trimmed and unchanged'
+);
+
+select results_eq(
+  $$select overrides from public.events
+    where id = 'e1e1e1e1-0000-0000-0000-000000000001'$$,
+  $$values (array['venue_id'])$$,
+  'a whitespace-only title does not register a false override'
+);
+
 -- A one-off event records no overrides — it has no series to diverge from.
 select lives_ok(
   $$select public.update_event(
@@ -250,6 +274,88 @@ select is(
    where e.title = 'Tuesday game, moved' and t.position = 1),
   'beginner',
   'the tier landed'
+);
+
+-- ---------------------------------------------------------------------
+-- Minor 1: the cap is on table count, not on the highest position ever
+-- issued. An event that briefly held twenty tables and then lost one to a
+-- removal must still be able to add one back, even though positions stay
+-- sparse.
+-- ---------------------------------------------------------------------
+select lives_ok(
+  $$select public.create_event(
+      'c1c1c1c1-0000-0000-0000-000000000001', 'Full house',
+      '11111111-0000-0000-0000-000000000001', '',
+      '2027-10-05 23:00+00', '2027-10-06 02:00+00', 20)$$,
+  'an organizer can create an event with the maximum number of tables'
+);
+
+select lives_ok(
+  $$select public.remove_event_table(
+      (select t.id from public.event_tables t
+       join public.events e on e.id = t.event_id
+       where e.title = 'Full house' and t.position = 1))$$,
+  'a table can be removed from a full event'
+);
+
+select lives_ok(
+  $$select public.add_event_table(
+      (select id from public.events where title = 'Full house'))$$,
+  'a table can be added back after a removal, even though positions stayed sparse'
+);
+
+select is(
+  (select count(*)::int from public.event_tables t
+   join public.events e on e.id = t.event_id
+   where e.title = 'Full house'),
+  20,
+  'the event holds twenty tables again, capped on count rather than on position'
+);
+
+-- ---------------------------------------------------------------------
+-- Minor 4: a cancelled event's seating is frozen exactly like its details.
+-- ---------------------------------------------------------------------
+select lives_ok(
+  $$select public.create_event(
+      'c1c1c1c1-0000-0000-0000-000000000001', 'Called off',
+      '11111111-0000-0000-0000-000000000001', '',
+      '2027-10-12 23:00+00', '2027-10-13 02:00+00', 1)$$,
+  'setup: an event to cancel'
+);
+
+select lives_ok(
+  $$select public.cancel_event(
+      (select id from public.events where title = 'Called off'))$$,
+  'setup: the event is cancelled'
+);
+
+select throws_ok(
+  $$select public.add_event_table(
+      (select id from public.events where title = 'Called off'))$$,
+  '42501',
+  null,
+  'a cancelled event cannot have a table added'
+);
+
+select throws_ok(
+  $$select public.update_event_table(
+      (select t.id from public.event_tables t
+       join public.events e on e.id = t.event_id
+       where e.title = 'Called off'),
+      'Renamed', null)$$,
+  '42501',
+  null,
+  'a cancelled event''s table cannot be relabelled'
+);
+
+select throws_ok(
+  $$select public.remove_event_table(
+      (select t.id from public.event_tables t
+       join public.events e on e.id = t.event_id
+       where e.title = 'Called off'))$$,
+  '42501',
+  null,
+  'a cancelled event cannot have a table removed'
 );
 
 select * from finish();
