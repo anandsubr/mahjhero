@@ -23,6 +23,14 @@ Every task's requirements implicitly include these. Values are taken from the sp
 - **The app never reproduces NMJL card content**, in any phase.
 - **Quiet hours are per-member, in the member's own timezone** — never a club setting.
 
+## Lessons carried forward to plans 2–6
+
+Two Critical defects reached the end of this plan because each task's spec was internally consistent but never cross-checked against its neighbours. Both live on axes the task decomposition hides.
+
+1. **Trace every data field end to end: migration → library type → screen.** `quiet_hours_start` was declared `time` in Task 3; PostgREST serialises that as `"21:00:00"`; Task 9's validator required `HH:MM`. Result: no member could save any notification preference. Neither test suite could see it — pgTAP never leaves SQL, Vitest asserts against hand-written literals. **A schema-contract test that reads a row through supabase-js and asserts the shape the client types claim is now the highest-value test in the project.** Add one per new table.
+
+2. **A feature is not done until the member sees it work on every target platform.** Magic-link sign-in passed nine reviews while being completely dead on iOS and Android — no `emailRedirectTo`, no deep-link handler. Then the *fix* passed its own review while still leaving the symptom intact, because the session arrived and no screen navigated. Web hid both, since its redirect is a fresh page load. When a plan says three platforms, each task that touches a user-visible flow must say what happens on each of the three.
+
 ---
 
 ### Task 1: Scaffold the Expo application
@@ -42,9 +50,17 @@ The repository already contains `README.md` and `docs/`. Scaffold into a tempora
 
 ```bash
 npx create-expo-app@latest /tmp/mahjhero-scaffold --template blank-typescript
-rsync -a --exclude=README.md /tmp/mahjhero-scaffold/ .
+rsync -a \
+  --exclude=.git \
+  --exclude=README.md \
+  --exclude=CLAUDE.md \
+  --exclude=AGENTS.md \
+  --exclude=LICENSE \
+  /tmp/mahjhero-scaffold/ .
 rm -rf /tmp/mahjhero-scaffold
 ```
+
+**`--exclude=.git` is not optional.** `create-expo-app` initializes its own git repository in the scaffold directory; without that exclusion the rsync overwrites this repository's `.git` with the throwaway one and destroys all history.
 
 - [ ] **Step 2: Add expo-router and web support**
 
@@ -149,11 +165,26 @@ git commit -m "feat: scaffold Expo app with expo-router for iOS, Android, and we
 
 **Interfaces:**
 - Consumes: nothing from Task 1.
-- Produces: a linked hosted Supabase project, a migrations directory, and a working `supabase test db --linked` command. All later database tasks depend on this harness.
+- Produces: a running local Supabase stack, a linked hosted dev project, a migrations directory, and a working `supabase test db --local` command. All later database tasks depend on this harness.
 
-**Deployment model:** this project runs **remote-only** — there is no local Supabase stack and Docker is not required. Migrations are applied to the linked dev project with `supabase db push`, and pgTAP tests run against it with `--linked`.
+**Deployment model — two databases, different jobs:**
 
-**The dev project is disposable.** It holds no real data and exists to be recreated whenever the schema needs a clean slate — that recreation is this setup's substitute for `supabase db reset`, which has no safe remote equivalent.
+- **Tests run against a local stack** (`supabase test db --local`). The local Postgres connects as superuser, which pgTAP requires.
+- **The app runs against the hosted `mahjhero-dev` project.** Migrations go there with `supabase db push`.
+
+Both receive the same migrations, so schema stays identical.
+
+**Do not attempt `supabase test db --linked`.** It was tried and abandoned for a structural reason: the CLI connects to a linked project as `cli_login_postgres`, a non-superuser that is absent from the `extensions` schema ACL. Supabase forces extensions into that schema and does not let a `grant usage ... to public` stick, so pgTAP's functions are unreachable — and Postgres reports the missing schema privilege as `function plan(integer) does not exist` rather than a permission error, which makes it look like the extension is missing when it is not.
+
+**Prerequisites:** OrbStack (or Docker Desktop) installed and running, and several GB of free disk for the container images.
+
+To keep the footprint small, start only the services the tests need:
+
+```bash
+npx supabase start -x studio,storage-api,imgproxy,edge-runtime,logflare,vector,supavisor,realtime,mailpit
+```
+
+**`supabase db reset` applies to the local database only.** It rebuilds local Postgres from the migrations in seconds and is the normal way to get a clean slate while iterating on schema. It has no remote equivalent — resetting the hosted dev project means recreating it in the dashboard, which is acceptable because that project holds no real data.
 
 - [ ] **Step 1: Initialize the Supabase directory**
 
@@ -212,7 +243,7 @@ rollback;
 
 - [ ] **Step 6: Run the test suite against the linked project**
 
-Run: `npx supabase test db --linked`
+Run: `npx supabase test db --local`
 Expected: PASS — `harness.test.sql .. ok`
 
 Every pgTAP test in this plan wraps itself in `begin`/`rollback`, so a test run leaves the dev database unchanged. That property is what makes running against a hosted project safe; do not write a test that omits it.
@@ -254,6 +285,10 @@ Create `supabase/tests/database/profiles.test.sql`:
 
 ```sql
 begin;
+-- pgTAP lives in the `extensions` schema, which is not on the runner's
+-- search_path. Every test file needs this line or plan() will not resolve.
+set local search_path to extensions, public;
+
 select plan(8);
 
 -- Structure
@@ -318,7 +353,7 @@ rollback;
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `npx supabase test db --linked`
+Run: `npx supabase test db --local`
 Expected: FAIL — `relation "public.profiles" does not exist`
 
 - [ ] **Step 3: Write the migration**
@@ -356,6 +391,14 @@ create policy profiles_select_own on public.profiles
 create policy profiles_update_own on public.profiles
   for update using (auth.uid() = id) with check (auth.uid() = id);
 
+-- RLS policies FILTER access; they do not GRANT it. Without a table-level
+-- grant the policies are unreachable and every query fails with
+-- "permission denied for table profiles". New tables are not auto-exposed
+-- to the Data API roles (see auto_expose_new_tables in supabase/config.toml,
+-- which is off here and off by default in the cloud), so every table this
+-- project creates needs a grant matching its policies — no wider.
+grant select, update on public.profiles to authenticated;
+
 -- Create a profile whenever an auth user is created, by any provider.
 create function public.handle_new_user()
 returns trigger
@@ -386,7 +429,7 @@ Expected: reports `create_profiles` applied.
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `npx supabase test db --linked`
+Run: `npx supabase test db --local`
 Expected: PASS — all 8 assertions in `profiles.test.sql`
 
 - [ ] **Step 6: Commit**
@@ -417,37 +460,55 @@ Create `supabase/tests/database/identity_linking.test.sql`:
 
 ```sql
 begin;
+-- pgTAP lives in the `extensions` schema, which is not on the runner's
+-- search_path. Every test file needs this line or plan() will not resolve.
+set local search_path to extensions, public;
+
 select plan(2);
 
--- One auth user, two verified identities for the same address
--- (as happens when someone signs up by magic link then uses Google).
-insert into auth.users (id, email)
-values ('33333333-3333-3333-3333-333333333333', 'carol@example.com');
+-- ---------------------------------------------------------------------------
+-- What is NOT tested here, and why.
+--
+-- `handle_new_user()` carries `on conflict (id) do nothing`. That branch is
+-- structurally unreachable and therefore untestable: profiles.id references
+-- auth.users(id) non-deferrably, so a profile cannot exist before its auth
+-- user; auth.users.id is a primary key, so the same id cannot be inserted
+-- twice to re-fire the trigger; and deleting the user cascades the profile
+-- away rather than orphaning it. The clause stays as cheap insurance against
+-- a future schema change, but no test can exercise it, and a test that
+-- claims to is worse than none — an earlier version of this file made
+-- exactly that false claim.
+--
+-- The two guarantees below are the ones that actually hold the identity
+-- model together, and both genuinely fail if broken.
+-- ---------------------------------------------------------------------------
 
-insert into auth.identities (id, user_id, provider, provider_id, identity_data)
-values
-  ('aaaaaaaa-0000-0000-0000-000000000001',
-   '33333333-3333-3333-3333-333333333333',
-   'email', 'carol@example.com',
-   '{"sub": "carol@example.com", "email": "carol@example.com"}'::jsonb),
-  ('aaaaaaaa-0000-0000-0000-000000000002',
-   '33333333-3333-3333-3333-333333333333',
-   'google', 'google-oauth-subject-1',
-   '{"sub": "google-oauth-subject-1", "email": "carol@example.com"}'::jsonb);
+-- 1. One verified email cannot become two accounts. This is what prevents a
+--    member appearing twice on a club roster with their bookings split.
+insert into auth.users (id, email)
+values ('44444444-4444-4444-4444-444444444444', 'dave@example.com');
+
+select throws_ok(
+  $$insert into auth.users (id, email)
+    values ('55555555-5555-5555-5555-555555555555', 'dave@example.com')$$,
+  '23505',
+  null,
+  'auth.users rejects a second user with the same email'
+);
+
+-- 2. Removing an auth user removes their profile. Without the cascade, a
+--    deleted account leaves an orphaned profile that still appears on
+--    rosters and in bookings.
+insert into auth.users (id, email)
+values ('66666666-6666-6666-6666-666666666666', 'erin@example.com');
+
+delete from auth.users where id = '66666666-6666-6666-6666-666666666666';
 
 select is(
   (select count(*)::int from public.profiles
-   where id = '33333333-3333-3333-3333-333333333333'),
-  1,
-  'two identities on one user still yield exactly one profile'
-);
-
-select is(
-  (select count(distinct u.id)::int
-   from auth.users u
-   where u.email = 'carol@example.com'),
-  1,
-  'one verified email maps to exactly one auth user'
+   where id = '66666666-6666-6666-6666-666666666666'),
+  0,
+  'deleting an auth user cascades to their profile, leaving no orphan'
 );
 
 select * from finish();
@@ -456,10 +517,14 @@ rollback;
 
 - [ ] **Step 2: Run the test to verify current behaviour**
 
-Run: `npx supabase test db --linked`
-Expected: PASS for both assertions. The `on conflict (id) do nothing` clause in `handle_new_user()` is what makes the first hold.
+Run: `npx supabase test db --local`
+Expected: PASS for both assertions.
 
-If either assertion fails, the trigger is creating duplicate profiles — fix `handle_new_user()` before continuing. Do not proceed with a failing assertion here; every later plan assumes one profile per person.
+**Verify the test can actually fail before trusting it.** Temporarily change `on delete cascade` to `on delete restrict` in the `profiles.id` foreign key, re-apply with `npx supabase db reset`, and confirm assertion 2 now fails. Restore it and re-apply. This file previously contained assertions that passed regardless of the code's correctness; do not trust a green run without a mutation proving otherwise.
+
+If assertion 1 fails, `auth.users` does not enforce email uniqueness on this Supabase version. Do not delete the assertion or work around it — report it, because the entire identity model assumes that guarantee. Note that this constraint lives in Supabase's own auth schema and is unrelated to `handle_new_user()`, which only guards `profiles.id`.
+
+If assertion 2 fails, the `profiles.id` foreign key has lost its `on delete cascade` and deleted accounts are leaving orphaned profiles behind on club rosters. Do not proceed with a failing assertion here; every later plan assumes one profile per person and no orphans.
 
 - [ ] **Step 3: Confirm automatic identity linking is on in the dashboard**
 
@@ -540,6 +605,41 @@ In `package.json`, add to `scripts`:
 }
 ```
 
+- [ ] **Step 2b: Configure Vitest**
+
+Vitest cannot run these tests without this. `lib/supabase.ts` transitively imports `react-native`, whose published source is Flow-typed and unparseable by Vitest's transform, and the module throws at import time if its env vars are missing.
+
+Create `vitest.config.mts`:
+
+```ts
+import { defineConfig } from 'vitest/config';
+
+export default defineConfig({
+  resolve: {
+    alias: {
+      // React Native ships Flow-typed source Vitest cannot parse.
+      // react-native-web is plain pre-compiled JS and a safe stand-in for
+      // unit tests that only need modules to resolve, not native behaviour.
+      //
+      // CAVEAT: react-native-web hardcodes `Platform.OS === 'web'`, so the
+      // native branch of any platform-branching code is invisible to this
+      // suite. A test needing it must override explicitly, e.g.
+      // vi.mock('react-native', () => ({ Platform: { OS: 'ios' } })).
+      'react-native': 'react-native-web',
+    },
+  },
+  test: {
+    env: {
+      // Satisfies lib/supabase.ts's import-time env guard. Real values live
+      // in .env.local. Note this means the guard's throw path is never
+      // exercised here; a test covering it must clear these for that spec.
+      EXPO_PUBLIC_SUPABASE_URL: 'https://example.supabase.co',
+      EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_test',
+    },
+  },
+});
+```
+
 - [ ] **Step 3: Write the failing test**
 
 Create `lib/session.test.ts`:
@@ -591,16 +691,16 @@ import { createClient } from '@supabase/supabase-js';
 import { Platform } from 'react-native';
 
 const url = process.env.EXPO_PUBLIC_SUPABASE_URL;
-const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+const publishableKey = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
-if (!url || !anonKey) {
+if (!url || !publishableKey) {
   throw new Error(
-    'Missing EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_ANON_KEY. ' +
+    'Missing EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY. ' +
       'Copy .env.local.example to .env.local and fill it in.',
   );
 }
 
-export const supabase = createClient(url, anonKey, {
+export const supabase = createClient(url, publishableKey, {
   auth: {
     // On web, Supabase uses localStorage by default; AsyncStorage is native-only.
     storage: Platform.OS === 'web' ? undefined : AsyncStorage,
@@ -681,10 +781,10 @@ Create `.env.local.example`:
 
 ```
 # From the dev project dashboard: Settings -> API
-# The anon key is a publishable client key and is safe in a client bundle.
-# Never put the service_role key in this file or anywhere in the app.
+# The publishable key (sb_publishable_...) is a client key and is safe in a
+# client bundle. Never put the service_role key here or anywhere in the app.
 EXPO_PUBLIC_SUPABASE_URL=https://<dev-project-ref>.supabase.co
-EXPO_PUBLIC_SUPABASE_ANON_KEY=replace-with-dev-anon-key
+EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_replace_me
 ```
 
 Then copy it to `.env.local` and fill in the real values. `.env.local` is git-ignored (Task 2).
@@ -778,13 +878,26 @@ export function isValidEmail(value: string): boolean {
   return EMAIL_PATTERN.test(value.trim());
 }
 
+/**
+ * Never rejects. A function declared as returning `{ error }` must report
+ * failure through that channel, not by throwing — the sign-in screen sets
+ * its status to "sending" before calling this, and an escaping rejection
+ * would strand the user in a spinner with the submit button disabled and
+ * no message explaining why.
+ */
 export async function sendMagicLink(
   email: string,
 ): Promise<{ error: string | null }> {
-  const { error } = await supabase.auth.signInWithOtp({
-    email: email.trim(),
-  });
-  return { error: error ? error.message : null };
+  try {
+    const { error } = await supabase.auth.signInWithOtp({
+      email: email.trim(),
+    });
+    return { error: error ? error.message : null };
+  } catch {
+    return {
+      error: 'Could not reach MahjHero. Check your connection and try again.',
+    };
+  }
 }
 ```
 
@@ -863,7 +976,7 @@ export default function SignIn() {
         accessibilityRole="button"
       >
         {status === 'sending' ? (
-          <ActivityIndicator />
+          <ActivityIndicator accessibilityLabel="Sending your sign-in link" />
         ) : (
           <Text style={styles.buttonText}>Email me a sign-in link</Text>
         )}
@@ -890,7 +1003,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   buttonText: { color: 'white', fontSize: 18, fontWeight: '600' },
-  error: { color: '#b3261e', fontSize: 16 },
+  error: { color: '#b3261e', fontSize: 18 },
 });
 ```
 
@@ -1126,7 +1239,7 @@ describe('isCompleteProfile', () => {
 });
 ```
 
-Skill level is required rather than optional because events tier their tables by it. A member with no skill level cannot be matched to a table, so the app must collect it before they reach any club.
+Skill level is required rather than optional because events tier their tables by it. A member with no skill level cannot be matched to a table, so the app must collect it before they reach any club. Step 5 uses this to disable the Save button until both fields are present, which is why it is worth extracting rather than inlining.
 
 - [ ] **Step 2: Run the test to verify it fails**
 
@@ -1202,7 +1315,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { fetchProfile, updateProfile } from '../lib/profile';
+import { fetchProfile, isCompleteProfile, updateProfile } from '../lib/profile';
 import type { SkillLevel } from '../lib/profile';
 import { useSession } from '../lib/session';
 import { supabase } from '../lib/supabase';
@@ -1247,10 +1360,19 @@ export default function ProfileScreen() {
 
   async function onSave() {
     if (!session) return;
-    await updateProfile(session.user.id, {
+    setError(null);
+    // updateProfile reports failure through `error` rather than throwing, so
+    // the caller MUST read it. Setting `saved` unconditionally would show
+    // "Saved" after a failed write and leave the member believing their
+    // skill level persisted when it did not.
+    const { error: saveError } = await updateProfile(session.user.id, {
       display_name: displayName,
       skill_level: skillLevel,
     });
+    if (saveError) {
+      setError(saveError);
+      return;
+    }
     setSaved(true);
   }
 
@@ -1294,7 +1416,30 @@ export default function ProfileScreen() {
         </Pressable>
       ))}
 
-      <Pressable style={styles.button} onPress={onSave} accessibilityRole="button">
+      {isCompleteProfile({ display_name: displayName, skill_level: skillLevel }) ? null : (
+        <Text style={styles.help}>
+          Add your name and skill level so hosts can seat you at the right table.
+        </Text>
+      )}
+      <Pressable
+        style={[
+          styles.button,
+          isCompleteProfile({ display_name: displayName, skill_level: skillLevel })
+            ? null
+            : styles.buttonDisabled,
+        ]}
+        onPress={onSave}
+        disabled={
+          !isCompleteProfile({ display_name: displayName, skill_level: skillLevel })
+        }
+        accessibilityRole="button"
+        accessibilityState={{
+          disabled: !isCompleteProfile({
+            display_name: displayName,
+            skill_level: skillLevel,
+          }),
+        }}
+      >
         <Text style={styles.buttonText}>{saved ? 'Saved' : 'Save'}</Text>
       </Pressable>
 
@@ -1341,6 +1486,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 16,
   },
+  buttonDisabled: { backgroundColor: '#9db8e8' },
   buttonText: { color: 'white', fontSize: 18, fontWeight: '600' },
   linkRow: { marginTop: 24 },
   link: { fontSize: 18, color: '#1f6feb' },
@@ -1453,10 +1599,19 @@ export async function updatePreferences(
   userId: string,
   changes: Partial<NotificationPreferences>,
 ): Promise<{ error: string | null }> {
+  const touchesStart = changes.quiet_hours_start !== undefined;
+  const touchesEnd = changes.quiet_hours_end !== undefined;
+
+  // Both bounds must travel together. Accepting one alone would let a caller
+  // slip past validation and store a window this module considers invalid.
+  if (touchesStart !== touchesEnd) {
+    return { error: 'Quiet hours must be changed as a pair.' };
+  }
+
   if (
-    changes.quiet_hours_start !== undefined &&
-    changes.quiet_hours_end !== undefined &&
-    !isValidQuietWindow(changes.quiet_hours_start, changes.quiet_hours_end)
+    touchesStart &&
+    touchesEnd &&
+    !isValidQuietWindow(changes.quiet_hours_start!, changes.quiet_hours_end!)
   ) {
     return { error: 'Those quiet hours do not make sense.' };
   }
@@ -1654,7 +1809,7 @@ const styles = StyleSheet.create({
 
 - [ ] **Step 6: Run the full test suite**
 
-Run: `npm test && npx supabase test db --linked`
+Run: `npm test && npx supabase test db --local`
 Expected: 18 Vitest tests PASS; all pgTAP files PASS.
 
 - [ ] **Step 7: Verify all three platforms build**
@@ -1682,4 +1837,4 @@ Deliberately deferred to later plans, so they aren't mistaken for omissions:
 
 ## Forward references
 
-`isCompleteProfile` (Task 8) is defined and tested here but has no caller in this plan. That is intentional, not dead code: Plan 2 uses it to block a member from joining a club until they have set a skill level, because events tier their tables by it and a member without one cannot be seated. If Plan 2 changes that rule, delete the function rather than leaving it unused.
+None. Every function this plan defines has a caller within it. Plan 2 additionally reuses `isCompleteProfile` to block joining a club without a skill level, but that is a second consumer, not the first.

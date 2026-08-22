@@ -1,0 +1,60 @@
+# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# local env files
+.env*.local
+
+# typescript
+*.tsbuildinfo
+
+# generated native folders
+/ios
+/android
+
+# project tooling
+.superpowers/
+
+# Supabase
+supabase/.branches
+supabase/.temp
+.env.local
+
+# Playwright output (baseline snapshots under e2e/**/*-snapshots/ are NOT ignored)
+test-results/
+playwright-report/
+
+# Stray .env files, at any depth. Nothing in this repo LOADS one — the visual
+# suite reads exported shell variables (see docs/testing.md) and there is no
+# dotenv wiring. This is purely a guard so a service_role key cannot be
+# committed by accident. An `e2e/.env` entry used to sit here and implied a
+# loader that never existed.
+.env
