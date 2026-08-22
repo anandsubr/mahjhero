@@ -76,3 +76,27 @@ export function dateToTimeString(date: Date): string {
 export function formatTimeLabel(date: Date, locale?: string): string {
   return date.toLocaleTimeString(locale, { hour: 'numeric', minute: '2-digit' });
 }
+
+/**
+ * "YYYY-MM-DD" to a LOCAL Date, for the native date picker.
+ *
+ * Local, not UTC, and deliberately so: the picker shows whatever day the
+ * Date lands on in the device's timezone, and `new Date('2027-03-14')`
+ * parses as UTC midnight — which is 13 March for everyone west of
+ * Greenwich. A host in Los Angeles would tap the 14th and see the 13th.
+ *
+ * The string itself carries no instant. It is a club-local calendar date,
+ * the same thing `event_series.starts_on` stores.
+ */
+export function dateStringToDate(value: string): Date {
+  const [year, month, day] = value.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
+/** The inverse. Local getters, for the same reason. */
+export function dateToDateString(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}

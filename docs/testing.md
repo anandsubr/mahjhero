@@ -10,7 +10,7 @@ Five layers, each covering something the others structurally cannot.
 | Component | Vitest + @testing-library/react | Screen structure, navigation, state transitions — of the **web** files (`.web.tsx` wins, same as the bundle) | Colour, layout, truncation, **and all native rendering — see below** |
 | Visual | Playwright | Colour, layout, truncation, at real viewport widths | Logic, data, and native rendering (Chromium web only) |
 
-Nothing in this table covers the native time picker. See
+Nothing in this table covers the native time or date pickers. See
 "`@react-native-community/datetimepicker` has no coverage anywhere" below.
 
 ## Why the visual layer exists
@@ -144,26 +144,28 @@ Maestro.
 Read this before assuming otherwise — an earlier version of this document
 claimed the visual layer covered it, and that claim was wrong.
 
-`components/TimeField.web.tsx` exists. Metro's platform-extension resolution
-picks it for web builds, so **the web bundle never imports
-`@react-native-community/datetimepicker` at all**. What the visual layer's
-screenshots show under "Starts"/"Ends" is an `<input type="time">` — a
-different control, from a different file, with a different implementation. It
-is real coverage of `TimeField.web.tsx`, and it is no coverage whatsoever of
-the native picker.
+`components/TimeField.web.tsx` and `components/DateField.web.tsx` both exist.
+Metro's platform-extension resolution picks them for web builds, so **the web
+bundle never imports `@react-native-community/datetimepicker` at all**. What
+the visual layer's screenshots show under "Starts"/"Ends" (and any date field
+built on `DateField`) is an `<input type="time">` or `<input type="date">` —
+a different control, from a different file, with a different implementation.
+It is real coverage of `TimeField.web.tsx` and `DateField.web.tsx`, and it is
+no coverage whatsoever of the native pickers.
 
-The component layer does not reach it either. `resolve.extensions` in
+The component layer does not reach them either. `resolve.extensions` in
 `vitest.config.mts` makes Vitest resolve `.web.tsx` first, exactly as the web
-bundle does, so `import TimeField from '../components/TimeField'` under Vitest
-also loads `TimeField.web.tsx`. Nothing under test imports the package. (This
-is why the old `test/stubs/datetimepicker.tsx` stub was deleted: with web
-resolution in place, no test pulls the package in, so there is nothing left
-to stub.)
+bundle does, so `import TimeField from '../components/TimeField'` (and the
+same for `DateField`) under Vitest loads the `.web.tsx` file. Nothing under
+test imports the package. (This is why the old
+`test/stubs/datetimepicker.tsx` stub was deleted: with web resolution in
+place, no test pulls the package in, so there is nothing left to stub.)
 
-**So: `@react-native-community/datetimepicker` and `components/TimeField.tsx`
-— the native picker and the file that drives it — are exercised by zero
-layers in this repo, and will stay that way until Maestro.** An overclaim is
-worse than a gap: a gap gets filled, false confidence does not.
+**So: `@react-native-community/datetimepicker`, `components/TimeField.tsx`,
+and `components/DateField.tsx` — the native picker and the two files that
+drive it — are exercised by zero layers in this repo, and will stay that way
+until Maestro.** An overclaim is worse than a gap: a gap gets filled, false
+confidence does not.
 
 ### Which platform's files the component layer resolves
 
