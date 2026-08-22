@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(41);
+select plan(44);
 
 -- Structure
 select has_table('public', 'venues', 'venues table exists');
@@ -254,6 +254,45 @@ select is(
    where id = '11111111-0000-0000-0000-000000000001'),
   '42 Elm St',
   'a null address_line argument leaves the existing address alone'
+);
+
+/*
+ * The four null-means-leave-alone assertions above cannot tell a working
+ * write-through from one that silently discards the argument and keeps the
+ * old value -- both produce the same "unchanged" result when the argument is
+ * null. `address_line` is exercised by the rename above (it goes from NULL
+ * to '42 Elm St'), but locality, region and postal_code have only ever been
+ * left alone in this file, never actually changed. Prove the write-through
+ * for all three by supplying real values and checking they landed. Setup
+ * only -- the call itself spends no plan slot.
+ */
+do $locality_edit$
+begin
+  perform public.update_venue(
+    '11111111-0000-0000-0000-000000000001', null,
+    null, 'Cambridge', 'NH', '02139');
+end
+$locality_edit$;
+
+select is(
+  (select locality from public.venues
+   where id = '11111111-0000-0000-0000-000000000001'),
+  'Cambridge',
+  'a non-null locality argument overwrites the existing locality'
+);
+
+select is(
+  (select region from public.venues
+   where id = '11111111-0000-0000-0000-000000000001'),
+  'NH',
+  'a non-null region argument overwrites the existing region'
+);
+
+select is(
+  (select postal_code from public.venues
+   where id = '11111111-0000-0000-0000-000000000001'),
+  '02139',
+  'a non-null postal_code argument overwrites the existing postal code'
 );
 
 -- Creation defaults to club visibility. This is the whole privacy argument:

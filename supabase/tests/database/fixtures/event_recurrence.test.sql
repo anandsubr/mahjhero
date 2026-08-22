@@ -214,11 +214,12 @@ select is(
 update public.event_series set materialized_through = null
   where id = '55555555-0000-0000-0000-000000000001';
 
-select lives_ok(
-  $$select public.materialize_one_series(
-      '55555555-0000-0000-0000-000000000001',
-      (date '2027-03-31' - current_date)::int)$$,
-  'the propagating path re-walks materialized dates without raising'
+select is(
+  public.materialize_one_series(
+    '55555555-0000-0000-0000-000000000001',
+    (date '2027-03-31' - current_date)::int),
+  0,
+  'the propagating path re-walks materialized dates without raising, creating nothing new'
 );
 
 -- ---------------------------------------------------------------------
