@@ -76,7 +76,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(9);
+select plan(14);
 
 -- Structure
 select has_table('public', 'clubs', 'clubs table exists');
@@ -151,6 +151,67 @@ select throws_ok(
   'a member cannot change roles directly'
 );
 
+-- ---------------------------------------------------------------------------
+-- WRITE isolation. Read isolation above is only half the property, and the
+-- missing half is where the real breach lives: an earlier version of this
+-- schema had `with check (auth.uid() = profile_id)` on club_members, which
+-- constrains who the row is about and nothing about which club or what role.
+-- Any authenticated user holding a club's uuid could insert themselves into
+-- it as host. Every assertion below would have caught that; none of the read
+-- assertions did.
+-- ---------------------------------------------------------------------------
+
+select throws_ok(
+  $$insert into public.club_members (club_id, profile_id, role)
+    values ('c2c2c2c2-0000-0000-0000-000000000002',
+            'aaaaaaaa-0000-0000-0000-000000000001', 'host')$$,
+  '42501',
+  null,
+  'a member cannot insert themselves into another club'
+);
+
+select throws_ok(
+  $$insert into public.club_members (club_id, profile_id, role)
+    values ('c1c1c1c1-0000-0000-0000-000000000001',
+            'aaaaaaaa-0000-0000-0000-000000000001', 'host')$$,
+  '42501',
+  null,
+  'a member cannot insert a membership even in their own club'
+);
+
+select throws_ok(
+  $$insert into public.club_invites (club_id, token, invited_by)
+    values ('c2c2c2c2-0000-0000-0000-000000000002', 'sneaky-token',
+            'aaaaaaaa-0000-0000-0000-000000000001')$$,
+  '42501',
+  null,
+  'a member cannot create an invite to another club'
+);
+
+with attempted as (
+  update public.clubs set name = 'Hijacked'
+  where id = 'c2c2c2c2-0000-0000-0000-000000000002'
+  returning 1
+)
+select is(
+  (select count(*)::int from attempted),
+  0,
+  'a member cannot update another club'
+);
+
+-- create_club is the only way a membership is created, and it seats the
+-- caller as host in the same transaction — so a club can never exist with
+-- no host, which would make it unreachable by every membership-scoped policy.
+select is(
+  (select count(*)::int
+   from public.club_members
+   where club_id = public.create_club('Test Club', 'Tuesdays')
+     and profile_id = 'aaaaaaaa-0000-0000-0000-000000000001'
+     and role = 'host'),
+  1,
+  'create_club seats the caller as host'
+);
+
 select * from finish();
 rollback;
 ```
@@ -183,7 +244,11 @@ create table public.clubs (
   visibility       public.club_visibility not null default 'private',
   timezone         text not null default 'America/New_York',
   reminder_offsets int[] not null default '{1440, 120}',
-  created_by       uuid not null references public.profiles(id),
+  -- Nullable with `set null`: deleting an account must not fail, and must not
+  -- take the club with it. Without this, the cascade from auth.users into
+  -- profiles aborts here, so account deletion is impossible for anyone who
+  -- has ever created a club.
+  created_by       uuid references public.profiles(id) on delete set null,
   created_at       timestamptz not null default now()
 );
 
@@ -204,15 +269,17 @@ create table public.club_invites (
   email         text,
   display_name  text,
   skill_level   public.skill_level,
-  invited_by    uuid not null references public.profiles(id),
+  invited_by    uuid references public.profiles(id) on delete set null,
   expires_at    timestamptz not null default (now() + interval '30 days'),
   accepted_at   timestamptz,
-  accepted_by   uuid references public.profiles(id),
+  accepted_by   uuid references public.profiles(id) on delete set null,
   created_at    timestamptz not null default now()
 );
 
 create index club_members_profile_idx on public.club_members (profile_id);
-create index club_invites_token_idx on public.club_invites (token);
+-- token already has a btree from its unique constraint; club_id does not,
+-- and the cascade from clubs would otherwise sequential-scan.
+create index club_invites_club_idx on public.club_invites (club_id);
 
 -- Breaks policy recursion: club_members' own policy would otherwise ask the
 -- same question it is answering. Definer rights plus a pinned search_path.
@@ -238,10 +305,10 @@ alter table public.club_invites enable row level security;
 create policy clubs_select_member on public.clubs
   for select using (public.is_club_member(id));
 
--- Anyone signed in may create a club; Task 2 makes them its host in the same
--- transaction, so a club without a host is not reachable through the app.
-create policy clubs_insert_any on public.clubs
-  for insert with check (auth.uid() = created_by);
+-- No insert policy on clubs either: `create_club` below is the only way in,
+-- so a club and its host row are always created together. A club with no
+-- member is unreachable by anyone — every policy here is membership-scoped —
+-- and its unique slug would be squatted permanently.
 
 create policy clubs_update_host on public.clubs
   for update using (
@@ -255,10 +322,15 @@ create policy clubs_update_host on public.clubs
 create policy club_members_select_member on public.club_members
   for select using (public.is_club_member(club_id));
 
--- Roles are changed only through a definer function (a later plan). Direct
--- writes are refused so a member cannot promote themselves.
-create policy club_members_insert_self on public.club_members
-  for insert with check (auth.uid() = profile_id);
+-- NOTE: there is deliberately NO insert policy and NO insert grant on
+-- club_members. Memberships are created only by `create_club` below and by
+-- `accept_club_invite` (Task 3), both `security definer`.
+--
+-- The obvious policy — `with check (auth.uid() = profile_id)` — is a
+-- cross-tenant breach: it constrains WHO the row is about and says nothing
+-- about WHICH club or WHAT role, so any authenticated user holding a club's
+-- uuid could insert themselves into it as host. Club uuids are not secret;
+-- every invitee learns one. Do not add that policy back.
 
 create policy club_invites_select_organizer on public.club_invites
   for select using (
@@ -278,10 +350,74 @@ create policy club_invites_insert_organizer on public.club_invites
     )
   );
 
+/*
+ * Creates a club and seats the caller as its host, atomically.
+ *
+ * security definer because there is no insert policy on either table — that
+ * is the point. A client-side two-write version would need an insert policy
+ * on club_members, and the only workable shape for one
+ * (`with check (auth.uid() = profile_id)`) lets anybody join any club as
+ * host. Doing it here means memberships can only ever be created by code
+ * that decides both the club and the role.
+ *
+ * RLS does not protect this function, so it validates its own inputs.
+ */
+create function public.create_club(club_name text, club_rhythm text default '')
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  caller uuid := auth.uid();
+  new_id uuid;
+  base_slug text;
+begin
+  if caller is null then
+    raise exception 'not signed in' using errcode = '42501';
+  end if;
+
+  if length(trim(club_name)) = 0 then
+    raise exception 'club name is required' using errcode = '22023';
+  end if;
+
+  base_slug := regexp_replace(lower(trim(club_name)), '[^a-z0-9]+', '-', 'g');
+  base_slug := trim(both '-' from base_slug);
+
+  if length(base_slug) = 0 then
+    raise exception 'club name needs a letter or number'
+      using errcode = '22023';
+  end if;
+
+  -- Suffix rather than collide: two clubs may legitimately share a name, and
+  -- surfacing a raw unique-violation to the member helps nobody.
+  insert into public.clubs (name, slug, rhythm, created_by)
+  values (
+    trim(club_name),
+    base_slug || '-' || substr(md5(gen_random_uuid()::text), 1, 6),
+    trim(coalesce(club_rhythm, '')),
+    caller
+  )
+  returning id into new_id;
+
+  insert into public.club_members (club_id, profile_id, role)
+  values (new_id, caller, 'host');
+
+  return new_id;
+end;
+$$;
+
+grant execute on function public.create_club(text, text) to authenticated;
+
 -- RLS filters; it does not grant. Without these the policies are unreachable
 -- and every query fails with "permission denied".
-grant select, insert, update on public.clubs to authenticated;
-grant select, insert on public.club_members to authenticated;
+--
+-- Note what is NOT granted: no insert on clubs or club_members (definer
+-- functions own that), and no delete anywhere (removing members and deleting
+-- clubs is a later plan, and both need decisions about what happens to that
+-- member's bookings).
+grant select, update on public.clubs to authenticated;
+grant select on public.club_members to authenticated;
 grant select, insert on public.club_invites to authenticated;
 
 -- Widen the profiles read policy: a member may see co-members, so rosters can
@@ -309,7 +445,7 @@ Expected: all migrations apply, ending with `create_clubs`.
 - [ ] **Step 5: Run the tests to verify they pass**
 
 Run: `npx supabase test db --local`
-Expected: PASS — 9 assertions in `clubs.test.sql`, and the existing 11 still pass.
+Expected: PASS — 14 assertions in `clubs.test.sql`, and the existing 11 still pass.
 
 - [ ] **Step 6: Prove the isolation test can fail**
 
@@ -612,56 +748,47 @@ export async function fetchRoster(clubId: string): Promise<ClubMember[] | null> 
 }
 
 /**
- * Creates the club and seats the creator as its host.
+ * Creates the club and seats the caller as its host.
  *
- * Two writes, not one. If the membership insert fails the club row is deleted
- * so a hostless club — which nobody could ever administer or even read, since
- * every policy is membership-scoped — is not left behind.
+ * Goes through the `create_club` database function rather than two client
+ * writes, because there is deliberately no insert policy on `clubs` or
+ * `club_members`. The only workable client-side policy for the membership
+ * insert — `with check (auth.uid() = profile_id)` — constrains who the row is
+ * about and nothing about which club or what role, so anyone holding a club's
+ * uuid could insert themselves into it as host. Letting the function decide
+ * both means that is not expressible from a client at all.
+ *
+ * It also makes the two inserts one transaction, so a club can never exist
+ * without a host — which would leave it unreachable by every
+ * membership-scoped policy and its unique slug squatted permanently.
+ *
+ * Note there is no `userId` argument: the function reads `auth.uid()` itself,
+ * so a caller cannot create a club on someone else's behalf.
  */
 export async function createClub(
-  userId: string,
   name: string,
   rhythm: string,
 ): Promise<{ clubId: string | null; error: string | null }> {
   const trimmed = name.trim();
-  const slug = slugify(trimmed);
 
   if (trimmed.length === 0) {
     return { clubId: null, error: 'Give the club a name.' };
   }
-  if (slug.length === 0) {
+  if (slugify(trimmed).length === 0) {
     return { clubId: null, error: 'That name needs at least one letter or number.' };
   }
 
   try {
-    const { data, error } = await supabase
-      .from('clubs')
-      .insert({
-        name: trimmed,
-        slug: `${slug}-${Math.random().toString(36).slice(2, 8)}`,
-        rhythm: rhythm.trim(),
-        created_by: userId,
-      })
-      .select('id')
-      .single();
+    const { data, error } = await supabase.rpc('create_club', {
+      club_name: trimmed,
+      club_rhythm: rhythm.trim(),
+    });
 
     if (error || !data) {
       console.error('createClub failed', error);
       return { clubId: null, error: GENERIC_ERROR };
     }
-
-    const { error: memberError } = await supabase
-      .from('club_members')
-      .insert({ club_id: data.id, profile_id: userId, role: 'host' })
-      .select('id');
-
-    if (memberError) {
-      console.error('createClub failed seating the host', memberError);
-      await supabase.from('clubs').delete().eq('id', data.id);
-      return { clubId: null, error: GENERIC_ERROR };
-    }
-
-    return { clubId: data.id as string, error: null };
+    return { clubId: data as string, error: null };
   } catch (cause) {
     console.error('createClub failed', cause);
     return { clubId: null, error: GENERIC_ERROR };
@@ -794,7 +921,7 @@ git commit -m "feat: add the clubs data layer"
 
 - [ ] **Step 1: Write the failing tests**
 
-Append to `supabase/tests/database/clubs.test.sql`, before `select * from finish();`, and change `plan(9)` to `plan(13)`:
+Append to `supabase/tests/database/clubs.test.sql`, before `select * from finish();`, and change `plan(14)` to `plan(18)`:
 
 ```sql
 -- Invite acceptance. Bob redeems an invite to Alice's club.
@@ -907,7 +1034,7 @@ grant execute on function public.accept_club_invite(text) to authenticated;
 - [ ] **Step 4: Apply and run the tests**
 
 Run: `npx supabase db reset && npx supabase test db --local`
-Expected: PASS — 13 assertions in `clubs.test.sql`.
+Expected: PASS — 18 assertions in `clubs.test.sql`.
 
 - [ ] **Step 5: Prove the expiry check can fail**
 
@@ -1171,11 +1298,7 @@ export default function NewClubScreen() {
     if (!session || saving) return;
     setError(null);
     setSaving(true);
-    const { clubId, error: createError } = await createClub(
-      session.user.id,
-      name,
-      rhythm,
-    );
+    const { clubId, error: createError } = await createClub(name, rhythm);
     setSaving(false);
     if (createError || !clubId) {
       setError(createError ?? 'Could not create the club.');
@@ -1723,7 +1846,7 @@ Run: `npx playwright test --update-snapshots`
 - [ ] **Step 5: Run everything**
 
 Run: `npm test && npm run test:contract && npx supabase test db --local && npm run test:visual && npx tsc --noEmit`
-Expected: 111 Vitest, 6 contract, 24 pgTAP, 8 visual, typecheck clean.
+Expected: 111 Vitest, 6 contract, 29 pgTAP, 8 visual, typecheck clean.
 
 - [ ] **Step 6: Commit**
 
