@@ -5470,7 +5470,12 @@ a `null` result sets `loadFailed`, anything else sets state.
 ```tsx
       fetchUpcomingEvents(clubId).then((result) => {
         if (cancelled) return;
-        if (result === null) setLoadFailed(true);
+        // Its OWN failure flag, not the screen-wide one. The top-level guard
+        // blanks the whole screen on `loadFailed`, so sharing it would mean a
+        // member loses the roster, the invite controls and everything else
+        // because one list could not load. An events failure degrades the
+        // Upcoming section and nothing more.
+        if (result === null) setEventsFailed(true);
         else setEvents(result);
       });
 ```
