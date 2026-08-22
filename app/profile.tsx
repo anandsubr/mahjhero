@@ -1,4 +1,4 @@
-import { Link, Redirect } from 'expo-router';
+import { Link, Redirect, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import Button from '../components/Button';
@@ -7,6 +7,7 @@ import ErrorBanner from '../components/ErrorBanner';
 import Screen from '../components/Screen';
 import SkillLevelPicker from '../components/SkillLevelPicker';
 import TextField from '../components/TextField';
+import { ChevronLeftIcon } from '../components/icons';
 import { GENERIC_ERROR } from '../lib/constants';
 import { fetchProfile, isCompleteProfile, updateProfile } from '../lib/profile';
 import type { SkillLevel } from '../lib/profile';
@@ -16,6 +17,7 @@ import { colors, space, type } from '../lib/theme';
 
 export default function ProfileScreen() {
   const { session, loading } = useSession();
+  const router = useRouter();
   const [displayName, setDisplayName] = useState('');
   const [skillLevel, setSkillLevel] = useState<SkillLevel | null>(null);
   const [ready, setReady] = useState(false);
@@ -144,6 +146,19 @@ export default function ProfileScreen() {
 
   return (
     <Screen scroll contentStyle={styles.container}>
+      {/* Profile is no longer the landing screen (app/index.tsx now sends
+          signed-in members to /clubs), so without this back link profile
+          becomes the dead end that notifications used to be. */}
+      <Button
+        variant="ghost"
+        big={false}
+        onPress={() => router.push('/clubs')}
+        icon={<ChevronLeftIcon color={colors.accentColor} />}
+        accessibilityLabel="Back to your clubs"
+        style={styles.backButton}
+      >
+        Clubs
+      </Button>
       <Text style={styles.heading}>Your profile</Text>
       <Text style={styles.subheading}>Two things and you're ready to sit down at a table.</Text>
 
@@ -225,6 +240,9 @@ const styles = StyleSheet.create({
   },
   centered: {
     alignItems: 'center',
+  },
+  backButton: {
+    alignSelf: 'flex-start',
   },
   heading: {
     fontFamily: type.heading,

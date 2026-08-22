@@ -15,7 +15,7 @@ export default function Index() {
     );
   }
 
-  return <Redirect href={session ? '/profile' : '/sign-in'} />;
+  return <Redirect href={session ? '/clubs' : '/sign-in'} />;
 }
 
 const styles = StyleSheet.create({
