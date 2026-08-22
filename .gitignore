@@ -51,4 +51,10 @@ supabase/.temp
 # Playwright output (baseline snapshots under e2e/**/*-snapshots/ are NOT ignored)
 test-results/
 playwright-report/
-e2e/.env
+
+# Stray .env files, at any depth. Nothing in this repo LOADS one — the visual
+# suite reads exported shell variables (see docs/testing.md) and there is no
+# dotenv wiring. This is purely a guard so a service_role key cannot be
+# committed by accident. An `e2e/.env` entry used to sit here and implied a
+# loader that never existed.
+.env

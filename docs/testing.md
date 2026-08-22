@@ -7,8 +7,11 @@ Five layers, each covering something the others structurally cannot.
 | Logic | Vitest | Pure functions in `lib/` | Anything rendered |
 | Schema contract | Vitest + local Supabase | The DB↔client seam — column names, types, JSON shape | UI |
 | Database | pgTAP | RLS policies, triggers, constraints | Everything above SQL |
-| Component | Vitest + @testing-library/react | Screen structure, navigation, state transitions | Colour, layout, truncation, **and all native rendering — see below** |
+| Component | Vitest + @testing-library/react | Screen structure, navigation, state transitions — of the **web** files (`.web.tsx` wins, same as the bundle) | Colour, layout, truncation, **and all native rendering — see below** |
 | Visual | Playwright | Colour, layout, truncation, at real viewport widths | Logic, data, and native rendering (Chromium web only) |
+
+Nothing in this table covers the native time picker. See
+"`@react-native-community/datetimepicker` has no coverage anywhere" below.
 
 ## Why the visual layer exists
 
@@ -124,21 +127,61 @@ transitions are correct; it says nothing about how that screen actually
 paints on an iPhone or an Android device. Do not treat green component tests
 as evidence that native rendering is fine.
 
-Two other modules are stubbed out for component tests, for the same
-Flow-parsing reason as the `react-native` alias above, and so are equally
-untested at this layer:
+One module is stubbed out for component tests, for the same Flow-parsing
+reason as the `react-native` alias above, and so is untested at this layer:
 
-- `@react-native-community/datetimepicker` → `test/stubs/datetimepicker.tsx`,
-  which renders nothing. The real platform time picker's appearance and
-  behaviour are not exercised by component tests.
 - `react-native-svg` → `test/stubs/react-native-svg.tsx`, whose `Svg`,
   `Circle`, `Path`, etc. all render as a no-op passthrough. Real icon
   rendering is not exercised by component tests.
 
-For both, the visual layer is what actually covers how they paint — it runs
-against a real production web build, so the true `TimeField` control and the
-true SVG icons appear in its screenshots. Native versions of either are still
-uncovered until Maestro.
+The visual layer does cover how `react-native-svg` paints: it has a real web
+implementation, it is in the production web bundle, and the icons are visibly
+present in the screenshots. Native icon rendering is still uncovered until
+Maestro.
+
+### `@react-native-community/datetimepicker` has no coverage anywhere
+
+Read this before assuming otherwise — an earlier version of this document
+claimed the visual layer covered it, and that claim was wrong.
+
+`components/TimeField.web.tsx` exists. Metro's platform-extension resolution
+picks it for web builds, so **the web bundle never imports
+`@react-native-community/datetimepicker` at all**. What the visual layer's
+screenshots show under "Starts"/"Ends" is an `<input type="time">` — a
+different control, from a different file, with a different implementation. It
+is real coverage of `TimeField.web.tsx`, and it is no coverage whatsoever of
+the native picker.
+
+The component layer does not reach it either. `resolve.extensions` in
+`vitest.config.mts` makes Vitest resolve `.web.tsx` first, exactly as the web
+bundle does, so `import TimeField from '../components/TimeField'` under Vitest
+also loads `TimeField.web.tsx`. Nothing under test imports the package. (This
+is why the old `test/stubs/datetimepicker.tsx` stub was deleted: with web
+resolution in place, no test pulls the package in, so there is nothing left
+to stub.)
+
+**So: `@react-native-community/datetimepicker` and `components/TimeField.tsx`
+— the native picker and the file that drives it — are exercised by zero
+layers in this repo, and will stay that way until Maestro.** An overclaim is
+worse than a gap: a gap gets filled, false confidence does not.
+
+### Which platform's files the component layer resolves
+
+Vite has no notion of Metro's platform extensions on its own. Without help,
+`import TimeField from '../components/TimeField'` under Vitest resolves
+`components/TimeField.tsx` — the **native** file — even though everything else
+about the test is a web render. That combination (the native `TimeField`'s iOS
+branch with its picker stubbed to `null`) is one no shipped platform runs,
+and it left `components/TimeField.web.tsx` — where the web truncation fix
+actually lives — imported by no test at all.
+
+`vitest.config.mts` therefore sets `resolve.extensions` with the `.web.*`
+variants ahead of Vite's defaults. The component layer now resolves the same
+files the web bundle ships, which is what "web render" above has always
+claimed. Note this applies inside `node_modules` too, where several Expo and
+React Native packages ship `.web.js` variants — again matching what the web
+bundle does. If a future dependency bump makes a test fail on something that
+looks like a wrong-platform import, this option is the first thing to check.
 
 ## Running
 
@@ -164,6 +207,19 @@ Visual tests additionally need three environment variables, all printed by
 The service_role key is for local test setup only. It bypasses RLS entirely and
 must never reach the app bundle or a hosted project.
 
+Export them in the shell that runs `npm run test:visual`. Nothing loads a
+`.env` file for you — there is no dotenv wiring in this repo, deliberately, so
+the keys live only in the shell that needs them.
+
+If any of the three is unset, `playwright.config.ts` throws immediately and
+names the missing variables. That check exists because the failure without it
+was actively misleading: an unset variable is not an error to the shell, it
+expands to the empty string, so `expo export` would spend minutes building a
+bundle with an empty Supabase URL, `lib/supabase.ts`'s guard would throw in
+the browser, and all six tests would fail on `toBeVisible` timeouts.
+`mintSession`'s own guard would not fire either, because the URL it checks was
+fine. Every symptom pointed at Playwright; the cause was a missing export.
+
 **Visual tests run entirely against the local stack, not the hosted dev
 project.** `playwright.config.ts` rebuilds the web bundle with the local URL and
 anon key, overriding `.env.local` for that build. This is not incidental: a
@@ -171,6 +227,76 @@ session minted against one Supabase project is not valid for another, so
 building against the hosted project would make every signed-in test fail to
 authenticate — and the failure would look like a Playwright problem rather than
 a configuration one.
+
+### Side effects of `npm run test:visual`
+
+Two things worth knowing before you run it:
+
+- **It overwrites `dist/`.** The suite's `webServer` command runs
+  `expo export -p web`, which replaces `dist/` with a bundle pointing at
+  **localhost** Supabase. If you were holding a `dist/` built for anything
+  else — a deploy candidate, a hosted-project build — it is gone, and the
+  bundle now sitting there must not be shipped. `dist/` is gitignored, so
+  nothing warns you. Rebuild before deploying.
+- **It always rebuilds, and it will not share port 4173.** See below.
+
+### Why the suite never reuses a running server
+
+`webServer.reuseExistingServer` is `false`, unconditionally — including
+locally, where Playwright's usual advice is the opposite.
+
+The reason is that `webServer.command` is `expo export && serve dist`. Reuse
+skips the *whole command*, so it does not merely reuse a server: it skips the
+build. An orphaned `serve` on 4173 — left by a killed run, or by something
+else on that port — would make the suite validate whatever `dist/` happened to
+contain from an earlier build, and pass. That is a false green in the one
+layer whose entire job is preventing false greens, and it is invisible: the
+run just looks fast and normal.
+
+With reuse off, a busy port fails loudly (`http://127.0.0.1:4173 is already
+used`). Kill the stray `serve` and re-run. The cost is a full `expo export`
+every run, which is the honest price of this layer.
+
+Moving only the export into `globalSetup` was tried and does not work:
+Playwright runs webServer plugins **before** `globalSetup`, so `serve` would
+start against a `dist/` that had not been rebuilt — and on a fresh checkout,
+where `dist/` does not exist at all, fail outright. Putting the export at the
+top of `playwright.config.ts` fails differently: Playwright re-evaluates that
+file in every worker process, so the export would run once per worker.
+
+### Why the visual suite resizes the viewport
+
+`fullPage: true` does nothing in this app, and relying on it left a baseline
+silently truncated for real.
+
+`components/Screen.tsx` renders through a react-native-web `ScrollView`, which
+does not scroll the document — it scrolls an inner `overflow: auto` div. So
+`document.scrollHeight` always equals the viewport height and `fullPage` has
+nothing extra to capture. Every baseline came out exactly viewport-sized, and
+`notifications-mobile` stopped part-way through the "Mute" card: **the Save
+button was not in the baseline at all**, on the one screen this suite was
+built for, at the width where the original truncation defect happened.
+
+Screenshotting a locator instead does not fix it, and this was measured rather
+than assumed. `locator.screenshot()` on the ScrollView returns its border box
+(375×812 — the same truncation). On its inner content container it returns the
+full 375×907, but the bottom 95px come back blank white: the ancestor's
+`overflow: auto` clips them, and capturing beyond the viewport does not undo
+that. A baseline that is the right size and blank where the content belongs is
+worse than an obviously short one.
+
+So `e2e/visual.spec.ts` measures the scroller (`components/Screen.tsx` carries
+a `testID="screen-scroll"` purely so the test can find it — no behaviour is
+attached) and grows the viewport height to fit before shooting. Nothing about
+the render changes: these screens lay out top-down, so a taller window reveals
+the rest without moving anything above it. Width, which is what every layout
+defect in this app's history turned on, stays at the device value. Screens
+that already fit are not resized, so `sign-in` and `profile` baselines remain
+at true device dimensions; only `notifications-mobile` grows (375×907).
+
+A baseline's height is therefore content-dependent. That is deliberate: if a
+screen grows or shrinks, Playwright reports a size mismatch, which is a diff,
+which is the point.
 
 ## Updating visual baselines
 
@@ -189,3 +315,13 @@ make a failure go away defeats the layer's only purpose — see "Why the
 threshold is an absolute pixel budget, not a ratio" above for what that
 threshold protects against. If a diff is genuinely non-deterministic, mask
 that region instead.
+
+**If the failure is intermittent, suspect `settle()`'s `waitForTimeout(300)`
+in `e2e/visual.spec.ts` first.** It is the only wall-clock-dependent step in
+the suite — a fixed sleep after `document.fonts.ready`, covering the last
+paint as fonts swap in. On a loaded or slower machine that 300ms can expire
+before the final paint, which shows up as a hairline diff on text or an icon
+edge. Raise the timeout; do not raise `maxDiffPixels`.
+
+A size mismatch rather than a pixel diff is a different signal: the screen's
+content height changed. See "Why the visual suite resizes the viewport".
