@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(30);
+select plan(34);
 
 /*
  * Guards the privileges themselves, not the policies.
@@ -231,6 +231,40 @@ select ok(
 select ok(
   has_table_privilege('service_role', 'public.club_invites', 'SELECT, INSERT, UPDATE, DELETE'),
   'service_role has DML on club_invites'
+);
+
+-- ---------------------------------------------------------------------------
+-- Series mutation ACLs (Task 6).
+--
+-- Same blind spot as the event/table block above, and the same fix: hosted's
+-- bootstrap grants EXECUTE directly to `authenticated`, so the trigger
+-- function's negative assertion here is the only thing that actually proves
+-- it was revoked from `authenticated` and not just from `public, anon`.
+-- ---------------------------------------------------------------------------
+
+select ok(
+  has_function_privilege(
+    'authenticated',
+    'public.create_event_series(uuid, text, uuid, text, public.series_frequency, smallint, smallint, time, int, int, date, date)',
+    'EXECUTE'),
+  'authenticated can still execute create_event_series'
+);
+select ok(
+  has_function_privilege(
+    'authenticated',
+    'public.update_event_series(uuid, text, uuid, text, time, int, int, date, boolean)',
+    'EXECUTE'),
+  'authenticated can still execute update_event_series'
+);
+select ok(
+  has_function_privilege(
+    'authenticated', 'public.end_event_series(uuid, boolean)', 'EXECUTE'),
+  'authenticated can still execute end_event_series'
+);
+select ok(
+  not has_function_privilege(
+    'authenticated', 'public.reflow_events_for_timezone()', 'EXECUTE'),
+  'authenticated cannot execute reflow_events_for_timezone'
 );
 
 select * from finish();

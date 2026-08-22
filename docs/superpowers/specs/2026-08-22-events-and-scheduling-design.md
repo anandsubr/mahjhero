@@ -455,7 +455,9 @@ crashing.
 - **Cancelling an event** sets status only. Booking cascades, promotion-offer
   voiding, and attendee notification are plan 4 and plan 6 respectively, and are
   named here so their absence is a documented boundary rather than an oversight.
-- **A club timezone change** rewrites future non-overridden occurrences by trigger.
+- **A club timezone change** rewrites every future, non-cancelled occurrence by
+  trigger — including overridden ones and one-off events. See "Time, timezones,
+  and DST" above for why.
 - **A deleted series** (`on delete set null` on `events.series_id`) leaves its
   occurrences standing as ordinary one-off events. Cancelling a club's games
   because a rule was tidied up would be worse than an orphan.
@@ -492,7 +494,8 @@ Weighted to where this can actually be wrong.
   other overrides preserved, cancelled occurrences untouched in both modes.
 - **DST against real 2027 shift dates**, including the spring-forward gap and the
   fall-back repeat.
-- The club-timezone-change trigger, including that it skips overridden occurrences.
+- The club-timezone-change trigger, including that it reaches overridden
+  occurrences and one-off events too, and leaves cancelled occurrences alone.
 - `monthly_nth_weekday` in a month with no 5th Tuesday.
 
 **pgTAP `portable/` (local and hosted):** grants and function ACLs asserted
