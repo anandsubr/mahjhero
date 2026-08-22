@@ -7399,6 +7399,19 @@ annotation.
 Then add four tests inside the existing `for (const vp of WIDTHS)` loop:
 
 ```ts
+    // The clubs LIST with cards in it. Task 11 fixed the spacing bug todo.md
+    // reported — "no space between the last club and the Start another club
+    // button" — but could only regenerate the EMPTY-state baseline, because
+    // nothing seeded a club at that point. So the state the bug was actually
+    // reported against has never been screenshotted. Now that seeding exists,
+    // it must be.
+    test(`clubs list with a club at ${vp.name}`, async ({ page }) => {
+      await page.setViewportSize({ width: vp.width, height: vp.height });
+      await page.goto('/clubs');
+      await expect(page.getByText('Riverside Mah Jongg')).toBeVisible();
+      await captureScreen(page, vp, `clubs-populated-${vp.name}.png`);
+    });
+
     test(`club detail at ${vp.name}`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto(`/clubs/${seeded.clubId}`);
