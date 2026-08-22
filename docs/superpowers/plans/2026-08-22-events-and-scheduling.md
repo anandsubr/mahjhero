@@ -1471,7 +1471,7 @@ git commit -m "feat(db): add event series, events, and tables with read-only cli
 
 **Interfaces:**
 - Consumes: the three tables from Task 3, `public.clubs.timezone`.
-- Produces: `public.series_occurrence_dates(public.series_frequency, smallint, smallint, date, date, date, date) returns setof date` and `public.materialize_event_series(int) returns int` (the count of events created). Task 6's `create_event_series` and `update_event_series` both call the latter; Task 7 schedules it.
+- Produces: `public.series_occurrence_dates(public.series_frequency, smallint, smallint, date, date, date, date) returns setof date`; `public.materialize_one_series(uuid, int) returns int`, which does one series and lets errors propagate; and `public.materialize_event_series(int) returns int`, the sweep, which loops over every active series calling the former inside a per-series `begin … exception when others` block with a `raise warning`. **Task 6 calls `materialize_one_series` with the id it just created — not the sweep.** Task 7 schedules the sweep.
 
 **The one arithmetic rule.** An occurrence's instant is
 `(occurrence_date + start_time) at time zone club_timezone`. Because the wall clock is resolved against the zone *at that date*, "Tuesdays at 7pm" stays 7pm across both DST shifts. Any code here that adds or subtracts hours to convert a timezone is wrong and will put a whole club at the venue an hour early, twice a year.
@@ -1792,6 +1792,13 @@ begin
 
       month_start := (month_start + interval '1 month')::date;
     end loop;
+
+  else
+    -- A future enum member must fail loudly here rather than silently
+    -- generating no dates, which would read as "this series has no
+    -- occurrences" and be blamed on the rule.
+    raise exception 'unhandled series frequency: %', freq
+      using errcode = '22023';
   end if;
 end;
 $$;
@@ -1829,9 +1836,20 @@ begin
     join public.clubs c on c.id = es.club_id
     where es.ends_on is null or es.ends_on >= current_date
   loop
+    -- Floored at today. Without it, a series whose starts_on is in the past
+    -- materializes every occurrence back to that date: a weekly series
+    -- starting two years ago produced 110 events, 104 of them already over,
+    -- inside the host's own request. This app schedules games; it does not
+    -- invent games that never happened. `current_date` and not
+    -- `current_date + 1` — a game this evening is not in the past.
+    --
+    -- materialized_through still advances to the window end. It means
+    -- "covered up to here", not "created up to here", and flooring opens no
+    -- gap because window_start is materialized_through + 1 from then on.
     window_start := greatest(
       s.starts_on,
-      coalesce(s.materialized_through + 1, s.starts_on)
+      coalesce(s.materialized_through + 1, s.starts_on),
+      current_date
     );
     window_end := least(
       current_date + horizon_days,
@@ -2631,7 +2649,7 @@ git commit -m "feat(db): add event and table mutations with per-field override t
 
 **A deviation from the spec, made deliberately.** The spec says the club-timezone reflow skips occurrences that have overridden `starts_at`. That is wrong on reflection and this plan does not implement it that way. A timezone change is a *correction of interpretation* — "our local times were being read in the wrong zone" — not a schedule change. An override records that this week's wall clock differs from the series', not that this week is immune to a correction. So the trigger preserves the club-local wall clock of **every** future non-cancelled event, including hand-set ones and including one-off events with no series at all, by re-resolving the same wall clock in the new zone. Update the spec to match when this task lands.
 
-**Why `materialize_event_series()` is called with no series argument.** It sweeps every active series, so calling it after one series changes does a little redundant work. At V1 scale — tens of clubs — that is nothing, and one code path is worth more than the saving. Revisit if the series count reaches the thousands.
+**Why the series functions call `materialize_one_series`, not the sweep.** Two reasons, both learned the hard way in Task 4. A user-facing request must not materialize every other club's series as a side effect of creating its own. And the sweep deliberately swallows a per-series failure so one club's bad data cannot roll back every tenant — which is exactly the wrong behaviour for the series the host is creating right now, where swallowing the error would leave them an empty series and a success message. `materialize_one_series` lets the error propagate, so the creation rolls back with it.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -2906,9 +2924,14 @@ begin
   )
   returning id into new_id;
 
-  -- Synchronously, in the same transaction. A host who creates a series and
-  -- sees no games has watched the feature fail, whatever happens at 3am.
-  perform public.materialize_event_series();
+  -- Synchronously, in the same transaction, and for THIS series only. A host
+  -- who creates a series and sees no games has watched the feature fail,
+  -- whatever happens at 3am — and materialize_one_series lets the error
+  -- propagate, so a failure rolls the creation back with it rather than
+  -- leaving an empty series behind a success message. The sweep is for cron:
+  -- calling it here would make one host's request materialize every club's
+  -- series, and would swallow the failure of the very series being created.
+  perform public.materialize_one_series(new_id);
 
   return new_id;
 end;
@@ -3061,8 +3084,9 @@ begin
       where id = target_series;
   end if;
 
-  -- Extending it, or changing nothing, both want the horizon topped up.
-  perform public.materialize_event_series();
+  -- Extending it, or changing nothing, both want the horizon topped up — for
+  -- this series only, for the same reasons as create_event_series above.
+  perform public.materialize_one_series(target_series);
 
   return true;
 end;
@@ -3227,7 +3251,7 @@ git commit -m "feat(db): add series edits with the override toggle, and the time
 
 - [ ] **Step 1: Add the grant and ACL assertions**
 
-In `supabase/tests/database/portable/grants.test.sql`, raise the plan count from 22 to 39 and append before `select * from finish();`:
+In `supabase/tests/database/portable/grants.test.sql`, raise the plan count from 22 to 41 and append before `select * from finish();`:
 
 ```sql
 -- The four tables plan 3 adds. Same reasoning as the four above: ALL is the
@@ -3321,6 +3345,41 @@ select ok(
   not has_function_privilege('authenticated',
     'public.materialize_event_series(int)', 'EXECUTE'),
   'authenticated cannot execute materialize_event_series'
+);
+select ok(
+  not has_function_privilege('authenticated',
+    'public.materialize_one_series(uuid, int)', 'EXECUTE'),
+  'authenticated cannot execute materialize_one_series'
+);
+
+/*
+ * The catch-all above this block enumerates functions reachable by `anon`.
+ * Add the mirror for `authenticated`, because the hosted project bootstraps
+ * every new function with EXECUTE granted DIRECTLY to anon, authenticated and
+ * service_role — and `revoke ... from public` does not clear a direct grant
+ * (see 20260822045809). An anon-only catch-all therefore cannot see an
+ * unintended authenticated grant, which is how series_occurrence_dates
+ * shipped reachable on hosted while local looked clean.
+ *
+ * List every function `authenticated` is SUPPOSED to reach; anything else
+ * appearing here is drift.
+ */
+select is(
+  (select coalesce(array_agg(p.proname order by p.proname), '{}')
+   from pg_proc p
+   join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public'
+     and has_function_privilege('authenticated', p.oid, 'EXECUTE')
+     and p.proname not in (
+       'is_club_member', 'is_club_organizer', 'create_club',
+       'accept_club_invite', 'club_roster',
+       'create_venue', 'update_venue', 'archive_venue', 'search_venues',
+       'create_event', 'update_event', 'cancel_event',
+       'add_event_table', 'update_event_table', 'remove_event_table',
+       'create_event_series', 'update_event_series', 'end_event_series'
+     )),
+  '{}'::name[],
+  'no function is reachable by authenticated that should not be'
 );
 ```
 
