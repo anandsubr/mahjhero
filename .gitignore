@@ -47,3 +47,8 @@ yarn-error.*
 supabase/.branches
 supabase/.temp
 .env.local
+
+# Playwright output (baseline snapshots under e2e/**/*-snapshots/ are NOT ignored)
+test-results/
+playwright-report/
+e2e/.env
