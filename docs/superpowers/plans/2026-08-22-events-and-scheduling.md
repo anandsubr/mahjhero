@@ -936,6 +936,13 @@ suite — **`event_series` was never once inserted into**:
 - A plain member can read a **cancelled** event (the policy comment claims it;
   nothing tested it).
 - The `event_tables` draft rule, from both roles.
+- **`delete from clubs`** for a club with a series, its occurrences, and their
+  tables: it succeeds and leaves nothing behind. This path is not optional —
+  a first attempt at the trigger above broke club deletion outright and shipped
+  green because nothing exercised the cascade.
+- A cross-club series link is rejected by the composite foreign key.
+- The `array_ndims(overrides) = 1` shape rule (the unknown-key test does not
+  cover shape).
 
 ```sql
 begin;
@@ -943,7 +950,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(33);
+select plan(40);
 
 select has_table('public', 'event_series', 'event_series table exists');
 select has_table('public', 'events', 'events table exists');
@@ -1217,15 +1224,21 @@ create table public.event_series (
   ),
   constraint event_series_ends_after_start check (
     ends_on is null or ends_on >= starts_on
-  )
+  ),
+  -- The target of events' composite foreign key, same job as events'
+  -- `unique (id, club_id)`: it makes a cross-club series link unrepresentable
+  -- rather than merely unlikely.
+  constraint event_series_id_club_unique unique (id, club_id)
 );
 
 create table public.events (
   id              uuid primary key default gen_random_uuid(),
   club_id         uuid not null references public.clubs(id) on delete cascade,
   -- A tidied-up rule must not cancel a club's games, so occurrences survive
-  -- their series as ordinary one-off events.
-  series_id       uuid references public.event_series(id) on delete set null,
+  -- their series as ordinary one-off events. The detaching is done by the
+  -- before-delete trigger below, NOT by a referential action, and the FK is
+  -- composite — see the constraint at the foot of this table.
+  series_id       uuid,
   title           text not null check (length(trim(title)) > 0),
   venue_id        uuid not null references public.venues(id),
   notes           text not null default '',
@@ -1258,7 +1271,34 @@ create table public.events (
     and array_ndims(overrides) = 1
   ),
   -- Not decorative: the target of event_tables' composite foreign key.
-  constraint events_id_club_unique unique (id, club_id)
+  constraint events_id_club_unique unique (id, club_id),
+
+  /*
+   * Composite, and `no action`, both deliberately.
+   *
+   * Composite because `series_id uuid references event_series(id)` alone lets
+   * an event in club B point at club A's series — and once the trigger below
+   * exists, club A deleting that series performs a `security definer` write
+   * into club B's row. MATCH SIMPLE means a NULL series_id satisfies it, so
+   * one-off events are unaffected.
+   *
+   * `no action` because every alternative was tried against a live database
+   * and each fails somewhere: `set null` nulls the whole composite key
+   * including club_id (23502); `set null (series_id)` leaves occurrence_date
+   * populated and violates events_occurrence_requires_series — the exact bug
+   * the trigger exists to fix; and `deferrable initially deferred` defers the
+   * INSERT check too, so a cross-club link is accepted at write time and only
+   * rejected at COMMIT. `no action` is safe precisely because the trigger has
+   * already cleared these rows before the action would fire.
+   *
+   * Note all four variants pass an ordinary club-cascade delete, because
+   * Postgres queues the clubs->events cascade ahead of the
+   * event_series->events RI action. That makes the broken ones look fine on
+   * the happy path; they only separate under a probe with the trigger
+   * dropped.
+   */
+  foreign key (series_id, club_id)
+    references public.event_series (id, club_id) on delete no action
 );
 
 /*
@@ -1317,9 +1357,16 @@ security definer
 set search_path = public
 as $$
 begin
-  update public.events
+  -- The `exists` is load-bearing. `delete from clubs` cascades to
+  -- event_series first (it is created first, so its RI trigger has the lower
+  -- oid), firing this trigger; without the guard, the UPDATE re-validates
+  -- events_club_id_fkey against a clubs row that is already gone and the
+  -- whole club delete fails. Occurrences whose club is going away are about
+  -- to be cascade-deleted anyway, so skipping them is correct.
+  update public.events e
     set series_id = null, occurrence_date = null
-    where series_id = old.id;
+    where e.series_id = old.id
+      and exists (select 1 from public.clubs c where c.id = e.club_id);
   return old;
 end;
 $$;
@@ -1386,7 +1433,7 @@ npx supabase db reset
 npm run test:db
 ```
 
-Expected: 33 passing in `events.test.sql`, everything else still green.
+Expected: 40 passing in `events.test.sql`, everything else still green.
 
 - [ ] **Step 5: Prove the draft assertion can fail**
 
