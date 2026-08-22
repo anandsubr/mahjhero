@@ -76,7 +76,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(14);
+select plan(15);
 
 -- Structure
 select has_table('public', 'clubs', 'clubs table exists');
@@ -202,14 +202,30 @@ select is(
 -- create_club is the only way a membership is created, and it seats the
 -- caller as host in the same transaction — so a club can never exist with
 -- no host, which would make it unreachable by every membership-scoped policy.
+--
+-- The call has to be its own statement. Calling create_club() inside the
+-- WHERE clause of a query against club_members cannot work: the query's
+-- snapshot is taken before the volatile function runs, so it can never see
+-- the row that function just inserted. That is a command-visibility rule,
+-- not an RLS effect — it fails the same way as superuser.
+create temporary table created_club on commit drop as
+  select public.create_club('Test Club', 'Tuesdays') as id;
+
 select is(
   (select count(*)::int
    from public.club_members
-   where club_id = public.create_club('Test Club', 'Tuesdays')
+   where club_id = (select id from created_club)
      and profile_id = 'aaaaaaaa-0000-0000-0000-000000000001'
      and role = 'host'),
   1,
   'create_club seats the caller as host'
+);
+
+select is(
+  (select count(*)::int from public.clubs
+   where id = (select id from created_club)),
+  1,
+  'the creator can read the club they just made'
 );
 
 select * from finish();
@@ -445,7 +461,7 @@ Expected: all migrations apply, ending with `create_clubs`.
 - [ ] **Step 5: Run the tests to verify they pass**
 
 Run: `npx supabase test db --local`
-Expected: PASS — 14 assertions in `clubs.test.sql`, and the existing 11 still pass.
+Expected: PASS — 15 assertions in `clubs.test.sql`, and the existing 11 still pass.
 
 - [ ] **Step 6: Prove the isolation test can fail**
 
@@ -921,7 +937,7 @@ git commit -m "feat: add the clubs data layer"
 
 - [ ] **Step 1: Write the failing tests**
 
-Append to `supabase/tests/database/clubs.test.sql`, before `select * from finish();`, and change `plan(14)` to `plan(18)`:
+Append to `supabase/tests/database/clubs.test.sql`, before `select * from finish();`, and change `plan(15)` to `plan(19)`:
 
 ```sql
 -- Invite acceptance. Bob redeems an invite to Alice's club.
@@ -1034,7 +1050,7 @@ grant execute on function public.accept_club_invite(text) to authenticated;
 - [ ] **Step 4: Apply and run the tests**
 
 Run: `npx supabase db reset && npx supabase test db --local`
-Expected: PASS — 18 assertions in `clubs.test.sql`.
+Expected: PASS — 19 assertions in `clubs.test.sql`.
 
 - [ ] **Step 5: Prove the expiry check can fail**
 
@@ -1846,7 +1862,7 @@ Run: `npx playwright test --update-snapshots`
 - [ ] **Step 5: Run everything**
 
 Run: `npm test && npm run test:contract && npx supabase test db --local && npm run test:visual && npx tsc --noEmit`
-Expected: 111 Vitest, 6 contract, 29 pgTAP, 8 visual, typecheck clean.
+Expected: 111 Vitest, 6 contract, 30 pgTAP, 8 visual, typecheck clean.
 
 - [ ] **Step 6: Commit**
 
