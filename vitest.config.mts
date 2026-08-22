@@ -11,6 +11,25 @@ export default defineConfig({
     __DEV__: 'true',
   },
   resolve: {
+    // Vite has no notion of Metro's platform extensions, so without this an
+    // extensionless `import TimeField from '../components/TimeField'`
+    // resolves components/TimeField.tsx — the NATIVE file — even though
+    // every component test renders through react-native-web and is
+    // otherwise a web render. That combination (the native TimeField's iOS
+    // branch, with @react-native-community/datetimepicker stubbed to null)
+    // is one no shipped platform runs, while components/TimeField.web.tsx —
+    // the file the web build actually ships, and where the time-label
+    // truncation fix lives — was imported by no test at all.
+    //
+    // Listing the `.web.*` variants ahead of Vite's defaults makes the
+    // component layer resolve the same files the web bundle does, which is
+    // what `docs/testing.md` already claims it tests. The remaining entries
+    // are Vite's built-in defaults, repeated verbatim because setting this
+    // option replaces them rather than extending them.
+    extensions: [
+      '.web.mjs', '.web.js', '.web.mts', '.web.ts', '.web.jsx', '.web.tsx',
+      '.mjs', '.js', '.mts', '.ts', '.jsx', '.tsx', '.json',
+    ],
     alias: {
       // React Native's own package ships Flow-typed source that Vitest's
       // parser cannot handle. react-native-web is plain, pre-compiled JS
@@ -25,13 +44,16 @@ export default defineConfig({
       // vi.mock('react-native', () => ({ Platform: { OS: 'ios' } })).
       // Asserting native behaviour without that override silently tests web.
       'react-native': 'react-native-web',
-      // Both ship untranspiled Flow (or reach into react-native internals
-      // the alias above does not intercept) and cannot be parsed by
-      // Vitest. See test/stubs/*.tsx for what each stub covers and why the
-      // real module isn't needed for component tests.
-      '@react-native-community/datetimepicker': new URL(
-        './test/stubs/datetimepicker.tsx', import.meta.url,
-      ).pathname,
+      // react-native-svg reaches into react-native internals the alias
+      // above does not intercept, and cannot be parsed by Vitest. See
+      // test/stubs/react-native-svg.tsx for what the stub covers.
+      //
+      // A '@react-native-community/datetimepicker' stub used to sit here
+      // too. `resolve.extensions` above retired it: the only importer of
+      // that package is components/TimeField.tsx, and component tests now
+      // resolve components/TimeField.web.tsx instead, which never touches
+      // it. Nothing under test imports the package any more — and nothing
+      // covers it either, at any layer, until Maestro. See docs/testing.md.
       'react-native-svg': new URL(
         './test/stubs/react-native-svg.tsx', import.meta.url,
       ).pathname,

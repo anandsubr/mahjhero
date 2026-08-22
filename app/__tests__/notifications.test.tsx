@@ -1,11 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import NotificationSettings from '../notifications';
+
+// Hoisted to module scope so the test can assert on it. A `push` created
+// inside the useRouter factory would be a fresh spy on every render, so
+// nothing outside the component could ever see the call.
+const push = vi.hoisted(() => vi.fn());
 
 vi.mock('expo-router', () => ({
   Redirect: () => null,
   Link: ({ children }: { children: React.ReactNode }) => children,
-  useRouter: () => ({ push: vi.fn(), back: vi.fn() }),
+  useRouter: () => ({ push, back: vi.fn() }),
 }));
 
 vi.mock('../../lib/session', () => ({
@@ -27,9 +32,15 @@ vi.mock('../../lib/profile', () => ({
 describe('notifications screen', () => {
   beforeEach(() => vi.clearAllMocks());
 
+  // Asserts the control *navigates*, not merely that the word "Profile" is
+  // on screen. The defect this guards against stranded a member on a dead-end
+  // screen; replacing the button with a static <Text>Profile</Text> would
+  // reintroduce exactly that and still satisfy a text-only assertion.
   it('offers a way back to the profile screen', async () => {
     render(<NotificationSettings />);
-    expect(await screen.findByText('Profile')).toBeTruthy();
+    const back = await screen.findByRole('button', { name: 'Back to profile' });
+    fireEvent.click(back);
+    expect(push).toHaveBeenCalledWith('/profile');
   });
 
   it('lists the default channel first', async () => {
