@@ -5,6 +5,7 @@ import {
   StyleSheet,
   Text,
   View,
+  type AccessibilityState,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
@@ -42,6 +43,14 @@ type ButtonProps = {
   disabled?: boolean;
   loading?: boolean;
   accessibilityLabel?: string;
+  /**
+   * Extra accessibility state to merge in on top of `{ disabled, busy }` --
+   * e.g. `{ selected: true }` for a Button used as a chip-style selector
+   * (see app/clubs/[id]/events/new.tsx's duration/table-count/repeat rows).
+   * `disabled`/`busy` here are always the ones this component computes
+   * itself; a caller cannot use this to lie about either.
+   */
+  accessibilityState?: AccessibilityState;
   /** Rendered to the left of the label, e.g. a back-chevron icon. */
   icon?: ReactNode;
   style?: StyleProp<ViewStyle>;
@@ -57,6 +66,7 @@ export default function Button({
   disabled = false,
   loading = false,
   accessibilityLabel,
+  accessibilityState,
   icon,
   style,
 }: ButtonProps) {
@@ -69,7 +79,7 @@ export default function Button({
       disabled={isDisabled}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
-      accessibilityState={{ disabled: isDisabled, busy }}
+      accessibilityState={{ ...accessibilityState, disabled: isDisabled, busy }}
       style={({ pressed }) => [
         styles.base,
         variantStyles[variant],

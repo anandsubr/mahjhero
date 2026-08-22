@@ -152,11 +152,17 @@ the visual layer's screenshots show under "Starts"/"Ends" is an
 different implementation. That is real coverage of `TimeField.web.tsx`, and no
 coverage whatsoever of the native picker behind it.
 
-**`DateField.web.tsx` has no coverage yet either.** No screen imports
-`DateField` at the time of writing, so no visual baseline contains one and no
-component test renders one. It gains web coverage when a screen starts using
-it, and not before — check that this paragraph is still true when you next
-touch this file.
+**`DateField.web.tsx` has component-layer coverage, not visual-layer
+coverage yet.** `app/clubs/[id]/events/new.tsx` (Task 13) is the first
+screen to import `DateField`, and `app/__tests__/events-new.test.tsx`
+renders it, interacting with the "Date" and "Stop repeating on" fields
+through `screen.getByLabelText` the same way the notifications screen's test
+drives `TimeField.web.tsx`. That is real component-layer coverage of this
+file's `<input type="date">` markup and its onChange/empty-string handling.
+It is still **not** in the visual suite: no baseline screenshot exists for
+this screen yet (Task 17 adds one), so nothing has confirmed how the control
+actually paints. Check that this paragraph is still true when you next touch
+this file.
 
 The component layer does not reach them either. `resolve.extensions` in
 `vitest.config.mts` makes Vitest resolve `.web.tsx` first, exactly as the web
