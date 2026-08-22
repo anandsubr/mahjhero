@@ -1522,7 +1522,7 @@ export default function ClubDetailScreen() {
                 : 'Invited — not signed in yet'}
             </Text>
             {member.role !== 'member' ? (
-              <Tag label={member.role === 'host' ? 'Host' : 'Co-organizer'} />
+              <Tag>{member.role === 'host' ? 'Host' : 'Co-organizer'}</Tag>
             ) : null}
           </View>
           {member.skill_level ? (
