@@ -839,9 +839,12 @@ grant select on public.venues to authenticated;
 revoke execute on function public.is_club_organizer(uuid) from public, anon;
 grant  execute on function public.is_club_organizer(uuid) to authenticated;
 
--- Not granted to authenticated: it is only ever called from inside the
--- definer functions below, which run as their owner.
-revoke execute on function public.assert_club_organizer(uuid) from public, anon;
+-- Only ever called from inside the definer functions, which run as their
+-- owner — so `authenticated` is revoked explicitly, not merely left ungranted.
+-- Hosted grants EXECUTE directly to authenticated at creation time, and
+-- `from public` does not clear a direct grant (see 20260822045809).
+revoke execute on function public.assert_club_organizer(uuid)
+  from public, anon, authenticated;
 
 revoke execute on function public.create_venue(text, text, text, text, text, uuid, boolean)
   from public, anon;
@@ -2401,18 +2404,23 @@ begin
   next_overrides := ev.overrides;
 
   if ev.series_id is not null then
+    -- array_append, not `||`. Against an untyped string literal, `||`
+    -- resolves to the anyarray||anyarray overload and tries to PARSE the
+    -- literal as an array, raising 22P02 malformed array literal. The
+    -- element-append overload is not chosen because nothing types the
+    -- literal as text first.
     if eff_title is distinct from ev.title then
-      next_overrides := next_overrides || 'title';
+      next_overrides := array_append(next_overrides, 'title');
     end if;
     if eff_venue is distinct from ev.venue_id then
-      next_overrides := next_overrides || 'venue_id';
+      next_overrides := array_append(next_overrides, 'venue_id');
     end if;
     if eff_notes is distinct from ev.notes then
-      next_overrides := next_overrides || 'notes';
+      next_overrides := array_append(next_overrides, 'notes');
     end if;
     if eff_starts is distinct from ev.starts_at
        or eff_ends is distinct from ev.ends_at then
-      next_overrides := next_overrides || 'starts_at';
+      next_overrides := array_append(next_overrides, 'starts_at');
     end if;
 
     -- Editing the same field twice must not stack the key.
@@ -2571,8 +2579,12 @@ begin
 end;
 $$;
 
+-- Also from `authenticated`, explicitly: this is a helper called only from
+-- inside the definer functions below, and the hosted project grants EXECUTE
+-- DIRECTLY to authenticated at creation time, which `from public` does not
+-- clear (see 20260822045809).
 revoke execute on function public.assert_venue_available(uuid, uuid)
-  from public, anon;
+  from public, anon, authenticated;
 
 revoke execute on function public.create_event(
   uuid, text, uuid, text, timestamptz, timestamptz, int) from public, anon;
