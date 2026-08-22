@@ -1,17 +1,17 @@
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Platform, StyleSheet, Text, View } from 'react-native';
-import Button from '../../components/Button';
-import Card from '../../components/Card';
-import ErrorBanner from '../../components/ErrorBanner';
-import Screen from '../../components/Screen';
-import Tag from '../../components/Tag';
-import { ChevronLeftIcon } from '../../components/icons';
-import { canInvite, createInvite, fetchClub, fetchRoster } from '../../lib/clubs';
-import type { Club, ClubMember } from '../../lib/clubs';
-import { GENERIC_ERROR } from '../../lib/constants';
-import { useSession } from '../../lib/session';
-import { colors, space, type } from '../../lib/theme';
+import Button from '../../../components/Button';
+import Card from '../../../components/Card';
+import ErrorBanner from '../../../components/ErrorBanner';
+import Screen from '../../../components/Screen';
+import Tag from '../../../components/Tag';
+import { ChevronLeftIcon } from '../../../components/icons';
+import { canInvite, createInvite, fetchClub, fetchRoster } from '../../../lib/clubs';
+import type { Club, ClubMember } from '../../../lib/clubs';
+import { GENERIC_ERROR } from '../../../lib/constants';
+import { useSession } from '../../../lib/session';
+import { colors, space, type } from '../../../lib/theme';
 
 export default function ClubDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -138,6 +138,13 @@ export default function ClubDetailScreen() {
             accessibilityLabel="Create an invite link"
           >
             Create an invite link
+          </Button>
+          <Button
+            variant="secondary"
+            onPress={() => router.push(`/clubs/${id}/import`)}
+            accessibilityLabel="Import a roster from a spreadsheet"
+          >
+            Import a roster
           </Button>
           {inviteUrl ? (
             <Card>

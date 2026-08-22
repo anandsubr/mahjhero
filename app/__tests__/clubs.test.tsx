@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import ClubsScreen from '../clubs/index';
 
 const push = vi.fn();
@@ -8,6 +8,7 @@ vi.mock('expo-router', () => ({
   Redirect: () => null,
   Link: ({ children }: { children: React.ReactNode }) => children,
   useRouter: () => ({ push, replace: vi.fn() }),
+  useLocalSearchParams: () => ({ id: 'club-1' }),
 }));
 
 vi.mock('../../lib/session', () => ({
@@ -51,5 +52,29 @@ describe('clubs list', () => {
     render(<ClubsScreen />);
     expect(await screen.findByText(/Could not reach MahjHero/)).toBeTruthy();
     expect(screen.queryByText(/not in a club yet/i)).toBeNull();
+  });
+});
+
+import ImportRosterScreen from '../clubs/[id]/import';
+
+vi.mock('../../lib/clubs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/clubs')>();
+  return {
+    ...actual,
+    fetchMyClubs: (...args: unknown[]) => fetchMyClubs(...args),
+    importRoster: vi.fn(async () => ({ created: 2, error: null })),
+  };
+});
+
+describe('roster import', () => {
+  it('reports skipped rows instead of dropping them silently', async () => {
+    render(<ImportRosterScreen />);
+    const field = screen.getByLabelText('Roster CSV');
+    fireEvent.change(field, {
+      target: { value: 'name,email\nJane,jane@example.com\nBad,not-an-email' },
+    });
+    fireEvent.click(screen.getByText('Check the file'));
+    expect(await screen.findByText(/1 person ready, 1 row skipped/)).toBeTruthy();
+    expect(screen.getByText(/Row 3: Not a valid email address/)).toBeTruthy();
   });
 });
