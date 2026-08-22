@@ -339,3 +339,36 @@ edge. Raise the timeout; do not raise `maxDiffPixels`.
 
 A size mismatch rather than a pixel diff is a different signal: the screen's
 content height changed. See "Why the visual suite resizes the viewport".
+
+## Scheduled work
+
+`pg_cron` runs the nightly job that keeps recurring events materialized about
+six weeks ahead. It was verified on both the local stack and the hosted
+project before anything depended on it — `shared_preload_libraries` contains
+`pg_cron` in both, `create extension pg_cron` succeeds and persists in both,
+and `cron.schedule`/`cron.unschedule` round-trip as `postgres` (the role the
+local stack and `supabase db push` both connect as).
+
+That round-trip does **not** work as `cli_login_postgres`, the restricted
+role `supabase test db --linked` provisions for pgTAP runs against the hosted
+project (see `supabase/tests/database/README.md`). It can create the
+extension and read `cron.job`, but scheduling fails with `permission denied
+for schema cron` — that role has no `USAGE` on the schema the extension owns.
+This is the same class of problem as the missing `USAGE` on `extensions`
+documented in that README, and is handled the same way: not fixed with a
+grant, because `cli_login_postgres` is deliberately narrow and widening it is
+not a trade worth making for test convenience. It does not block anything —
+migrations apply as `postgres`, which owns the `cron` schema outright as the
+role that created it, so the job scheduled in a later migration needs no
+extra grant to run.
+
+The job is `materialize-event-series`, defined in
+`<timestamp>_schedule_materialize_event_series.sql`. It calls
+`public.materialize_event_series()`, which is ordinary SQL — so it is tested
+by pgTAP calling it directly, with no HTTP, no secrets, and no Edge Function
+in the loop. To run it by hand:
+
+    select public.materialize_event_series();
+
+Inspect the schedule with `select * from cron.job;` and its history with
+`select * from cron.job_run_details order by start_time desc limit 20;`.
