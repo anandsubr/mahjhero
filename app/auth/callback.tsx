@@ -19,6 +19,12 @@ import { colors, space, type } from '../../lib/theme';
  * `detectSessionInUrl` on web, so supabase-js parses the tokens out of the URL
  * fragment during client init. This screen only waits for that to land and
  * then gets out of the way.
+ *
+ * Getting out of the way means redirecting to "/", not to a fixed screen:
+ * `app/index.tsx` is the one place that knows whether this member has a club
+ * invite parked (see `PENDING_INVITE_KEY` in `app/join/[token].tsx`) and must
+ * land on `/join/<token>` rather than `/clubs`. This screen only knows a
+ * session arrived, not where it should lead.
  */
 
 /**
@@ -40,7 +46,7 @@ export default function AuthCallback() {
     return () => clearTimeout(timer);
   }, []);
 
-  if (session) return <Redirect href="/profile" />;
+  if (session) return <Redirect href="/" />;
 
   if (!loading && settled) {
     return <Redirect href="/sign-in" />;
