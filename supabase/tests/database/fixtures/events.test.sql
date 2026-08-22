@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(40);
+select plan(48);
 
 select has_table('public', 'event_series', 'event_series table exists');
 select has_table('public', 'events', 'events table exists');
@@ -29,6 +29,26 @@ insert into public.venues (id, name, added_by_club_id, created_by) values
   ('11111111-0000-0000-0000-000000000001', 'The Hall',
    'c1c1c1c1-0000-0000-0000-000000000001',
    'aaaaaaaa-0000-0000-0000-000000000001');
+
+/*
+ * The club's weekly series, seeded here rather than beside the
+ * materialization assertions further down.
+ *
+ * It used to be created immediately before the partial-unique-index block,
+ * which left `event_series` completely empty during the RLS block below --
+ * so "another club cannot read this club's series" counted zero rows out of
+ * zero rows, and `alter policy event_series_select_member using (true)`
+ * passed the whole fixture. A cross-tenant read assertion needs something to
+ * fail to read.
+ */
+insert into public.event_series
+  (id, club_id, title, venue_id, frequency, weekday, start_time, starts_on,
+   created_by)
+values
+  ('55555555-0000-0000-0000-000000000001',
+   'c1c1c1c1-0000-0000-0000-000000000001', 'Weekly Tuesday',
+   '11111111-0000-0000-0000-000000000001', 'weekly', 2, '19:00',
+   '2026-09-01', 'aaaaaaaa-0000-0000-0000-000000000001');
 
 insert into public.events
   (id, club_id, title, venue_id, starts_at, ends_at, created_by) values
@@ -152,6 +172,16 @@ select is(
   'a member of the club can read its tables'
 );
 
+-- The positive half of the series read boundary. Without it, a policy of
+-- `using (false)` on event_series would be indistinguishable from the real
+-- one, because this file's only other series read is the cross-club refusal.
+select is(
+  (select count(*)::int from public.event_series
+   where club_id = 'c1c1c1c1-0000-0000-0000-000000000001'),
+  1,
+  'a member of the club can read its series'
+);
+
 -- Demote Alice to a plain member and re-ask about the draft.
 set local role postgres;
 update public.club_members set role = 'member'
@@ -175,6 +205,20 @@ select ok(
   has_table_privilege('authenticated', 'public.events', 'SELECT'),
   'authenticated can select events'
 );
+/*
+ * "Select only" is three tables times four write verbs, and this block used
+ * to check five of those twelve. Every one of the seven it skipped --
+ * DELETE on events, and UPDATE/DELETE/TRUNCATE on each of event_tables and
+ * event_series -- could be granted to `authenticated` without a single
+ * assertion in this file noticing, because nothing here reaches these
+ * tables except through the definer functions and RLS. TRUNCATE in
+ * particular is not filtered by RLS at all, which is why the blanket `ALL`
+ * grant was revoked in 20260822041836 in the first place.
+ *
+ * The SELECT half needs no assertion of its own: revoking SELECT on any of
+ * the three makes the reads earlier in this file raise 42501, which fails
+ * the run outright.
+ */
 select ok(
   not has_table_privilege('authenticated', 'public.events', 'INSERT'),
   'authenticated cannot insert events directly'
@@ -184,16 +228,44 @@ select ok(
   'authenticated cannot update events directly'
 );
 select ok(
+  not has_table_privilege('authenticated', 'public.events', 'DELETE'),
+  'authenticated cannot delete events directly'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.events', 'TRUNCATE'),
+  'authenticated cannot TRUNCATE events'
+);
+select ok(
   not has_table_privilege('authenticated', 'public.event_tables', 'INSERT'),
   'authenticated cannot insert event_tables directly'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.event_tables', 'UPDATE'),
+  'authenticated cannot update event_tables directly'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.event_tables', 'DELETE'),
+  'authenticated cannot delete event_tables directly'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.event_tables', 'TRUNCATE'),
+  'authenticated cannot TRUNCATE event_tables'
 );
 select ok(
   not has_table_privilege('authenticated', 'public.event_series', 'INSERT'),
   'authenticated cannot insert event_series directly'
 );
 select ok(
-  not has_table_privilege('authenticated', 'public.events', 'TRUNCATE'),
-  'authenticated cannot TRUNCATE events'
+  not has_table_privilege('authenticated', 'public.event_series', 'UPDATE'),
+  'authenticated cannot update event_series directly'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.event_series', 'DELETE'),
+  'authenticated cannot delete event_series directly'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.event_series', 'TRUNCATE'),
+  'authenticated cannot TRUNCATE event_series'
 );
 
 -- ---------------------------------------------------------------------
@@ -243,15 +315,8 @@ select throws_ok(
 -- ---------------------------------------------------------------------
 -- The partial unique index that makes materialization idempotent.
 -- ---------------------------------------------------------------------
-insert into public.event_series
-  (id, club_id, title, venue_id, frequency, weekday, start_time, starts_on,
-   created_by)
-values
-  ('55555555-0000-0000-0000-000000000001',
-   'c1c1c1c1-0000-0000-0000-000000000001', 'Weekly Tuesday',
-   '11111111-0000-0000-0000-000000000001', 'weekly', 2, '19:00',
-   '2026-09-01', 'aaaaaaaa-0000-0000-0000-000000000001');
-
+-- 'Weekly Tuesday' (55555555-...0001) is seeded at the top of this file, so
+-- that the cross-club series read above has a row to be refused.
 insert into public.events
   (id, club_id, series_id, title, venue_id, starts_at, ends_at,
    occurrence_date, created_by)
