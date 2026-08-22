@@ -51,6 +51,14 @@ export default function Screen({
   if (scroll) {
     return (
       <ScrollView
+        // Test-only handle, no behaviour attached. On web this renders as
+        // `data-testid`, which e2e/visual.spec.ts uses to measure how tall
+        // this scroller's content actually is: react-native-web scrolls an
+        // inner `overflow: auto` div rather than the document, so the page
+        // itself never grows and a screenshot would otherwise stop at the
+        // fold. See "Why the visual suite resizes the viewport" in
+        // docs/testing.md.
+        testID="screen-scroll"
         style={[styles.fill, { backgroundColor: background }]}
         contentContainerStyle={center ? styles.scrollCenter : null}
       >
