@@ -61,9 +61,9 @@ export default function SignIn() {
     }
   }
 
-  // This screen has to watch the session itself. app/index.tsx is the only
-  // other place a session changes the route, and it has already unmounted by
-  // the time anyone is standing here.
+  // This screen has to watch the session itself. app/index.tsx doesn't
+  // remount to react to a session appearing here — it has already unmounted
+  // by the time anyone is standing on this screen.
   //
   // Warm path: the member is on "Check your email", taps the link, the app
   // foregrounds, useAuthDeepLink establishes the session — and without this
@@ -74,7 +74,13 @@ export default function SignIn() {
   // index.tsx.
   //
   // It fixes the same latent gap for OAuth, which never navigated either.
-  if (!loading && session) return <Redirect href="/profile" />;
+  //
+  // Redirects to "/" rather than a fixed destination: app/index.tsx is the
+  // one place that knows whether this member has a pending club invite
+  // parked (see PENDING_INVITE_KEY) and must be sent to `/join/<token>`
+  // instead of `/clubs`. Hard-coding a destination here would either strand
+  // that invite (as `/profile` did) or duplicate index's decision.
+  if (!loading && session) return <Redirect href="/" />;
 
   if (status === 'sent') {
     return (
