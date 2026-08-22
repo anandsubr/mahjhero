@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(28);
+select plan(32);
 
 -- Structure
 select has_table('public', 'venues', 'venues table exists');
@@ -101,6 +101,18 @@ select throws_ok(
   'a host of another club cannot archive a public venue'
 );
 
+-- create_venue gets the same "another club" negative as update_venue and
+-- archive_venue above: a host of Oakfield cannot create a venue attributed
+-- to Riverside just by passing Riverside's id as target_club.
+select throws_ok(
+  $$select public.create_venue(
+      'Sneaky Venue', null, null, null, null,
+      'c1c1c1c1-0000-0000-0000-000000000001', false)$$,
+  '42501',
+  null,
+  'a host of another club cannot create a venue attributed to it'
+);
+
 -- A plain member of the owning club is also refused.
 set local request.jwt.claims =
   '{"sub": "cccccccc-0000-0000-0000-000000000003", "role": "authenticated"}';
@@ -185,6 +197,41 @@ select is(
   'c1c1c1c1-0000-0000-0000-000000000001'::uuid,
   'a new venue records the club that added it'
 );
+
+-- ---------------------------------------------------------------------
+-- The one path that can publish a member's home address: an explicit
+-- share_publicly => true, and nothing short of it, produces a public row.
+-- There is deliberately no un-publish function, so a defect on this path is
+-- unrecoverable through the API — it deserves its own direct test rather
+-- than relying on the "defaults to club" assertions above.
+-- ---------------------------------------------------------------------
+select lives_ok(
+  $$select public.create_venue(
+      'The Grange', null, 'Newton', null, null,
+      'c1c1c1c1-0000-0000-0000-000000000001', true)$$,
+  'the owning club''s host can create a venue with share_publicly => true'
+);
+
+select is(
+  (select visibility::text from public.venues where name = 'The Grange'),
+  'public',
+  'share_publicly => true produces a public venue'
+);
+
+-- Bob (Oakfield) belongs to neither Riverside nor this venue's club, and is
+-- the same caller the visibility tests above showed cannot read a
+-- club-visibility Riverside venue. He must be able to read this one.
+set local request.jwt.claims =
+  '{"sub": "bbbbbbbb-0000-0000-0000-000000000002", "role": "authenticated"}';
+
+select is(
+  (select count(*)::int from public.venues where name = 'The Grange'),
+  1,
+  'a member of a different club can read the explicitly public venue'
+);
+
+set local request.jwt.claims =
+  '{"sub": "aaaaaaaa-0000-0000-0000-000000000001", "role": "authenticated"}';
 
 -- ---------------------------------------------------------------------
 -- Archiving hides from search and preserves the row.
