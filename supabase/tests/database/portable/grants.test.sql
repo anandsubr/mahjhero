@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(54);
+select plan(56);
 
 /*
  * Guards the privileges themselves, not the policies.
@@ -61,6 +61,45 @@ select ok(
 select ok(
   has_table_privilege('authenticated', 'public.profiles', 'SELECT'),
   'authenticated can still read profiles'
+);
+
+-- ---------------------------------------------------------------------------
+-- Table-level catch-all.
+--
+-- Everything above enumerates specific tables by name, which means a new
+-- `create table` in `public` is invisible to this file until someone
+-- remembers to come back and add it here. Proven: `create table
+-- public.new_thing(id uuid primary key); grant all on public.new_thing to
+-- authenticated, anon;` left the suite green before these two assertions
+-- existed. Supabase's hosted bootstrap grants ALL — including TRUNCATE,
+-- which RLS never filters — to `authenticated` on every new table in
+-- `public`, and no table in this schema has an `anon` policy. These two
+-- assertions catch a table that inherits either default, the same way the
+-- function catch-all further down catches an unguarded function. Restricted
+-- to `relkind = 'r'` (ordinary tables) so views and other relations in
+-- `public` do not create noise.
+-- ---------------------------------------------------------------------------
+
+select is(
+  (select coalesce(string_agg(c.relname, ', ' order by c.relname), '')
+   from pg_class c
+   join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'public'
+     and c.relkind = 'r'
+     and has_table_privilege('authenticated', c.oid, 'TRUNCATE')),
+  '',
+  'no table in schema public is TRUNCATE-able by authenticated'
+);
+
+select is(
+  (select coalesce(string_agg(c.relname, ', ' order by c.relname), '')
+   from pg_class c
+   join pg_namespace n on n.oid = c.relnamespace
+   where n.nspname = 'public'
+     and c.relkind = 'r'
+     and has_table_privilege('anon', c.oid, 'SELECT')),
+  '',
+  'no table in schema public is reachable by anon'
 );
 
 -- ---------------------------------------------------------------------------
@@ -380,36 +419,62 @@ select ok(
 
 /*
  * The catch-all above this block enumerates functions reachable by `anon`.
- * Add the mirror for `authenticated`, because the hosted project bootstraps
- * every new function with EXECUTE granted DIRECTLY to anon, authenticated and
- * service_role — and `revoke ... from public` does not clear a direct grant
- * (see 20260822045809). An anon-only catch-all therefore cannot see an
- * unintended authenticated grant, which is how series_occurrence_dates
- * shipped reachable on hosted while local looked clean.
+ * This is the mirror for `authenticated`, because the hosted project
+ * bootstraps every new function with EXECUTE granted DIRECTLY to anon,
+ * authenticated and service_role — and `revoke ... from public` does not
+ * clear a direct grant (see 20260822045809). An anon-only catch-all
+ * therefore cannot see an unintended authenticated grant, which is how
+ * series_occurrence_dates shipped reachable on hosted while local looked
+ * clean.
  *
- * List every function `authenticated` is SUPPOSED to reach; anything else
- * appearing here is drift. `reset_event_to_series` belongs in this list —
- * Task 6 already grants it and asserts the positive case above — even though
- * an earlier draft of this catch-all omitted it, which would have failed
- * this very test on a correctly-configured database.
+ * Asserts equality, not "nothing extra beyond this list". A `not in (...)`
+ * check only ever proves half of that: it stays green if a name is silently
+ * revoked, which is exactly the shape of bug it should also catch — revoking
+ * `is_club_organizer` breaks `events_select_member` for every organizer, a
+ * live outage a subset check would wave through. List every function
+ * `authenticated` is SUPPOSED to reach; the reachable set must equal this
+ * list exactly, in either direction. `reset_event_to_series` belongs in it —
+ * Task 6 already grants it and asserts the positive case above.
+ *
+ * Compares by `p.oid::regprocedure`, not `p.proname`: a same-named overload
+ * (e.g. a future `create_event()` alongside `create_event(uuid, ...)`) has a
+ * different signature and so is not silently absorbed into the allowed set
+ * the way a name-only comparison would absorb it. The expected list below is
+ * cast through `::regprocedure::text` too, so both sides go through the same
+ * canonicalization and a reader sees the actual mismatched signature in the
+ * `is()` diff rather than a decoded name.
  */
 select is(
-  (select coalesce(array_agg(p.proname order by p.proname), '{}')
+  (select coalesce(
+     array_agg(p.oid::regprocedure::text order by p.oid::regprocedure::text),
+     '{}')
    from pg_proc p
    join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public'
-     and has_function_privilege('authenticated', p.oid, 'EXECUTE')
-     and p.proname not in (
-       'is_club_member', 'is_club_organizer', 'create_club',
-       'accept_club_invite', 'club_roster',
-       'create_venue', 'update_venue', 'archive_venue', 'search_venues',
-       'create_event', 'update_event', 'cancel_event',
-       'add_event_table', 'update_event_table', 'remove_event_table',
-       'create_event_series', 'update_event_series', 'end_event_series',
-       'reset_event_to_series'
-     )),
-  '{}'::name[],
-  'no function is reachable by authenticated that should not be'
+     and has_function_privilege('authenticated', p.oid, 'EXECUTE')),
+  (select array_agg(x::regprocedure::text order by x::regprocedure::text)
+   from unnest(array[
+     'public.is_club_member(uuid)',
+     'public.is_club_organizer(uuid)',
+     'public.create_club(text, text)',
+     'public.accept_club_invite(text)',
+     'public.club_roster(uuid)',
+     'public.create_venue(text, text, text, text, text, uuid, boolean)',
+     'public.update_venue(uuid, text, text, text, text, text)',
+     'public.archive_venue(uuid)',
+     'public.search_venues(uuid, text)',
+     'public.create_event(uuid, text, uuid, text, timestamptz, timestamptz, int)',
+     'public.update_event(uuid, text, uuid, text, timestamptz, timestamptz)',
+     'public.cancel_event(uuid)',
+     'public.add_event_table(uuid)',
+     'public.update_event_table(uuid, text, public.skill_tier)',
+     'public.remove_event_table(uuid)',
+     'public.create_event_series(uuid, text, uuid, text, public.series_frequency, smallint, smallint, time, int, int, date, date)',
+     'public.update_event_series(uuid, text, uuid, text, time, int, int, date, boolean)',
+     'public.end_event_series(uuid, boolean)',
+     'public.reset_event_to_series(uuid)'
+   ]) as x),
+  'authenticated can execute exactly the expected set of functions'
 );
 
 select * from finish();
