@@ -434,7 +434,13 @@ export async function mintSession(
     );
   }
 
-  if (!url.includes('127.0.0.1') && !url.includes('localhost')) {
+  // Compare the parsed hostname exactly. A substring check is foolable —
+  // `https://notlocalhost.evil.example.com` contains "localhost", and
+  // `https://evil.com/?x=127.0.0.1` contains the loopback address. This is
+  // the only control stopping a service_role key from being pointed at a
+  // hosted project, so it has to actually hold.
+  const hostname = new URL(url).hostname;
+  if (hostname !== '127.0.0.1' && hostname !== 'localhost' && hostname !== '::1') {
     throw new Error(`Refusing to mint sessions against a non-local URL: ${url}`);
   }
 
