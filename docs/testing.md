@@ -387,7 +387,7 @@ in an otherwise-green suite is not worth adding to every environment forever,
 so this gap stays as a documented limitation rather than a grant.
 
 The job is `materialize-event-series`, defined in
-`<timestamp>_schedule_materialize_event_series.sql`. It calls
+`20260823060000_schedule_materialize_event_series.sql`. It calls
 `public.materialize_event_series()`, which is ordinary SQL — so it is tested
 by pgTAP calling it directly, with no HTTP, no secrets, and no Edge Function
 in the loop. To run it by hand:
@@ -396,3 +396,17 @@ in the loop. To run it by hand:
 
 Inspect the schedule with `select * from cron.job;` and its history with
 `select * from cron.job_run_details order by start_time desc limit 20;`.
+
+The sweep wraps each series in its own exception block (see
+`20260823000000_harden_event_series_materialization.sql`), so one club's bad
+data — a timezone the `clubs_validate_timezone` trigger didn't exist to
+reject when the row was written, a venue deleted out from under a series,
+anything else `materialize_one_series` can throw on — is skipped rather than
+rolling back the whole run. The skip is not silent: it `raise warning`s the
+series id, title, club id, and the underlying error before moving on. A
+`WARNING` raised inside a function called by `cron.schedule` does not go
+anywhere a client would see it; it lands in `cron.job_run_details.return_message`
+for that run (`cli_login_postgres` cannot read that table — see above — so
+this is a `postgres`/dashboard-only inspection) and in the Postgres server
+log for whichever environment ran it. Nobody currently polls either one, so
+today a skipped series is discoverable but not alerted on.

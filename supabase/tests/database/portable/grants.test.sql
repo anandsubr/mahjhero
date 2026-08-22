@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(35);
+select plan(54);
 
 /*
  * Guards the privileges themselves, not the policies.
@@ -273,6 +273,143 @@ select ok(
   has_function_privilege(
     'authenticated', 'public.reset_event_to_series(uuid)', 'EXECUTE'),
   'authenticated can still execute reset_event_to_series'
+);
+
+-- ---------------------------------------------------------------------------
+-- Scheduling ACLs (Task 7).
+--
+-- The four tables plan 3 adds. Same reasoning as the four above: ALL is the
+-- Supabase bootstrap default and includes TRUNCATE, which RLS does not
+-- filter.
+-- ---------------------------------------------------------------------------
+
+select ok(
+  not has_table_privilege('authenticated', 'public.venues', 'TRUNCATE'),
+  'authenticated cannot TRUNCATE venues'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.event_series', 'TRUNCATE'),
+  'authenticated cannot TRUNCATE event_series'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.events', 'TRUNCATE'),
+  'authenticated cannot TRUNCATE events'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.event_tables', 'TRUNCATE'),
+  'authenticated cannot TRUNCATE event_tables'
+);
+
+-- Clients read these tables and never write them. Every mutation is a
+-- security definer function that checks the caller's role against the row's
+-- own club.
+select ok(
+  not has_table_privilege('authenticated', 'public.venues', 'INSERT'),
+  'authenticated cannot insert venues'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.events', 'INSERT'),
+  'authenticated cannot insert events'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.events', 'UPDATE'),
+  'authenticated cannot update events'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.events', 'DELETE'),
+  'authenticated cannot delete events'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.event_tables', 'INSERT'),
+  'authenticated cannot insert event_tables'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.event_series', 'INSERT'),
+  'authenticated cannot insert event_series'
+);
+
+-- service_role needs DML, because Edge Functions and scheduled jobs run as
+-- it and BYPASSRLS skips policies, not grants.
+select ok(
+  has_table_privilege('service_role', 'public.events', 'INSERT'),
+  'service_role can insert events'
+);
+select ok(
+  has_table_privilege('service_role', 'public.venues', 'SELECT'),
+  'service_role can select venues'
+);
+
+-- Function ACLs. A null proacl is EXECUTE to PUBLIC, so "nobody granted it"
+-- and "everybody has it" look identical until you assert.
+select ok(
+  not has_function_privilege('anon',
+    'public.create_event(uuid, text, uuid, text, timestamptz, timestamptz, int)',
+    'EXECUTE'),
+  'anon cannot execute create_event'
+);
+select ok(
+  not has_function_privilege('anon',
+    'public.create_venue(text, text, text, text, text, uuid, boolean)',
+    'EXECUTE'),
+  'anon cannot execute create_venue'
+);
+select ok(
+  not has_function_privilege('anon', 'public.search_venues(uuid, text)',
+    'EXECUTE'),
+  'anon cannot execute search_venues'
+);
+select ok(
+  not has_function_privilege('authenticated',
+    'public.assert_club_organizer(uuid)', 'EXECUTE'),
+  'authenticated cannot execute assert_club_organizer'
+);
+
+-- The sweep function takes no club argument and checks no membership,
+-- because it is maintenance across every series in the system. That is
+-- exactly why authenticated must not reach it.
+select ok(
+  not has_function_privilege('authenticated',
+    'public.materialize_event_series(int)', 'EXECUTE'),
+  'authenticated cannot execute materialize_event_series'
+);
+select ok(
+  not has_function_privilege('authenticated',
+    'public.materialize_one_series(uuid, int)', 'EXECUTE'),
+  'authenticated cannot execute materialize_one_series'
+);
+
+/*
+ * The catch-all above this block enumerates functions reachable by `anon`.
+ * Add the mirror for `authenticated`, because the hosted project bootstraps
+ * every new function with EXECUTE granted DIRECTLY to anon, authenticated and
+ * service_role — and `revoke ... from public` does not clear a direct grant
+ * (see 20260822045809). An anon-only catch-all therefore cannot see an
+ * unintended authenticated grant, which is how series_occurrence_dates
+ * shipped reachable on hosted while local looked clean.
+ *
+ * List every function `authenticated` is SUPPOSED to reach; anything else
+ * appearing here is drift. `reset_event_to_series` belongs in this list —
+ * Task 6 already grants it and asserts the positive case above — even though
+ * an earlier draft of this catch-all omitted it, which would have failed
+ * this very test on a correctly-configured database.
+ */
+select is(
+  (select coalesce(array_agg(p.proname order by p.proname), '{}')
+   from pg_proc p
+   join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public'
+     and has_function_privilege('authenticated', p.oid, 'EXECUTE')
+     and p.proname not in (
+       'is_club_member', 'is_club_organizer', 'create_club',
+       'accept_club_invite', 'club_roster',
+       'create_venue', 'update_venue', 'archive_venue', 'search_venues',
+       'create_event', 'update_event', 'cancel_event',
+       'add_event_table', 'update_event_table', 'remove_event_table',
+       'create_event_series', 'update_event_series', 'end_event_series',
+       'reset_event_to_series'
+     )),
+  '{}'::name[],
+  'no function is reachable by authenticated that should not be'
 );
 
 select * from finish();
