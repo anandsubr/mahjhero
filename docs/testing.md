@@ -147,11 +147,16 @@ claimed the visual layer covered it, and that claim was wrong.
 `components/TimeField.web.tsx` and `components/DateField.web.tsx` both exist.
 Metro's platform-extension resolution picks them for web builds, so **the web
 bundle never imports `@react-native-community/datetimepicker` at all**. What
-the visual layer's screenshots show under "Starts"/"Ends" (and any date field
-built on `DateField`) is an `<input type="time">` or `<input type="date">` —
-a different control, from a different file, with a different implementation.
-It is real coverage of `TimeField.web.tsx` and `DateField.web.tsx`, and it is
-no coverage whatsoever of the native pickers.
+the visual layer's screenshots show under "Starts"/"Ends" is an
+`<input type="time">` — a different control, from a different file, with a
+different implementation. That is real coverage of `TimeField.web.tsx`, and no
+coverage whatsoever of the native picker behind it.
+
+**`DateField.web.tsx` has no coverage yet either.** No screen imports
+`DateField` at the time of writing, so no visual baseline contains one and no
+component test renders one. It gains web coverage when a screen starts using
+it, and not before — check that this paragraph is still true when you next
+touch this file.
 
 The component layer does not reach them either. `resolve.extensions` in
 `vitest.config.mts` makes Vitest resolve `.web.tsx` first, exactly as the web
