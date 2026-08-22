@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(74);
+select plan(89);
 
 /*
  * Series creation, series editing, resetting one week, ending a series, and
@@ -517,6 +517,18 @@ select throws_ok(
   'and a cancelled week is not quietly brought back by a reset'
 );
 
+-- Fix pass 2: reset_event_to_series must refuse a past occurrence too. p1
+-- (current_date - 11) is genuinely in the past, genuinely part of series A,
+-- not cancelled, and untouched by anything so far -- so this is a clean
+-- refusal, not a side effect of one of the other two guards.
+select throws_ok(
+  $$select public.reset_event_to_series(
+      (select id from public.events where occurrence_date = current_date - 11))$$,
+  '42501',
+  'a past occurrence is history and cannot be reset',
+  'nor is a past occurrence, even an un-cancelled, un-overridden one'
+);
+
 -- ---------------------------------------------------------------------------
 -- 8. table_count applies to occurrences materialized later, never to ones
 --    that already exist.
@@ -761,6 +773,185 @@ select ok(
   (select ended_at is not null from public.event_series
    where starts_on = current_date - 28),
   'and its ended_at is set'
+);
+
+-- ---------------------------------------------------------------------------
+-- 13. Fix pass 2: new_duration and new_ends_on had no mutation-tested
+--     coverage, and the shortening branch's own `starts_at > now()` guard had
+--     none either. A dedicated series, C, isolates all of it from series A
+--     and the sibling above -- both already ended by this point -- so
+--     shortening series C's run here cannot disturb an assertion already
+--     proven earlier in this file. By this point the club's timezone is
+--     'America/Chicago' (section 10), so every clock check below reads in
+--     that zone, matching whatever club_tz update_event_series itself reads.
+-- ---------------------------------------------------------------------------
+
+set local role postgres;
+
+insert into public.event_series (
+  id, club_id, title, venue_id, notes, frequency, weekday, nth_week,
+  start_time, duration_minutes, table_count, starts_on, ends_on, created_by
+) values (
+  '55555555-0000-0000-0000-000000000004',
+  'c1c1c1c1-0000-0000-0000-000000000001', 'Duration series',
+  '11111111-0000-0000-0000-000000000001', '',
+  'weekly', extract(dow from current_date)::smallint, null,
+  '19:00'::time, 180, 1, current_date - 60, current_date - 20,
+  'aaaaaaaa-0000-0000-0000-000000000001'
+);
+
+-- Two past occurrences and two live future ones -- one hand-set to a
+-- non-standard 90 minutes, one left alone. `ends_on` is already in the past
+-- (current_date - 20), so the `perform materialize_one_series` at the end of
+-- every update_event_series call below opens an empty window and generates
+-- nothing here -- these four rows are the only occurrences this series ever
+-- has.
+insert into public.events
+  (club_id, series_id, title, venue_id, notes,
+   starts_at, ends_at, occurrence_date, overrides, created_by)
+values
+  ('c1c1c1c1-0000-0000-0000-000000000001',
+   '55555555-0000-0000-0000-000000000004', 'Duration series',
+   '11111111-0000-0000-0000-000000000001', '',
+   ((current_date - 30) + time '19:00') at time zone 'America/Chicago',
+   ((current_date - 30) + time '22:00') at time zone 'America/Chicago',
+   current_date - 30, '{}', 'aaaaaaaa-0000-0000-0000-000000000001'),
+  ('c1c1c1c1-0000-0000-0000-000000000001',
+   '55555555-0000-0000-0000-000000000004', 'Duration series',
+   '11111111-0000-0000-0000-000000000001', '',
+   ((current_date - 50) + time '19:00') at time zone 'America/Chicago',
+   ((current_date - 50) + time '22:00') at time zone 'America/Chicago',
+   current_date - 50, '{}', 'aaaaaaaa-0000-0000-0000-000000000001'),
+  ('c1c1c1c1-0000-0000-0000-000000000001',
+   '55555555-0000-0000-0000-000000000004', 'Duration series',
+   '11111111-0000-0000-0000-000000000001', '',
+   ((current_date + 5) + time '19:00') at time zone 'America/Chicago',
+   ((current_date + 5) + time '20:30') at time zone 'America/Chicago',
+   current_date + 5, array['starts_at']::text[],
+   'aaaaaaaa-0000-0000-0000-000000000001'),
+  ('c1c1c1c1-0000-0000-0000-000000000001',
+   '55555555-0000-0000-0000-000000000004', 'Duration series',
+   '11111111-0000-0000-0000-000000000001', '',
+   ((current_date + 12) + time '19:00') at time zone 'America/Chicago',
+   ((current_date + 12) + time '22:00') at time zone 'America/Chicago',
+   current_date + 12, '{}', 'aaaaaaaa-0000-0000-0000-000000000001');
+
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "aaaaaaaa-0000-0000-0000-000000000001", "role": "authenticated"}';
+
+-- 13a. new_duration alone, toggle off. Closes x1 (touched_time dropping its
+-- eff_dur half) and x2 (make_interval hardcoded to 180) in one assertion,
+-- and is also the propagation-path ends_at assertion the review asked for.
+select lives_ok(
+  $$select public.update_event_series(
+      '55555555-0000-0000-0000-000000000004',
+      null, null, null, null, 240, null, null, false)$$,
+  'series C''s duration alone is changed, toggle off'
+);
+
+select is(
+  (select to_char(ends_at at time zone 'America/Chicago', 'HH24:MI')
+   from public.events where occurrence_date = current_date - 30),
+  '22:00',
+  'a past week keeps its original 180-minute length'
+);
+
+select is(
+  (select to_char(ends_at at time zone 'America/Chicago', 'HH24:MI')
+   from public.events where occurrence_date = current_date + 5),
+  '20:30',
+  'a week with a hand-set time keeps its hand-set 90 minutes'
+);
+
+select is(
+  (select to_char(ends_at at time zone 'America/Chicago', 'HH24:MI')
+   from public.events where occurrence_date = current_date + 12),
+  '23:00',
+  'an un-customised week takes the new 240-minute length'
+);
+
+-- The gate that decides whether a title "changed" is trimmed on both sides
+-- (20260823040000). Give one live week a title override on top of its
+-- starts_at one, so a whitespace-only resend can be told apart from a real
+-- edit by whether that override survives.
+set local role postgres;
+update public.events set overrides = array['starts_at', 'title']::text[]
+  where occurrence_date = current_date + 5;
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "aaaaaaaa-0000-0000-0000-000000000001", "role": "authenticated"}';
+
+-- 13b. A whitespace-padded resend of the series' own current title, toggle
+-- on, is not a change -- the override survives.
+select lives_ok(
+  $$select public.update_event_series(
+      '55555555-0000-0000-0000-000000000004',
+      '  Duration series  ', null, null, null, null, null, null, true)$$,
+  'the series title is resent padded with whitespace, toggle on'
+);
+
+select results_eq(
+  $$select overrides from public.events
+    where occurrence_date = current_date + 5$$,
+  $$values (array['starts_at', 'title']::text[])$$,
+  'a whitespace-only resend is not a real change, so the title override survives the toggle'
+);
+
+-- 13c. A real title change propagates trimmed.
+select lives_ok(
+  $$select public.update_event_series(
+      '55555555-0000-0000-0000-000000000004',
+      '  Brand new title  ', null, null, null, null, null, null, false)$$,
+  'the series title is actually changed, padded with whitespace'
+);
+
+select is(
+  (select title from public.events where occurrence_date = current_date + 12),
+  'Brand new title',
+  'and the un-overridden week takes it trimmed, not padded'
+);
+
+-- 13d. Shortening ends_on, chosen to fall before BOTH past occurrences, so
+-- the shortening cancel's own `starts_at > now()` guard -- not the one on the
+-- other four propagation statements -- is what has to hold. Closes x3 (the
+-- whole branch deleted) and x4 (that guard specifically dropped).
+select lives_ok(
+  $$select public.update_event_series(
+      '55555555-0000-0000-0000-000000000004',
+      null, null, null, null, null, null, (current_date - 55), false)$$,
+  'series C''s planned end is pulled back before both of its past weeks'
+);
+
+select is(
+  (select status::text from public.events where occurrence_date = current_date + 5),
+  'cancelled',
+  'a live future week beyond the shortened end is cancelled'
+);
+
+select is(
+  (select status::text from public.events where occurrence_date = current_date + 12),
+  'cancelled',
+  'so is the other one'
+);
+
+select isnt(
+  (select status::text from public.events where occurrence_date = current_date - 30),
+  'cancelled',
+  'a past week that also falls beyond the shortened end is NOT cancelled -- shortening a series never rewrites history'
+);
+
+select isnt(
+  (select status::text from public.events where occurrence_date = current_date - 50),
+  'cancelled',
+  'nor is the other past week'
+);
+
+select is(
+  (select materialized_through from public.event_series
+   where id = '55555555-0000-0000-0000-000000000004'),
+  current_date - 55,
+  'materialized_through is pulled back to the new end along with it'
 );
 
 select * from finish();
