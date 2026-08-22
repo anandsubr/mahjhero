@@ -1972,7 +1972,11 @@ git commit -m "feat(db): materialize recurring events with DST-correct instants"
 
 **A null argument means "leave this alone", never "clear this".** A screen that edits only the title would otherwise wipe the notes. Clearing a text field is done by passing `''`, which is non-null and therefore an intentional change.
 
-**On `remove_event_table`:** plan 4 attaches bookings to `event_tables.id`. When it does, this function needs a rule for what happens to the people sitting there. It is granular now precisely so that rule can be added without restructuring.
+**On `remove_event_table`:** plan 4 attaches bookings to `event_tables.id`. When it does, this function needs a rule for what happens to the people sitting there. It is granular now precisely so that rule can be added without restructuring. It also locks the event's table rows before counting them — two concurrent removals could otherwise each see two tables remaining and both proceed, leaving the event with none.
+
+**All three table functions refuse a cancelled event**, matching `update_event`. Letting a cancelled game's seating be edited would only get more confusing once plan 4 hangs bookings off these rows.
+
+**Read-modify-write needs `for update`.** `update_event` and `remove_event_table` both read a row, decide, then write, so both take the lock — the pattern `accept_club_invite` already established in plan 2. `cancel_event` and `update_event_table` do not: each writes through a single self-contained `UPDATE` that locks and re-reads atomically, with no separate snapshot to go stale.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -2372,7 +2376,12 @@ declare
   eff_ends       timestamptz;
   next_overrides text[];
 begin
-  select * into ev from public.events where id = target_event;
+  -- `for update`, matching accept_club_invite, reactivate_removed_club_member
+  -- and 20260822180300. Without it this is a snapshot read followed by an
+  -- unconditional write — the textbook lost update. Two concurrent calls,
+  -- one setting the title and one setting the notes, both return true and the
+  -- title change vanishes along with its override key, silently.
+  select * into ev from public.events where id = target_event for update;
 
   if ev.id is null then
     raise exception 'no such event' using errcode = 'P0002';
@@ -2409,7 +2418,14 @@ begin
     -- literal as an array, raising 22P02 malformed array literal. The
     -- element-append overload is not chosen because nothing types the
     -- literal as text first.
-    if eff_title is distinct from ev.title then
+    -- Compare TRIMMED, because line below writes trim(eff_title). Comparing
+    -- the untrimmed value means '  Weekly  ' over a row titled 'Weekly'
+    -- stores an unchanged title and still records the override — detaching
+    -- that occurrence from the series title forever, so it silently skips
+    -- every future rename. A trailing space from a phone keyboard is enough.
+    -- (`notes` is not trimmed on write, so its comparison is already
+    -- consistent — leave it.)
+    if trim(eff_title) is distinct from ev.title then
       next_overrides := array_append(next_overrides, 'title');
     end if;
     if eff_venue is distinct from ev.venue_id then
@@ -2489,12 +2505,22 @@ begin
   end if;
   perform public.assert_club_organizer(owning_club);
 
-  select coalesce(max(position), 0) + 1 into next_pos
-  from public.event_tables where event_id = target_event;
-
-  if next_pos > 20 then
+  -- The cap is on the COUNT, not on max(position). Capping the position means
+  -- an event that ever reached 20 tables can never add another, even after
+  -- removals — create 20, remove one, add, and it refuses with 19 present.
+  --
+  -- Positions may go sparse (remove position 2 of 3 and the next add is 4).
+  -- That is cosmetic and cannot collide: max(position)+1 is strictly greater
+  -- than every existing position, so `unique (event_id, position)` is never
+  -- at risk. It also makes the set-based race here fail safe rather than
+  -- needing a lock.
+  if (select count(*) from public.event_tables
+      where event_id = target_event) >= 20 then
     raise exception 'too many tables' using errcode = '23514';
   end if;
+
+  select coalesce(max(position), 0) + 1 into next_pos
+  from public.event_tables where event_id = target_event;
 
   insert into public.event_tables (event_id, club_id, label, position)
   values (target_event, owning_club, 'Table ' || next_pos, next_pos)
