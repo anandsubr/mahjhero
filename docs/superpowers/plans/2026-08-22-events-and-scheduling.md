@@ -3359,6 +3359,90 @@ git commit -m "feat(db): add series edits with the override toggle, and the time
 
 ---
 
+### Task 6b: Mutation audit of the Tasks 2-5 fixtures
+
+**Files:**
+- Modify: `supabase/tests/database/fixtures/venues.test.sql`
+- Modify: `supabase/tests/database/fixtures/events.test.sql`
+- Modify: `supabase/tests/database/fixtures/event_recurrence.test.sql`
+- Modify: `supabase/tests/database/fixtures/event_mutations.test.sql`
+
+**Interfaces:**
+- Consumes: everything Tasks 2-5 built.
+- Produces: no new schema. Stronger assertions, and a written record of which
+  mutation each rule's test actually kills.
+
+**Why this task exists.** Task 6 shipped 17 green assertions that killed **one
+of eight** mutants. Removing the guard that stops past occurrences being
+rewritten, removing the guard that stops a cancelled week following a series
+edit, and adding the exact reflow "fix" the design forbids all passed a fully
+green suite. Worse, the brief's own verification step — "drop this guard and
+watch assertion 7 fail" — could not fail under either implementation, so the
+thing being relied on as a safety net across five tasks was inert.
+
+The Tasks 2-5 fixtures were never mutation-checked. Their reviews verified
+behaviour directly against the database, which is stronger evidence than the
+tests carry — but that evidence lives in review transcripts, not in anything
+that runs again. This task converts it into tests.
+
+**Method, per file.** Do not add assertions speculatively. For each file:
+
+1. **Enumerate the rules the file claims to protect.** Read the assertions and
+   the migration they cover, and write the list down first.
+2. **For each rule, construct the mutation that breaks it** — `create or
+   replace` the function, `alter policy`, `drop constraint`, whatever is
+   narrowest — inside a transaction.
+3. **Run the file against the mutant.** Record survives/killed and, when
+   killed, which assertion caught it.
+4. **Roll back.**
+5. **For every survivor, add or strengthen an assertion**, then re-run the
+   mutation to confirm it now dies.
+
+**The specific rules that must have a killing assertion**, drawn from what each
+task's review verified by hand:
+
+`venues.test.sql` — the cross-club read boundary in both directions;
+`search_venues` refusing a club the caller does not belong to; the write guards
+checking `added_by_club_id` rather than "organizes something"; `visibility`
+defaulting to `club`; `share_publicly => true` actually publishing; the partial
+unique index applying to public rows only; archived venues absent from search
+but still resolving.
+
+`events.test.sql` — the composite FK making a cross-club table row
+unrepresentable, on UPDATE as well as INSERT; the draft carve-out on both
+`events` and `event_tables`; a cancelled event still visible to a member; the
+club cascade leaving nothing behind; the cross-club series link rejected; the
+`overrides` shape and key constraints.
+
+`event_recurrence.test.sql` — the DST instant expression (a fixed-offset
+mutant must die); biweekly anchoring on `starts_on`; the missing-fifth-weekday
+rule; `on conflict` idempotency; a cancelled occurrence never resurrected; the
+`current_date` floor; `materialized_through` bookkeeping; the timezone
+validation trigger; per-series failure containment in the sweep.
+
+`event_mutations.test.sql` — `assert_club_organizer` on each of the six
+functions with the row's own club; `assert_venue_available` on both write
+paths; the conditional venue re-assert; per-field override recording including
+the trimmed comparison and de-duplication; a cancelled event refusing edits;
+the last table refusing removal; the table cap counting rows.
+
+**Do not change any migration.** If a mutation reveals a real defect rather
+than a test gap, stop and report it rather than fixing it here — a schema
+change belongs in its own reviewed task.
+
+- [ ] **Step 1: Audit and strengthen `venues.test.sql` and `events.test.sql`**
+- [ ] **Step 2: Audit and strengthen `event_recurrence.test.sql` and `event_mutations.test.sql`**
+- [ ] **Step 3: Run everything**
+
+```bash
+npm run test:db
+npx supabase test db --linked supabase/tests/database/portable
+```
+
+- [ ] **Step 4: Commit, with the mutation table in the message body**
+
+---
+
 ### Task 7: Schedule the nightly job, and guard the grants
 
 **Files:**
