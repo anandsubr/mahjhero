@@ -124,5 +124,18 @@ test.describe('signed in', () => {
       await expect(page.getByText('How should we reach you?')).toBeVisible();
       await captureScreen(page, vp, `notifications-${vp.name}.png`);
     });
+
+    test(`clubs at ${vp.name}`, async ({ page }) => {
+      await page.setViewportSize({ width: vp.width, height: vp.height });
+      await page.goto('/clubs');
+      await expect(page.getByText('Your clubs')).toBeVisible();
+      // The brief's literal snippet uses `toHaveScreenshot(..., { fullPage:
+      // true })`, but `captureScreen`'s own doc comment above explains why
+      // that option is a no-op against this app's ScrollView-based layout
+      // and previously produced a truncated notifications-mobile baseline
+      // that cut off the Save button. Using captureScreen here instead
+      // keeps the clubs baseline from repeating that exact defect.
+      await captureScreen(page, vp, `clubs-${vp.name}.png`);
+    });
   }
 });
