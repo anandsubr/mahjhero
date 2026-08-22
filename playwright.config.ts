@@ -35,9 +35,19 @@ export default defineConfig({
   },
   expect: {
     toHaveScreenshot: {
-      // Small tolerance for antialiasing differences between machines.
-      // Do not raise this to silence a real diff.
-      maxDiffPixelRatio: 0.01,
+      // An absolute pixel budget, not a ratio.
+      //
+      // A ratio scales with page size and silently swallows small elements:
+      // a 62x34 toggle knob is ~2,100px, which on a 375x812 page is 0.69% —
+      // under a 1% ratio. This suite exists *because* a toggle knob rendered
+      // in the wrong colour escaped every other test, so a threshold that
+      // masks exactly that is worse than useless. A whole-theme accent
+      // mutation was empirically shown to pass at 0.01 on notifications-mobile.
+      //
+      // 120px covers antialiasing jitter between machines while staying far
+      // below any single control. Do not raise it to silence a diff — mask a
+      // genuinely non-deterministic region instead.
+      maxDiffPixels: 120,
     },
   },
 });
