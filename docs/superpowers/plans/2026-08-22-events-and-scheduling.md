@@ -1291,11 +1291,19 @@ create table public.events (
    * rejected at COMMIT. `no action` is safe precisely because the trigger has
    * already cleared these rows before the action would fire.
    *
-   * Note all four variants pass an ordinary club-cascade delete, because
-   * Postgres queues the clubs->events cascade ahead of the
-   * event_series->events RI action. That makes the broken ones look fine on
-   * the happy path; they only separate under a probe with the trigger
-   * dropped.
+   * Note that every candidate action passes an ordinary club-cascade delete,
+   * so the happy path does not discriminate them at all. What happens is: the
+   * event_series cascade fires FIRST (lower RI trigger oid), its own FK check
+   * is QUEUED rather than immediate, the events cascade then deletes the
+   * referencing rows, and the queued check finds nothing left to complain
+   * about. The broken variants therefore look fine until you drop the trigger
+   * and force the action to fire on a live row.
+   *
+   * Do not re-derive this from an assumed firing order. Two successive
+   * attempts at this trigger were reasoned out from one and both were wrong;
+   * the version that holds is the one that does not depend on the order at
+   * all — if the events cascade ran first, the trigger's UPDATE would simply
+   * match zero rows and the outcome would be identical.
    */
   foreign key (series_id, club_id)
     references public.event_series (id, club_id) on delete no action
@@ -1350,7 +1358,7 @@ create table public.event_tables (
  * games, so its occurrences survive as ordinary one-off events — and an
  * ordinary one-off event does not carry a vestigial occurrence_date.
  */
-create function public.detach_events_from_series()
+create function public.event_series_detach_occurrences()
 returns trigger
 language plpgsql
 security definer
@@ -1373,9 +1381,9 @@ $$;
 
 create trigger event_series_detach_events
   before delete on public.event_series
-  for each row execute function public.detach_events_from_series();
+  for each row execute function public.event_series_detach_occurrences();
 
-revoke execute on function public.detach_events_from_series() from public, anon;
+revoke execute on function public.event_series_detach_occurrences() from public, anon;
 
 alter table public.event_series enable row level security;
 alter table public.events enable row level security;
