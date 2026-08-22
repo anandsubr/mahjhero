@@ -24,7 +24,13 @@ export async function mintSession(
     );
   }
 
-  if (!url.includes('127.0.0.1') && !url.includes('localhost')) {
+  // Compare the parsed hostname exactly. A substring check is foolable —
+  // `https://notlocalhost.evil.example.com` contains "localhost", and
+  // `https://evil.com/?x=127.0.0.1` contains the loopback address. This is
+  // the only control stopping a service_role key from being pointed at a
+  // hosted project, so it has to actually hold.
+  const hostname = new URL(url).hostname;
+  if (hostname !== '127.0.0.1' && hostname !== 'localhost' && hostname !== '::1') {
     throw new Error(`Refusing to mint sessions against a non-local URL: ${url}`);
   }
 
@@ -61,7 +67,13 @@ export async function mintSession(
 
 /**
  * The localStorage key supabase-js persists its session under, derived from
- * the project ref in the URL. Keep in step with the client's own convention.
+ * the project ref in the URL. Keep in step with the client's own convention:
+ * see `defaultStorageKey` in `node_modules/@supabase/supabase-js/src/SupabaseClient.ts`
+ * (``sb-${baseUrl.hostname.split('.')[0]}-auth-token``). If a future
+ * supabase-js bump changes that derivation, this helper will silently
+ * produce a mismatched key, and Task 4's screenshots will just come back
+ * blank/unauthenticated — check that file first before suspecting Playwright
+ * or the injection step.
  */
 export function storageKeyFor(supabaseUrl: string): string {
   const ref = new URL(supabaseUrl).hostname.split('.')[0];
