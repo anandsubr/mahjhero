@@ -43,6 +43,12 @@ export default function ClubDetailScreen() {
   const [events, setEvents] = useState<ClubEvent[]>([]);
   const [ready, setReady] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
+  // Kept separate from `loadFailed`: that flag blanks the whole screen, which
+  // is right when the club/roster/invites fetch fails (there is nothing to
+  // show). A failed events fetch is different — the club name, roster and
+  // invites all still loaded fine, so only the Upcoming section should
+  // degrade, not the entire page.
+  const [eventsFailed, setEventsFailed] = useState(false);
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -66,7 +72,7 @@ export default function ClubDetailScreen() {
     );
     fetchUpcomingEvents(id).then((result) => {
       if (cancelled) return;
-      if (result === null) setLoadFailed(true);
+      if (result === null) setEventsFailed(true);
       else setEvents(result);
     });
     return () => {
@@ -163,7 +169,9 @@ export default function ClubDetailScreen() {
 
       <Text style={styles.sectionTitle}>Upcoming</Text>
 
-      {events.length === 0 ? (
+      {eventsFailed ? (
+        <Text style={styles.help}>Could not load upcoming games.</Text>
+      ) : events.length === 0 ? (
         <Text style={styles.help}>
           {mayInvite
             ? 'No games scheduled yet. Add one and everyone in the club will see it.'

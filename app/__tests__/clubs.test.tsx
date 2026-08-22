@@ -339,4 +339,29 @@ describe('club detail screen upcoming events', () => {
     expect(screen.queryByText(/book/i)).toBeNull();
     expect(screen.queryByText(/coming soon/i)).toBeNull();
   });
+
+  // The bug this branch's review flagged: `fetchUpcomingEvents` failing
+  // alone (club, roster and invites all load fine) used to set the same
+  // `loadFailed` flag as the Promise.all above it, so the top-level
+  // `if (loadFailed || !club) return <ErrorBanner/>` guard blanked the
+  // *entire* screen — a member lost the roster and the invite controls
+  // because one list, the games, could not load. Both halves matter: a test
+  // that only checked the failure line would still pass on the old code
+  // (the whole screen was replaced by an ErrorBanner containing similar
+  // text), so this also asserts the roster is still on screen.
+  it('degrades only the Upcoming section when the events fetch fails, leaving the roster on screen', async () => {
+    fetchRoster.mockResolvedValue([
+      { profile_id: 'test-user', role: 'host', display_name: 'Ada', skill_level: null },
+    ]);
+    fetchUpcomingEvents.mockResolvedValue(null);
+    render(<ClubDetailScreen />);
+
+    expect(await screen.findByText('Could not load upcoming games.')).toBeTruthy();
+    // The rest of the screen is unaffected: club name, roster, and the
+    // member count heading all still render.
+    expect(screen.getByText('Riverside Mah Jongg')).toBeTruthy();
+    expect(screen.getByText('Ada')).toBeTruthy();
+    expect(screen.getByText('1 member')).toBeTruthy();
+    expect(screen.queryByText(/Could not reach MahjHero/)).toBeNull();
+  });
 });
