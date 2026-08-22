@@ -3,14 +3,19 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import ClubsScreen from '../clubs/index';
 
 const push = vi.fn();
+const replace = vi.fn();
+
+// Mutable so a test can put `?imported=40` on the URL the way
+// `app/clubs/[id]/import.tsx` does after a successful import.
+const searchParams: Record<string, string> = { id: 'club-1' };
 
 vi.mock('expo-router', () => ({
   Redirect: ({ href }: { href: string }) => (
     <div data-testid="redirect" data-href={href} />
   ),
   Link: ({ children }: { children: React.ReactNode }) => children,
-  useRouter: () => ({ push, replace: vi.fn() }),
-  useLocalSearchParams: () => ({ id: 'club-1' }),
+  useRouter: () => ({ push, replace }),
+  useLocalSearchParams: () => searchParams,
 }));
 
 const useSessionMock = vi.fn(
@@ -25,14 +30,50 @@ vi.mock('../../lib/session', () => ({
 }));
 
 const fetchMyClubs = vi.fn();
+const fetchClub = vi.fn();
+const fetchRoster = vi.fn();
+const fetchPendingInvites = vi.fn();
+const importRoster = vi.fn();
 
-vi.mock('../../lib/clubs', () => ({
-  fetchMyClubs: (...args: unknown[]) => fetchMyClubs(...args),
-}));
+// One partial mock for the whole file, not one per describe block. Two
+// `vi.mock` calls for the same specifier are both hoisted and only one
+// survives, so the second block's `...actual` spread silently lost whatever
+// the first factory did not list — which is how `MAX_ROSTER_ROWS` came back
+// undefined at render time. `parseRoster`, `canInvite` and `MAX_ROSTER_ROWS`
+// stay real here on purpose: they are pure and the screens' behaviour under
+// test depends on what they actually do.
+vi.mock('../../lib/clubs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/clubs')>();
+  return {
+    ...actual,
+    fetchMyClubs: (...args: unknown[]) => fetchMyClubs(...args),
+    fetchClub: (...args: unknown[]) => fetchClub(...args),
+    fetchRoster: (...args: unknown[]) => fetchRoster(...args),
+    fetchPendingInvites: (...args: unknown[]) => fetchPendingInvites(...args),
+    importRoster: (...args: unknown[]) => importRoster(...args),
+  };
+});
+
+const CLUB = {
+  id: 'club-1',
+  name: 'Riverside Mah Jongg',
+  slug: 'riverside',
+  rhythm: 'Thursday evenings',
+  visibility: 'private' as const,
+  timezone: 'America/New_York',
+};
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  for (const key of Object.keys(searchParams)) delete searchParams[key];
+  searchParams.id = 'club-1';
+  fetchClub.mockResolvedValue(CLUB);
+  fetchRoster.mockResolvedValue([]);
+  fetchPendingInvites.mockResolvedValue([]);
+  importRoster.mockResolvedValue({ created: 2, error: null });
+});
 
 describe('clubs list', () => {
-  beforeEach(() => vi.clearAllMocks());
-
   it('offers a way to start one when the member has no clubs', async () => {
     fetchMyClubs.mockResolvedValueOnce([]);
     render(<ClubsScreen />);
@@ -41,10 +82,7 @@ describe('clubs list', () => {
   });
 
   it('lists the clubs a member belongs to', async () => {
-    fetchMyClubs.mockResolvedValueOnce([
-      { id: 'c1', name: 'Riverside Mah Jongg', slug: 'riverside',
-        rhythm: 'Thursday evenings', visibility: 'private', timezone: 'America/New_York' },
-    ]);
+    fetchMyClubs.mockResolvedValueOnce([CLUB]);
     render(<ClubsScreen />);
     expect(await screen.findByText('Riverside Mah Jongg')).toBeTruthy();
     expect(screen.getByText('Thursday evenings')).toBeTruthy();
@@ -66,15 +104,6 @@ describe('clubs list', () => {
 
 import ImportRosterScreen from '../clubs/[id]/import';
 
-vi.mock('../../lib/clubs', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../lib/clubs')>();
-  return {
-    ...actual,
-    fetchMyClubs: (...args: unknown[]) => fetchMyClubs(...args),
-    importRoster: vi.fn(async () => ({ created: 2, error: null })),
-  };
-});
-
 describe('roster import', () => {
   it('reports skipped rows instead of dropping them silently', async () => {
     render(<ImportRosterScreen />);
@@ -85,6 +114,18 @@ describe('roster import', () => {
     fireEvent.click(screen.getByText('Check the file'));
     expect(await screen.findByText(/1 person ready, 1 row skipped/)).toBeTruthy();
     expect(screen.getByText(/Row 3: Not a valid email address/)).toBeTruthy();
+  });
+
+  // The end-to-end shape of the parser fix: a real Google Sheets export of
+  // "Last, First" reaches the preview as one person, not one skipped row.
+  it('accepts a quoted name containing a comma', async () => {
+    render(<ImportRosterScreen />);
+    fireEvent.change(screen.getByLabelText('Roster CSV'), {
+      target: { value: 'name,email\n"Doe, Jane",jane@example.com' },
+    });
+    fireEvent.click(screen.getByText('Check the file'));
+    expect(await screen.findByText(/1 person ready$/)).toBeTruthy();
+    expect(screen.getByText('Doe, Jane')).toBeTruthy();
   });
 });
 
@@ -106,5 +147,50 @@ describe('club detail screen', () => {
     render(<ClubDetailScreen />);
     const redirect = await screen.findByTestId('redirect');
     expect(redirect.getAttribute('data-href')).toBe('/sign-in');
+  });
+
+  // `club_members` rows are written only by `create_club` and
+  // `accept_club_invite`, both of which require `auth.uid()`, so a roster row
+  // always belongs to someone who has signed in. The screen nonetheless
+  // labelled an empty display_name "Invited — not signed in yet" — a claim
+  // that could never be true, and one that started firing on real members
+  // once magic-link signup began producing `display_name = ''` with nothing
+  // to make them set one.
+  it('does not call a member with no name an uninvited guest', async () => {
+    fetchRoster.mockResolvedValue([
+      { profile_id: 'test-user', role: 'host', display_name: '', skill_level: null },
+    ]);
+    render(<ClubDetailScreen />);
+    expect(await screen.findByText('Member')).toBeTruthy();
+    expect(screen.queryByText(/not signed in yet/i)).toBeNull();
+  });
+
+  // `importRoster` writes to `club_invites`, which `fetchRoster` never read.
+  // A host who pasted forty people was redirected to a screen that still said
+  // "1 member" and showed no trace of them.
+  it('lists unaccepted invites as a separate Invited section', async () => {
+    fetchRoster.mockResolvedValue([
+      { profile_id: 'test-user', role: 'host', display_name: 'Ada', skill_level: null },
+    ]);
+    fetchPendingInvites.mockResolvedValue([
+      { id: 'i1', email: 'jane@example.com', display_name: 'Jane Doe', skill_level: null },
+      { id: 'i2', email: 'sam@example.com', display_name: null, skill_level: null },
+    ]);
+    render(<ClubDetailScreen />);
+    expect(await screen.findByText('2 invited')).toBeTruthy();
+    expect(screen.getByText('1 member')).toBeTruthy();
+    expect(screen.getByText('Jane Doe')).toBeTruthy();
+    // No display_name on the invite, so the email is the only thing the club
+    // knows about this person — showing it beats showing nothing.
+    expect(screen.getByText('sam@example.com')).toBeTruthy();
+  });
+
+  it('confirms an import instead of ignoring the imported parameter', async () => {
+    searchParams.imported = '40';
+    fetchRoster.mockResolvedValue([
+      { profile_id: 'test-user', role: 'host', display_name: 'Ada', skill_level: null },
+    ]);
+    render(<ClubDetailScreen />);
+    expect(await screen.findByText(/40 invitations sent/)).toBeTruthy();
   });
 });

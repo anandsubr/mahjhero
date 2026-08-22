@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(28);
+select plan(41);
 
 -- Structure
 select has_table('public', 'clubs', 'clubs table exists');
@@ -307,6 +307,214 @@ select is(
      and profile_id = 'bbbbbbbb-0000-0000-0000-000000000002'),
   'active',
   'a removed member who redeems a fresh invite is reactivated, not stranded'
+);
+
+-- ---------------------------------------------------------------------------
+-- Column exposure through the widened profiles policy.
+--
+-- `20260822033527` widened `profiles` select to "own row OR any co-member's
+-- row" so a roster could show names and skill levels. A policy is per-row and
+-- cannot be per-column, so that handed every co-member the whole profile —
+-- quiet hours, notification channel, timezone. Not a tenant-boundary breach,
+-- but anyone in your club learned what hours you sleep, and no assertion
+-- anywhere could see it: the existing profiles tests count rows, and the row
+-- count was the intended part.
+--
+-- Alice and Bob now share Riverside (Bob redeemed an invite above), and this
+-- still runs as Bob, so this is the exact shape that was verified live.
+-- ---------------------------------------------------------------------------
+select is(
+  (select count(*)::int from public.profiles
+   where id = 'aaaaaaaa-0000-0000-0000-000000000001'
+     and quiet_hours_start is not null),
+  0,
+  'a co-member cannot read another member''s quiet_hours_start'
+);
+
+-- The other half: the roster still works. Without this, the assertion above
+-- passes by making co-members invisible to each other entirely, which would
+-- break every club screen.
+set local role postgres;
+reset request.jwt.claims;
+update public.profiles
+set display_name = 'Alice Alder', skill_level = 'advanced'
+where id = 'aaaaaaaa-0000-0000-0000-000000000001';
+
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "bbbbbbbb-0000-0000-0000-000000000002", "role": "authenticated"}';
+
+select is(
+  (select display_name from public.club_roster(
+     'c1c1c1c1-0000-0000-0000-000000000001')
+   where profile_id = 'aaaaaaaa-0000-0000-0000-000000000001'),
+  'Alice Alder',
+  'club_roster still shows a co-member''s display name'
+);
+
+select is(
+  (select skill_level::text from public.club_roster(
+     'c1c1c1c1-0000-0000-0000-000000000001')
+   where profile_id = 'aaaaaaaa-0000-0000-0000-000000000001'),
+  'advanced',
+  'club_roster still shows a co-member''s skill level'
+);
+
+-- club_roster is security definer, so RLS does not protect it and the
+-- membership check in its body is the tenant boundary. Bob hosts Oakfield but
+-- is asking about a club he does not belong to.
+set local request.jwt.claims =
+  '{"sub": "aaaaaaaa-0000-0000-0000-000000000001", "role": "authenticated"}';
+
+select is(
+  (select count(*)::int from public.club_roster(
+     'c2c2c2c2-0000-0000-0000-000000000002')),
+  0,
+  'club_roster returns nothing for a club the caller does not belong to'
+);
+
+-- ---------------------------------------------------------------------------
+-- Invite attribution and club identity.
+-- ---------------------------------------------------------------------------
+
+-- invited_by was client-supplied and unchecked: the insert policy asked only
+-- whether the caller was an organizer, so a host could sign an invite — or a
+-- whole imported batch — with somebody else's profile id.
+select throws_ok(
+  $$insert into public.club_invites (club_id, invited_by)
+    values ('c1c1c1c1-0000-0000-0000-000000000001',
+            'bbbbbbbb-0000-0000-0000-000000000002')$$,
+  '42501',
+  null,
+  'a host cannot attribute an invite to another profile'
+);
+
+-- clubs UPDATE had `using` and no `with check`, and was unbounded by column.
+-- Slug is globally unique, so an ordinary host session could squat any slug a
+-- future public-club URL would want.
+select throws_ok(
+  $$update public.clubs set slug = 'squatted'
+    where id = 'c1c1c1c1-0000-0000-0000-000000000001'$$,
+  '42501',
+  null,
+  'a host cannot rewrite their club''s slug'
+);
+
+-- The positive case, so the freeze cannot pass by blocking every host update.
+with renamed as (
+  update public.clubs set name = 'Riverside Renamed'
+  where id = 'c1c1c1c1-0000-0000-0000-000000000001'
+  returning 1
+)
+select is(
+  (select count(*)::int from renamed),
+  1,
+  'a host can still rename their own club'
+);
+
+-- ---------------------------------------------------------------------------
+-- Account deletion must not orphan a club.
+--
+-- club_members cascades from profiles (20260822033527:22) but clubs.created_by
+-- is `on delete set null` (20260822040732:95-103), so before the succession
+-- trigger both of these were permanent and unrecoverable through the UI:
+--
+--   * the sole member of a club deletes their account -> the club survives
+--     with zero members, invisible to every membership-scoped policy, its
+--     globally-unique slug taken forever;
+--   * the host of a multi-member club deletes their account -> zero hosts.
+--     clubs_update_host and both club_invites organizer policies require an
+--     active host, and role promotion is deferred to a later plan, so the
+--     remaining members can neither change the club nor invite anyone.
+--
+-- Both delete `auth.users` rather than club_members directly, so the assertion
+-- exercises the real cascade an account deletion produces.
+-- ---------------------------------------------------------------------------
+set local role postgres;
+reset request.jwt.claims;
+
+insert into auth.users (id, email) values
+  ('cccccccc-0000-0000-0000-000000000003', 'carol@example.com'),
+  ('dddddddd-0000-0000-0000-000000000004', 'dave@example.com'),
+  ('eeeeeeee-0000-0000-0000-000000000005', 'erin@example.com'),
+  ('ffffffff-0000-0000-0000-000000000006', 'frank@example.com');
+
+-- Carol's club: she is the only member.
+insert into public.clubs (id, name, slug, created_by) values
+  ('c3c3c3c3-0000-0000-0000-000000000003', 'Carol Solo', 'carol-solo',
+   'cccccccc-0000-0000-0000-000000000003');
+insert into public.club_members (club_id, profile_id, role, joined_at) values
+  ('c3c3c3c3-0000-0000-0000-000000000003',
+   'cccccccc-0000-0000-0000-000000000003', 'host', now());
+
+-- Dave's club: Erin joined before Frank, so Erin is the longest-tenured
+-- remaining member and should inherit.
+insert into public.clubs (id, name, slug, created_by) values
+  ('c4c4c4c4-0000-0000-0000-000000000004', 'Dave Hosts', 'dave-hosts',
+   'dddddddd-0000-0000-0000-000000000004');
+insert into public.club_members (club_id, profile_id, role, joined_at) values
+  ('c4c4c4c4-0000-0000-0000-000000000004',
+   'dddddddd-0000-0000-0000-000000000004', 'host', now() - interval '10 days'),
+  ('c4c4c4c4-0000-0000-0000-000000000004',
+   'eeeeeeee-0000-0000-0000-000000000005', 'member', now() - interval '5 days'),
+  ('c4c4c4c4-0000-0000-0000-000000000004',
+   'ffffffff-0000-0000-0000-000000000006', 'member', now() - interval '1 day');
+
+delete from auth.users where id = 'cccccccc-0000-0000-0000-000000000003';
+
+select is(
+  (select count(*)::int from public.clubs
+   where id = 'c3c3c3c3-0000-0000-0000-000000000003'),
+  0,
+  'a club whose last member deletes their account is deleted, not orphaned'
+);
+
+delete from auth.users where id = 'dddddddd-0000-0000-0000-000000000004';
+
+select is(
+  (select count(*)::int from public.clubs
+   where id = 'c4c4c4c4-0000-0000-0000-000000000004'),
+  1,
+  'a club with members left survives its host deleting their account'
+);
+
+select is(
+  (select count(*)::int from public.club_members
+   where club_id = 'c4c4c4c4-0000-0000-0000-000000000004'
+     and role = 'host' and status = 'active'),
+  1,
+  'exactly one host remains after the host deletes their account'
+);
+
+select is(
+  (select profile_id from public.club_members
+   where club_id = 'c4c4c4c4-0000-0000-0000-000000000004'
+     and role = 'host' and status = 'active'),
+  'eeeeeeee-0000-0000-0000-000000000005'::uuid,
+  'the longest-tenured remaining member inherits the host role'
+);
+
+-- The promoted host can actually do the things a host does. Zero hosts froze
+-- the club precisely because these two policies require one.
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "eeeeeeee-0000-0000-0000-000000000005", "role": "authenticated"}';
+
+with renamed as (
+  update public.clubs set name = 'Erin Hosts'
+  where id = 'c4c4c4c4-0000-0000-0000-000000000004'
+  returning 1
+)
+select is(
+  (select count(*)::int from renamed),
+  1,
+  'the promoted host can update the club'
+);
+
+select lives_ok(
+  $$insert into public.club_invites (club_id)
+    values ('c4c4c4c4-0000-0000-0000-000000000004')$$,
+  'the promoted host can create an invite'
 );
 
 select * from finish();
