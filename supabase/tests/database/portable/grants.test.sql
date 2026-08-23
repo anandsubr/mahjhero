@@ -323,7 +323,7 @@ select ok(
 select ok(
   has_function_privilege(
     'authenticated',
-    'public.update_event_series(uuid, text, uuid, text, time, int, int, date, boolean)',
+    'public.update_event_series(uuid, text, uuid, text, time, int, int, date, boolean, boolean)',
     'EXECUTE'),
   'authenticated can still execute update_event_series'
 );
@@ -517,7 +517,7 @@ select is(
        'public.update_event_table(uuid, text, public.skill_tier)',
        'public.remove_event_table(uuid)',
        'public.create_event_series(uuid, text, uuid, text, public.series_frequency, smallint, smallint, time, int, int, date, date)',
-       'public.update_event_series(uuid, text, uuid, text, time, int, int, date, boolean)',
+       'public.update_event_series(uuid, text, uuid, text, time, int, int, date, boolean, boolean)',
        'public.end_event_series(uuid, boolean)',
        'public.reset_event_to_series(uuid)'
      ]) as f
@@ -563,7 +563,7 @@ select is(
          'public.update_event_table(uuid, text, public.skill_tier)',
          'public.remove_event_table(uuid)',
          'public.create_event_series(uuid, text, uuid, text, public.series_frequency, smallint, smallint, time, int, int, date, date)',
-         'public.update_event_series(uuid, text, uuid, text, time, int, int, date, boolean)',
+         'public.update_event_series(uuid, text, uuid, text, time, int, int, date, boolean, boolean)',
          'public.end_event_series(uuid, boolean)',
          'public.reset_event_to_series(uuid)'
        ]) as f

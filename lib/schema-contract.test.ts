@@ -775,6 +775,18 @@ describe.runIf(reachable || required)(
             includeOverridden: false,
           }),
       },
+      // Same RPC, but exercising `clear_ends_on` -- the argument name added
+      // by supabase/migrations/20260823080000 for the edit screen's "Runs
+      // indefinitely" control. A PGRST202 here would mean the client and the
+      // deployed function have drifted on this specific parameter, which the
+      // case above (which never sends it) cannot catch.
+      {
+        fnName: 'update_event_series',
+        invoke: () =>
+          updateEventSeries(DUMMY_UUID, {
+            clearEndsOn: true,
+          }),
+      },
       {
         fnName: 'end_event_series',
         invoke: () => endEventSeries(DUMMY_UUID, true),

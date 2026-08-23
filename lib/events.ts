@@ -235,6 +235,31 @@ export function frequencyLabel(
   return `The ${ORDINALS[nthWeek ?? 1]} ${day} of the month`;
 }
 
+/**
+ * The wall-clock "HH:MM" an instant reads as in the club's timezone — a
+ * READ, not a conversion. The edit screen (Task 15) needs a value to open
+ * its TimeField on, and reading one via Intl carries none of the risk the
+ * "no client-side timezone conversion" rule guards against, because nothing
+ * here builds an instant back out of the parts — calendar values only ever
+ * flow INTO the database (see updateEvent/updateEventSeries below); this
+ * flows the other way, for display only, exactly like formatEventWhen.
+ *
+ * `hourCycle: 'h23'` rather than `hour12: false` deliberately — some ICU
+ * builds render midnight as "24:00" under `hour12: false`, which
+ * TimeField/TIME_PATTERN's 00-23 range would then reject outright.
+ */
+export function eventStartTimeInZone(startsAt: string, timezone: string): string {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+    timeZone: timezone,
+  }).formatToParts(new Date(startsAt));
+  const hour = parts.find((p) => p.type === 'hour')?.value ?? '00';
+  const minute = parts.find((p) => p.type === 'minute')?.value ?? '00';
+  return `${hour}:${minute}`;
+}
+
 // ---------------------------------------------------------------------------
 // Data functions
 //
@@ -368,6 +393,35 @@ export async function fetchOverriddenOccurrences(
       .filter((e) => e.overrides.length > 0);
   } catch (cause) {
     console.error('fetchOverriddenOccurrences failed', cause);
+    return null;
+  }
+}
+
+/**
+ * How many future, non-cancelled occurrences a series still has — the exact
+ * set `end_event_series(cancel_future => true)` is about to cancel. The edit
+ * screen's "Change the schedule" control (Task 15) uses this so ending a
+ * series is a number a host can weigh, not just a warning: "cancels every
+ * future game" says nothing about whether that is one game or forty.
+ */
+export async function fetchFutureOccurrenceCount(
+  seriesId: string,
+): Promise<number | null> {
+  try {
+    const { count, error } = await supabase
+      .from('events')
+      .select('id', { count: 'exact', head: true })
+      .eq('series_id', seriesId)
+      .neq('status', 'cancelled')
+      .gte('starts_at', new Date().toISOString());
+
+    if (error) {
+      console.error('fetchFutureOccurrenceCount failed', error);
+      return null;
+    }
+    return count ?? 0;
+  } catch (cause) {
+    console.error('fetchFutureOccurrenceCount failed', cause);
     return null;
   }
 }
@@ -647,7 +701,17 @@ export async function updateEventSeries(
     startTime?: string | null;
     durationMinutes?: number | null;
     tableCount?: number | null;
+    /** A club-local calendar date, or null/omitted to leave it alone. */
     endsOn?: string | null;
+    /**
+     * Un-sets an already-set `ends_on`, so the series runs indefinitely
+     * again. `endsOn: null` cannot express this — every other field here
+     * follows the same convention, where null means "leave this alone", not
+     * "clear it" — so this is a distinct signal. Takes precedence over
+     * `endsOn` if a caller somehow sends both (see
+     * supabase/migrations/20260823080000).
+     */
+    clearEndsOn?: boolean;
     includeOverridden?: boolean;
   },
 ): Promise<{ error: string | null }> {
@@ -662,6 +726,7 @@ export async function updateEventSeries(
       new_table_count: input.tableCount ?? null,
       new_ends_on: input.endsOn ?? null,
       include_overridden: input.includeOverridden ?? false,
+      clear_ends_on: input.clearEndsOn ?? false,
     });
 
     if (error) {

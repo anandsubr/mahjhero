@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(89);
+select plan(96);
 
 /*
  * Series creation, series editing, resetting one week, ending a series, and
@@ -949,6 +949,74 @@ select is(
    where id = '55555555-0000-0000-0000-000000000004'),
   current_date - 55,
   'materialized_through is pulled back to the new end along with it'
+);
+
+-- ---------------------------------------------------------------------------
+-- 14. clear_ends_on (20260823080000): the edit screen's "Runs indefinitely"
+--     control. `new_ends_on` alone can never express this -- null means
+--     "leave alone" for every field in this function, not "clear it" -- so
+--     this is a second, distinct signal. Still series C, whose ends_on is
+--     current_date - 55 after 13d and whose two future occurrences are
+--     already cancelled by it.
+-- ---------------------------------------------------------------------------
+
+-- 14a. Clearing with nothing else set.
+select lives_ok(
+  $$select public.update_event_series(
+      '55555555-0000-0000-0000-000000000004',
+      null, null, null, null, null, null, null, false, true)$$,
+  'the host turns the series back to running indefinitely'
+);
+
+select ok(
+  (select ends_on from public.event_series
+   where id = '55555555-0000-0000-0000-000000000004') is null,
+  'ends_on is cleared'
+);
+
+-- 14b. Precedence: clear_ends_on wins even if new_ends_on is also sent.
+-- Kills a mutant that swaps the ternary's branches, or that ORs the two
+-- instead of letting clear_ends_on short-circuit.
+select lives_ok(
+  $$select public.update_event_series(
+      '55555555-0000-0000-0000-000000000004',
+      null, null, null, null, null, null,
+      (current_date + 100), false, true)$$,
+  'clear_ends_on is sent alongside a new_ends_on date'
+);
+
+select ok(
+  (select ends_on from public.event_series
+   where id = '55555555-0000-0000-0000-000000000004') is null,
+  'clearing still wins -- the date argument is ignored'
+);
+
+-- 14c. Clearing never cancels anything -- there is nothing to cancel when
+-- the boundary moves to infinity. The two occurrences 13d already cancelled
+-- stay exactly as they were; nothing else joins them.
+select is(
+  (select count(*)::int from public.events
+   where series_id = '55555555-0000-0000-0000-000000000004'
+     and status = 'cancelled'),
+  2,
+  'clearing the end date cancels nothing new'
+);
+
+-- 14d. With clear_ends_on left at its default (false), new_ends_on still
+-- behaves normally on an already-null ends_on -- the two parameters do not
+-- interfere with each other once clear_ends_on stops being sent.
+select lives_ok(
+  $$select public.update_event_series(
+      '55555555-0000-0000-0000-000000000004',
+      null, null, null, null, null, null, (current_date + 200), false, false)$$,
+  'an ordinary new_ends_on edit, after the series was cleared'
+);
+
+select is(
+  (select ends_on from public.event_series
+   where id = '55555555-0000-0000-0000-000000000004'),
+  current_date + 200,
+  'and it is set normally'
 );
 
 select * from finish();

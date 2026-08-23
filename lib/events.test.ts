@@ -15,10 +15,12 @@ import {
   addEventTable,
   createEvent,
   createEventSeries,
+  eventStartTimeInZone,
   formatEventWhen,
   frequencyLabel,
   nextOccurrences,
   updateEvent,
+  updateEventSeries,
 } from './events';
 
 describe('nextOccurrences', () => {
@@ -196,6 +198,31 @@ describe('formatEventWhen', () => {
   });
 });
 
+describe('eventStartTimeInZone', () => {
+  it('reads the wall-clock time in the club timezone, not the device one', () => {
+    // 2027-09-08 00:00 UTC is 20:00 the evening before in New York (EDT,
+    // UTC-4, in September).
+    expect(eventStartTimeInZone('2027-09-08T00:00:00Z', 'America/New_York')).toBe(
+      '20:00',
+    );
+  });
+
+  it('gives a different answer for a different club timezone', () => {
+    const ny = eventStartTimeInZone('2027-09-08T00:00:00Z', 'America/New_York');
+    const tokyo = eventStartTimeInZone('2027-09-08T00:00:00Z', 'Asia/Tokyo');
+    expect(ny).not.toEqual(tokyo);
+  });
+
+  it('reads midnight as "00:00", not "24:00"', () => {
+    // The reason this function uses hourCycle: 'h23' rather than
+    // hour12: false — see its own doc comment. 2027-09-08 04:00 UTC is
+    // exactly midnight in New York (UTC-4 in September).
+    expect(eventStartTimeInZone('2027-09-08T04:00:00Z', 'America/New_York')).toBe(
+      '00:00',
+    );
+  });
+});
+
 describe('frequencyLabel', () => {
   it('names each rhythm in words a host would use', () => {
     expect(frequencyLabel('weekly', 2, null)).toBe('Every Tuesday');
@@ -321,6 +348,57 @@ describe('updateEvent', () => {
       new_date: null,
       new_start_time: null,
       new_duration_minutes: null,
+    });
+  });
+});
+
+describe('updateEventSeries', () => {
+  beforeEach(() => {
+    rpcMock.mockReset();
+  });
+
+  it('maps clearEndsOn onto clear_ends_on, defaulting to false', async () => {
+    rpcMock.mockResolvedValueOnce({ data: true, error: null });
+
+    await expect(
+      updateEventSeries('series-1', { title: 'Renamed' }),
+    ).resolves.toEqual({ error: null });
+    expect(rpcMock).toHaveBeenCalledWith('update_event_series', {
+      target_series: 'series-1',
+      new_title: 'Renamed',
+      new_venue_id: null,
+      new_notes: null,
+      new_start_time: null,
+      new_duration: null,
+      new_table_count: null,
+      new_ends_on: null,
+      include_overridden: false,
+      clear_ends_on: false,
+    });
+  });
+
+  /*
+   * The edit screen (Task 15) sends `clearEndsOn: true` and no `endsOn` for
+   * its "Runs indefinitely" toggle — this is the mapping that makes
+   * supabase/migrations/20260823080000's `clear_ends_on` argument reachable
+   * at all. Pinned here because nothing before this task ever called
+   * updateEventSeries with anything other than its defaults.
+   */
+  it('sends clear_ends_on: true for "runs indefinitely", independent of new_ends_on', async () => {
+    rpcMock.mockResolvedValueOnce({ data: true, error: null });
+
+    await updateEventSeries('series-1', { clearEndsOn: true });
+    expect(rpcMock).toHaveBeenCalledWith('update_event_series', {
+      target_series: 'series-1',
+      new_title: null,
+      new_venue_id: null,
+      new_notes: null,
+      new_start_time: null,
+      new_duration: null,
+      new_table_count: null,
+      new_ends_on: null,
+      include_overridden: false,
+      clear_ends_on: true,
     });
   });
 });
