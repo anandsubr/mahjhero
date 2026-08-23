@@ -110,4 +110,65 @@ describe('TableCard', () => {
     );
     expect(screen.getByText('Needs a 4th')).toBeTruthy();
   });
+
+  // "Bring someone" is one of the card's two documented ways in (see
+  // TableCard's own docstring). capacity 4, one occupant -> 3 free, so the
+  // `free > 1` gate is open.
+  it('offers "Bring someone" when more than one seat is free', () => {
+    render(
+      <TableCard
+        table={table}
+        occupants={occupants}
+        youId="p9"
+        onTakeSeat={vi.fn()}
+        onBringSomeone={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByLabelText('Bring someone to Table 2'),
+    ).toBeTruthy();
+  });
+
+  it('calls onBringSomeone when pressed', () => {
+    const onBringSomeone = vi.fn();
+    render(
+      <TableCard
+        table={table}
+        occupants={occupants}
+        youId="p9"
+        onTakeSeat={vi.fn()}
+        onBringSomeone={onBringSomeone}
+      />,
+    );
+    fireEvent.click(screen.getByLabelText('Bring someone to Table 2'));
+    expect(onBringSomeone).toHaveBeenCalledTimes(1);
+  });
+
+  // The gate is deliberate: with exactly one seat left there is nobody left
+  // to "bring" — the last seat is for whoever taps it themselves. capacity 2,
+  // one occupant -> 1 free.
+  it('does not offer "Bring someone" when only one seat is free', () => {
+    render(
+      <TableCard
+        table={{ ...table, capacity: 2 }}
+        occupants={occupants}
+        youId="p9"
+        onTakeSeat={vi.fn()}
+        onBringSomeone={vi.fn()}
+      />,
+    );
+    expect(screen.queryByLabelText('Bring someone to Table 2')).toBeNull();
+  });
+
+  it('does not offer "Bring someone" when no handler is supplied', () => {
+    render(
+      <TableCard
+        table={table}
+        occupants={occupants}
+        youId="p9"
+        onTakeSeat={vi.fn()}
+      />,
+    );
+    expect(screen.queryByLabelText('Bring someone to Table 2')).toBeNull();
+  });
 });

@@ -1,4 +1,5 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { seatsRemaining } from '../lib/bookings';
 import { colors, radius, space, type } from '../lib/theme';
 
 export type Seat = {
@@ -25,9 +26,32 @@ type Props = {
  * COUNTS seats, and a UI that implies Table 2 seat 3 is a durable place
  * teaches members to expect something the data cannot promise.
  *
- * Empty count floors at zero. A table can hold more people than it seats
- * after a host removes another table, and rendering a negative number of
- * empty chairs is not a state anybody needs to see.
+ * Empty count floors at zero (via lib/bookings' `seatsRemaining`, the same
+ * helper TableCard uses for its own count). A table can hold more people
+ * than it seats after a host removes another table, and rendering a
+ * negative number of empty chairs is not a state anybody needs to see.
+ *
+ * The empty seat's disabled state is sent as the flat `aria-disabled` prop,
+ * not `accessibilityState={{ disabled }}` (which this used to send). See
+ * components/Toggle.tsx's docstring for why in general: react-native-web's
+ * createDOMProps has no handling for `accessibilityState` at all.
+ *
+ * One wrinkle specific to `Pressable` (unlike Toggle's plain `aria-checked`
+ * case): RN Web's own `Pressable` computes `aria-disabled` itself from its
+ * `disabled` prop and unconditionally overwrites whatever `aria-disabled` a
+ * caller passes in (node_modules/react-native-web/dist/exports/Pressable/
+ * index.js, ~line 125 — the trailing `{"aria-disabled": disabled}` in its
+ * object spread wins over anything already in `rest`). So on THIS control it
+ * is the `disabled` prop below, not the explicit `aria-disabled` prop, that
+ * is actually load-bearing for the DOM attribute; `aria-disabled` is kept
+ * here to match the flat-prop pattern this codebase now standardizes on, but
+ * a caller relying on it alone (e.g. a plain `View`, or if this ever became
+ * a bare `Pressable`-less element) would need it to do real work.
+ * components/__tests__/SeatGrid.test.tsx asserts the rendered attribute;
+ * neutralizing the `disabled` prop turns it red. (Reverting only to
+ * `accessibilityState` does NOT turn it red here — the `disabled` prop's
+ * own effect on `Pressable` already covers it, which is the mutation-tested
+ * evidence for this note.)
  */
 export default function SeatGrid({
   tableLabel,
@@ -37,7 +61,7 @@ export default function SeatGrid({
   busy = false,
   needsFourth = false,
 }: Props) {
-  const empties = Math.max(0, capacity - seats.length);
+  const empties = seatsRemaining(capacity, seats.length);
   const lastSeatCall = needsFourth && empties === 1;
 
   return (
@@ -65,7 +89,7 @@ export default function SeatGrid({
               ? `Take the last seat at ${tableLabel}`
               : `Take a seat at ${tableLabel}`
           }
-          accessibilityState={{ disabled: busy || !onTakeSeat }}
+          aria-disabled={busy || !onTakeSeat}
         >
           {/*
            * Deliberately NOT the string "Needs a 4th" — TableCard already

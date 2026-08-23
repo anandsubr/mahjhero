@@ -78,4 +78,43 @@ describe('SeatGrid', () => {
     );
     expect(screen.getByLabelText('Take the last seat at Table 3')).toBeTruthy();
   });
+
+  // See SeatGrid.tsx's docstring for the full mechanics. Short version:
+  // `accessibilityState` never reaches the DOM on any platform (RNW's
+  // createDOMProps doesn't read it), and the `disabled` prop below is what
+  // actually drives `Pressable`'s own `aria-disabled` output — an explicit
+  // `aria-disabled` prop is overridden by Pressable regardless of its value.
+  // Asserted as the rendered attribute (getAttribute), not just the absence
+  // of a click, because a passing "callback didn't fire" test is not
+  // evidence the attribute exists.
+  //
+  // react-native-web only emits `aria-disabled` when it is true (unlike
+  // `aria-checked`, which it emits for both states) — so the not-disabled
+  // case is legitimately no attribute at all, not the string "false".
+  it('renders no aria-disabled on a pressable empty seat', () => {
+    render(
+      <SeatGrid
+        tableLabel="Table 1"
+        capacity={4}
+        seats={seats}
+        onTakeSeat={vi.fn()}
+      />,
+    );
+    const seat = screen.getByLabelText('Take a seat at Table 1');
+    expect(seat.getAttribute('aria-disabled')).toBeNull();
+  });
+
+  it('renders aria-disabled="true" on the empty seat while busy', () => {
+    render(
+      <SeatGrid
+        tableLabel="Table 1"
+        capacity={4}
+        seats={seats}
+        onTakeSeat={vi.fn()}
+        busy
+      />,
+    );
+    const seat = screen.getByLabelText('Take a seat at Table 1');
+    expect(seat.getAttribute('aria-disabled')).toBe('true');
+  });
 });
