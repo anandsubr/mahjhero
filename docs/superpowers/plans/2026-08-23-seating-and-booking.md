@@ -5488,7 +5488,11 @@ TypeScript; the two must stay in step."
 
 **Both components are pure.** They take data and callbacks and render. That is what lets Task 15's visual baselines and these tests cover every state — full, one short, empty, someone else's seat, your seat — without a database, and it is why the event screen can shrink instead of growing.
 
-**Seats are drawn, not numbered.** The grid renders the occupants it was given, in the order it was given them, then fills the remainder with empty cells. Nothing in the props or the markup may suggest that a particular chair belongs to a particular position — the schema counts seats and the moment the UI implies otherwise, members start expecting "my usual seat".
+**Seats are drawn, not numbered.** The grid renders the occupants it was given, in the order it was given them, then fills the remainder with empty cells.
+
+**The last empty seat reads "Last seat", not "Needs a 4th".** `TableCard`'s `Tag` already says "Needs a 4th", and having both render the same literal makes `getByText` ambiguous in this task's own tests — Task 9 hit exactly that. The accessibility label still distinguishes the cell ("Take the last seat at Table 3"), and the card is the right place for the call.
+
+**"Bring someone" appears only when more than one seat is free** (`free > 1`). With a single seat left there is nobody to bring — the member should take it. A group of two would be waitlisted and then offered that one seat, which is a worse path than simply sitting down. Nothing in the props or the markup may suggest that a particular chair belongs to a particular position — the schema counts seats and the moment the UI implies otherwise, members start expecting "my usual seat".
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -5777,7 +5781,7 @@ export default function SeatGrid({
           accessibilityState={{ disabled: busy || !onTakeSeat }}
         >
           <Text style={[styles.emptyText, lastSeatCall && styles.callingText]}>
-            {lastSeatCall ? 'Needs a 4th' : 'Empty'}
+            {lastSeatCall ? 'Last seat' : 'Empty'}
           </Text>
         </Pressable>
       ))}
