@@ -283,10 +283,13 @@ test.describe('signed in', () => {
         // this would still resolve to one match by luck rather than by the
         // query actually being specific. `.first()` on Priya's name —
         // since the signed-in member is this club's organizer, HostSeating
-        // renders her name a SECOND time in its own "Move to …" / "Unseat"
-        // / "Remove from game" controls, distinct from her name in the seat grid
+        // renders her name a SECOND time in its own "Move to …" / "Remove
+        // from game" controls, distinct from her name in the seat grid
         // itself. Both are real; this only needs to know her name appears
-        // on the page at all.
+        // on the page at all. (There used to be a third rendering site,
+        // "Unseat" — removed along with the button itself: a host who wants
+        // somebody off a table moves them or removes them from the game,
+        // never parks them in limbo on purpose.)
         await expect(page.getByText('You', { exact: true })).toBeVisible();
         await expect(page.getByText('Priya Nair').first()).toBeVisible();
         await expect(

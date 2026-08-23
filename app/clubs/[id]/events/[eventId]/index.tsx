@@ -60,12 +60,15 @@ import { colors, space, type } from '../../../../../lib/theme';
  *
  * Organizers (host or co-organizer — `canInvite`, the same test the SQL
  * functions below enforce) additionally get table management and seating
- * controls (both rendered into `TableCard`'s `children` slot — tier chips
- * and Remove table directly, `HostSeating` for seating a booking, moving or
- * unseating a seated one, removing one from the game, and calling early for
- * a fourth), an edit link (Task 15), a cancel action, and — only on a series
- * occurrence they have personally customised — a "Reset to the series"
- * control.
+ * controls: `TierPicker` and Remove table rendered into `TableCard`'s
+ * `children` slot, `HostSeating` for moving a seated player or removing
+ * them from the game entirely, and — one level down, in `WaitlistPanel`'s
+ * "Coming, not yet seated" section — a "Seat at …" option per table for
+ * anyone confirmed but not yet placed. There is deliberately no "Unseat"
+ * control: a host who wants somebody off a table moves them elsewhere or
+ * removes them from the game, never parks them in limbo on purpose. Also:
+ * an edit link (Task 15), a cancel action, and — only on a series occurrence
+ * they have personally customised — a "Reset to the series" control.
  */
 export default function EventScreen() {
   const { id: clubId, eventId } = useLocalSearchParams<{
@@ -321,11 +324,16 @@ export default function EventScreen() {
   );
   const myHoldsSeat = myBooking !== undefined;
 
-  // Confirmed but not placed at any table — "any table" bookings and the
-  // outcome of an Unseat. Shared by HostSeating (a host can seat one of
-  // these at a specific table) and WaitlistPanel below (a member sees them
-  // listed as still coming, just not seated yet), computed once so both
-  // agree on exactly the same set.
+  // Confirmed but not placed at any table — "any table" bookings, and
+  // whatever `placeBooking(id, null)` produces (the data-layer capability
+  // behind the seating rule still stands; there is just no UI button left
+  // that calls it with `null` — see `hostPlace`'s own comment below).
+  // Rendered exactly ONCE, in WaitlistPanel's "Coming, not yet seated"
+  // section — not per table card. This used to be handed to every table's
+  // own HostSeating too, so a single unplaced member showed up under Table
+  // 1 AND Table 2 AND Table 3, reading as "unseated and still at the
+  // table" everywhere a host could place them. HostSeating no longer takes
+  // an `unseated` prop at all.
   const unseatedBookings = seating.filter(
     (o) => o.status === 'confirmed' && o.event_table_id === null,
   );
@@ -453,10 +461,17 @@ export default function EventScreen() {
     await run(() => declinePromotionOffer(offer.id));
   }
 
-  // The host's own seating controls (HostSeating). `hostPlace(id, null)` is
-  // an Unseat, not a removal — the booking stays confirmed, just without a
-  // table (see placeBooking's own contract). `hostRemove` is the one that
-  // takes somebody out of the game entirely, and is not undoable.
+  // The host's own seating controls: HostSeating's "Move to …" and
+  // WaitlistPanel's "Seat at …" (for a confirmed-but-unplaced booking) both
+  // call this with a real table id. `placeBooking(id, null)` — an Unseat,
+  // not a removal; the booking stays confirmed, just without a table — is
+  // still what the data layer supports (see placeBooking's own contract),
+  // but there is deliberately no button left that calls it: a host who
+  // wants somebody off a table moves them elsewhere or removes them from
+  // the game via `hostRemove`, which takes somebody out of the game
+  // entirely and is not undoable. Parking a member in limbo on purpose was
+  // never the goal, and the control cost a third of the per-person stack on
+  // an already very tall screen.
   async function hostPlace(bookingId: string, tableId: string | null) {
     await run(() => placeBooking(bookingId, tableId));
   }
@@ -640,7 +655,6 @@ export default function EventScreen() {
                   */}
                   <HostSeating
                     occupants={confirmedAtTable}
-                    unseated={unseatedBookings}
                     tables={tables}
                     table={table}
                     busy={busy}
@@ -747,6 +761,17 @@ export default function EventScreen() {
 
       {waitlistNote ? <Text style={styles.help}>{waitlistNote}</Text> : null}
 
+      {/*
+        `tables`/`onSeat` are the one place a host can seat someone who is
+        confirmed but unplaced — omitted entirely for a plain member (not
+        just disabled), since only a host may place anyone. This is also
+        the fix for the duplicate-rendering bug: `unseatedBookings` used to
+        be handed to every table's own HostSeating, so one unplaced member
+        showed up once per table card. Listing them here, once, with a
+        "Seat at …" option per table, is the natural single home —
+        WaitlistPanel already had the "Coming, not yet seated" section for
+        the member-facing read of the same list.
+      */}
       <WaitlistPanel
         unseated={unseatedBookings}
         waiting={seating.filter((o) => o.status === 'waitlisted')}
@@ -757,6 +782,8 @@ export default function EventScreen() {
         onAcceptOffer={acceptOffer}
         onDeclineOffer={declineOffer}
         onLeaveWaitlist={leaveWaitlist}
+        tables={isOrganizer ? tables : undefined}
+        onSeat={isOrganizer ? hostPlace : undefined}
       />
 
       {isOrganizer && event.status !== 'cancelled' ? (

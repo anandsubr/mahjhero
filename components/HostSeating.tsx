@@ -7,8 +7,6 @@ import { colors, space, type } from '../lib/theme';
 type Props = {
   /** Everybody seated at THIS table. */
   occupants: SeatOccupant[];
-  /** Confirmed but unplaced, anywhere in this game. */
-  unseated?: SeatOccupant[];
   tables: EventTable[];
   table: EventTable;
   busy?: boolean;
@@ -19,11 +17,28 @@ type Props = {
 };
 
 /**
- * The organizer's controls for one table.
+ * The organizer's controls for one table: move a seated player elsewhere,
+ * or remove them from the game entirely.
  *
  * Nothing here reseats anybody automatically. The roadmap parks automatic
  * seating under "hosts have opinions about who sits where", so every
  * rearrangement in this plan is somebody's deliberate act.
+ *
+ * This used to also carry a per-person "Unseat" button
+ * (`onPlace(bookingId, null)`) and, separately, a "Seat at {table}" row for
+ * every confirmed-but-unplaced booking in the whole game — the latter
+ * rendered into EVERY table's own HostSeating, so one unplaced member
+ * appeared once per table card, reading as "unseated and still at the
+ * table" wherever a host could place them. The human removed both: seating
+ * an unplaced booking now lives once, in WaitlistPanel's "Coming, not yet
+ * seated" section (still via `placeBooking`, unchanged), and "Unseat" is
+ * gone outright — a host who wants somebody off a table moves them
+ * (`onPlace` with a real table id, below) or removes them from the game
+ * (`onRemove`); deliberately parking a member in limbo was never the goal,
+ * and the control cost a third of the per-person stack on a very tall
+ * screen. `onPlace` keeps its `string | null` signature regardless — the
+ * data-layer capability (`placeBooking(id, null)`) is unchanged, only the
+ * button that called it with `null` from here is gone.
  *
  * `canCallForAFourth` is a prop, not a computation this component makes
  * itself — the caller (the event screen) derives it from occupancy and the
@@ -34,7 +49,6 @@ type Props = {
  */
 export default function HostSeating({
   occupants,
-  unseated = [],
   tables,
   table,
   busy = false,
@@ -63,22 +77,6 @@ export default function HostSeating({
                 {`Move to ${other.label}`}
               </Button>
             ))}
-            {/*
-              Unseating is NOT removal: the member is still coming, they
-              just have no chair yet (placeBooking(id, null)). Removal
-              (cancelBooking) takes them out of the game and is not
-              undoable. Two separate controls because the two acts are not
-              the same, and the labels must not blur that.
-            */}
-            <Button
-              variant="secondary"
-              big={false}
-              disabled={busy}
-              onPress={() => onPlace(person.booking_id, null)}
-              accessibilityLabel={`Unseat ${person.display_name}`}
-            >
-              Unseat
-            </Button>
             <Button
               variant="ghost"
               big={false}
@@ -89,21 +87,6 @@ export default function HostSeating({
               Remove from game
             </Button>
           </View>
-        </View>
-      ))}
-
-      {unseated.map((person) => (
-        <View key={person.booking_id} style={styles.person}>
-          <Text style={styles.name}>{person.display_name}</Text>
-          <Button
-            variant="secondary"
-            big={false}
-            disabled={busy}
-            onPress={() => onPlace(person.booking_id, table.id)}
-            accessibilityLabel={`Seat ${person.display_name} at ${table.label}`}
-          >
-            {`Seat at ${table.label}`}
-          </Button>
         </View>
       ))}
 

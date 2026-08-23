@@ -28,16 +28,6 @@ const seated = {
   created_at: '2026-08-20T10:00:00Z',
 };
 
-const unplaced = {
-  ...seated,
-  booking_id: 'b2',
-  profile_id: 'p2',
-  display_name: 'Mei L.',
-  event_table_id: null,
-  booked_by: 'p2',
-  booked_by_name: 'Mei L.',
-};
-
 beforeEach(() => {
   place.mockReset();
   remove.mockReset();
@@ -61,7 +51,10 @@ describe('HostSeating', () => {
     await waitFor(() => expect(place).toHaveBeenCalledWith('b1', 't2'));
   });
 
-  it('unseats a player without removing them from the game', async () => {
+  // "Unseat" is gone -- a host who wants somebody off a table moves them
+  // (asserted above) or removes them from the game entirely (asserted
+  // below); deliberately parking a member in limbo was never the goal.
+  it('offers no "Unseat" control', () => {
     render(
       <HostSeating
         occupants={[seated]}
@@ -73,9 +66,8 @@ describe('HostSeating', () => {
         canCallForAFourth={false}
       />,
     );
-    fireEvent.click(screen.getByLabelText('Unseat Ravi K.'));
-    await waitFor(() => expect(place).toHaveBeenCalledWith('b1', null));
-    expect(remove).not.toHaveBeenCalled();
+    expect(screen.queryByText('Unseat')).toBeNull();
+    expect(screen.queryByLabelText('Unseat Ravi K.')).toBeNull();
   });
 
   it('removes a player from the game entirely', async () => {
@@ -128,25 +120,5 @@ describe('HostSeating', () => {
     );
     fireEvent.click(screen.getByText('Call for a 4th now'));
     await waitFor(() => expect(call).toHaveBeenCalledWith('t1'));
-  });
-
-  // Not in the brief's five, but the `unseated` prop — a host seating an
-  // "any table" booking, the first thing the task description lists a host
-  // can do here — had no coverage in the five given tests at all.
-  it('seats an unplaced booking at this table', async () => {
-    render(
-      <HostSeating
-        occupants={[]}
-        unseated={[unplaced]}
-        tables={tables}
-        table={tables[0]}
-        onPlace={place}
-        onRemove={remove}
-        onCallForAFourth={call}
-        canCallForAFourth={false}
-      />,
-    );
-    fireEvent.click(screen.getByLabelText('Seat Mei L. at Table 1'));
-    await waitFor(() => expect(place).toHaveBeenCalledWith('b2', 't1'));
   });
 });

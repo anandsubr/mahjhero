@@ -453,7 +453,7 @@ describe('organizer view', () => {
       booked_by_name: 'Mei L.',
     };
 
-    it('lets the host seat an unplaced booking, move a seated player, unseat them, and remove them from the game', async () => {
+    it('lets the host seat an unplaced booking, move a seated player, and remove them from the game', async () => {
       fetchEventTables.mockResolvedValue([TABLE_1, TABLE_2]);
       fetchEventSeating.mockResolvedValue([SEATED, UNSEATED]);
       render(<EventScreen />);
@@ -476,6 +476,9 @@ describe('organizer view', () => {
         return screen.getByLabelText(label);
       }
 
+      // "Seat Mei L. at Table 1" now comes from WaitlistPanel's "Coming, not
+      // yet seated" section, not from a table's own HostSeating — see the
+      // duplicate-rendering test below for why that moved.
       fireEvent.click(await waitEnabled('Seat Mei L. at Table 1'));
       await vi.waitFor(() =>
         expect(placeBooking).toHaveBeenCalledWith('booking-2', 'table-1'),
@@ -486,15 +489,38 @@ describe('organizer view', () => {
         expect(placeBooking).toHaveBeenCalledWith('booking-1', 'table-2'),
       );
 
-      fireEvent.click(await waitEnabled('Unseat Ravi K.'));
-      await vi.waitFor(() =>
-        expect(placeBooking).toHaveBeenCalledWith('booking-1', null),
-      );
-
       fireEvent.click(await waitEnabled('Remove Ravi K. from this game'));
       await vi.waitFor(() =>
         expect(cancelBooking).toHaveBeenCalledWith('booking-1'),
       );
+    });
+
+    // THE BUG this task fixed: an unplaced booking used to be handed to
+    // EVERY table's own HostSeating, so "Mei L." (UNSEATED) appeared once
+    // per table card with her own "Seat at {that table}" button each time —
+    // reading as "unseated and still at the table" wherever a host could
+    // place her. She must now appear exactly once, with one seat option per
+    // table gathered into that single row.
+    it('lists an unplaced booking once, not once per table, with every table offered from there', async () => {
+      fetchEventTables.mockResolvedValue([TABLE_1, TABLE_2]);
+      fetchEventSeating.mockResolvedValue([SEATED, UNSEATED]);
+      render(<EventScreen />);
+      await screen.findByText('Thursday Mahjong');
+
+      expect(await screen.findAllByText('Mei L.')).toHaveLength(1);
+      expect(screen.getByLabelText('Seat Mei L. at Table 1')).toBeTruthy();
+      expect(screen.getByLabelText('Seat Mei L. at Table 2')).toBeTruthy();
+    });
+
+    // "Unseat" is gone: a host who wants somebody off a table moves them or
+    // removes them from the game, never parks them in limbo on purpose.
+    it('offers no "Unseat" control anywhere', async () => {
+      fetchEventTables.mockResolvedValue([TABLE_1, TABLE_2]);
+      fetchEventSeating.mockResolvedValue([SEATED, UNSEATED]);
+      render(<EventScreen />);
+      await screen.findByText('Thursday Mahjong');
+      expect(screen.queryByText('Unseat')).toBeNull();
+      expect(screen.queryByLabelText('Unseat Ravi K.')).toBeNull();
     });
 
     // canCallForAFourth is computed by the screen, not HostSeating itself —
