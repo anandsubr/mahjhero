@@ -369,6 +369,58 @@ describe('the event screen, for a member', () => {
   // BringSomeoneSheet itself now omits the opener when they are already
   // seated (see components/__tests__/BringSomeoneSheet.test.tsx), so the
   // screen no longer needs to hide the button to avoid that refusal.
+  // The bug this fix pass exists for: BringSomeoneSheet used to always
+  // render after every table card and every host control, at the very
+  // bottom of the screen -- opening it from Table 1's own "Bring someone"
+  // mounted the sheet far below the viewport, so the tap looked dead.
+  // "Renders somewhere" is exactly what the old, buggy position already
+  // satisfied; only a DOM-order assertion (the sheet's own heading landing
+  // before the next table's label) can tell the two apart.
+  describe('opening "Bring someone" from a table card', () => {
+    it('renders the sheet immediately after that table, not at the end of the screen', async () => {
+      render(<EventScreen />);
+      fireEvent.click(await screen.findByLabelText('Bring someone to Table 1'));
+
+      const heading = await screen.findByText("Who's coming?");
+      // An empty seat's own aria-label ("Take a seat at Table 2") is unique
+      // to SeatGrid and unambiguous, unlike the table's plain-text label
+      // (which BringSomeoneSheet's own "Where?" chips repeat verbatim).
+      const [table2Seat] = screen.getAllByLabelText('Take a seat at Table 2');
+
+      // heading precedes table2Seat in document order.
+      expect(
+        heading.compareDocumentPosition(table2Seat) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
+
+    it('mounts exactly one sheet', async () => {
+      render(<EventScreen />);
+      fireEvent.click(await screen.findByLabelText('Bring someone to Table 1'));
+      await screen.findByText("Who's coming?");
+      expect(screen.getAllByText("Who's coming?").length).toBe(1);
+    });
+  });
+
+  it('opening the screen-level "Bring someone" still renders the sheet in the footer position, after every table', async () => {
+    render(<EventScreen />);
+    fireEvent.click(await screen.findByLabelText('Bring someone'));
+
+    const heading = await screen.findByText("Who's coming?");
+    const [table1Seat] = screen.getAllByLabelText('Take a seat at Table 1');
+    const [table2Seat] = screen.getAllByLabelText('Take a seat at Table 2');
+
+    // both tables' seats precede the footer sheet's heading.
+    expect(
+      table1Seat.compareDocumentPosition(heading) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      table2Seat.compareDocumentPosition(heading) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it('still offers "Bring someone" to a member who already holds a seat', async () => {
     fetchEventSeating.mockResolvedValue([
       {

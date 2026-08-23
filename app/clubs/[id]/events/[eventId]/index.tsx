@@ -1,5 +1,5 @@
 import { Link, Redirect, useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import BringSomeoneSheet from '../../../../../components/BringSomeoneSheet';
 import Button from '../../../../../components/Button';
@@ -654,106 +654,150 @@ export default function EventScreen() {
             (o) => o.status === 'confirmed',
           );
           const confirmedHere = confirmedAtTable.length;
+          // Is BringSomeoneSheet currently open *for this table*? Used
+          // below both to render the sheet right after this card (rather
+          // than in the screen-level footer, where it used to render
+          // unconditionally — off-screen below every table and every host
+          // control, which is the bug this block exists to fix) and to
+          // swap out this table's own "Bring someone" button while its
+          // sheet is open: the button's whole job is to open the sheet, so
+          // once it's open the button has nothing left to do, and leaving
+          // it up would just be a second, redundant way to press "open"
+          // again.
+          const bringSomeoneHere = bringSomeone?.tableId === table.id;
           return (
-            <TableCard
-              key={table.id}
-              table={table}
-              occupants={tableOccupants}
-              youId={me}
-              // Omitted entirely — not a disabled control — for a cancelled
-              // or already-started game (see `canBook`'s own comment), for
-              // every seat once this member's own booking is only
-              // waitlisted (`place_booking` refuses a non-confirmed
-              // booking, so there is nothing a tap here could do), and for
-              // this specific table once a confirmed booking is already
-              // seated at it — tapping a seat you already hold has nothing
-              // to do. Any other seat — a fresh booking, or a confirmed
-              // booking elsewhere (a different table, or "any table")
-              // wanting to move — still offers a tap; `takeSeat` (via
-              // `commitSeat`) is what decides book vs. move.
-              onTakeSeat={
-                canBook &&
-                (!myBooking ||
-                  (myBooking.status === 'confirmed' &&
-                    myBooking.event_table_id !== table.id))
-                  ? () => takeSeat(table)
-                  : undefined
-              }
-              onBringSomeone={
-                canBringSomeone ? () => openBringSomeone(table.id) : undefined
-              }
-              busy={busy}
-              needsFourth={needsAFourth(
-                table.capacity,
-                confirmedHere,
-                new Date(event.starts_at),
-                now,
-              )}
-            >
-              {isOrganizer ? (
-                <>
-                  <View style={styles.chips}>
-                    {TIERS.map((tier) => (
-                      <TierChip
-                        key={tier.value}
-                        label={tier.label}
-                        selected={table.skill_tier === tier.value}
+            <Fragment key={table.id}>
+              <TableCard
+                table={table}
+                occupants={tableOccupants}
+                youId={me}
+                // Omitted entirely — not a disabled control — for a cancelled
+                // or already-started game (see `canBook`'s own comment), for
+                // every seat once this member's own booking is only
+                // waitlisted (`place_booking` refuses a non-confirmed
+                // booking, so there is nothing a tap here could do), and for
+                // this specific table once a confirmed booking is already
+                // seated at it — tapping a seat you already hold has nothing
+                // to do. Any other seat — a fresh booking, or a confirmed
+                // booking elsewhere (a different table, or "any table")
+                // wanting to move — still offers a tap; `takeSeat` (via
+                // `commitSeat`) is what decides book vs. move.
+                onTakeSeat={
+                  canBook &&
+                  (!myBooking ||
+                    (myBooking.status === 'confirmed' &&
+                      myBooking.event_table_id !== table.id))
+                    ? () => takeSeat(table)
+                    : undefined
+                }
+                onBringSomeone={
+                  canBringSomeone && !bringSomeoneHere
+                    ? () => openBringSomeone(table.id)
+                    : undefined
+                }
+                busy={busy}
+                needsFourth={needsAFourth(
+                  table.capacity,
+                  confirmedHere,
+                  new Date(event.starts_at),
+                  now,
+                )}
+              >
+                {isOrganizer ? (
+                  <>
+                    <View style={styles.chips}>
+                      {TIERS.map((tier) => (
+                        <TierChip
+                          key={tier.value}
+                          label={tier.label}
+                          selected={table.skill_tier === tier.value}
+                          disabled={busy}
+                          onPress={() =>
+                            run(() => updateEventTable(table.id, { tier: tier.value }))
+                          }
+                          accessibilityLabel={`${table.label}: ${tier.label}`}
+                        />
+                      ))}
+                    </View>
+
+                    {tables.length > 1 ? (
+                      <Button
+                        variant="ghost"
+                        big={false}
                         disabled={busy}
-                        onPress={() =>
-                          run(() => updateEventTable(table.id, { tier: tier.value }))
-                        }
-                        accessibilityLabel={`${table.label}: ${tier.label}`}
-                      />
-                    ))}
-                  </View>
+                        onPress={() => run(() => removeEventTable(table.id))}
+                        accessibilityLabel={`Remove ${table.label}`}
+                      >
+                        Remove
+                      </Button>
+                    ) : null}
 
-                  {tables.length > 1 ? (
-                    <Button
-                      variant="ghost"
-                      big={false}
-                      disabled={busy}
-                      onPress={() => run(() => removeEventTable(table.id))}
-                      accessibilityLabel={`Remove ${table.label}`}
-                    >
-                      Remove
-                    </Button>
-                  ) : null}
+                    {/*
+                      canCallForAFourth mirrors need_a_fourth_stage's own
+                      occupancy check (20260825050000) minus the 48-hour
+                      window — "a host calling early is asking to skip
+                      exactly that window", per that migration's own comment.
+                      `canBook` already carries the "published and not yet
+                      started" half of that rule.
 
-                  {/*
-                    canCallForAFourth mirrors need_a_fourth_stage's own
-                    occupancy check (20260825050000) minus the 48-hour
-                    window — "a host calling early is asking to skip
-                    exactly that window", per that migration's own comment.
-                    `canBook` already carries the "published and not yet
-                    started" half of that rule.
+                      `table.capacity >= 2` mirrors `needsAFourth`'s own
+                      `capacity < 2` guard (and need_a_fourth_stage's identical
+                      `when t.capacity < 2 then null`), which the expression
+                      below would otherwise drop: on a capacity-1 table with
+                      zero confirmed, `0 === 1 - 1` is true even though such a
+                      table can never need a fourth. Not delegated to
+                      `needsAFourth` itself, since that function also applies
+                      the 48-hour window this gate deliberately skips.
+                    */}
+                    <HostSeating
+                      occupants={confirmedAtTable}
+                      unseated={unseatedBookings}
+                      tables={tables}
+                      table={table}
+                      busy={busy}
+                      canCallForAFourth={
+                        table.capacity >= 2 &&
+                        confirmedHere === table.capacity - 1 &&
+                        canBook
+                      }
+                      onPlace={hostPlace}
+                      onRemove={hostRemove}
+                      onCallForAFourth={hostCallForAFourth}
+                    />
+                  </>
+                ) : null}
+              </TableCard>
 
-                    `table.capacity >= 2` mirrors `needsAFourth`'s own
-                    `capacity < 2` guard (and need_a_fourth_stage's identical
-                    `when t.capacity < 2 then null`), which the expression
-                    below would otherwise drop: on a capacity-1 table with
-                    zero confirmed, `0 === 1 - 1` is true even though such a
-                    table can never need a fourth. Not delegated to
-                    `needsAFourth` itself, since that function also applies
-                    the 48-hour window this gate deliberately skips.
-                  */}
-                  <HostSeating
-                    occupants={confirmedAtTable}
-                    unseated={unseatedBookings}
-                    tables={tables}
-                    table={table}
-                    busy={busy}
-                    canCallForAFourth={
-                      table.capacity >= 2 &&
-                      confirmedHere === table.capacity - 1 &&
-                      canBook
-                    }
-                    onPlace={hostPlace}
-                    onRemove={hostRemove}
-                    onCallForAFourth={hostCallForAFourth}
-                  />
-                </>
+              {/*
+                Rendered right here — immediately after the table it belongs
+                to — rather than in one shared spot at the bottom of the
+                screen. That used to be this component's only bug: every
+                table's "Bring someone" opened the exact same
+                `BringSomeoneSheet` instance, mounted after every table card
+                and every host control, so tapping it on Table 1 produced a
+                sheet the member had to scroll past everything else to find.
+                `bringSomeoneHere` (computed above) is `true` for at most one
+                table at a time — `bringSomeone.tableId` is a single value —
+                so this can never mount two sheets, and the footer copy below
+                (gated on `bringSomeone?.tableId === null` instead) is the one
+                other place this same state can produce a sheet. Neither
+                condition depends on `tables`/`roster`/`seating` reloading, so
+                a `load()` after some *other* action never remounts this and
+                never discards an in-progress selection.
+              */}
+              {bringSomeoneHere ? (
+                <BringSomeoneSheet
+                  roster={roster}
+                  booked={seating.map((o) => o.profile_id)}
+                  youId={me}
+                  tables={tables}
+                  initialTableId={bringSomeone!.tableId}
+                  onPropose={(input) => proposeBooking({ eventId, ...input })}
+                  onCommit={(input) => commitBooking({ eventId, ...input })}
+                  onClose={closeBringSomeone}
+                />
               ) : null}
-            </TableCard>
+            </Fragment>
           );
         })
       )}
@@ -807,7 +851,16 @@ export default function EventScreen() {
         </Button>
       ) : null}
 
-      {bringSomeone ? (
+      {/*
+        Only the "any table" case (`tableId === null`, the screen-level
+        entry point below) renders here — this position was already
+        correct for that button. A table-specific `bringSomeone` renders
+        inline in the `tables.map` above instead (see the comment there);
+        the two conditions are mutually exclusive since `bringSomeone` is a
+        single `{ tableId }` value, so at most one `BringSomeoneSheet` is
+        ever mounted.
+      */}
+      {bringSomeone && bringSomeone.tableId === null ? (
         <BringSomeoneSheet
           roster={roster}
           booked={seating.map((o) => o.profile_id)}
