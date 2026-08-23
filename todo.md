@@ -39,6 +39,12 @@ Fix belongs in the layout, not a one-off margin — either a gap on the list con
 or a consistent bottom margin on `Card`, using `space[…]` from `lib/theme` rather
 than a literal. Regenerate the clubs visual baselines afterwards.
 
+Already relying on a page-level `gap: space[4]` between this screen's top-level
+sections, which happened to close the gap, but nothing had marked this box done. The
+"Your games" commit (Task 13) gives the club cards and the button their own dedicated
+`gap: space[3]` list container instead, so the fix no longer depends on the coarser
+page-level gap.
+
 ### [ ] Venues screen flashes "No venues yet." on a club that has venues
 
 `app/clubs/[id]/venues.tsx` sets `ready` off the club/roster `Promise.all` alone and
@@ -55,7 +61,7 @@ and empty" — `venuesFailed` exists precisely so a failed fetch is not read as 
 a not-yet-landed fetch needs the same treatment. Not mine to fix in a `test:` commit;
 recorded here per Task 17's own report.
 
-### [ ] `app/clubs/index.tsx` has no page padding
+### [x] `app/clubs/index.tsx` has no page padding
 
 "Your clubs" sits at x=0 with its ascenders touching the top edge, and the club
 cards run to the viewport edge at 375px width — visible in every clubs baseline,
@@ -63,6 +69,11 @@ including the pre-existing ones this task didn't touch. Every other screen in th
 app gets its side margins from `Screen`'s default content padding; this screen must
 be opting out of it somewhere, or never had it. Regenerate the `clubs*` and
 `clubs-populated-*` visual baselines afterwards.
+
+Fixed in the "Your games" commit (Task 13): `Screen` itself carries no default
+padding — every other screen supplies `padding: space[6]` in its own `contentStyle`,
+and this one never did. Added it to `app/clubs/index.tsx`'s `container` style.
+`clubs-*` and `clubs-populated-*` baselines still need regenerating (Task 15).
 
 ### [ ] "Anything else? (optional)" label sits too tight under the Start time field
 
