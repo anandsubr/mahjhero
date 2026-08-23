@@ -216,27 +216,42 @@ describe('cancelBooking', () => {
  * mapping fails loudly here instead of silently reporting GENERIC_ERROR to
  * a member.
  *
+ * The glob covers EVERY migration, not just the day-8 ones: the original
+ * `20260825*` filter meant a raise site added on any earlier day (most of
+ * lib/events.ts's own vocabulary, all of clubs/venues) was never read by
+ * this audit at all, so the ALLOWLIST below used to be able to claim
+ * "lib/events.ts owns its own vocabulary for these" without that claim ever
+ * being checked. It is checked now, which is also why the allowlist grew —
+ * every refusal anywhere in the schema now needs a mapping or a true reason
+ * this module is not the one responsible for it.
+ *
  * Mutation evidence: run with BOOKING_REFUSALS reverted to the pre-fix,
  * code-AND-message-keyed version (single 23514 'no such table' entry, no
  * 'not a member of this club' entry), this test fails and names both
  * strings — see the task-8 report's "Fix pass" section for the transcript.
  */
 describe('BOOKING_REFUSALS (self-audit against the migrations)', () => {
-  // Every distinct message the day-8 migrations raise that deliberately has
-  // no entry in BOOKING_REFUSALS, and the specific reason each one
-  // qualifies. Two categories:
+  // Every distinct message ANY migration raises that deliberately has no
+  // entry in BOOKING_REFUSALS, and the specific reason each one qualifies.
+  // Three categories:
   //
   //   1. The plan's own refusal table (docs/superpowers/plans/
   //      2026-08-23-seating-and-booking.md, "Error handling") already
   //      documents these as unreachable from the UI and falls them back to
   //      GENERIC_ERROR on purpose.
-  //   2. Raised by a function this module does not call. lib/events.ts
-  //      calls add_event_table, remove_event_table, cancel_event and
-  //      update_event_series, and owns its own RPC_ERROR_MESSAGES
-  //      vocabulary for their refusals; that vocabulary is out of scope
-  //      here, and the messages below are asserted to fall to GENERIC_ERROR
-  //      from bookingErrorMessage specifically because bookingErrorMessage
-  //      is not the vocabulary responsible for them.
+  //   2. Raised by a function this module does not call, but that DOES have
+  //      its own client-side mapping in the module that does call it —
+  //      lib/events.ts's RPC_ERROR_MESSAGES (verified true by
+  //      lib/events.test.ts's "the table/series mutations report their own
+  //      refusals" describe block, which asserts every one of these exact
+  //      strings maps to a real sentence there).
+  //   3. Raised by a function lib/clubs.ts or lib/venues.ts calls, or by an
+  //      internal trigger/helper no lib/*.ts function calls at all. Neither
+  //      is this module's responsibility either way; whether clubs.ts and
+  //      venues.ts have completed their OWN vocabularies is a different,
+  //      pre-existing gap (they do not, today — every one of their RPC
+  //      errors still becomes GENERIC_ERROR) and out of scope for this file,
+  //      which only audits bookingErrorMessage.
   const ALLOWLIST: Record<string, string> = {
     // The player picker cannot select the same person twice; this is a
     // server-side belt for a client that already has the suspenders.
@@ -257,19 +272,88 @@ describe('BOOKING_REFUSALS (self-audit against the migrations)', () => {
     // 'wide'.
     'unrecognized stage: %':
       'only reachable from an internal, non-granted function (announce_table_fourth)',
-    // add_event_table / remove_event_table: called from lib/events.ts, not
-    // lib/bookings.ts.
+
+    // --- Category 2: lib/events.ts's own functions, mapped by its own
+    // RPC_ERROR_MESSAGES (lib/events.ts) and pinned by lib/events.test.ts. ---
     "a cancelled event's tables cannot be edited":
-      'raised by add_event_table/remove_event_table — lib/events.ts’s functions, not this module’s',
+      'raised by add_event_table/remove_event_table/update_event_table — mapped by lib/events.ts’s own RPC_ERROR_MESSAGES, not this module’s',
+    'a cancelled event cannot be edited':
+      'raised by update_event/reset_event_to_series — mapped by lib/events.ts’s own RPC_ERROR_MESSAGES, not this module’s',
+    'a past occurrence is history and cannot be reset':
+      'raised by reset_event_to_series — mapped by lib/events.ts’s own RPC_ERROR_MESSAGES, not this module’s',
+    'an event must end after it starts':
+      'raised by create_event/update_event — mapped by lib/events.ts’s own RPC_ERROR_MESSAGES, not this module’s',
+    'an event must have a date and a start time':
+      'raised by create_event — mapped by lib/events.ts’s own RPC_ERROR_MESSAGES, not this module’s',
     'an event must keep at least one table':
-      'raised by remove_event_table — lib/events.ts’s function, not this module’s',
-    'too many tables':
-      'raised by add_event_table — lib/events.ts’s function, not this module’s',
-    // update_event_series: called from lib/events.ts, not lib/bookings.ts.
+      'raised by remove_event_table — mapped by lib/events.ts’s own RPC_ERROR_MESSAGES, not this module’s',
+    'duration out of range':
+      'raised by create_event/update_event — mapped by lib/events.ts’s own RPC_ERROR_MESSAGES, not this module’s',
+    'no games before that end date':
+      'raised by create_event_series — mapped by lib/events.ts’s own RPC_ERROR_MESSAGES, not this module’s',
     'no such series':
-      'raised by update_event_series — lib/events.ts’s function, not this module’s',
+      'raised by end_event_series/update_event_series — mapped by lib/events.ts’s own RPC_ERROR_MESSAGES, not this module’s',
+    'table count out of range':
+      'raised by create_event — mapped by lib/events.ts’s own RPC_ERROR_MESSAGES, not this module’s',
+    'that start time has already passed':
+      'raised by create_event/update_event — mapped by lib/events.ts’s own RPC_ERROR_MESSAGES, not this module’s',
+    'this event is not part of a series':
+      'raised by reset_event_to_series — mapped by lib/events.ts’s own RPC_ERROR_MESSAGES, not this module’s',
     'title is required':
-      'raised by update_event_series — already mapped by lib/events.ts’s own RPC_ERROR_MESSAGES',
+      'raised by create_event/create_event_series/update_event/update_event_series — mapped by lib/events.ts’s own RPC_ERROR_MESSAGES, not this module’s',
+    'too many tables':
+      'raised by add_event_table — mapped by lib/events.ts’s own RPC_ERROR_MESSAGES, not this module’s',
+    'venue not available to this club':
+      'raised (via assert_venue_available) by create_event/update_event/update_event_series — mapped by lib/events.ts’s own RPC_ERROR_MESSAGES, not this module’s',
+    // Shared infrastructure (assert_club_organizer): every host-only
+    // mutation in events.ts, clubs.ts and venues.ts calls it first. Mapped
+    // here in lib/events.ts's RPC_ERROR_MESSAGES for the paths this branch
+    // touches; clubs.ts/venues.ts calling the same guard does not make it
+    // this module's to map.
+    'not an organizer of this club':
+      'raised (via assert_club_organizer) by every host-only mutation in events.ts/clubs.ts/venues.ts — mapped by lib/events.ts’s own RPC_ERROR_MESSAGES for this branch, not this module’s',
+
+    // --- Category 3: lib/clubs.ts's own functions. Neither this module nor
+    // lib/clubs.ts maps these today — every clubs.ts RPC error still falls
+    // to GENERIC_ERROR there (see lib/clubs.ts). Real gap, not this file's. ---
+    'club name is required': 'raised by create_club — lib/clubs.ts’s function, not this module’s',
+    'club name needs a letter or number':
+      'raised by create_club — lib/clubs.ts’s function, not this module’s',
+    'not signed in': 'raised by create_club — lib/clubs.ts’s function, not this module’s',
+    // clubs_freeze_identity is an UPDATE trigger on public.clubs, revoked
+    // from public/anon/authenticated execute (the grant a trigger fires
+    // under is the table owner's, not the caller's, so the revoke does not
+    // stop it firing) -- but no lib/*.ts function ever updates a club's
+    // created_by/id/slug, so these three are unreached from any client path
+    // today, not merely unmapped.
+    'club created_by cannot be changed':
+      'trigger (clubs_freeze_identity) on public.clubs UPDATE — no lib/*.ts function changes this column',
+    'club id cannot be changed':
+      'trigger (clubs_freeze_identity) on public.clubs UPDATE — no lib/*.ts function changes this column',
+    'club slug cannot be changed':
+      'trigger (clubs_freeze_identity) on public.clubs UPDATE — no lib/*.ts function changes this column',
+    // clubs_validate_timezone is an INSERT/UPDATE trigger on public.clubs;
+    // lib/clubs.ts only ever writes a timezone from a fixed picker of valid
+    // IANA names, so this is defence in depth, not a reachable client path.
+    'unrecognized timezone: %':
+      'trigger (clubs_validate_timezone) on public.clubs — lib/clubs.ts only writes timezones from a fixed valid list',
+
+    // --- Category 3, continued: lib/venues.ts's own functions. Also
+    // unmapped there today (see lib/venues.ts). ---
+    'venue name is required':
+      'raised by create_venue — lib/venues.ts’s function, not this module’s',
+    'no such venue':
+      'raised by archive_venue/update_venue — lib/venues.ts’s function, not this module’s',
+
+    // series_occurrence_dates is revoked from public/anon/authenticated
+    // (20260822197000, restated 20260823000000) and called only from inside
+    // create_event_series/materialize_event_series's own plpgsql bodies —
+    // never directly. `frequency` is `event_series.frequency`'s own enum
+    // type, so every value the column can hold is one of the branches this
+    // function already handles; the `raise` is an exhaustiveness guard
+    // against a future enum member, matching 'unrecognized stage: %' above.
+    'series_occurrence_dates: unhandled frequency %':
+      'only reachable from an internal, non-granted function (series_occurrence_dates); frequency is a Postgres enum so every current value is handled',
   };
 
   function distinctRaisedMessages(): string[] {
@@ -277,9 +361,7 @@ describe('BOOKING_REFUSALS (self-audit against the migrations)', () => {
       dirname(fileURLToPath(import.meta.url)),
       '../supabase/migrations',
     );
-    const files = readdirSync(migrationsDir).filter(
-      (name) => name.startsWith('20260825') && name.endsWith('.sql'),
-    );
+    const files = readdirSync(migrationsDir).filter((name) => name.endsWith('.sql'));
     const messages = new Set<string>();
     const raisePattern = /raise exception\s+'((?:[^']|'')*)'/g;
     for (const file of files) {
@@ -295,7 +377,10 @@ describe('BOOKING_REFUSALS (self-audit against the migrations)', () => {
   }
 
   it('found at least one raise site (guards against a broken glob or regex)', () => {
-    expect(distinctRaisedMessages().length).toBeGreaterThan(10);
+    // The whole-schema glob finds ~46 distinct messages today; a much lower
+    // floor than that still catches the failure mode this guards against —
+    // a glob or regex that silently matches nothing.
+    expect(distinctRaisedMessages().length).toBeGreaterThan(30);
   });
 
   it('maps, or explicitly allowlists, every message the migrations raise', () => {

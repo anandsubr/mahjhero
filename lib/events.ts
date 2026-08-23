@@ -389,56 +389,148 @@ type RpcError = { code?: string | null; message?: string | null } | null | undef
  * again." That is a FALSE STATEMENT about a request that reached MahjHero
  * fine and was refused for a reason the host can act on — clearing the title,
  * naming an end date before the start, choosing a date that has already gone
- * past. Every one of those used to be reported as a broken internet
- * connection, and the create screen and the edit screen disagreed about the
- * very same rule (create already said "Give the game a name.").
+ * past, removing an event's last table. Every one of those used to be
+ * reported as a broken internet connection, and the create screen and the
+ * edit screen disagreed about the very same rule (create already said "Give
+ * the game a name.").
  *
- * Matched on SQLSTATE **and** message text, because 23514 is the code for
- * every deliberate `raise` in the event functions as well as for a table
- * CHECK violation — the code alone cannot tell an empty title from a past
- * date. The strings are the ones the functions raise
- * (supabase/migrations/20260824001000) or the constraint name Postgres puts
- * in the message for a CHECK violation (`event_series_ends_after_start`, from
- * 20260822194000). Both are pinned end-to-end against the real database in
- * lib/schema-contract.test.ts, so a renamed constraint or a reworded `raise`
- * turns that suite red rather than silently falling back to the lie.
+ * Keyed on MESSAGE TEXT ONLY, for the same reason lib/bookings.ts's
+ * BOOKING_REFUSALS is: 23514 is the SQLSTATE for every deliberate `raise` in
+ * the event functions as well as for a table CHECK violation, so it cannot
+ * discriminate an empty title from a past date — and worse, 'no such event'
+ * and 'no such table' are raised as P0002 from most of these functions but
+ * 42501 from a couple of others (reset_event_to_series, update_event). A
+ * vocabulary keyed on code AND message misses every one of those second
+ * codes. `codes` below is kept purely as a reader's note of where a message
+ * is actually raised from; it is never compared. The strings are the ones
+ * the functions raise (supabase/migrations/20260823*, 20260824*, 20260825*)
+ * or the constraint name Postgres puts in the message for a CHECK violation
+ * (`event_series_ends_after_start`, from 20260822194000). Both are pinned
+ * end-to-end against the real database in lib/schema-contract.test.ts, so a
+ * renamed constraint or a reworded `raise` turns that suite red rather than
+ * silently falling back to the lie.
  *
  * Anything unrecognised still gets GENERIC_ERROR. A vague statement is worse
  * than a precise one and better than a false one.
  */
-const RPC_ERROR_MESSAGES: { code: string; contains: string; message: string }[] = [
+const RPC_ERROR_MESSAGES: { contains: string; message: string; codes: string[] }[] = [
   {
-    code: '23514',
     contains: 'title is required',
     // Word-for-word what the create screen's own client-side check says, so
     // the two screens stop disagreeing about one rule.
     message: 'Give the game a name.',
+    codes: ['23514'],
   },
   {
-    code: '23514',
     contains: 'event_series_ends_after_start',
     message: 'That end date is before the series starts.',
+    codes: ['23514'],
   },
   {
-    code: '23514',
     contains: 'that start time has already passed',
     message: 'That start time has already passed. Pick a later one.',
+    codes: ['23514'],
   },
   {
-    code: '23514',
     contains: 'no games before that end date',
     // Matches the create screen's own preview copy for the same situation.
     message: 'No games would be created before that end date.',
+    codes: ['23514'],
+  },
+  {
+    contains: 'an event must have a date and a start time',
+    message: 'Give the game a date and a start time.',
+    codes: ['23514'],
+  },
+  {
+    contains: 'duration out of range',
+    message: 'Choose a duration between 15 minutes and 24 hours.',
+    codes: ['23514'],
+  },
+  {
+    contains: 'table count out of range',
+    message: 'Choose between 1 and 20 tables.',
+    codes: ['23514'],
+  },
+  {
+    contains: 'an event must end after it starts',
+    message: 'The game must end after it starts.',
+    codes: ['23514'],
+  },
+  {
+    // Order before 'a cancelled event' -- no, these two strings never
+    // collide (see the note below), so order does not matter here.
+    contains: "a cancelled event's tables cannot be edited",
+    message: 'This game was cancelled and its tables can no longer be edited.',
+    codes: ['42501'],
+  },
+  {
+    // Distinct from the entry above -- "…event cannot be edited" is not a
+    // substring of "…event's tables cannot be edited", so the two never
+    // collide regardless of which is checked first.
+    contains: 'a cancelled event cannot be edited',
+    message: 'This game was cancelled and can no longer be edited.',
+    codes: ['42501'],
+  },
+  {
+    contains: 'this event is not part of a series',
+    message: 'This game is not part of a series.',
+    codes: ['42501'],
+  },
+  {
+    contains: 'a past occurrence is history and cannot be reset',
+    message: 'That date has already passed and cannot be reset.',
+    codes: ['42501'],
+  },
+  {
+    contains: 'too many tables',
+    message: 'This game already has the maximum of 20 tables.',
+    codes: ['23514'],
+  },
+  {
+    contains: 'an event must keep at least one table',
+    message: 'A game must keep at least one table.',
+    codes: ['23514'],
+  },
+  {
+    contains: 'no such event',
+    // Raised as P0002 from cancel_event/add_event_table/reset_event_to_series
+    // and 42501 from update_event -- one more reason the code cannot be part
+    // of the match.
+    message: 'This game is no longer listed.',
+    codes: ['P0002', '42501'],
+  },
+  {
+    contains: 'no such table',
+    message: 'That table is no longer part of this game.',
+    codes: ['P0002'],
+  },
+  {
+    contains: 'no such series',
+    message: 'This series is no longer listed.',
+    codes: ['P0002'],
+  },
+  {
+    contains: 'venue not available to this club',
+    // assert_venue_available, called by create_event/update_event/
+    // update_event_series whenever a venue changes.
+    message: 'That venue is not available to this club.',
+    codes: ['42501'],
+  },
+  {
+    // assert_club_organizer, called first by every one of these functions.
+    // A member without the organizer role hitting Cancel, Remove table, or
+    // End series used to be told the connection was down.
+    contains: 'not an organizer of this club',
+    message: 'Only a club organizer can do that.',
+    codes: ['42501'],
   },
 ];
 
 function rpcErrorMessage(error: RpcError): string {
   if (!error) return GENERIC_ERROR;
   const text = error.message ?? '';
-  const match = RPC_ERROR_MESSAGES.find(
-    (candidate) =>
-      candidate.code === error.code && text.includes(candidate.contains),
-  );
+  const match = RPC_ERROR_MESSAGES.find((candidate) => text.includes(candidate.contains));
   return match ? match.message : GENERIC_ERROR;
 }
 
@@ -720,7 +812,7 @@ export async function cancelEvent(
     });
     if (error) {
       console.error('cancelEvent failed', error);
-      return { error: GENERIC_ERROR };
+      return { error: rpcErrorMessage(error) };
     }
     return { error: null };
   } catch (cause) {
@@ -747,7 +839,7 @@ export async function resetEventToSeries(
     });
     if (error) {
       console.error('resetEventToSeries failed', error);
-      return { error: GENERIC_ERROR };
+      return { error: rpcErrorMessage(error) };
     }
     return { error: null };
   } catch (cause) {
@@ -785,13 +877,12 @@ export async function addEventTable(
         continue;
       }
       console.error('addEventTable failed', error);
-      // The table cap (20) is a real answer a host can act on — stop adding
-      // tables — not a system fault, so it does not get the generic message.
-      // Mirrors createVenue's 23505 mapping in lib/venues.ts.
-      if (error.code === '23514') {
-        return { error: 'This game already has the maximum of 20 tables.' };
-      }
-      return { error: GENERIC_ERROR };
+      // The table cap (20), a cancelled event, or a since-deleted event are
+      // all real answers a host can act on — not a system fault — so they go
+      // through the same vocabulary every other event mutation uses rather
+      // than a one-off special case. A raw 23505 (the race above, exhausted)
+      // matches nothing in RPC_ERROR_MESSAGES and still falls back here.
+      return { error: rpcErrorMessage(error) };
     } catch (cause) {
       console.error('addEventTable failed', cause);
       return { error: GENERIC_ERROR };
@@ -812,7 +903,7 @@ export async function updateEventTable(
     });
     if (error) {
       console.error('updateEventTable failed', error);
-      return { error: GENERIC_ERROR };
+      return { error: rpcErrorMessage(error) };
     }
     return { error: null };
   } catch (cause) {
@@ -830,7 +921,7 @@ export async function removeEventTable(
     });
     if (error) {
       console.error('removeEventTable failed', error);
-      return { error: GENERIC_ERROR };
+      return { error: rpcErrorMessage(error) };
     }
     return { error: null };
   } catch (cause) {
@@ -942,7 +1033,7 @@ export async function endEventSeries(
     });
     if (error) {
       console.error('endEventSeries failed', error);
-      return { error: GENERIC_ERROR };
+      return { error: rpcErrorMessage(error) };
     }
     return { error: null };
   } catch (cause) {

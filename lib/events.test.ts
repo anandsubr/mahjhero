@@ -23,15 +23,20 @@ vi.mock('./supabase', () => ({
 import { GENERIC_ERROR } from './constants';
 import {
   addEventTable,
+  cancelEvent,
   createEvent,
   createEventSeries,
+  endEventSeries,
   eventStartTimeInZone,
   fetchEvent,
   formatEventWhen,
   frequencyLabel,
   nextOccurrences,
+  removeEventTable,
+  resetEventToSeries,
   updateEvent,
   updateEventSeries,
+  updateEventTable,
 } from './events';
 
 /**
@@ -589,10 +594,14 @@ describe('addEventTable', () => {
  * the title on either edit scope, an end date before the series' start, and
  * (since 20260824001000) a date that has already gone by.
  *
- * Each case is asserted against its real payload shape — the SQLSTATE plus
- * the message text Postgres actually produces, either from the function's own
- * `raise` or from the constraint name in a CHECK violation — so a mapper that
- * matched on the code alone, or on the wrong substring, fails here.
+ * Each case is asserted against its real payload shape — the message text
+ * Postgres actually produces, either from the function's own `raise` or from
+ * the constraint name in a CHECK violation. The SQLSTATE in each fixture is
+ * deliberately whatever that function really raises it as (see the comment
+ * on RPC_ERROR_MESSAGES in lib/events.ts) rather than always the "obvious"
+ * code, and the "regardless of SQLSTATE" test below asserts directly that
+ * the code plays no part in the match — that was the branch-level bug this
+ * vocabulary fixed (BRANCH-LEVEL FINDING, Task 8's report).
  */
 describe('deliberate refusals are reported as refusals, not as network failures', () => {
   beforeEach(() => {
@@ -710,16 +719,18 @@ describe('deliberate refusals are reported as refusals, not as network failures'
     expect(result.error).toBe('That end date is before the series starts.');
   });
 
-  it('a 23514 nobody has mapped still falls back, rather than borrowing another message', async () => {
-    // The code alone is not the key. `update_event` raises 23514 for an
-    // out-of-range duration too, and that must not come back reading as an
-    // empty title or a past date.
+  it('updateEvent: an out-of-range duration says so, not as an empty title or a past date', async () => {
+    // `update_event` raises 23514 for three different reasons (empty title,
+    // end-before-start, out-of-range duration); this must not come back
+    // borrowing one of the other two sentences.
     rpcMock.mockResolvedValueOnce({
       error: { code: '23514', message: 'duration out of range' },
     });
     await expect(
       updateEvent('event-1', { durationMinutes: 5 }),
-    ).resolves.toEqual({ error: GENERIC_ERROR });
+    ).resolves.toEqual({
+      error: 'Choose a duration between 15 minutes and 24 hours.',
+    });
   });
 
   it('an actual connection failure still says the connection failed', async () => {
@@ -729,15 +740,137 @@ describe('deliberate refusals are reported as refusals, not as network failures'
     });
   });
 
-  it('a matching message under a different SQLSTATE is not mapped', async () => {
-    // Both halves of the key are load-bearing. A mapper that matched on the
-    // message alone would be one string away from mistranslating an
-    // unrelated error.
+  it('an error the vocabulary does not recognise still falls back to the generic message', async () => {
     rpcMock.mockResolvedValueOnce({
-      error: { code: '42501', message: 'title is required' },
+      error: { code: '23514', message: 'zzz not a real refusal' },
     });
-    await expect(updateEvent('event-1', { title: '  ' })).resolves.toEqual({
+    await expect(updateEvent('event-1', { title: 'x' })).resolves.toEqual({
       error: GENERIC_ERROR,
+    });
+  });
+
+  it('a real refusal message maps regardless of which SQLSTATE accompanies it', async () => {
+    // This is the exact defect BRANCH-LEVEL FINDING described: 'no such
+    // event' is raised as P0002 from cancel_event/add_event_table but 42501
+    // from update_event/reset_event_to_series. A mapper keyed on code AND
+    // message would need two entries for the same sentence and would still
+    // miss whichever code the reviser did not think of — this one, matched
+    // against a code that is not even in RPC_ERROR_MESSAGES's own `codes`
+    // list for the entry, proves the code is not part of the match at all.
+    rpcMock.mockResolvedValueOnce({
+      error: { code: '99999', message: 'no such event' },
+    });
+    await expect(updateEvent('event-1', { title: 'x' })).resolves.toEqual({
+      error: 'This game is no longer listed.',
+    });
+  });
+});
+
+/*
+ * cancelEvent, resetEventToSeries, updateEventTable, removeEventTable and
+ * endEventSeries used to report EVERY refusal as GENERIC_ERROR unconditionally
+ * — they never even called the mapper. An organizer pressing Remove on an
+ * event's last table was told to check their connection while the database
+ * had refused on purpose. Each now routes through rpcErrorMessage exactly
+ * like the functions above.
+ */
+describe('the table/series mutations report their own refusals', () => {
+  beforeEach(() => {
+    rpcMock.mockReset();
+  });
+
+  it('cancelEvent: a since-deleted event says so', async () => {
+    rpcMock.mockResolvedValueOnce({
+      error: { code: 'P0002', message: 'no such event' },
+    });
+    await expect(cancelEvent('event-1')).resolves.toEqual({
+      error: 'This game is no longer listed.',
+    });
+  });
+
+  it('cancelEvent: an unrecognised error still falls back', async () => {
+    rpcMock.mockResolvedValueOnce({ error: { code: '08006', message: 'connection failure' } });
+    await expect(cancelEvent('event-1')).resolves.toEqual({ error: GENERIC_ERROR });
+  });
+
+  it('resetEventToSeries: an occurrence with no series says so', async () => {
+    rpcMock.mockResolvedValueOnce({
+      error: { code: '42501', message: 'this event is not part of a series' },
+    });
+    await expect(resetEventToSeries('event-1')).resolves.toEqual({
+      error: 'This game is not part of a series.',
+    });
+  });
+
+  it('resetEventToSeries: a past occurrence says so', async () => {
+    rpcMock.mockResolvedValueOnce({
+      error: {
+        code: '42501',
+        message: 'a past occurrence is history and cannot be reset',
+      },
+    });
+    await expect(resetEventToSeries('event-1')).resolves.toEqual({
+      error: 'That date has already passed and cannot be reset.',
+    });
+  });
+
+  it('updateEventTable: a table removed from underneath the host says so', async () => {
+    rpcMock.mockResolvedValueOnce({
+      error: { code: 'P0002', message: 'no such table' },
+    });
+    await expect(updateEventTable('table-1', { label: 'Table 9' })).resolves.toEqual({
+      error: 'That table is no longer part of this game.',
+    });
+  });
+
+  it("removeEventTable: an event's last table says so, not that the connection failed", async () => {
+    rpcMock.mockResolvedValueOnce({
+      error: { code: '23514', message: 'an event must keep at least one table' },
+    });
+    await expect(removeEventTable('table-1')).resolves.toEqual({
+      error: 'A game must keep at least one table.',
+    });
+  });
+
+  it('removeEventTable: a cancelled event says so', async () => {
+    rpcMock.mockResolvedValueOnce({
+      error: {
+        code: '42501',
+        message: "a cancelled event's tables cannot be edited",
+      },
+    });
+    await expect(removeEventTable('table-1')).resolves.toEqual({
+      error: 'This game was cancelled and its tables can no longer be edited.',
+    });
+  });
+
+  it('endEventSeries: a since-deleted series says so', async () => {
+    rpcMock.mockResolvedValueOnce({
+      error: { code: 'P0002', message: 'no such series' },
+    });
+    await expect(endEventSeries('series-1')).resolves.toEqual({
+      error: 'This series is no longer listed.',
+    });
+  });
+
+  it('removeEventTable: a non-organizer says so, not that the connection failed', async () => {
+    // assert_club_organizer is the first thing every one of these functions
+    // does; a member without the role hitting Remove used to see the
+    // generic message too.
+    rpcMock.mockResolvedValueOnce({
+      error: { code: '42501', message: 'not an organizer of this club' },
+    });
+    await expect(removeEventTable('table-1')).resolves.toEqual({
+      error: 'Only a club organizer can do that.',
+    });
+  });
+
+  it('updateEvent: a venue the club cannot use says so', async () => {
+    rpcMock.mockResolvedValueOnce({
+      error: { code: '42501', message: 'venue not available to this club' },
+    });
+    await expect(updateEvent('event-1', { venueId: 'venue-9' })).resolves.toEqual({
+      error: 'That venue is not available to this club.',
     });
   });
 });
