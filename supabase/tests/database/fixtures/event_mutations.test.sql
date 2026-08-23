@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(72);
+select plan(76);
 
 insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-000000000001', 'alice@example.com'),
@@ -759,6 +759,83 @@ select throws_ok(
       '7a7a7a7a-0000-0000-0000-000000000001')$$,
   '42501', null,
   'a host of another club cannot remove a table here'
+);
+
+-- ---------------------------------------------------------------------
+-- The organizer guard again, now pinned to an ARGUMENT SHAPE rather than to
+-- being present at all. update_event's guard sits ahead of every other
+-- check in the function, but every assertion above calls it with a
+-- non-null new_title -- so `if new_title is not null then perform
+-- assert_club_organizer(...); end if;` passes every assertion in this file
+-- while leaving a title-less edit (a date move, a notes-only edit) wide
+-- open to any member. Two shapes below, both with new_title => null, and
+-- chosen to also cross update_event's own branch between "nothing
+-- calendar-shaped changed" and "recompute the instant" -- neither call can
+-- carry the other.
+--
+-- create_event's guard is the first statement in the function, but both
+-- assertions above call it with every optional argument filled in, so a
+-- guard conditioned on any one of them -- event_notes, event_date,
+-- start_time, duration_minutes, table_count -- is equally invisible. One
+-- call below, with all five explicit null, closes every one of them at
+-- once: skip the guard for any of them and the function still raises, but
+-- 23514 ("an event must have a date") rather than 42501, and throws_ok
+-- tells the two apart.
+--
+-- update_event_table has the identical shape: every assertion above calls
+-- it with a non-null new_label and a null new_tier, so `if new_label is
+-- not null then ...` passes unnoticed. new_tier is already null in every
+-- existing call, so the other half of this guard is already covered --
+-- only a shape where new_label, not new_tier, is the null one is missing.
+--
+-- cancel_event, add_event_table and remove_event_table take exactly one
+-- required argument each. There is no second shape to pin the guard to:
+-- the argument that reaches the guard is the same one that resolves the
+-- row, so this class of mutation does not apply to them.
+-- ---------------------------------------------------------------------
+set local request.jwt.claims =
+  '{"sub": "cccccccc-0000-0000-0000-000000000003", "role": "authenticated"}';
+
+select throws_ok(
+  $$select public.update_event(
+      target_event => 'e2e2e2e2-0000-0000-0000-000000000001',
+      new_title    => null,
+      new_notes    => 'Member''s notes')$$,
+  '42501', null,
+  'a plain member cannot edit an event by notes alone, title left null'
+);
+
+select throws_ok(
+  $$select public.update_event(
+      target_event   => 'e2e2e2e2-0000-0000-0000-000000000001',
+      new_title      => null,
+      new_date       => '2027-11-09',
+      new_start_time => '20:00')$$,
+  '42501', null,
+  'a plain member cannot move an event''s date/time, title left null'
+);
+
+select throws_ok(
+  $$select public.create_event(
+      target_club       => 'c1c1c1c1-0000-0000-0000-000000000001',
+      event_title       => 'Member''s all-defaults event',
+      target_venue      => '11111111-0000-0000-0000-000000000001',
+      event_notes       => null,
+      event_date        => null,
+      start_time        => null,
+      duration_minutes  => null,
+      table_count       => null)$$,
+  '42501', null,
+  'a plain member cannot create an event, every optional argument null'
+);
+
+select throws_ok(
+  $$select public.update_event_table(
+      target_table => '7a7a7a7a-0000-0000-0000-000000000001',
+      new_label    => null,
+      new_tier     => 'advanced')$$,
+  '42501', null,
+  'a plain member cannot relabel a table by tier alone, label left null'
 );
 
 -- ---------------------------------------------------------------------
