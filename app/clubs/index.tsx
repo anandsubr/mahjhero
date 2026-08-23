@@ -140,7 +140,7 @@ export default function ClubsScreen() {
   const showGamesSection = bookingsFailed || myGames.length > 0;
 
   return (
-    <Screen contentStyle={styles.container}>
+    <Screen scroll contentStyle={styles.container}>
       {showGamesSection ? (
         <View style={styles.gamesSection}>
           <Text style={styles.heading}>Your games</Text>

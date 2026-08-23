@@ -153,6 +153,43 @@ describe('Your games', () => {
     expect(await screen.findByText('Waiting for a seat')).toBeTruthy();
   });
 
+  // The one row action given no test in the original brief: a self-held
+  // waitlist spot with no live offer. cancelBooking is in the brief's
+  // Consumes list precisely because of this control (see the Task 13
+  // report's "Row logic" section), so it gets the same three-part coverage
+  // as every other action here — renders, calls the right function with the
+  // right id, and does not leak onto a row it should not appear on.
+  it('lets a waitlisted member leave the waitlist, and does not offer that on a seated row', async () => {
+    fetchMyUpcomingBookings.mockResolvedValue([
+      {
+        ...base,
+        status: 'waitlisted' as const,
+        event_table_id: null,
+        table_label: null,
+      },
+    ]);
+    cancelBooking.mockResolvedValue({ error: null });
+    render(<ClubsScreen />);
+
+    const leaveButton = await screen.findByLabelText(
+      'Leave the waitlist for Tuesday game',
+    );
+    expect(leaveButton).toBeTruthy();
+
+    fireEvent.click(leaveButton);
+    await waitFor(() => expect(cancelBooking).toHaveBeenCalledWith('b1'));
+  });
+
+  it('does not offer to leave the waitlist on a confirmed, seated row', async () => {
+    fetchMyUpcomingBookings.mockResolvedValue([base]);
+    render(<ClubsScreen />);
+    await screen.findByText('Tuesday game');
+    expect(screen.queryByText('Leave the waitlist')).toBeNull();
+    expect(
+      screen.queryByLabelText('Leave the waitlist for Tuesday game'),
+    ).toBeNull();
+  });
+
   it('does not hide the club list when the bookings fetch fails', async () => {
     fetchMyUpcomingBookings.mockResolvedValue(null);
     render(<ClubsScreen />);

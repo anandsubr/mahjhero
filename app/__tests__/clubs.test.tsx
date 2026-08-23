@@ -101,6 +101,20 @@ describe('clubs list', () => {
     expect(screen.getByText('Thursday evenings')).toBeTruthy();
   });
 
+  // "Your games" (Task 13) stacked a whole section above the club list with
+  // no `scroll` prop on Screen, unlike every other list screen
+  // (app/clubs/[id]/index.tsx, the event screen). A member with a few games
+  // and a few clubs could produce a page taller than the viewport with no
+  // way to reach "Start another club" or "Your profile". Only the populated
+  // main render needs this — the loading/ready spinners and the load-failed
+  // error banner are all short, centered, single-purpose content.
+  it('lets the populated screen scroll', async () => {
+    fetchMyClubs.mockResolvedValueOnce([CLUB]);
+    render(<ClubsScreen />);
+    expect(await screen.findByText('Riverside Mah Jongg')).toBeTruthy();
+    expect(screen.getByTestId('screen-scroll')).toBeTruthy();
+  });
+
   // The one that matters: fetchMyClubs returns null on a failed load and []
   // when the member genuinely has no clubs. Rendering the empty-state copy
   // for both would tell a member whose fetch just failed that their clubs
