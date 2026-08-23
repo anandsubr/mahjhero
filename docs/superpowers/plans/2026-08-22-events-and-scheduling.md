@@ -6362,6 +6362,16 @@ git commit -m "feat: add the event screen with tables, tiers, and organizer cont
 - Consumes: `fetchEvent`, `fetchSeries`, `fetchOverriddenOccurrences`, `updateEvent`, `updateEventSeries`, `endEventSeries`, `formatEventWhen` from `lib/events.ts`; `fetchClub` from `lib/clubs.ts`; `VenuePicker`, `DateField`, `TimeField`, `Toggle`.
 - Produces: the route `/clubs/<id>/events/<eventId>/edit`, linked from Task 14.
 
+**Clearing an already-set end date needs a deliberate answer.** `DateField`
+ignores an empty change by design, so there is no way to un-set "Stop repeating
+on" through it. On the create screen that was survivable — the host can start
+over. Here it is a real operation on a running series ("this no longer stops in
+March"), with no start-over escape, and `updateEventSeries`'s `new_ends_on`
+cannot express it either: null means "leave alone", not "clear". Decide how to
+offer it — a separate "Runs indefinitely" control that sends a distinct signal
+is the obvious shape — and say what you chose. Do not silently ship a series
+whose end date is one-way.
+
 **The scope choice appears only when there is one.** A one-off event has no series, so the screen edits it and says nothing about scope. A series-linked event offers "This game" or "The whole series".
 
 **The overridden-occurrences toggle appears only when there is something for it to apply to.** `fetchOverriddenOccurrences` returns the future, live, customised weeks; if the list is empty the toggle is not rendered at all. When it is rendered, it names them if there are three or fewer, because "2 events" tells a host nothing about whether they mind.
