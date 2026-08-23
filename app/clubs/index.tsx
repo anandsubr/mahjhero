@@ -12,6 +12,7 @@ import {
   declinePromotionOffer,
   fetchMyUpcomingBookings,
   offerCountdown,
+  waitlistLabel,
 } from '../../lib/bookings';
 import type { MyBooking } from '../../lib/bookings';
 import { fetchMyClubs } from '../../lib/clubs';
@@ -260,7 +261,9 @@ function BookingCard({
     : booking.table_label
       ? booking.table_label
       : booking.status === 'waitlisted'
-        ? 'Waiting for a seat'
+        ? booking.waitlist_position !== null
+          ? waitlistLabel(booking.waitlist_position)
+          : 'Waiting for a seat'
         : 'Not seated yet';
 
   const bookedByOther = booking.booked_by !== youId;
@@ -296,7 +299,9 @@ function BookingCard({
             big={false}
             disabled={busy}
             onPress={() => onDeclineOffer(booking)}
-            accessibilityLabel="Decline the offer"
+            accessibilityLabel={`Decline the ${booking.offer_seats} ${
+              booking.offer_seats === 1 ? 'seat' : 'seats'
+            } offered for ${booking.event_title}`}
           >
             No thanks
           </Button>

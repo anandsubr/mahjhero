@@ -64,6 +64,7 @@ export type MyBooking = {
   offer_id: string | null;
   offer_seats: number | null;
   offer_expires_at: string | null;
+  waitlist_position: number | null;
 };
 
 export type BookingOutcome = {
