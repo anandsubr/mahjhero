@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(16);
+select plan(24);
 
 insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-000000000001', 'alice@example.com'),
@@ -235,6 +235,184 @@ select throws_ok(
   '23514',
   null,
   'the last table still cannot be removed');
+
+-- ---------------------------------------------------------------------
+-- IMPORTANT FIX (20260825100000): accepting a promotion offer used to be
+-- able to seat a group past the event's capacity, because
+-- accept_promotion_offer trusted the seat count stamped on the offer when
+-- it was minted rather than checking capacity actually free at the moment
+-- of acceptance. Tested here, in this file, because the way capacity
+-- shrinks out from under an outstanding offer is exactly what
+-- remove_event_table does (unseat, never destroy) -- the same mechanism
+-- event_disruption.test.sql already exercises above for the "unseat
+-- rather than eject" rule. waitlist_promotion.test.sql covers
+-- promote_waitlist's own termination fix instead.
+--
+-- A second, isolated event: two tables of two (capacity 4). Alice and
+-- Carol confirmed at Table A (full); Dan confirmed alone at Table B (one
+-- free seat). Frank and Grace, an "any table" pair, are offered that one
+-- free seat (offered_seat_count = 1; they still want 2). The host then
+-- removes Table B -- Dan is unseated, not ejected, exactly as tested
+-- above -- so capacity drops to 2 while 3 bookings stay confirmed and the
+-- offer still holds 1: `cap 2, conf 3, held 1, free 0`. Frank accepts.
+-- Before the fix: confirm_group_seats(group, 1) ignored capacity entirely
+-- for an "any table" group (seat_assignments' `preferred is null` branch
+-- never checks it -- see 20260825100000's header) and seated one more
+-- booking anyway: `cap 2, conf 4`. After the fix: the seat count is
+-- bounded by `least(offered_seat_count, event_free_seats(...))` = 0, so
+-- nothing is seated and the pair stays exactly as waitlisted as before.
+-- ---------------------------------------------------------------------
+-- The preceding throws_ok block left role set to authenticated, which has
+-- no direct DML grant on these tables -- only the security-definer
+-- functions do.
+reset role;
+
+insert into public.events
+  (id, club_id, title, venue_id, starts_at, ends_at, created_by) values
+  ('e1e1e1e1-0000-0000-0000-000000000002',
+   'c1c1c1c1-0000-0000-0000-000000000001', 'Thursday game',
+   '11111111-0000-0000-0000-000000000001',
+   now() + interval '7 days', now() + interval '7 days 3 hours',
+   'aaaaaaaa-0000-0000-0000-000000000001');
+
+insert into public.event_tables
+  (id, event_id, club_id, label, capacity, position) values
+  ('7ab1e000-0000-0000-0000-000000000010',
+   'e1e1e1e1-0000-0000-0000-000000000002',
+   'c1c1c1c1-0000-0000-0000-000000000001', 'Table A', 2, 1),
+  ('7ab1e000-0000-0000-0000-000000000011',
+   'e1e1e1e1-0000-0000-0000-000000000002',
+   'c1c1c1c1-0000-0000-0000-000000000001', 'Table B', 2, 2);
+
+-- Alice and Carol fill Table A.
+insert into public.booking_groups
+  (id, event_id, club_id, created_by, preferred_table_id) values
+  ('9909aaaa-0000-0000-0000-000000000010',
+   'e1e1e1e1-0000-0000-0000-000000000002',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   'aaaaaaaa-0000-0000-0000-000000000001',
+   '7ab1e000-0000-0000-0000-000000000010');
+insert into public.bookings
+  (group_id, event_id, club_id, event_table_id, profile_id, booked_by) values
+  ('9909aaaa-0000-0000-0000-000000000010',
+   'e1e1e1e1-0000-0000-0000-000000000002',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   '7ab1e000-0000-0000-0000-000000000010',
+   'aaaaaaaa-0000-0000-0000-000000000001',
+   'aaaaaaaa-0000-0000-0000-000000000001'),
+  ('9909aaaa-0000-0000-0000-000000000010',
+   'e1e1e1e1-0000-0000-0000-000000000002',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   '7ab1e000-0000-0000-0000-000000000010',
+   'cccccccc-0000-0000-0000-000000000003',
+   'aaaaaaaa-0000-0000-0000-000000000001');
+
+-- Dan sits alone at Table B -- one free seat there.
+insert into public.booking_groups
+  (id, event_id, club_id, created_by, preferred_table_id) values
+  ('9909aaaa-0000-0000-0000-000000000011',
+   'e1e1e1e1-0000-0000-0000-000000000002',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   'dddddddd-0000-0000-0000-000000000004',
+   '7ab1e000-0000-0000-0000-000000000011');
+insert into public.bookings
+  (group_id, event_id, club_id, event_table_id, profile_id, booked_by) values
+  ('9909aaaa-0000-0000-0000-000000000011',
+   'e1e1e1e1-0000-0000-0000-000000000002',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   '7ab1e000-0000-0000-0000-000000000011',
+   'dddddddd-0000-0000-0000-000000000004',
+   'dddddddd-0000-0000-0000-000000000004');
+
+-- Frank and Grace, any table, want two seats.
+insert into public.booking_groups
+  (id, event_id, club_id, created_by, allow_split, status, waitlisted_at)
+  values
+  ('9909aaaa-0000-0000-0000-000000000012',
+   'e1e1e1e1-0000-0000-0000-000000000002',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   '66666666-0000-0000-0000-000000000006', true, 'waitlisted', now());
+insert into public.bookings
+  (group_id, event_id, club_id, profile_id, booked_by, status) values
+  ('9909aaaa-0000-0000-0000-000000000012',
+   'e1e1e1e1-0000-0000-0000-000000000002',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   '66666666-0000-0000-0000-000000000006',
+   '66666666-0000-0000-0000-000000000006', 'waitlisted'),
+  ('9909aaaa-0000-0000-0000-000000000012',
+   'e1e1e1e1-0000-0000-0000-000000000002',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   '77777777-0000-0000-0000-000000000007',
+   '66666666-0000-0000-0000-000000000006', 'waitlisted');
+
+select public.promote_waitlist('e1e1e1e1-0000-0000-0000-000000000002');
+
+select is(
+  (select offered_seat_count from public.promotion_offers
+    where group_id = '9909aaaa-0000-0000-0000-000000000012'),
+  1,
+  'Frank and Grace are offered the one free seat at Table B');
+
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "aaaaaaaa-0000-0000-0000-000000000001", "role": "authenticated"}';
+
+select lives_ok(
+  $$select public.remove_event_table('7ab1e000-0000-0000-0000-000000000011')$$,
+  'the host removes Table B out from under the outstanding offer');
+
+reset role;
+
+select is(public.event_free_seats('e1e1e1e1-0000-0000-0000-000000000002'), 0,
+  'cap 2, conf 3, held 1: no free seats left for the offer to spend');
+
+-- The event is already over capacity at this point (Dan's confirmed
+-- booking survived the table removal that unseated him -- the same
+-- "unseat, never destroy" rule proven above, not this fix's concern). So
+-- "confirmed <= capacity" does not hold even before the accept; what this
+-- fix guards is that the accept does not make that WORSE. Captured here,
+-- compared after.
+create temporary table _confirmed_before_accept as
+  select count(*)::int as n from public.bookings
+  where event_id = 'e1e1e1e1-0000-0000-0000-000000000002'
+    and status = 'confirmed';
+
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "66666666-0000-0000-0000-000000000006", "role": "authenticated"}';
+
+select is(
+  public.accept_promotion_offer(
+    (select id from public.promotion_offers
+      where group_id = '9909aaaa-0000-0000-0000-000000000012')),
+  0,
+  'accepting seats nobody -- capacity for the promised seat evaporated first');
+
+reset role;
+
+select is(
+  (select count(*)::int from public.bookings
+    where event_id = 'e1e1e1e1-0000-0000-0000-000000000002'
+      and status = 'confirmed'),
+  3,
+  'confirmed count is unchanged by the accept');
+select is(
+  (select count(*)::int from public.bookings
+    where event_id = 'e1e1e1e1-0000-0000-0000-000000000002'
+      and status = 'confirmed'),
+  (select n from _confirmed_before_accept),
+  'the accept does not seat anybody beyond what was already confirmed -- the property this fix exists to hold');
+select is(
+  (select count(*)::int from public.bookings
+    where group_id = '9909aaaa-0000-0000-0000-000000000012'
+      and status = 'waitlisted'),
+  2,
+  'Frank and Grace are still both waitlisted, exactly as before the accept');
+select is(
+  (select status::text from public.booking_groups
+    where id = '9909aaaa-0000-0000-0000-000000000012'),
+  'waitlisted',
+  'and their group is still waitlisted, not confirmed');
 
 -- ---------------------------------------------------------------------
 -- Cancelling the game voids everything.
