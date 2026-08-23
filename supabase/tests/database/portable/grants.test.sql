@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(57);
+select plan(65);
 
 /*
  * Guards the privileges themselves, not the policies.
@@ -369,6 +369,64 @@ select ok(
 select ok(
   not has_table_privilege('authenticated', 'public.event_tables', 'TRUNCATE'),
   'authenticated cannot TRUNCATE event_tables'
+);
+
+-- ---------------------------------------------------------------------------
+-- Booking ACLs (this plan's Task 7). The four tables Tasks 1-6 added. Same
+-- reasoning as every TRUNCATE block above: ALL is the Supabase bootstrap
+-- default and includes TRUNCATE, which RLS does not filter.
+-- ---------------------------------------------------------------------------
+
+select ok(
+  not has_table_privilege('authenticated', 'public.booking_groups', 'TRUNCATE'),
+  'authenticated cannot TRUNCATE booking_groups'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.bookings', 'TRUNCATE'),
+  'authenticated cannot TRUNCATE bookings'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.promotion_offers', 'TRUNCATE'),
+  'authenticated cannot TRUNCATE promotion_offers'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.notification_outbox', 'TRUNCATE'),
+  'authenticated cannot TRUNCATE notification_outbox'
+);
+
+-- The outbox is plan 6's queue and nobody else's. RLS is on with no policy,
+-- so even a mistaken grant would return nothing — but a grant that exists
+-- is a grant somebody will eventually write a policy for.
+select ok(
+  not has_table_privilege('authenticated', 'public.notification_outbox',
+    'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER'),
+  'authenticated holds no privilege of any kind on notification_outbox'
+);
+
+select ok(
+  has_function_privilege('authenticated',
+    'public.commit_booking(uuid, uuid[], uuid, boolean)', 'EXECUTE'),
+  'authenticated can still execute commit_booking'
+);
+
+-- sweep_promotion_offers and announce_need_a_fourth are the two functions
+-- 20260825060000 schedules to run as `postgres`. Neither takes a caller
+-- argument nor checks membership, so authenticated must not reach either —
+-- and unlike the eleven client-facing functions above, their migrations
+-- (20260825010000, 20260825050000) only revoke from `public, anon`, the
+-- same gap that let reflow_events_for_timezone, assert_club_organizer and
+-- event_series_detach_occurrences stay reachable on hosted after a `revoke
+-- ... from public` that looked complete locally. 20260825060000 closes it
+-- explicitly for these two with `revoke ... from authenticated`.
+select ok(
+  not has_function_privilege(
+    'authenticated', 'public.sweep_promotion_offers()', 'EXECUTE'),
+  'authenticated cannot execute sweep_promotion_offers'
+);
+select ok(
+  not has_function_privilege(
+    'authenticated', 'public.announce_need_a_fourth()', 'EXECUTE'),
+  'authenticated cannot execute announce_need_a_fourth'
 );
 
 -- Clients read these tables and never write them. Every mutation is a

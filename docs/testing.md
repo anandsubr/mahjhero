@@ -609,3 +609,33 @@ for that run (`cli_login_postgres` cannot read that table — see above — so
 this is a `postgres`/dashboard-only inspection) and in the Postgres server
 log for whichever environment ran it. Nobody currently polls either one, so
 today a skipped series is discoverable but not alerted on.
+
+Three jobs now run on `pg_cron`:
+
+| Job | Schedule | What it does |
+|---|---|---|
+| `materialize-event-series` | `0 3 * * *` | Keeps ~6 weeks of recurring events materialized |
+| `sweep-promotion-offers` | `*/5 * * * *` | Expires promotion offers past `expires_at`, releases their held seats, and promotes the next eligible group |
+| `announce-need-a-fourth` | `*/15 * * * *` | Writes `notification_outbox` rows for tables at `capacity - 1` inside the 48-hour window |
+
+All three are ordinary plpgsql and are tested by **calling them**, not by
+waiting for a schedule. `sweep_promotion_offers()` and
+`announce_need_a_fourth()` both return a count, so a fixture can assert what
+a run did rather than inspecting `cron.job_run_details` — which the hosted
+suite could not read anyway.
+
+**Waitlist promotion is not on this list, and that is deliberate.** It runs
+inline inside whichever transaction frees a seat. The sweep calls it too,
+but only after expiring an offer; if you find yourself adding a "promote the
+waitlist" job, something inline has stopped calling `promote_waitlist`.
+
+`sweep_promotion_offers` and `announce_need_a_fourth` are also the first two
+scheduled-job functions revoked from `authenticated` explicitly, in
+`20260825060000_schedule_booking_jobs.sql`. Their own migrations
+(`20260825010000`, `20260825050000`) only revoke `from public, anon` — the
+same shape of gap `reflow_events_for_timezone`, `assert_club_organizer` and
+`event_series_detach_occurrences` each hit before them, where a hosted
+bootstrap grant of EXECUTE directly to `authenticated` survived a `revoke
+... from public` that looked complete against the local stack. Neither
+function takes a caller argument or checks membership, so `authenticated`
+reaching either would be a real hole, not a theoretical one.
