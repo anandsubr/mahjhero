@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(65);
+select plan(66);
 
 /*
  * Guards the privileges themselves, not the policies.
@@ -409,6 +409,12 @@ select ok(
   'authenticated can still execute commit_booking'
 );
 
+select ok(
+  has_function_privilege('authenticated', 'public.event_seating(uuid)',
+    'EXECUTE'),
+  'authenticated can still execute event_seating'
+);
+
 -- sweep_promotion_offers and announce_need_a_fourth are the two functions
 -- 20260825060000 schedules to run as `postgres`. Neither takes a caller
 -- argument nor checks membership, so authenticated must not reach either —
@@ -588,7 +594,9 @@ select is(
        'public.decline_booking(uuid)',
        'public.cancel_booking_group(uuid)',
        'public.place_booking(uuid, uuid)',
-       'public.call_for_a_fourth(uuid)'
+       'public.call_for_a_fourth(uuid)',
+       'public.event_seating(uuid)',
+       'public.my_upcoming_bookings()'
      ]) as f
    ) expected
    where not exists (
@@ -645,7 +653,9 @@ select is(
          'public.decline_booking(uuid)',
          'public.cancel_booking_group(uuid)',
          'public.place_booking(uuid, uuid)',
-         'public.call_for_a_fourth(uuid)'
+         'public.call_for_a_fourth(uuid)',
+         'public.event_seating(uuid)',
+         'public.my_upcoming_bookings()'
        ]) as f
        where to_regprocedure(f) = p.oid::regprocedure
      )),
