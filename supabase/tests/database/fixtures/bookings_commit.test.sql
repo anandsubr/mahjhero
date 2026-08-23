@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(43);
+select plan(44);
 
 insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-000000000001', 'alice@example.com'),
@@ -453,6 +453,38 @@ select lives_ok(
             '44444444-0000-0000-0000-000000000012']::uuid[],
       '7ab1e000-0000-0000-0000-000000000001', true)$$,
   'a splittable pair with one seat free is accepted onto the waitlist');
+
+-- Kim's group lands on the waitlist behind Ivy/Jack's -- narratively. Both
+-- commits ran inside this same test transaction, where now() is pinned to
+-- the transaction start, so their waitlisted_at (and created_at) values tie
+-- exactly; the ordering's final tiebreaker, group id, is a fresh random
+-- uuid and settles the tie arbitrarily. That is fine for promote_waitlist
+-- (a real tie genuinely doesn't matter -- nobody is disadvantaged either
+-- way) but makes a bad fixture: "behind one other group" has to be true
+-- unconditionally, not by the luck of two random uuids. Backdating Ivy and
+-- Jack's own waitlisted_at, rather than advancing Kim's, keeps this test
+-- reading the same clock direction as production -- the group that has
+-- been waiting LONGER is the one further ahead.
+reset role;
+update public.booking_groups
+   set waitlisted_at = waitlisted_at - interval '1 minute'
+ where created_by = '77777777-0000-0000-0000-000000000009';
+
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "55555555-0000-0000-0000-000000000011", "role": "authenticated"}';
+
+-- my_upcoming_bookings() -- what "Your games" reads -- must report the
+-- same position booking_result already does, computed with the identical
+-- (waitlisted_at, created_at, id) ordering promote_waitlist walks; a
+-- screen that disagrees with the function that actually seats people is
+-- worse than a screen that says nothing.
+select is(
+  (select waitlist_position from public.my_upcoming_bookings()
+    where event_id = 'e1e1e1e1-0000-0000-0000-000000000001'),
+  2,
+  'my_upcoming_bookings reports the same waitlist position booking_result '
+  'does -- 2nd, behind the one group ahead of it');
 
 reset role;
 select is(

@@ -70,6 +70,7 @@ const base = {
   offer_id: null,
   offer_seats: null,
   offer_expires_at: null,
+  waitlist_position: null,
 };
 
 beforeEach(() => {
@@ -147,6 +148,26 @@ describe('Your games', () => {
         status: 'waitlisted' as const,
         event_table_id: null,
         table_label: null,
+        waitlist_position: 3,
+      },
+    ]);
+    render(<ClubsScreen />);
+    // waitlistLabel(3) — the exact wording the event screen already uses
+    // for this. A bare "Waiting for a seat" would not answer "should I
+    // make other plans tonight?", which is why this row-level data (not a
+    // generic status word) is what gets asserted.
+    expect(await screen.findByText('3rd on the waitlist')).toBeTruthy();
+    expect(screen.queryByText('Waiting for a seat')).toBeNull();
+  });
+
+  it('falls back to a generic waiting message when no position is known', async () => {
+    fetchMyUpcomingBookings.mockResolvedValue([
+      {
+        ...base,
+        status: 'waitlisted' as const,
+        event_table_id: null,
+        table_label: null,
+        waitlist_position: null,
       },
     ]);
     render(<ClubsScreen />);
@@ -197,5 +218,97 @@ describe('Your games', () => {
     // says so quietly and gets out of the way.
     expect(await screen.findByText('Your clubs')).toBeTruthy();
     expect(screen.getByText('Could not load your games.')).toBeTruthy();
+  });
+
+  // A member can be waitlisted at two events at once and get promoted at
+  // both — two live offers, two decline controls. "Decline the offer"
+  // named nothing distinguishing; a screen reader (and getByLabelText)
+  // could not tell them apart. Each label must name its own seats and
+  // event.
+  it('gives each of two simultaneous offers its own, distinct decline label', async () => {
+    fetchMyUpcomingBookings.mockResolvedValue([
+      {
+        ...base,
+        booking_id: 'b1',
+        event_id: 'e1',
+        event_title: 'Tuesday game',
+        status: 'waitlisted' as const,
+        event_table_id: null,
+        table_label: null,
+        offer_id: 'o1',
+        offer_seats: 2,
+        offer_expires_at: '2026-08-24T16:15:00Z',
+      },
+      {
+        ...base,
+        booking_id: 'b2',
+        event_id: 'e2',
+        event_title: 'Thursday game',
+        status: 'waitlisted' as const,
+        event_table_id: null,
+        table_label: null,
+        offer_id: 'o2',
+        offer_seats: 1,
+        offer_expires_at: '2026-08-24T17:00:00Z',
+      },
+    ]);
+    render(<ClubsScreen />);
+
+    const first = await screen.findByLabelText(
+      'Decline the 2 seats offered for Tuesday game',
+    );
+    const second = await screen.findByLabelText(
+      'Decline the 1 seat offered for Thursday game',
+    );
+    expect(first).toBeTruthy();
+    expect(second).toBeTruthy();
+    expect(first).not.toBe(second);
+  });
+
+  // runBookingAction sets actionError straight from the data layer's
+  // { error } channel — this pins that down against a regression that
+  // swaps the real refusal sentence for GENERIC_ERROR.
+  it('renders the data layer refusal verbatim, not a generic message', async () => {
+    fetchMyUpcomingBookings.mockResolvedValue([
+      { ...base, booked_by: 'p2', booked_by_name: 'Jane P.' },
+    ]);
+    declineBooking.mockResolvedValue({
+      error: 'That is not your seat to change.',
+    });
+    render(<ClubsScreen />);
+    fireEvent.click(
+      await screen.findByLabelText('Decline the seat Jane P. booked'),
+    );
+    expect(
+      await screen.findByText('That is not your seat to change.'),
+    ).toBeTruthy();
+  });
+
+  // Every other test here renders exactly one row, so a regression that
+  // hoists club_timezone to a page-level variable (instead of reading each
+  // row's own field) would pass unnoticed. Two rows, same instant, two
+  // different club timezones: the rendered local times must differ.
+  it('formats each row in its own club timezone, not a shared one', async () => {
+    fetchMyUpcomingBookings.mockResolvedValue([
+      {
+        ...base,
+        booking_id: 'b1',
+        event_title: 'Tuesday game',
+        club_name: 'Riverside',
+        club_timezone: 'America/New_York',
+        starts_at: '2026-08-25T22:30:00Z',
+      },
+      {
+        ...base,
+        booking_id: 'b2',
+        event_title: 'Friday game',
+        club_name: 'Oakfield',
+        club_timezone: 'Asia/Tokyo',
+        starts_at: '2026-08-25T22:30:00Z',
+      },
+    ]);
+    render(<ClubsScreen />);
+    expect(await screen.findByText('Tue 25 Aug, 6:30 pm')).toBeTruthy();
+    expect(await screen.findByText('Wed 26 Aug, 7:30 am')).toBeTruthy();
   });
 });
