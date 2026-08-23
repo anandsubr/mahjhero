@@ -520,7 +520,9 @@ select is(
        'public.update_event_series(uuid, text, uuid, text, time, int, int, date, boolean, boolean)',
        'public.end_event_series(uuid, boolean)',
        'public.reset_event_to_series(uuid)',
-       'public.is_booking_group_member(uuid)'
+       'public.is_booking_group_member(uuid)',
+       'public.accept_promotion_offer(uuid)',
+       'public.decline_promotion_offer(uuid)'
      ]) as f
    ) expected
    where not exists (
@@ -567,7 +569,9 @@ select is(
          'public.update_event_series(uuid, text, uuid, text, time, int, int, date, boolean, boolean)',
          'public.end_event_series(uuid, boolean)',
          'public.reset_event_to_series(uuid)',
-         'public.is_booking_group_member(uuid)'
+         'public.is_booking_group_member(uuid)',
+         'public.accept_promotion_offer(uuid)',
+         'public.decline_promotion_offer(uuid)'
        ]) as f
        where to_regprocedure(f) = p.oid::regprocedure
      )),
