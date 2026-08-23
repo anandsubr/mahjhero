@@ -23,7 +23,11 @@ import {
 } from '../../../lib/clubs';
 import type { Club, ClubInvite, ClubMember } from '../../../lib/clubs';
 import { GENERIC_ERROR } from '../../../lib/constants';
-import { fetchUpcomingEvents, formatEventWhen } from '../../../lib/events';
+import {
+  eventStatusLine,
+  fetchUpcomingEvents,
+  formatEventWhen,
+} from '../../../lib/events';
 import type { ClubEvent } from '../../../lib/events';
 import { useSession } from '../../../lib/session';
 import { colors, space, type } from '../../../lib/theme';
@@ -213,6 +217,27 @@ export default function ClubDetailScreen() {
                 <Text style={styles.help}>
                   {event.table_count}{' '}
                   {event.table_count === 1 ? 'table' : 'tables'}
+                </Text>
+                {/*
+                  Task 14: where the viewer stands on THIS game — their own
+                  seat/waitlist place first, then a call for a fourth aimed
+                  at everybody who is not already in, then the plain seat
+                  count. Your own state always wins (see eventStatusLine's
+                  doc comment in lib/events.ts) — a member already seated is
+                  never told the table needs a fourth.
+                */}
+                <Text style={styles.help}>
+                  {eventStatusLine(
+                    {
+                      starts_at: event.starts_at,
+                      event_tables: event.event_tables,
+                      bookings: event.bookings,
+                      tables_labels: Object.fromEntries(
+                        event.event_tables.map((t) => [t.id, t.label]),
+                      ),
+                    },
+                    userId ?? '',
+                  )}
                 </Text>
               </Card>
             </Pressable>

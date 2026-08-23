@@ -1,3 +1,4 @@
+import { needsAFourth } from './bookings';
 import { GENERIC_ERROR } from './constants';
 import { supabase } from './supabase';
 
@@ -22,6 +23,16 @@ export type ClubEvent = {
   occurrence_date: string | null;
   overrides: OverrideKey[];
   table_count: number;
+  /**
+   * Raw enough for `eventStatusLine` to compute from directly — capacity per
+   * table and the label a placed seat should show (Task 14). Carried
+   * alongside the already-derived `table_count` rather than replacing it;
+   * existing callers read `table_count`, only the club list's status line
+   * needs the rest.
+   */
+  event_tables: { id: string; capacity: number; label: string }[];
+  /** Every booking row for this event, live and dead. Filter before use. */
+  bookings: EventBookingRow[];
 };
 
 export type EventTable = {
@@ -90,10 +101,20 @@ export type RecurrenceRule = {
  * rather than retyping them — see lib/profile.ts's PROFILE_COLUMNS for the
  * pattern this follows. A column dropped here without the test noticing is
  * exactly the drift the contract suite exists to catch.
+ *
+ * `event_tables(id, capacity, label)` and the top-level `bookings(...)` embed
+ * were added for Task 14's "where you stand" line on the club's list.
+ * `bookings` is readable by any club member (`bookings_select_club_member`,
+ * Task 1), so this is one PostgREST embed, not a second round trip. `label`
+ * is not in Task 14's brief text — added anyway, because without it a placed
+ * seat's line ("You're in · Table 2") can never actually render; the brief's
+ * own `eventStatusLine` signature takes a `tables_labels` map that has to
+ * come from somewhere, and `event_tables(id)` alone cannot supply it.
  */
 export const EVENT_COLUMNS =
   'id, club_id, series_id, title, venue_id, notes, starts_at, ends_at, ' +
-  'status, occurrence_date, overrides, venues(name), event_tables(id)';
+  'status, occurrence_date, overrides, venues(name), ' +
+  'event_tables(id, capacity, label), bookings(profile_id, status, event_table_id)';
 
 export const SERIES_COLUMNS =
   'id, club_id, title, venue_id, notes, frequency, weekday, nth_week, start_time, duration_minutes, table_count, starts_on, ends_on, ended_at, venues(name)';
@@ -268,6 +289,82 @@ export function eventStartTimeInZone(startsAt: string, timezone: string): string
   return `${hour}:${minute}`;
 }
 
+/** One booking row as `EVENT_COLUMNS`'s `bookings(...)` embed returns it. */
+export type EventBookingRow = {
+  profile_id: string;
+  status: 'confirmed' | 'waitlisted' | 'cancelled' | 'declined';
+  event_table_id: string | null;
+};
+
+/**
+ * One line per game on the club's list — Task 14.
+ *
+ * Precedence is deliberate and is NOT alphabetical: YOUR state wins over the
+ * club's, because a member already in the game does not need recruiting to
+ * it. So: your placed seat, then your "any table" seat, then your waitlist
+ * place, then the call for a fourth, then the plain seat count.
+ *
+ * A waitlisted member's *position* is not in this row's data — `bookings`
+ * carries no group, unlike `event_seating`'s RPC. Render `Waiting` here and
+ * the position on the event screen, which has the group. Faking a position
+ * from this embed, or adding a second round trip just to get one, is
+ * exactly what this function must not do.
+ *
+ * The "one short, within 48 hours" rule is `needsAFourth`'s (lib/bookings.ts)
+ * and `need_a_fourth_stage`'s (SQL) alone. This calls `needsAFourth`
+ * directly rather than re-deriving the rule inline — Task 12's review already
+ * caught a THIRD copy on the event screen that had drifted (it dropped the
+ * `capacity < 2` guard the other two carry); a fourth copy here would be the
+ * same mistake again.
+ *
+ * Pure and exported so the branching is testable without rendering — the
+ * same reason `resolveIndexRedirect` is (app/index.tsx): the branching IS
+ * the behaviour, and a render test hides which branch ran.
+ */
+export function eventStatusLine(
+  event: {
+    starts_at: string;
+    event_tables: { id: string; capacity: number }[];
+    bookings: EventBookingRow[];
+    /** Table id -> label, for a placed seat's "· Table 2". */
+    tables_labels?: Record<string, string>;
+  },
+  youId: string,
+  now: Date = new Date(),
+): string {
+  const live = event.bookings.filter(
+    (b) => b.status === 'confirmed' || b.status === 'waitlisted',
+  );
+  const mine = live.find((b) => b.profile_id === youId);
+
+  if (mine?.status === 'confirmed') {
+    const label = mine.event_table_id
+      ? event.tables_labels?.[mine.event_table_id]
+      : null;
+    return label ? `You're in · ${label}` : "You're in";
+  }
+  if (mine?.status === 'waitlisted') return 'Waiting';
+
+  const confirmed = live.filter((b) => b.status === 'confirmed');
+  const startsAt = new Date(event.starts_at);
+  const oneShortAndSoon = event.event_tables.some((t) =>
+    needsAFourth(
+      t.capacity,
+      confirmed.filter((b) => b.event_table_id === t.id).length,
+      startsAt,
+      now,
+    ),
+  );
+  if (oneShortAndSoon) return 'Needs a 4th';
+
+  const capacity = event.event_tables.reduce((sum, t) => sum + t.capacity, 0);
+  const free = Math.max(0, capacity - confirmed.length);
+  // "0 seats free" is a sentence nobody writes. Plan 3's visual review
+  // caught a card reading "0 tables" for the same reason.
+  if (free === 0) return 'Full';
+  return `${free} ${free === 1 ? 'seat' : 'seats'} free`;
+}
+
 // ---------------------------------------------------------------------------
 // Data functions
 //
@@ -345,17 +442,23 @@ function rpcErrorMessage(error: RpcError): string {
   return match ? match.message : GENERIC_ERROR;
 }
 
-type EventRow = Omit<ClubEvent, 'venue_name' | 'table_count'> & {
+type EventRow = Omit<
+  ClubEvent,
+  'venue_name' | 'table_count' | 'event_tables' | 'bookings'
+> & {
   venues: { name: string } | null;
-  event_tables: { id: string }[] | null;
+  event_tables: { id: string; capacity: number; label: string }[] | null;
+  bookings: EventBookingRow[] | null;
 };
 
 function toClubEvent(row: EventRow): ClubEvent {
-  const { venues, event_tables, ...rest } = row;
+  const { venues, event_tables, bookings, ...rest } = row;
   return {
     ...rest,
     venue_name: venues?.name ?? '',
     table_count: event_tables?.length ?? 0,
+    event_tables: event_tables ?? [],
+    bookings: bookings ?? [],
   };
 }
 

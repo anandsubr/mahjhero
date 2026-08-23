@@ -510,13 +510,26 @@ describe.runIf(reachable || required)('events schema contract', () => {
       [
         'id', 'club_id', 'series_id', 'title', 'venue_id', 'notes',
         'starts_at', 'ends_at', 'status', 'occurrence_date', 'overrides',
-        'venues', 'event_tables',
+        'venues', 'event_tables', 'bookings',
       ].sort(),
     );
     expect(row.title).toBe('Tuesday Mahjong');
     expect(row.overrides).toEqual(['title']);
     expect((row.venues as { name: string }).name).toBe('Contract Hall');
     expect((row.event_tables as unknown[]).length).toBe(1);
+    // Task 14: `eventStatusLine` (lib/events.ts) needs capacity and label off
+    // each table, and the live bookings, to compute where a member stands on
+    // this game — added to EVENT_COLUMNS alongside the id-only embed this
+    // suite already pinned.
+    const [table] = row.event_tables as {
+      id: string;
+      capacity: number;
+      label: string;
+    }[];
+    expect(table.capacity).toBe(4);
+    expect(table.label).toBe('Table 1');
+    // No bookings seeded for this event — an empty array, not a missing key.
+    expect(row.bookings).toEqual([]);
   });
 
   it('exposes exactly the columns lib/events.ts names on event_series, including ended_at', async () => {
