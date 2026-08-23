@@ -6556,11 +6556,11 @@ import Card from './Card';
 import Toggle from './Toggle';
 import type { BookingOutcome } from '../lib/bookings';
 import type { EventTable } from '../lib/events';
-import type { RosterMember } from '../lib/clubs';
+import type { ClubMember } from '../lib/clubs';
 import { colors, radius, space, type } from '../lib/theme';
 
 type Props = {
-  roster: RosterMember[];
+  roster: ClubMember[];
   /** profile ids already holding a live booking for this game. */
   booked: string[];
   youId: string;
@@ -6837,7 +6837,7 @@ const styles = StyleSheet.create({
 });
 ```
 
-`RosterMember` is `lib/clubs.ts`'s existing roster row type — use whatever it is actually called there rather than declaring a second one.
+The roster row type is **`ClubMember`** in `lib/clubs.ts` — `{ profile_id, role, display_name, skill_level }`, returned by `fetchRoster(clubId): Promise<ClubMember[] | null>`. (`RosterRow` in that file is something else: a CSV import row, with an email and no profile id. Do not use it.)
 
 **`Toggle` takes `value`, `onValueChange` and `accessibilityLabel`, and nothing else.** It sets `accessibilityRole="switch"` and `aria-checked` internally — do not pass it `accessibilityState`, which it no longer accepts and which react-native-web drops on the floor anyway. Every interactive control in this sheet states its state through a flat `aria-*` prop for the same reason; see `components/Toggle.tsx`'s docstring.
 
