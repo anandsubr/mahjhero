@@ -12,8 +12,17 @@ export type BookingGroupStatus = 'confirmed' | 'waitlisted' | 'cancelled';
 // unions type-check against each other right up until one of them gains a
 // value.
 export type { SkillTier } from './events';
+export type { SkillLevel } from './profile';
 
-/** One live booking, as `event_seating` returns it. */
+/**
+ * One live booking, as `event_seating` returns it.
+ *
+ * `status` is narrower than `BookingStatus`: `event_seating`'s own
+ * `where b.status in ('confirmed', 'waitlisted')` (20260825070000) means a
+ * cancelled or declined booking can never appear in this field. Typed to
+ * match, so a caller that mishandles 'cancelled'/'declined' here is a
+ * compile error rather than dead code nobody notices.
+ */
 export type SeatOccupant = {
   booking_id: string;
   group_id: string;
@@ -21,23 +30,12 @@ export type SeatOccupant = {
   display_name: string;
   skill_level: SkillLevel | null;
   event_table_id: string | null;
-  status: BookingStatus;
+  status: 'confirmed' | 'waitlisted';
   booked_by: string;
   booked_by_name: string;
   group_status: BookingGroupStatus;
   waitlist_position: number | null;
   created_at: string;
-};
-
-/** Every table's live bookings, as the seating screen groups them. */
-export type TableSeating = {
-  event_table_id: string | null;
-  occupants: SeatOccupant[];
-};
-
-/** The whole picture for one game — `event_seating`'s rows, grouped by table. */
-export type EventSeating = {
-  tables: TableSeating[];
 };
 
 export type PromotionOffer = {
@@ -92,79 +90,134 @@ type RpcError = { code?: string; message?: string; details?: string } | null;
  * both wrong and unactionable. A refusal the database wrote is a sentence
  * the member can do something about.
  *
+ * Keyed on MESSAGE TEXT ONLY. `codes` below is informational, kept for a
+ * reader who wants to know where a refusal comes from — it is never
+ * compared. The first version of this vocabulary matched on `code` AND
+ * `contains`, which is wrong: the same message is raised with different
+ * SQLSTATEs by different functions ('no such table' is 23514 from
+ * plan_seating, 42501 from place_booking, and P0002 from
+ * call_for_a_fourth/remove_event_table; 'no such event' is 42501 from
+ * assert_event_bookable and P0002 from cancel_event/add_event_table). With
+ * only one 23514 entry for 'no such table', every site but plan_seating's
+ * fell through to GENERIC_ERROR — an organizer moving a booking onto a
+ * table an admin had just removed was told to check their connection. The
+ * message is the thing the client and the member both care about; Postgres
+ * picks the code per call site, not per meaning, so the code cannot be part
+ * of the match.
+ *
  * `details` carries a profile id for the two refusals that are about a
  * person; the caller substitutes the name it already holds from the roster.
+ *
+ * Two entries are ordered deliberately: 'not a member of this club' before
+ * 'not a member', because the shorter string is a substring of the longer
+ * one and `Array.find` returns the first match.
+ *
+ * Not every message the day-8 migrations raise appears here — some are
+ * deliberately left to fall back to GENERIC_ERROR, and some belong to
+ * lib/events.ts's own functions, not this module's. Both categories, and
+ * why each one qualifies, are documented on the allowlist in
+ * lib/bookings.test.ts's self-auditing test, which fails by naming the
+ * exact string if a future raise site is left off both this vocabulary and
+ * that allowlist.
  */
-const BOOKING_REFUSALS: { code: string; contains: string; message: string }[] = [
+const BOOKING_REFUSALS: { contains: string; message: string; codes: string[] }[] = [
   {
-    code: '23514',
     contains: 'event not bookable',
     message: 'This game was cancelled.',
+    codes: ['23514'],
   },
   {
-    code: '23514',
     contains: 'event already started',
     message: 'This game has already started.',
+    codes: ['23514'],
   },
   {
-    code: '23514',
     contains: 'already booked',
     message: 'Someone in your group already has a seat at this game.',
+    codes: ['23514'],
   },
   {
-    code: '23514',
+    // Order before 'not a member' below — see the note above.
+    contains: 'not a member of this club',
+    message: 'You are no longer a member of this club.',
+    codes: ['42501'],
+  },
+  {
     contains: 'not a member',
     message: 'Someone in your group is no longer in this club.',
+    codes: ['23514'],
   },
   {
-    code: '23514',
-    contains: 'table full',
-    message: 'Someone just took the last seat at that table.',
+    contains: 'no players',
+    message: 'Pick at least one player.',
+    codes: ['23514'],
   },
   {
-    code: '23514',
-    contains: 'no such table',
-    message: 'That table is no longer part of this game.',
-  },
-  {
-    code: '42501',
-    contains: 'no such event',
-    message: 'This game is no longer listed.',
-  },
-  {
-    code: '23514',
-    contains: 'offer expired',
-    message: "That offer has expired — you're still on the waitlist.",
-  },
-  {
-    code: '23514',
     contains: 'table does not need a fourth',
     message: 'That table needs more than one more player.',
+    codes: ['23514'],
   },
   {
-    code: '23514',
+    contains: 'table full',
+    message: 'Someone just took the last seat at that table.',
+    codes: ['23514'],
+  },
+  {
+    contains: 'no such table',
+    message: 'That table is no longer part of this game.',
+    codes: ['23514', '42501', 'P0002'],
+  },
+  {
+    contains: 'no such event',
+    message: 'This game is no longer listed.',
+    codes: ['42501', 'P0002'],
+  },
+  {
+    contains: 'no such offer',
+    message: 'That offer no longer exists.',
+    codes: ['42501'],
+  },
+  {
+    contains: 'no such booking',
+    message: 'That booking no longer exists.',
+    codes: ['42501'],
+  },
+  {
+    contains: 'no such group',
+    message: 'That booking group no longer exists.',
+    codes: ['42501'],
+  },
+  {
+    contains: 'offer expired',
+    message: "That offer has expired — you're still on the waitlist.",
+    codes: ['23514'],
+  },
+  {
     contains: 'booking already closed',
     message: 'That seat has already been given up.',
+    codes: ['23514'],
   },
   {
-    code: '42501',
+    contains: 'booking not confirmed',
+    message: 'Only a confirmed seat can be moved to a table.',
+    codes: ['23514'],
+  },
+  {
     contains: 'not your booking',
     message: 'That is not your seat to change.',
+    codes: ['42501'],
   },
   {
-    code: '42501',
     contains: 'not your offer',
     message: 'Only the person who booked can answer that offer.',
+    codes: ['42501'],
   },
 ];
 
 export function bookingErrorMessage(error: RpcError): string {
   if (!error) return GENERIC_ERROR;
   const text = error.message ?? '';
-  const match = BOOKING_REFUSALS.find(
-    (candidate) =>
-      candidate.code === error.code && text.includes(candidate.contains),
-  );
+  const match = BOOKING_REFUSALS.find((candidate) => text.includes(candidate.contains));
   return match ? match.message : GENERIC_ERROR;
 }
 
