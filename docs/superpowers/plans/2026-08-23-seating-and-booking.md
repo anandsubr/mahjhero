@@ -21,6 +21,7 @@ Every task's requirements implicitly include these.
 - **Every new function gets `revoke execute on function … from public, anon` before its `grant`.** A null `proacl` means EXECUTE to PUBLIC.
 - **Every `security definer` function pins `set search_path = public`** and checks membership or organizer role against the row's **own** club as its first statement, using plan 3's shared `public.assert_club_organizer(uuid)` or `public.is_club_member(uuid)`. RLS does not protect a definer function.
 - **Every seat-changing function takes `perform 1 from public.events where id = <event> for update;` before it reads any count.** This is the entire concurrency design. A function that computes free seats without holding that lock is wrong even when its tests pass.
+- **Never gate authorization on `<>` against `auth.uid()`.** A null `auth.uid()` makes `x <> auth.uid()` evaluate to NULL, the guard does not fire, and the function proceeds — a check that fails *open*. Bind `caller uuid := auth.uid()`, refuse a null caller explicitly, and compare with `=` or `is distinct from`. `20260822044023_accept_club_invite.sql` is the codebase's existing shape for this. Task 2's review caught two functions doing it the wrong way.
 - **`lib/` functions never reject.** They catch internally, `console.error('<fn> failed', cause)` the original, and return `GENERIC_ERROR` from `lib/constants.ts` through an `{ error: string | null }` channel. Callers must consume that channel.
 - **A refusal from the database is never reported as a connection failure.** Plan 3 shipped that bug and fixed it at merge: a `raise exception` with a known errcode maps to the written sentence in the "Error handling" table below; only an unreachable server yields `GENERIC_ERROR`.
 - **Every write uses `.select(...)` and treats zero rows as failure.** PostgREST answers 204 with `error: null` when an update matches nothing, which is what an RLS denial looks like.
@@ -1201,6 +1202,13 @@ Create `supabase/migrations/20260825010000_waitlist_promotion.sql`:
  * Returns NO ROWS rather than a partial answer when the request cannot be
  * satisfied. "The whole group or nobody" is a property of this function,
  * not a rule repeated by each caller.
+ *
+ * ONE EXCEPTION, and callers must know it: the `preferred is null` ("any
+ * table") branch answers "unplaced, all of them" without consulting
+ * capacity at all. Nobody is being placed, so there is no table to run out
+ * of — but EVENT-level capacity is then the caller's responsibility.
+ * Both callers already check it: promote_waitlist only calls in when
+ * free >= wanted, and plan_seating checks event_free_seats first.
  */
 create function public.seat_assignments(
   target_event uuid,
@@ -1314,12 +1322,8 @@ begin
     return 0;
   end if;
 
-  if not exists (
-    select 1 from public.seat_assignments(
-      g.event_id, want, g.preferred_table_id, g.allow_split))
-  then
-    return 0;
-  end if;
+  -- Before reading any count. A no-op when the caller already holds it.
+  perform 1 from public.events where id = g.event_id for update;
 
   for a in
     select * from public.seat_assignments(
@@ -1372,9 +1376,10 @@ $$;
 /*
  * The walk. Called by every path that frees a seat, and by the sweep.
  *
- * The caller is expected to already hold `for update` on the event row.
- * Every granted function in this plan takes that lock as its first
- * statement; this one is never granted to authenticated.
+ * Takes the event lock itself rather than trusting its callers to hold
+ * it. Re-acquiring a row lock already held in the same transaction is a
+ * no-op, so this is free at every call site that already locked — and it
+ * means the guarantee does not rest on each of Tasks 3-6 remembering.
  */
 create function public.promote_waitlist(target_event uuid)
 returns void
@@ -1390,6 +1395,8 @@ declare
   seated    int;
   new_offer uuid;
 begin
+  perform 1 from public.events where id = target_event for update;
+
   select id, status, starts_at, club_id into ev
   from public.events where id = target_event;
 
@@ -1450,6 +1457,7 @@ as $$
 declare
   o      record;
   g      record;
+  caller uuid;
   seated int;
 begin
   select * into o from public.promotion_offers where id = target_offer;
@@ -1458,7 +1466,11 @@ begin
   end if;
 
   select * into g from public.booking_groups where id = o.group_id;
-  if g.created_by <> auth.uid() then
+  -- `<>` against a null auth.uid() is NULL, not true, so the guard would
+  -- not fire and a caller with no `sub` claim would answer somebody else's
+  -- offer. Bind and refuse null explicitly, as accept_club_invite does.
+  caller := auth.uid();
+  if caller is null or g.created_by <> caller then
     raise exception 'not your offer' using errcode = '42501';
   end if;
 
@@ -1489,8 +1501,9 @@ security definer
 set search_path = public
 as $$
 declare
-  o record;
-  g record;
+  o      record;
+  g      record;
+  caller uuid;
 begin
   select * into o from public.promotion_offers where id = target_offer;
   if o.id is null then
@@ -1498,7 +1511,8 @@ begin
   end if;
 
   select * into g from public.booking_groups where id = o.group_id;
-  if g.created_by <> auth.uid() then
+  caller := auth.uid();
+  if caller is null or g.created_by <> caller then
     raise exception 'not your offer' using errcode = '42501';
   end if;
 
@@ -1591,7 +1605,8 @@ Expected: `waitlist_promotion.test.sql .. ok`, 24 of 24.
 | In `accept_promotion_offer`, set `waitlisted_at = now()` on the group | "and keeps its original place in the queue" |
 | In `sweep_promotion_offers`, `delete from public.promotion_offers` instead of updating | "an unanswered offer is recorded as expired, not deleted" |
 | Remove `perform public.promote_waitlist(o.event_id)` from the sweep | "a released seat is promoted in the same sweep" |
-| Remove the `g.created_by <> auth.uid()` check in `accept_promotion_offer` | "a member of the group who did not book it cannot answer the offer" |
+| Remove the `caller is null or g.created_by <> caller` check in `accept_promotion_offer` | "a member of the group who did not book it cannot answer the offer" |
+| Change that check back to a bare `g.created_by <> auth.uid()` | the null-caller assertion — if none goes red, the null-safety fix has no test and one must be added |
 
 - [ ] **Step 6: Commit**
 
@@ -1648,6 +1663,8 @@ faster member takes the seat that was promised."
 **Why `commit_booking` takes the same arguments as `propose_booking` rather than a plan.** There is no proposal token to go stale, to replay, or to forge. The commit re-derives the plan under the event lock and returns what it actually did; the client compares that against what it showed the member and says what changed. The parent spec's `commit_booking(plan)` would have required either trusting client-supplied placements or storing and expiring proposals — a whole extra lifecycle for no gain.
 
 **A solo tap-to-book calls `commit_booking` directly with a one-element array.** For one player there is nothing to confirm, so the proposal round trip would buy a dialog nobody needs.
+
+**`seat_assignments` (Task 2) is the placement authority, with one caveat you must respect.** Its `preferred is null` branch answers "unplaced, all of them" **without consulting capacity** — nobody is being placed, so there is no table to run out of. Event-level capacity is therefore the caller's job, which is why `plan_seating` below checks `event_free_seats(target_event) < n` *before* it calls `seat_assignments` and not after. Do not reorder those two.
 
 **The database does not check skill tiers.** The client warns; the member decides. These functions stay a pure capacity-and-atomicity concern, and the fixture asserts a beginner *can* take a seat at an advanced table so that nobody "fixes" this later.
 
@@ -3087,21 +3104,30 @@ security definer
 set search_path = public
 as $$
 declare
-  bk record;
-  ev record;
+  bk     record;
+  ev     record;
+  caller uuid;
 begin
   select * into bk from public.bookings where id = target_booking;
   if bk.id is null then
     raise exception 'no such booking' using errcode = '42501';
   end if;
 
-  if bk.profile_id <> auth.uid() then
+  -- Bound and null-checked rather than compared with `<>`: a null
+  -- auth.uid() makes `bk.profile_id <> auth.uid()` evaluate to NULL, so
+  -- the guard would not fire and a caller with no `sub` claim could
+  -- decline anybody's seat. Task 2's review caught exactly this shape in
+  -- accept_promotion_offer. Every other guard in this migration is an
+  -- `=`/or chain, which refuses a null caller by falling through to its
+  -- `not (...)`.
+  caller := auth.uid();
+  if caller is null or bk.profile_id <> caller then
     raise exception 'not your booking' using errcode = '42501';
   end if;
 
   -- A seat you booked yourself is cancelled, never declined. Allowing both
   -- would make the booker's outbox row a coin flip.
-  if bk.booked_by = auth.uid() then
+  if bk.booked_by = caller then
     raise exception 'nothing to decline' using errcode = '42501';
   end if;
 
@@ -3117,7 +3143,7 @@ begin
   perform 1 from public.events where id = bk.event_id for update;
 
   update public.bookings
-     set status = 'declined', cancelled_at = now(), cancelled_by = auth.uid()
+     set status = 'declined', cancelled_at = now(), cancelled_by = caller
    where id = target_booking;
 
   insert into public.notification_outbox
