@@ -529,7 +529,8 @@ select is(
        'public.cancel_booking(uuid)',
        'public.decline_booking(uuid)',
        'public.cancel_booking_group(uuid)',
-       'public.place_booking(uuid, uuid)'
+       'public.place_booking(uuid, uuid)',
+       'public.call_for_a_fourth(uuid)'
      ]) as f
    ) expected
    where not exists (
@@ -585,7 +586,8 @@ select is(
          'public.cancel_booking(uuid)',
          'public.decline_booking(uuid)',
          'public.cancel_booking_group(uuid)',
-         'public.place_booking(uuid, uuid)'
+         'public.place_booking(uuid, uuid)',
+         'public.call_for_a_fourth(uuid)'
        ]) as f
        where to_regprocedure(f) = p.oid::regprocedure
      )),
