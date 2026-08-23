@@ -4581,7 +4581,7 @@ enumerated rather than described."
 
 **Interfaces:**
 - Consumes: every function granted in Tasks 1–6; plan 2's `club_roster(uuid)`.
-- Produces: `event_seating(uuid)` and `my_upcoming_bookings()` in SQL; and from `lib/bookings.ts` the types `SeatOccupant`, `TableSeating`, `EventSeating`, `MyBooking`, `PromotionOffer`, `BookingOutcome`, plus `fetchEventSeating`, `fetchMyUpcomingBookings`, `proposeBooking`, `commitBooking`, `cancelBooking`, `declineBooking`, `cancelBookingGroup`, `placeBooking`, `acceptPromotionOffer`, `declinePromotionOffer`, `callForAFourth`, and the pure helpers `tierWarning`, `needsAFourth`, `seatsRemaining`, `waitlistLabel`, `offerCountdown`. Tasks 9–14 consume these.
+- Produces: `event_seating(uuid)` and `my_upcoming_bookings()` in SQL; and from `lib/bookings.ts` the types `SeatOccupant`, `MyBooking`, `PromotionOffer`, `BookingOutcome`, plus `fetchEventSeating`, `fetchMyUpcomingBookings`, `proposeBooking`, `commitBooking`, `cancelBooking`, `declineBooking`, `cancelBookingGroup`, `placeBooking`, `acceptPromotionOffer`, `declinePromotionOffer`, `callForAFourth`, and the pure helpers `tierWarning`, `needsAFourth`, `seatsRemaining`, `waitlistLabel`, `offerCountdown`. Tasks 9–14 consume these.
 
 **Read this before writing a single query: `profiles` is self-only.** Plan 2's `20260822180000` narrowed the policy back to own-row after discovering a co-member could read another member's quiet hours. A `.select('*, profiles(display_name)')` from `bookings` therefore returns **null names for everybody but you**, with no error — the exact shape of bug that looks like a rendering problem for a day. Names come from a `security definer` function that re-asks the membership question, which is why this task starts with a migration rather than with TypeScript.
 
@@ -4845,13 +4845,19 @@ as $$
   order by e.starts_at, c.name;
 $$;
 
-revoke execute on function public.event_seating(uuid)      from public, anon;
-revoke execute on function public.my_upcoming_bookings()   from public, anon;
+-- `authenticated` too, and not optionally: Supabase's hosted bootstrap
+-- grants EXECUTE to it directly at creation time, which a revoke from
+-- `public` never touches. Sixteen functions on this branch shipped
+-- reachable by every signed-in user that way. See 20260825061000.
+revoke execute on function public.event_seating(uuid)
+  from public, anon, authenticated;
+revoke execute on function public.my_upcoming_bookings()
+  from public, anon, authenticated;
 grant  execute on function public.event_seating(uuid)      to authenticated;
 grant  execute on function public.my_upcoming_bookings()   to authenticated;
 ```
 
-Add both to **each** allowlist array in `supabase/tests/database/portable/grants.test.sql`, and bump `plan(63)` to `plan(64)` with one more positive case:
+Add both to **each** allowlist array in `supabase/tests/database/portable/grants.test.sql`. **Check the file's current `plan(N)` rather than trusting a number written here** — every task since Task 1 has extended this file, so any count this plan quotes is stale by the time it is read. Add one more positive case:
 
 ```sql
          'public.event_seating(uuid)',
