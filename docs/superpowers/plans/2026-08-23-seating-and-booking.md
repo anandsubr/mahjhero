@@ -26,7 +26,7 @@ Every task's requirements implicitly include these.
 - **A refusal from the database is never reported as a connection failure.** Plan 3 shipped that bug and fixed it at merge: a `raise exception` with a known errcode maps to the written sentence in the "Error handling" table below; only an unreachable server yields `GENERIC_ERROR`.
 - **Every write uses `.select(...)` and treats zero rows as failure.** PostgREST answers 204 with `error: null` when an update matches nothing, which is what an RLS denial looks like.
 - **18pt is the app-wide minimum body text size.** Helper/secondary text at 16pt is the sole exception. Never encode anything below 16 as correct.
-- **Accessibility props are required** — `accessibilityLabel`, `accessibilityRole`, `accessibilityState` on every interactive control. Plan 3's merge review found every `Toggle` announcing `role=switch` with no state to web screen readers; do not repeat it.
+- **Accessibility props are required** — `accessibilityLabel` and `accessibilityRole` on every interactive control, and state through the **flat `aria-*` prop**: `aria-checked`, `aria-selected`, `aria-disabled`, `aria-busy`. **Never `accessibilityState`.** react-native-web's `createDOMProps` has no handling for `accessibilityState` at all, so it reaches the DOM on no platform this app ships to — plan 3's merge review found every `Toggle` rendering `role="switch"` with no state, including the switch that decides whether a member's home address becomes public. One prop covers both platforms rather than two that could drift: React Native's own `Pressable` resolves `checked: ariaChecked ?? accessibilityState?.checked`, so the flat prop reaches the native accessibility tree too. `components/Toggle.tsx` documents this in full and its test asserts the rendered attribute; read it before writing an interactive control.
 - **Every screen wraps its content in `<Screen>`**, which constrains the column to 440px and centres it on wide viewports.
 - **Spacing comes from `space[…]` in `lib/theme`**, never a literal.
 - **Times are club-local wall clock plus the club's timezone, never a fixed UTC offset.** The 48-hour and 12-hour windows in this plan are plain intervals against `starts_at`, an instant — that is arithmetic on instants, not a timezone conversion, and it is correct under any server zone.
@@ -5778,7 +5778,7 @@ export default function SeatGrid({
               ? `Take the last seat at ${tableLabel}`
               : `Take a seat at ${tableLabel}`
           }
-          accessibilityState={{ disabled: busy || !onTakeSeat }}
+          aria-disabled={busy || !onTakeSeat}
         >
           <Text style={[styles.emptyText, lastSeatCall && styles.callingText]}>
             {lastSeatCall ? 'Last seat' : 'Empty'}
@@ -6649,7 +6649,8 @@ export default function BringSomeoneSheet({
               disabled={busy}
               accessibilityRole="button"
               accessibilityLabel={`${on ? 'Remove' : 'Add'} ${member.display_name}`}
-              accessibilityState={{ selected: on, disabled: busy }}
+              aria-selected={on}
+              aria-disabled={busy}
             >
               <Text style={on ? styles.personTextOn : styles.personText}>
                 {member.display_name}
@@ -6674,7 +6675,8 @@ export default function BringSomeoneSheet({
               disabled={busy}
               accessibilityRole="button"
               accessibilityLabel={`Sit at ${table.label}`}
-              accessibilityState={{ selected: on, disabled: busy }}
+              aria-selected={on}
+              aria-disabled={busy}
             >
               <Text style={on ? styles.personTextOn : styles.personText}>
                 {table.label}
@@ -6691,7 +6693,8 @@ export default function BringSomeoneSheet({
           disabled={busy}
           accessibilityRole="button"
           accessibilityLabel="Any table"
-          accessibilityState={{ selected: tableId === null, disabled: busy }}
+          aria-selected={tableId === null}
+          aria-disabled={busy}
         >
           <Text
             style={tableId === null ? styles.personTextOn : styles.personText}
@@ -6803,7 +6806,9 @@ const styles = StyleSheet.create({
 });
 ```
 
-`RosterMember` is `lib/clubs.ts`'s existing roster row type — use whatever it is actually called there rather than declaring a second one. `Toggle` must receive its state through `accessibilityState={{ checked }}`; plan 3's merge review found every Toggle in the app announcing `role=switch` with no state to web screen readers, and this is a new caller of the same component.
+`RosterMember` is `lib/clubs.ts`'s existing roster row type — use whatever it is actually called there rather than declaring a second one.
+
+**`Toggle` takes `value`, `onValueChange` and `accessibilityLabel`, and nothing else.** It sets `accessibilityRole="switch"` and `aria-checked` internally — do not pass it `accessibilityState`, which it no longer accepts and which react-native-web drops on the floor anyway. Every interactive control in this sheet states its state through a flat `aria-*` prop for the same reason; see `components/Toggle.tsx`'s docstring.
 
 - [ ] **Step 4: Wire it into the event screen**
 
