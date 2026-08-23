@@ -37,6 +37,14 @@ export type EventSeries = {
   club_id: string;
   title: string;
   venue_id: string;
+  /**
+   * Joined from `venues(name)`, the same embed EVENT_COLUMNS already uses
+   * for occurrences (see `toClubEvent`) — added alongside Fix pass 1 on
+   * Task 15's review so the edit screen's "The whole series" heading can
+   * show the series' OWN venue rather than the occurrence's, which is a
+   * different venue whenever `venue_id` is overridden on that occurrence.
+   */
+  venue_name: string;
   notes: string;
   frequency: SeriesFrequency;
   weekday: number;
@@ -88,7 +96,7 @@ export const EVENT_COLUMNS =
   'status, occurrence_date, overrides, venues(name), event_tables(id)';
 
 export const SERIES_COLUMNS =
-  'id, club_id, title, venue_id, notes, frequency, weekday, nth_week, start_time, duration_minutes, table_count, starts_on, ends_on, ended_at';
+  'id, club_id, title, venue_id, notes, frequency, weekday, nth_week, start_time, duration_minutes, table_count, starts_on, ends_on, ended_at, venues(name)';
 
 export const EVENT_TABLE_COLUMNS = 'id, label, skill_tier, capacity, position';
 
@@ -345,6 +353,18 @@ export async function fetchEventTables(
   }
 }
 
+type SeriesRow = Omit<EventSeries, 'venue_name'> & {
+  venues: { name: string } | null;
+};
+
+function toEventSeries(row: SeriesRow): EventSeries {
+  const { venues, ...rest } = row;
+  return {
+    ...rest,
+    venue_name: venues?.name ?? '',
+  };
+}
+
 export async function fetchSeries(
   seriesId: string,
 ): Promise<EventSeries | null> {
@@ -359,7 +379,7 @@ export async function fetchSeries(
       console.error('fetchSeries failed', error);
       return null;
     }
-    return data as EventSeries;
+    return toEventSeries(data as unknown as SeriesRow);
   } catch (cause) {
     console.error('fetchSeries failed', cause);
     return null;

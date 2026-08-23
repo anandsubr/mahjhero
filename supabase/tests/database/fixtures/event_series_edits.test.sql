@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(96);
+select plan(97);
 
 /*
  * Series creation, series editing, resetting one week, ending a series, and
@@ -1017,6 +1017,29 @@ select is(
    where id = '55555555-0000-0000-0000-000000000004'),
   current_date + 200,
   'and it is set normally'
+);
+
+-- 14e. The guard-shape gap closed for six other functions in
+-- 20260823020000 could reopen here: clear_ends_on gives
+-- update_event_series a natural call form with a NULL title -- the edit
+-- screen's "Runs indefinitely" toggle never touches the name field, so a
+-- real client-issued clear-the-end-date call looks exactly like this. The
+-- ONLY other organizer-guard assertion for this function (9, above) sends
+-- a non-null title ('Bob was here'), so a mutant that guards
+-- assert_club_organizer behind `if new_title is not null then ... end if`
+-- would satisfy every other assertion in this file while still letting a
+-- plain member clear a series' end date outright.
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "aaaaaaaa-0000-0000-0000-000000000002", "role": "authenticated"}';
+
+select throws_ok(
+  $$select public.update_event_series(
+      '55555555-0000-0000-0000-000000000004',
+      null, null, null, null, null, null, null, false, true)$$,
+  '42501',
+  'not an organizer of this club',
+  'a plain member cannot clear a series end date'
 );
 
 select * from finish();

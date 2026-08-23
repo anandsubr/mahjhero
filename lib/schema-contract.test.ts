@@ -536,11 +536,16 @@ describe.runIf(reachable || required)('events schema contract', () => {
       [
         'id', 'club_id', 'title', 'venue_id', 'notes', 'frequency',
         'weekday', 'nth_week', 'start_time', 'duration_minutes',
-        'table_count', 'starts_on', 'ends_on', 'ended_at',
+        'table_count', 'starts_on', 'ends_on', 'ended_at', 'venues',
       ].sort(),
     );
     expect(row.ends_on).toBe('2027-12-31');
     expect(row.ended_at).toBe('2027-06-01T00:00:00+00:00');
+    // `venues(name)`, added alongside Fix pass 1 on Task 15's review so the
+    // edit screen's "The whole series" heading can show the series' own
+    // venue rather than the occurrence's — the seed row reuses the same
+    // venue ("Contract Hall") both events and event_series point at above.
+    expect((row.venues as { name: string }).name).toBe('Contract Hall');
   });
 
   it('exposes exactly the columns lib/events.ts names on event_tables', async () => {

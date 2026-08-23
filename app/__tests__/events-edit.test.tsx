@@ -62,12 +62,25 @@ vi.mock('../../lib/events', async (importOriginal) => {
 // venue distinct from every fixture's own venue_id below, so "the host
 // changed the venue" is unambiguous whenever this stub is clicked, and
 // unambiguously untouched whenever it is not — matching
-// events-new.test.tsx's pickVenue() pattern.
+// events-new.test.tsx's pickVenue() pattern. Also renders `valueName` as
+// plain text — Fix pass 1's scope-seeding bug (Task 15's review) is
+// otherwise invisible from outside: the real VenuePicker never surfaces
+// `valueName` as a queryable string on its own, and the bug was exactly
+// that the wrong scope's venue name reached this prop.
 vi.mock('../../components/VenuePicker', () => ({
-  default: ({ onChange }: { onChange: (id: string, name: string) => void }) => (
-    <button onClick={() => onChange('venue-2', 'New Venue')}>
-      Pick venue (test stub)
-    </button>
+  default: ({
+    valueName,
+    onChange,
+  }: {
+    valueName: string;
+    onChange: (id: string, name: string) => void;
+  }) => (
+    <div>
+      <span>{valueName}</span>
+      <button onClick={() => onChange('venue-2', 'New Venue')}>
+        Pick venue (test stub)
+      </button>
+    </div>
   ),
 }));
 
@@ -115,6 +128,7 @@ const SERIES = {
   club_id: 'club-1',
   title: 'Thursday Mahjong',
   venue_id: 'venue-1',
+  venue_name: 'The Annexe',
   notes: '',
   frequency: 'weekly' as const,
   weekday: 4,
@@ -237,6 +251,65 @@ describe('a series occurrence', () => {
     expect(screen.getByText('Every Thursday')).toBeTruthy();
   });
 
+  // Fix pass 1's regression test (Task 15's review): an occurrence whose
+  // title/venue/notes/start time are all overridden, so they differ from
+  // the series' own values in every field. Switching to "The whole series"
+  // and saving WITHOUT touching anything must display, and then send, the
+  // SERIES' own values — not the customised occurrence's. Before the fix,
+  // this screen seeded the series-scope fields from the occurrence once on
+  // load and never re-seeded them, so this exact sequence sent the
+  // occurrence's customisation as if it were an intentional series-wide
+  // edit, and the RPC's own "did this change?" gate (which compares
+  // against the series row) made it worse: because an overridden
+  // occurrence's values differ from the series precisely BECAUSE they are
+  // overridden, every gate fired and every live future week was rewritten
+  // to this one week's customisation.
+  it('seeds and displays "The whole series" from the series row, not the customised occurrence being viewed', async () => {
+    fetchEvent.mockResolvedValue({
+      ...SERIES_EVENT,
+      title: 'Beginners night (this week only)',
+      venue_id: 'venue-9',
+      venue_name: 'Downstairs Room',
+      notes: 'Bring a friend',
+      // 20:30 JST, distinct from the series' 19:00.
+      starts_at: '2026-09-03T11:30:00.000Z',
+      overrides: ['title', 'venue_id', 'notes', 'starts_at'],
+    });
+    render(<EditEventScreen />);
+    await screen.findByText('The whole series');
+
+    // "This game" (the default scope) correctly shows the customised
+    // occurrence's own values — unaffected by the bug, and the baseline
+    // this test's next assertion contrasts against.
+    await screen.findByDisplayValue('Beginners night (this week only)');
+    expect(screen.getByText('Downstairs Room')).toBeTruthy();
+
+    fireEvent.click(screen.getByText('The whole series'));
+
+    // The heading now reads "The whole series", so the form must show the
+    // SERIES' values — showing the occurrence's here would misinform the
+    // host before they even press Save.
+    await screen.findByDisplayValue('Thursday Mahjong');
+    expect(
+      screen.queryByDisplayValue('Beginners night (this week only)'),
+    ).toBeNull();
+    expect(screen.getByText('The Annexe')).toBeTruthy();
+    expect(screen.queryByText('Downstairs Room')).toBeNull();
+
+    fireEvent.click(screen.getByText('Save'));
+
+    await vi.waitFor(() => expect(updateEventSeries).toHaveBeenCalled());
+    expect(updateEventSeries).toHaveBeenCalledWith('series-1', {
+      title: 'Thursday Mahjong',
+      venueId: 'venue-1',
+      notes: '',
+      startTime: '19:00',
+      endsOn: undefined,
+      clearEndsOn: false,
+      includeOverridden: false,
+    });
+  });
+
   it('sends the whole-series edit, including clear_ends_on when "Runs indefinitely" is turned on', async () => {
     render(<EditEventScreen />);
     await screen.findByText('The whole series');
@@ -256,6 +329,39 @@ describe('a series occurrence', () => {
       endsOn: undefined,
       clearEndsOn: true,
       includeOverridden: false,
+    });
+  });
+
+  // "Runs indefinitely" is a view of `endsOn`, not an independent fact: OFF
+  // must always show whatever end date the series actually has. Before this
+  // fix, turning the toggle back off left `endsOn` at '' (only ON cleared
+  // it), so the DateField reappeared empty while `series.ends_on` was still
+  // '2026-12-31' — a screen showing "no end date" for a series that still
+  // had one — and Save then sent neither `endsOnInput` nor `clearEndsOn`,
+  // silently keeping the date the screen had just claimed was gone.
+  it('restores the series\' own end date when "Runs indefinitely" is turned back off', async () => {
+    render(<EditEventScreen />);
+    await screen.findByText('The whole series');
+    fireEvent.click(screen.getByText('The whole series'));
+
+    const toggle = screen.getByRole('switch', {
+      name: 'Runs indefinitely, with no end date',
+    });
+    fireEvent.click(toggle);
+    expect(screen.queryByLabelText('Stop repeating on')).toBeNull();
+
+    fireEvent.click(toggle);
+    const dateInput = screen.getByLabelText(
+      'Stop repeating on',
+    ) as HTMLInputElement;
+    expect(dateInput.value).toBe('2026-12-31');
+
+    fireEvent.click(screen.getByText('Save'));
+
+    await vi.waitFor(() => expect(updateEventSeries).toHaveBeenCalled());
+    expect(updateEventSeries.mock.calls[0][1]).toMatchObject({
+      endsOn: undefined,
+      clearEndsOn: false,
     });
   });
 
@@ -368,7 +474,7 @@ describe('the overridden-occurrences toggle', () => {
     await screen.findByText(/you've changed/);
     fireEvent.click(
       screen.getByRole('switch', {
-        name: "Also apply this edit to the 1 games you've changed",
+        name: "Also apply this edit to the 1 game you've changed",
       }),
     );
     fireEvent.click(screen.getByText('Save'));

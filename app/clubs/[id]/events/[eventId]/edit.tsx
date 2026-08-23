@@ -51,10 +51,24 @@ type OriginalOccurrence = {
  * Two save paths behave differently on purpose:
  *
  *   - "The whole series" always sends every field to `updateEventSeries`.
- *     That is safe because the RPC itself gates propagation on whether the
- *     value actually changed, compared against the series row it reads
- *     under `for update` (supabase/migrations/20260823040000) — resending an
- *     unchanged value is a correctly-detected no-op there.
+ *     That is safe ONLY because the series-scope fields below are seeded
+ *     from the SERIES row (`series.title` / `series.venue_id` / etc — see
+ *     the load effect below), never from the occurrence being viewed. An
+ *     untouched field then round-trips as the series' own current value,
+ *     which the RPC's gate — comparing the incoming value against `se`, the
+ *     row it just read `for update` (supabase/migrations/20260823040000) —
+ *     correctly treats as a no-op.
+ *
+ *     Fix pass 1 on this task's review found this screen seeding those same
+ *     fields from the OCCURRENCE instead, on the mistaken belief that the
+ *     RPC's gate made the source irrelevant. It does not: an overridden
+ *     occurrence's values differ from the series precisely BECAUSE they are
+ *     overridden, so every gate fired and choosing "The whole series" and
+ *     changing nothing silently rewrote every live future week to that one
+ *     week's customisation (see .superpowers/sdd/task-15-report.md). Do not
+ *     reintroduce that by sharing form state across scopes again — this is
+ *     exactly why event- and series-scope fields are separate state below,
+ *     not one shared set re-labelled by heading.
  *   - "This game" only sends the fields that changed from what this
  *     occurrence already had. `updateEvent` does NOT re-derive "did this
  *     change" the same way: any non-null date/time/duration argument pushes
@@ -92,12 +106,24 @@ export default function EditEventScreen() {
   const [ready, setReady] = useState(false);
 
   const [scope, setScope] = useState<Scope>('event');
-  const [title, setTitle] = useState('');
-  const [venueId, setVenueId] = useState<string | null>(null);
-  const [venueName, setVenueName] = useState('');
-  const [startTime, setStartTime] = useState('19:00');
-  const [notes, setNotes] = useState('');
+  // Two independent snapshots, not one shared set of fields re-labelled by
+  // heading -- see the file-level comment above for why the series-scope
+  // save path depends on its fields never having come from the occurrence.
+  // "This game" edits eventTitle/eventVenueId/etc, diffed against `original`
+  // below; "The whole series" edits seriesTitle/seriesVenueId/etc, sent
+  // unconditionally and relying on the RPC's own gate.
+  const [eventTitle, setEventTitle] = useState('');
+  const [eventVenueId, setEventVenueId] = useState<string | null>(null);
+  const [eventVenueName, setEventVenueName] = useState('');
+  const [eventStartTime, setEventStartTime] = useState('19:00');
+  const [eventNotes, setEventNotes] = useState('');
   const [original, setOriginal] = useState<OriginalOccurrence | null>(null);
+
+  const [seriesTitle, setSeriesTitle] = useState('');
+  const [seriesVenueId, setSeriesVenueId] = useState<string | null>(null);
+  const [seriesVenueName, setSeriesVenueName] = useState('');
+  const [seriesStartTime, setSeriesStartTime] = useState('19:00');
+  const [seriesNotes, setSeriesNotes] = useState('');
   // The series' own "stop repeating on". Kept apart from `runsIndefinitely`
   // (see that state's own note) rather than folded into a single nullable
   // string, because DateField has no way to produce an empty string through
@@ -136,11 +162,11 @@ export default function EditEventScreen() {
           loadedEvent.starts_at,
           loadedClub.timezone,
         );
-        setTitle(loadedEvent.title);
-        setVenueId(loadedEvent.venue_id);
-        setVenueName(loadedEvent.venue_name);
-        setNotes(loadedEvent.notes);
-        setStartTime(initialStartTime);
+        setEventTitle(loadedEvent.title);
+        setEventVenueId(loadedEvent.venue_id);
+        setEventVenueName(loadedEvent.venue_name);
+        setEventNotes(loadedEvent.notes);
+        setEventStartTime(initialStartTime);
         setOriginal({
           title: loadedEvent.title,
           venueId: loadedEvent.venue_id,
@@ -164,6 +190,17 @@ export default function EditEventScreen() {
         setFutureCount(loadedFutureCount);
 
         if (loadedSeries) {
+          setSeriesTitle(loadedSeries.title);
+          setSeriesVenueId(loadedSeries.venue_id);
+          setSeriesVenueName(loadedSeries.venue_name);
+          setSeriesNotes(loadedSeries.notes);
+          // Postgres `time` arrives as "HH:MM:SS"; the form's whole surface
+          // is HH:MM (TimeField, TIME_PATTERN-shaped inputs elsewhere in the
+          // app) -- mirrors lib/profile.ts's normalizeTime for the same
+          // quiet_hours_start/end shape, kept local here since this is the
+          // only place in lib/events.ts's domain that reads a `time` column
+          // back into a form field.
+          setSeriesStartTime(loadedSeries.start_time.slice(0, 5));
           setEndsOn(loadedSeries.ends_on ?? '');
           setRunsIndefinitely(loadedSeries.ends_on === null);
         }
@@ -209,6 +246,31 @@ export default function EditEventScreen() {
       </Screen>
     );
   }
+
+  // Which snapshot the visible form fields (and onSave below) read from.
+  // `series` must also be non-null, matching onSave's own condition -- a
+  // scope of 'series' left over from a series that then failed to load
+  // (a real sequence: fetchSeries can resolve null while `scope` state
+  // persists across the re-render) must fall back to the event's own
+  // fields, not a series snapshot that was never populated.
+  const isSeriesScope = scope === 'series' && series !== null;
+  const title = isSeriesScope ? seriesTitle : eventTitle;
+  const setTitle = isSeriesScope ? setSeriesTitle : setEventTitle;
+  const venueId = isSeriesScope ? seriesVenueId : eventVenueId;
+  const venueName = isSeriesScope ? seriesVenueName : eventVenueName;
+  const setVenue = isSeriesScope
+    ? (id: string, name: string) => {
+        setSeriesVenueId(id);
+        setSeriesVenueName(name);
+      }
+    : (id: string, name: string) => {
+        setEventVenueId(id);
+        setEventVenueName(name);
+      };
+  const startTime = isSeriesScope ? seriesStartTime : eventStartTime;
+  const setStartTime = isSeriesScope ? setSeriesStartTime : setEventStartTime;
+  const notes = isSeriesScope ? seriesNotes : eventNotes;
+  const setNotes = isSeriesScope ? setSeriesNotes : setEventNotes;
 
   // Arrow functions assigned to `const`, not `function` declarations --
   // TypeScript only carries the `!club || !event` narrowing above into a
@@ -331,13 +393,17 @@ export default function EditEventScreen() {
       />
 
       <VenuePicker
+        // VenuePicker seeds its own internal search text from `valueName`
+        // only on mount (it does not resync when the prop later changes --
+        // see its own props doc) -- so switching scope needs a fresh
+        // instance to show the newly-active snapshot's venue instead of
+        // going on displaying whichever scope was showing when it first
+        // mounted.
+        key={isSeriesScope ? 'series' : 'event'}
         clubId={clubId}
         value={venueId}
         valueName={venueName}
-        onChange={(id, name) => {
-          setVenueId(id);
-          setVenueName(name);
-        }}
+        onChange={setVenue}
       />
 
       <Text style={styles.label}>Start time</Text>
@@ -364,10 +430,20 @@ export default function EditEventScreen() {
               value={runsIndefinitely}
               onValueChange={(next) => {
                 setRunsIndefinitely(next);
-                // Clears the picked date from view along with the toggle --
-                // turning this back off should not silently resurrect a date
-                // the host just said they don't want.
-                if (next) setEndsOn('');
+                if (next) {
+                  // Clears the picked date from view along with the toggle
+                  // -- turning this back off should not silently resurrect
+                  // a date the host just said they don't want.
+                  setEndsOn('');
+                } else {
+                  // Restores the series' own end date. Leaving `endsOn`
+                  // at '' here would show an empty DateField while
+                  // `series.ends_on` is still set -- onSave then sends
+                  // neither `endsOnInput` nor `clearEndsOn`, so the series
+                  // silently keeps the end date the screen just told the
+                  // host it no longer had.
+                  setEndsOn(series?.ends_on ?? '');
+                }
               }}
               accessibilityLabel="Runs indefinitely, with no end date"
             />
@@ -392,7 +468,9 @@ export default function EditEventScreen() {
             <Toggle
               value={includeOverridden}
               onValueChange={setIncludeOverridden}
-              accessibilityLabel={`Also apply this edit to the ${customised.length} games you've changed`}
+              accessibilityLabel={`Also apply this edit to the ${customised.length} ${
+                customised.length === 1 ? 'game' : 'games'
+              } you've changed`}
             />
             <Text style={styles.help}>
               {customised.length <= 3
