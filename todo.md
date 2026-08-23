@@ -83,7 +83,7 @@ Likely `TimeField.web.tsx`'s wrapper `flex: 1` inside the gapped column absorbin
 less vertical space than the other field wrappers. Cosmetic; visible in the
 `new-event-*` and `edit-event-*` baselines.
 
-### [ ] "seats" is never singularised on the event detail screen
+### [x] "seats" is never singularised on the event detail screen
 
 `app/clubs/[id]/events/[eventId]/index.tsx` (around line 252) renders
 `` `${tables.length} ${tables.length === 1 ? 'table' : 'tables'} · ${seats} seats` ``
@@ -92,6 +92,11 @@ capacity 1 would read "1 table · 1 seats". Unreachable through the UI today: ta
 capacity is not editable anywhere and every table is created at the default of 4, so
 this has never actually been seen. Low priority; fix alongside anything else that
 touches this line.
+
+**Fixed** in the seating branch (PR #5). Task 10 rewrote that header while wiring
+booking, and the line now reads `${seats} ${seats === 1 ? 'seat' : 'seats'}`
+(`app/clubs/[id]/events/[eventId]/index.tsx:594`). Still unreachable through the
+UI — capacity is not editable anywhere — but it no longer lies if it ever is.
 
 ---
 
@@ -114,6 +119,70 @@ works on a device.
 - Verify: sign in with Google, then sign in with a magic link to the *same* address,
   and confirm one profile results. `supabase/tests/database/identity_linking.test.sql`
   asserts this — run it against any environment whose auth settings change.
+
+### [ ] Seating & booking — the by-hand pass before PR #5 merges
+
+The plan for V1 plan 4 names four checks as merge criteria and **none have been
+done**. Automated coverage is 663 pgTAP / 67 hosted / 459 Vitest / 49 contract /
+5 concurrency / 28 visual, but none of it exercises two real people, and none of
+it has ever run on a phone.
+
+The app points at the hosted **mahjhero-dev** project, which already has all 22 of
+the branch's migrations. So this tests real code against the real schema.
+
+**Setup, once (~10 min).**
+
+- In the Supabase dashboard → Authentication → Users → *Add user*, create three
+  extra accounts with **Auto Confirm** ticked (`you+a@…`, `+b`, `+c`). You need
+  enough members to fill a table; you only have two hands.
+- `npm run web`, sign in with a real address you can read — sign-in is a magic
+  link, and the local stack's mail catcher is deliberately excluded, so the mail
+  goes to real email. If the link does not return you to the app, that is the
+  redirect allow-list: see `docs/auth-configuration.md`.
+- Create a club, invite the three placeholders (they must be members before you
+  can book on their behalf), and create a game for tomorrow evening with
+  **1 table** — four seats.
+
+**1. Two accounts racing one seat.**
+Book two placeholders via "Bring someone" so the table sits at 3 of 4. Open the
+event screen in two browsers signed in as different people, and tap the last empty
+seat together.
+*Expect:* exactly one wins. The loser reads *"That game filled up while you were
+looking. Join the waitlist?"* — **not** "Could not reach MahjHero. Check your
+connection." A connection message here means a refusal is being mis-mapped, which
+is the bug class this branch fixed four separate times.
+
+**2. A friend-booked seat, and its decline.**
+Book a placeholder via "Bring someone", then sign in as them and open `/clubs`.
+*Expect:* a "Your games" row reading *"[name] booked this for you"* with a
+Decline. Decline it, then re-check the event screen — the seat is free and anyone
+waiting is promoted **immediately**, not after a five-minute sweep.
+
+**3. An offer end to end.** *The one that matters most.*
+Fill all four seats. Then, as somebody with no seat, use "Bring someone" to
+propose **yourself plus one other** — a group of two against zero seats, so you
+are waitlisted. Now cancel one booking to free a single seat.
+*Expect:* the booker gets an offer for **1 seat** with a countdown, on the event
+screen and on "Your games". Accept it. **One of you is seated and the other is
+still waitlisted, at the same place in the queue.** That is the rule the whole
+design rests on, and this is the check that would most likely have caught the
+waitlist livelock the final review found.
+
+*Optional, to watch the livelock fix work:* in the SQL editor,
+`update promotion_offers set expires_at = now() - interval '1 minute';` then
+`select public.sweep_promotion_offers();`. Whoever is waiting *behind* the group
+should get seated, and the group should keep its original position rather than
+being handed the same seat forever.
+
+**4. On a device.**
+`npm run start`, scan the QR with Expo Go.
+*Expect:* the seat grid legible at phone width. Are empty seats obviously
+tappable at 18pt? Does a four-seat table wrap sanely? Is "Bring someone" reachable
+without horizontal scrolling? Plan 3 shipped having never been run on a device,
+and the seat grid is the densest thing this app draws.
+
+Everything here writes to the dev project's data — harmless, but it is shared
+state if anyone else is looking at it.
 
 ---
 
