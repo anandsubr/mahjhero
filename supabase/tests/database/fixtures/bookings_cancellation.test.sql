@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(22);
+select plan(29);
 
 insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-000000000001', 'alice@example.com'),
@@ -116,6 +116,14 @@ values ('b00c0000-0000-0000-0000-000000000009',
 -- Who may end a booking.
 -- ---------------------------------------------------------------------
 set local role authenticated;
+set local request.jwt.claims = '{"role": "authenticated"}';
+
+select throws_ok(
+  $$select public.cancel_booking('b00c0000-0000-0000-0000-000000000001')$$,
+  '42501',
+  null,
+  'a caller with no sub claim cannot cancel a booking');
+
 set local request.jwt.claims =
   '{"sub": "bbbbbbbb-0000-0000-0000-000000000002", "role": "authenticated"}';
 
@@ -169,6 +177,26 @@ insert into public.bookings
    'bbbbbbbb-0000-0000-0000-000000000002',
    'cccccccc-0000-0000-0000-000000000003', 'waitlisted');
 
+-- Alice books a seat for Carol at last week's (already-started) game, to
+-- exercise decline_booking's "event already started" guard on a booking
+-- Carol may legitimately decline (booked_by <> profile_id, so it does not
+-- trip the earlier "nothing to decline" guard instead).
+insert into public.booking_groups
+  (id, event_id, club_id, created_by, preferred_table_id) values
+  ('9909aaaa-0000-0000-0000-000000000006',
+   'e3e3e3e3-0000-0000-0000-000000000003',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   'aaaaaaaa-0000-0000-0000-000000000001',
+   '7ab1e000-0000-0000-0000-000000000003');
+insert into public.bookings
+  (id, group_id, event_id, club_id, profile_id, booked_by) values
+  ('b00c0000-0000-0000-0000-000000000022',
+   '9909aaaa-0000-0000-0000-000000000006',
+   'e3e3e3e3-0000-0000-0000-000000000003',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   'cccccccc-0000-0000-0000-000000000003',
+   'aaaaaaaa-0000-0000-0000-000000000001');
+
 set local role authenticated;
 set local request.jwt.claims =
   '{"sub": "bbbbbbbb-0000-0000-0000-000000000002", "role": "authenticated"}';
@@ -199,6 +227,12 @@ select throws_ok(
   '42501',
   null,
   'a seat you booked yourself is cancelled, never declined');
+
+select throws_ok(
+  $$select public.decline_booking('b00c0000-0000-0000-0000-000000000022')$$,
+  '23514',
+  'event already started',
+  'a seat at a game that has started cannot be declined');
 
 -- ---------------------------------------------------------------------
 -- The host may end anybody's booking, and the member hears about it.
@@ -261,6 +295,23 @@ insert into public.promotion_offers
    'e1e1e1e1-0000-0000-0000-000000000001', 1, now() + interval '2 hours');
 
 set local role authenticated;
+set local request.jwt.claims = '{"role": "authenticated"}';
+
+select throws_ok(
+  $$select public.cancel_booking_group('9909aaaa-0000-0000-0000-000000000003')$$,
+  '42501',
+  null,
+  'a caller with no sub claim cannot cancel a booking group');
+
+set local request.jwt.claims =
+  '{"sub": "bbbbbbbb-0000-0000-0000-000000000002", "role": "authenticated"}';
+
+select throws_ok(
+  $$select public.cancel_booking_group('9909aaaa-0000-0000-0000-000000000009')$$,
+  '23514',
+  'event already started',
+  'a group at a game that has started cannot be withdrawn');
+
 set local request.jwt.claims =
   '{"sub": "eeeeeeee-0000-0000-0000-000000000005", "role": "authenticated"}';
 
@@ -306,8 +357,22 @@ insert into public.bookings
    'dddddddd-0000-0000-0000-000000000004');
 
 set local role authenticated;
+set local request.jwt.claims = '{"role": "authenticated"}';
+
+select throws_ok(
+  $$select public.place_booking('b00c0000-0000-0000-0000-000000000020', null)$$,
+  '42501',
+  null,
+  'a caller with no sub claim cannot place a booking');
+
 set local request.jwt.claims =
   '{"sub": "bbbbbbbb-0000-0000-0000-000000000002", "role": "authenticated"}';
+
+select throws_ok(
+  $$select public.place_booking('b00c0000-0000-0000-0000-000000000009', null)$$,
+  '23514',
+  'event already started',
+  'a booking at a game that has started cannot be placed');
 
 select throws_ok(
   $$select public.place_booking('b00c0000-0000-0000-0000-000000000020',
@@ -362,9 +427,17 @@ select lives_ok(
   $$select public.place_booking('b00c0000-0000-0000-0000-000000000020', null)$$,
   'passing no table returns the booking to "any table"');
 
+reset role;
+select is(
+  (select event_table_id from public.bookings
+    where id = 'b00c0000-0000-0000-0000-000000000020'),
+  null::uuid,
+  'and the booking''s table is actually cleared, not left as-is');
+
 -- An organizer may place a booking that is not their own — the guard is
 -- `profile_id = auth.uid() or is_club_organizer(...)`, not just the first
 -- half.
+set local role authenticated;
 set local request.jwt.claims =
   '{"sub": "aaaaaaaa-0000-0000-0000-000000000001", "role": "authenticated"}';
 

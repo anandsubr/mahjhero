@@ -48,16 +48,29 @@ security definer
 set search_path = public
 as $$
 declare
-  bk record;
-  ev record;
+  bk     record;
+  ev     record;
+  caller uuid;
 begin
+  -- Bound and null-checked before anything else: with an OR-chain guard
+  -- (`bk.profile_id = auth.uid() or ... or is_club_organizer(...)`), a
+  -- session with no `sub` claim makes every `= auth.uid()` term NULL and
+  -- is_club_organizer(...) a definite false, so `NULL or NULL or false` is
+  -- NULL, `not NULL` is NULL, and plpgsql skips an `if` whose condition is
+  -- NULL — the guard never fires. Binding `caller` and refusing a null
+  -- caller up front, as decline_booking already does, closes that hole.
+  caller := auth.uid();
+  if caller is null then
+    raise exception 'not your booking' using errcode = '42501';
+  end if;
+
   select * into bk from public.bookings where id = target_booking;
   if bk.id is null then
     raise exception 'no such booking' using errcode = '42501';
   end if;
 
-  if not (bk.profile_id = auth.uid()
-          or bk.booked_by = auth.uid()
+  if not (bk.profile_id = caller
+          or bk.booked_by = caller
           or public.is_club_organizer(bk.club_id)) then
     raise exception 'not your booking' using errcode = '42501';
   end if;
@@ -74,17 +87,17 @@ begin
   perform 1 from public.events where id = bk.event_id for update;
 
   update public.bookings
-     set status = 'cancelled', cancelled_at = now(), cancelled_by = auth.uid()
+     set status = 'cancelled', cancelled_at = now(), cancelled_by = caller
    where id = target_booking;
 
   -- Somebody else ended this person's booking; they are owed the news.
-  if bk.profile_id <> auth.uid() then
+  if bk.profile_id <> caller then
     insert into public.notification_outbox
       (recipient_id, club_id, event_id, kind, payload, dedupe_key)
     values (bk.profile_id, bk.club_id, bk.event_id,
             'booking_cancelled_by_host',
             jsonb_build_object('booking_id', bk.id,
-                               'cancelled_by', auth.uid()),
+                               'cancelled_by', caller),
             'booking_cancelled_by_host:' || bk.id::text)
     on conflict (dedupe_key) do nothing;
   end if;
@@ -176,16 +189,24 @@ security definer
 set search_path = public
 as $$
 declare
-  g  record;
-  ev record;
-  bk record;
+  g      record;
+  ev     record;
+  bk     record;
+  caller uuid;
 begin
+  -- Same null-caller hole as cancel_booking's OR-chain guard, and the same
+  -- fix: bind and refuse a null caller before the OR-chain ever runs.
+  caller := auth.uid();
+  if caller is null then
+    raise exception 'not your booking' using errcode = '42501';
+  end if;
+
   select * into g from public.booking_groups where id = target_group;
   if g.id is null then
     raise exception 'no such group' using errcode = '42501';
   end if;
 
-  if not (g.created_by = auth.uid() or public.is_club_organizer(g.club_id)) then
+  if not (g.created_by = caller or public.is_club_organizer(g.club_id)) then
     raise exception 'not your booking' using errcode = '42501';
   end if;
 
@@ -202,16 +223,16 @@ begin
   loop
     update public.bookings
        set status = 'cancelled', cancelled_at = now(),
-           cancelled_by = auth.uid()
+           cancelled_by = caller
      where id = bk.id;
 
-    if bk.profile_id <> auth.uid() then
+    if bk.profile_id <> caller then
       insert into public.notification_outbox
         (recipient_id, club_id, event_id, kind, payload, dedupe_key)
       values (bk.profile_id, bk.club_id, bk.event_id,
               'booking_cancelled_by_host',
               jsonb_build_object('booking_id', bk.id,
-                                 'cancelled_by', auth.uid()),
+                                 'cancelled_by', caller),
               'booking_cancelled_by_host:' || bk.id::text)
       on conflict (dedupe_key) do nothing;
     end if;
@@ -244,13 +265,21 @@ declare
   bk       record;
   ev       record;
   tbl      record;
+  caller   uuid;
 begin
+  -- Same null-caller hole as cancel_booking's OR-chain guard, and the same
+  -- fix: bind and refuse a null caller before the OR-chain ever runs.
+  caller := auth.uid();
+  if caller is null then
+    raise exception 'not your booking' using errcode = '42501';
+  end if;
+
   select * into bk from public.bookings where id = target_booking;
   if bk.id is null then
     raise exception 'no such booking' using errcode = '42501';
   end if;
 
-  if not (bk.profile_id = auth.uid()
+  if not (bk.profile_id = caller
           or public.is_club_organizer(bk.club_id)) then
     raise exception 'not your booking' using errcode = '42501';
   end if;
