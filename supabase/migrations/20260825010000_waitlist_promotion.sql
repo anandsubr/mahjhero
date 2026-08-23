@@ -23,7 +23,12 @@
  *
  * Returns NO ROWS rather than a partial answer when the request cannot be
  * satisfied. "The whole group or nobody" is a property of this function,
- * not a rule repeated by each caller.
+ * not a rule repeated by each caller. The one exception is the
+ * `preferred is null` branch below: it answers "unplaced", and never
+ * consults capacity at all, so event-level capacity there is the
+ * caller's responsibility — every current caller already guards it
+ * (promote_waitlist and confirm_group_seats via event_free_seats before
+ * they get here; the booking planner does the same).
  */
 create function public.seat_assignments(
   target_event uuid,
@@ -137,12 +142,10 @@ begin
     return 0;
   end if;
 
-  if not exists (
-    select 1 from public.seat_assignments(
-      g.event_id, want, g.preferred_table_id, g.allow_split))
-  then
-    return 0;
-  end if;
+  -- Takes the event lock before reading any seat count, per the
+  -- concurrency design (see promote_waitlist). A no-op when the caller
+  -- already holds it in this transaction.
+  perform 1 from public.events where id = g.event_id for update;
 
   for a in
     select * from public.seat_assignments(
@@ -195,9 +198,11 @@ $$;
 /*
  * The walk. Called by every path that frees a seat, and by the sweep.
  *
- * The caller is expected to already hold `for update` on the event row.
- * Every granted function in this plan takes that lock as its first
- * statement; this one is never granted to authenticated.
+ * Takes `for update` on the event row itself, as its first statement,
+ * before reading any seat count. Re-acquiring a row lock already held in
+ * the same transaction is a no-op, so this costs nothing at the call
+ * sites (accept/decline/sweep) that already hold it going in. This one
+ * is never granted to authenticated.
  */
 create function public.promote_waitlist(target_event uuid)
 returns void
@@ -213,6 +218,8 @@ declare
   seated    int;
   new_offer uuid;
 begin
+  perform 1 from public.events where id = target_event for update;
+
   select id, status, starts_at, club_id into ev
   from public.events where id = target_event;
 
@@ -274,14 +281,19 @@ declare
   o      record;
   g      record;
   seated int;
+  caller uuid := auth.uid();
 begin
+  if caller is null then
+    raise exception 'not your offer' using errcode = '42501';
+  end if;
+
   select * into o from public.promotion_offers where id = target_offer;
   if o.id is null then
     raise exception 'no such offer' using errcode = '42501';
   end if;
 
   select * into g from public.booking_groups where id = o.group_id;
-  if g.created_by <> auth.uid() then
+  if g.created_by <> caller then
     raise exception 'not your offer' using errcode = '42501';
   end if;
 
@@ -312,16 +324,21 @@ security definer
 set search_path = public
 as $$
 declare
-  o record;
-  g record;
+  o      record;
+  g      record;
+  caller uuid := auth.uid();
 begin
+  if caller is null then
+    raise exception 'not your offer' using errcode = '42501';
+  end if;
+
   select * into o from public.promotion_offers where id = target_offer;
   if o.id is null then
     raise exception 'no such offer' using errcode = '42501';
   end if;
 
   select * into g from public.booking_groups where id = o.group_id;
-  if g.created_by <> auth.uid() then
+  if g.created_by <> caller then
     raise exception 'not your offer' using errcode = '42501';
   end if;
 

@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(28);
+select plan(32);
 
 insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-000000000001', 'alice@example.com'),
@@ -348,8 +348,11 @@ update public.bookings
        cancelled_by = 'aaaaaaaa-0000-0000-0000-000000000001'
  where profile_id = 'aaaaaaaa-0000-0000-0000-000000000001';
 
--- No-op: group_004 already holds an outstanding offer, so the walk skips
--- it and the newly freed seat stays exactly where the offer holds it.
+-- No-op, but NOT because the walk reaches group_004's outstanding-offer
+-- guard: event_free_seats is already 0 at this point (the offer above
+-- holds the only newly-freed seat), so the loop's `exit when free <= 0`
+-- stops the walk before it ever gets to group_004's row. Either way the
+-- freed seat stays exactly where the offer holds it.
 select public.promote_waitlist('e1e1e1e1-0000-0000-0000-000000000001');
 
 update public.promotion_offers
@@ -398,6 +401,133 @@ select throws_ok(
   '42501',
   null,
   'a member of the group who did not book it cannot answer the offer');
+
+select throws_ok(
+  $$select public.decline_promotion_offer(
+      '0ffe0000-0000-0000-0000-000000000001')$$,
+  '42501',
+  null,
+  'and cannot decline it either');
+
+reset role;
+
+-- ---------------------------------------------------------------------
+-- Declining releases the hold, and the walk runs immediately — same as
+-- every other seat-freeing path.
+--
+-- A second table gives this scenario clean, isolated capacity so it
+-- doesn't have to reason about the phantom hold group_004's still-
+-- outstanding offer (above) leaves on table 1.
+-- ---------------------------------------------------------------------
+insert into public.event_tables
+  (id, event_id, club_id, label, skill_tier, capacity, position) values
+  ('7ab1e000-0000-0000-0000-000000000002',
+   'e1e1e1e1-0000-0000-0000-000000000001',
+   'c1c1c1c1-0000-0000-0000-000000000001', 'Table 2', 'mixed', 2, 2);
+
+insert into public.booking_groups
+  (id, event_id, club_id, created_by, preferred_table_id, allow_split,
+   status, waitlisted_at) values
+  ('9909aaaa-0000-0000-0000-000000000005',
+   'e1e1e1e1-0000-0000-0000-000000000001',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   'cccccccc-0000-0000-0000-000000000003',
+   '7ab1e000-0000-0000-0000-000000000002', true, 'waitlisted',
+   now() - interval '5 minutes');
+
+insert into public.bookings
+  (group_id, event_id, club_id, profile_id, booked_by, status) values
+  ('9909aaaa-0000-0000-0000-000000000005',
+   'e1e1e1e1-0000-0000-0000-000000000001',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   'cccccccc-0000-0000-0000-000000000003',
+   'cccccccc-0000-0000-0000-000000000003', 'waitlisted');
+
+insert into public.promotion_offers
+  (id, group_id, event_id, offered_seat_count, expires_at) values
+  ('0ffe0000-0000-0000-0000-000000000002',
+   '9909aaaa-0000-0000-0000-000000000005',
+   'e1e1e1e1-0000-0000-0000-000000000001', 1, now() + interval '2 hours');
+
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "cccccccc-0000-0000-0000-000000000003", "role": "authenticated"}';
+
+select public.decline_promotion_offer('0ffe0000-0000-0000-0000-000000000002');
+
+reset role;
+
+-- Carol is still first (and now only) in the queue, so the seat her own
+-- offer was holding comes straight back to her the moment decline runs
+-- promote_waitlist. This would still read 'waitlisted' if decline did not
+-- call promote_waitlist itself.
+select is(
+  (select status::text from public.bookings
+    where profile_id = 'cccccccc-0000-0000-0000-000000000003'
+      and group_id = '9909aaaa-0000-0000-0000-000000000005'),
+  'confirmed',
+  'declining releases the seat it was holding to the next eligible booking');
+
+-- ---------------------------------------------------------------------
+-- An offer past its expires_at cannot be accepted, even by its own
+-- booker.
+-- ---------------------------------------------------------------------
+insert into public.booking_groups
+  (id, event_id, club_id, created_by, preferred_table_id, allow_split,
+   status, waitlisted_at) values
+  ('9909aaaa-0000-0000-0000-000000000006',
+   'e1e1e1e1-0000-0000-0000-000000000001',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   'aaaaaaaa-0000-0000-0000-000000000001',
+   '7ab1e000-0000-0000-0000-000000000002', true, 'waitlisted', now());
+
+insert into public.bookings
+  (group_id, event_id, club_id, profile_id, booked_by, status) values
+  ('9909aaaa-0000-0000-0000-000000000006',
+   'e1e1e1e1-0000-0000-0000-000000000001',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   'aaaaaaaa-0000-0000-0000-000000000001',
+   'aaaaaaaa-0000-0000-0000-000000000001', 'waitlisted');
+
+insert into public.promotion_offers
+  (id, group_id, event_id, offered_seat_count, expires_at) values
+  ('0ffe0000-0000-0000-0000-000000000003',
+   '9909aaaa-0000-0000-0000-000000000006',
+   'e1e1e1e1-0000-0000-0000-000000000001', 1, now() - interval '5 minutes');
+
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "aaaaaaaa-0000-0000-0000-000000000001", "role": "authenticated"}';
+
+select throws_ok(
+  $$select public.accept_promotion_offer(
+      '0ffe0000-0000-0000-0000-000000000003')$$,
+  '23514',
+  null,
+  'an offer past its expires_at cannot be accepted');
+
+reset role;
+
+-- ---------------------------------------------------------------------
+-- A null caller (no `sub` in the JWT claims) cannot answer any offer at
+-- all — the mismatch check `created_by <> auth.uid()` is NULL, not true,
+-- for a null auth.uid(), so this has to be its own guard. Reuses the
+-- still-outstanding, still-expired offer above: with the guard in place
+-- this raises before ever inspecting expiry; without it, the call would
+-- fall through to the expiry check and raise 23514 instead of 42501,
+-- which is exactly the mismatch this assertion is here to catch.
+-- ---------------------------------------------------------------------
+set local role authenticated;
+set local request.jwt.claims = '{"role": "authenticated"}';
+
+select throws_ok(
+  $$select public.accept_promotion_offer(
+      '0ffe0000-0000-0000-0000-000000000003')$$,
+  '42501',
+  null,
+  'a null caller cannot accept an offer at all');
+
+reset role;
 
 select * from finish();
 rollback;
