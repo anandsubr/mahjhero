@@ -39,7 +39,7 @@ Every task's requirements implicitly include these.
 
 ## Scope
 
-**In:** the four booking tables, the propose/commit pair, group booking with splits, booking on behalf of club members with a one-tap decline, "any table" bookings and host placement, member and host cancellation, the waitlist with FIFO auto-promotion, timed partial-fit promotion offers, "need a 4th" detection and claiming, the amendments to plan 3's `cancel_event` and `remove_event_table`, three screen changes, and the two `todo.md` layout bugs on the clubs list.
+**In:** the four booking tables, the propose/commit pair, group booking with splits, booking on behalf of club members with a one-tap decline, "any table" bookings and host placement, member and host cancellation, the waitlist with FIFO auto-promotion, timed partial-fit promotion offers, "need a 4th" detection and claiming, the amendments to plan 3's `cancel_event`, `remove_event_table` and `end_event_series` (the last found and fixed at the whole-branch review, not enumerated when this plan was written — see the final-review-fixes report), three screen changes, and the two `todo.md` layout bugs on the clubs list.
 
 **Out — deferred with reasons:**
 

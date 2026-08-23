@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(118);
+select plan(122);
 
 /*
  * Series creation, series editing, resetting one week, ending a series, and
@@ -737,11 +737,88 @@ select ok(
 --     history alone.
 -- ---------------------------------------------------------------------------
 
+-- IMPORTANT FIX (20260825110000): end_event_series used to set
+-- events.status = 'cancelled' directly and stop -- bookings stayed
+-- 'confirmed'/'waitlisted', their booking_groups stayed live, no offers
+-- were expired and no event_cancelled outbox row was written. The game
+-- then simply vanished from "Your games" (my_upcoming_bookings filters on
+-- e.status = 'published'), with no notification and no record of what
+-- happened. This file calls end_event_series three times above and never
+-- once with a booking in play, so the gap went uncaught. Bob books a real
+-- seat, with a real table, on o6 (current_date + 38) -- one of series A's
+-- occurrences nothing above this point has touched -- immediately before
+-- the host ends the series. Direct inserts, so drop back out of
+-- authenticated first -- only the security-definer functions have DML
+-- grants on these tables.
+reset role;
+
+insert into public.booking_groups
+  (id, event_id, club_id, created_by, preferred_table_id)
+select '9909aaaa-0000-0000-0000-000000000101',
+       e.id, 'c1c1c1c1-0000-0000-0000-000000000001',
+       'aaaaaaaa-0000-0000-0000-000000000002',
+       (select t.id from public.event_tables t
+         where t.event_id = e.id order by t.position limit 1)
+from public.events e
+where e.occurrence_date = current_date + 38
+  and e.series_id =
+    (select id from public.event_series where starts_on = current_date - 28);
+
+insert into public.bookings
+  (group_id, event_id, club_id, event_table_id, profile_id, booked_by)
+select '9909aaaa-0000-0000-0000-000000000101', g.event_id, g.club_id,
+       g.preferred_table_id, 'aaaaaaaa-0000-0000-0000-000000000002',
+       'aaaaaaaa-0000-0000-0000-000000000002'
+from public.booking_groups g
+where g.id = '9909aaaa-0000-0000-0000-000000000101';
+
+select is(
+  (select status::text from public.bookings
+    where group_id = '9909aaaa-0000-0000-0000-000000000101'),
+  'confirmed',
+  'Bob has a real, confirmed seat on a future occurrence before the series ends'
+);
+
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "aaaaaaaa-0000-0000-0000-000000000001", "role": "authenticated"}';
+
 select lives_ok(
   $$select public.end_event_series(
       (select id from public.event_series where starts_on = current_date - 28),
       true)$$,
   'an organizer ends the live series and cancels its future occurrences'
+);
+
+-- Back out of authenticated: notification_outbox has no SELECT policy at
+-- all (see 20260825000000's own comment), so reading it needs the
+-- unrestricted role the same way event_disruption.test.sql's equivalent
+-- checks do.
+reset role;
+
+select is(
+  (select status::text from public.bookings
+    where group_id = '9909aaaa-0000-0000-0000-000000000101'),
+  'cancelled',
+  'ending the series cancels Bob''s booking on the occurrence it cancelled -- not left confirmed for a game that vanished from his list'
+);
+
+select is(
+  (select status::text from public.booking_groups
+    where id = '9909aaaa-0000-0000-0000-000000000101'),
+  'cancelled',
+  'and his booking group along with it'
+);
+
+select is(
+  (select count(*)::int from public.notification_outbox
+    where kind = 'event_cancelled'
+      and recipient_id = 'aaaaaaaa-0000-0000-0000-000000000002'
+      and (payload->>'booking_id')::uuid = (
+        select id from public.bookings
+          where group_id = '9909aaaa-0000-0000-0000-000000000101')),
+  1,
+  'and he is told once, the same way a single cancel_event would tell him'
 );
 
 select is(
