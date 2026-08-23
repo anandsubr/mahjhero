@@ -436,7 +436,20 @@ Organizer-guarded, via plan 3's shared `assert_club_organizer(uuid)`:
 
 Plan 2's hygiene applies to every new object: grants written verb-for-verb rather
 than `all` (which includes `TRUNCATE`, which RLS does not filter), and
-`revoke execute … from public, anon` before every grant.
+`revoke execute … from public, anon, authenticated` before every grant.
+
+**`authenticated` belongs in that revoke, and leaving it out is the mistake this
+project keeps making.** Two independent mechanisms hand out EXECUTE: a null
+`proacl` means EXECUTE to PUBLIC, *and* Supabase's hosted bootstrap grants EXECUTE
+to `authenticated` directly at function-creation time — which a revoke from
+`public` never touches. The local stack adds no such grant, so an internal
+function reachable by every signed-in user on hosted looks clean locally and stays
+clean through every local test run. Plan 3 was bitten three times; plan 4 shipped
+sixteen functions that way, `promote_waitlist` and `confirm_group_seats` among
+them — `security definer`, no membership check, written to trust their callers
+because they were supposed to be unreachable. Only `portable/grants.test.sql` run
+against hosted finds it, which is the argument for running it early rather than at
+merge.
 
 ---
 
