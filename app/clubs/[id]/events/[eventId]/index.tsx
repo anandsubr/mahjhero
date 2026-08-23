@@ -17,6 +17,7 @@ import {
   commitBooking,
   declinePromotionOffer,
   fetchEventSeating,
+  fetchOpenOffer,
   needsAFourth,
   seatsRemaining,
   tierWarning,
@@ -99,11 +100,12 @@ export default function EventScreen() {
   const [seating, setSeating] = useState<SeatOccupant[]>([]);
   const [seatingFailed, setSeatingFailed] = useState(false);
 
-  // A promotion offer currently held open for this member's group. Nothing
-  // in lib/bookings.ts exposes a way to *read* `promotion_offers` yet
-  // (Task 8 shipped only the accept/decline writes), so this stays null
-  // until a later plan adds that fetch — the state and the panel wiring
-  // exist now so that plan only has to set it, not build the rendering.
+  // A promotion offer currently held open for this member's group, read via
+  // `fetchOpenOffer`. RLS (`promotion_offers_select_group`) already scopes
+  // the fetch to a group this member actually belongs to, so no client-side
+  // filtering on `youId`/`group_id` is needed here. Reshaped from
+  // `PromotionOffer` (`offered_seat_count`) to `WaitlistPanel`'s prop shape
+  // (`seats`) below, in `load()`.
   const [offer, setOffer] = useState<{
     id: string;
     seats: number;
@@ -128,13 +130,14 @@ export default function EventScreen() {
   const me = session?.user.id ?? '';
 
   async function load() {
-    const [loadedClub, loadedEvent, loadedTables, roster, seatingRows] =
+    const [loadedClub, loadedEvent, loadedTables, roster, seatingRows, openOffer] =
       await Promise.all([
         fetchClub(clubId),
         fetchEvent(eventId),
         fetchEventTables(eventId),
         fetchRoster(clubId),
         fetchEventSeating(eventId),
+        fetchOpenOffer(eventId),
       ]);
 
     setClub(loadedClub);
@@ -149,6 +152,20 @@ export default function EventScreen() {
     // getting it wrong) — this game's guest list gets the same treatment.
     setSeatingFailed(seatingRows === null);
     setSeating(seatingRows ?? []);
+
+    // `fetchOpenOffer` returns null both on failure and on "no open offer" —
+    // unlike seating there is no third failed-vs-empty state to preserve
+    // here: an offer that failed to load is indistinguishable from one that
+    // doesn't exist, and in both cases the banner should simply not render.
+    setOffer(
+      openOffer
+        ? {
+            id: openOffer.id,
+            seats: openOffer.offered_seat_count,
+            expires_at: openOffer.expires_at,
+          }
+        : null,
+    );
 
     // A roster fetch failure fails closed to "not an organizer" rather than
     // blanking the screen — the member-facing content above is unaffected,

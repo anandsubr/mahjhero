@@ -67,6 +67,29 @@ vi.mock('../../lib/events', async (importOriginal) => {
   };
 });
 
+// Added alongside `fetchOpenOffer` (this fix pass): this file previously left
+// `lib/bookings` entirely unmocked, relying on `fetchEventSeating`'s real RPC
+// call failing over the test environment's blocked network and resolving
+// (via its own try/catch) to `null` fast enough to beat
+// `findByText`'s default wait. `fetchOpenOffer` is a second such call, on a
+// different code path (`.from().select()` rather than `.rpc()`) that was
+// observed to take several seconds to fail closed in this sandbox — long
+// enough to blow past that default and fail all 24 tests below with the
+// loading spinner still on screen. Mocking both here removes the reliance on
+// production network-failure timing entirely, which is what this file should
+// have done from the start.
+const fetchEventSeating = vi.fn();
+const fetchOpenOffer = vi.fn();
+
+vi.mock('../../lib/bookings', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/bookings')>();
+  return {
+    ...actual,
+    fetchEventSeating: (...args: unknown[]) => fetchEventSeating(...args),
+    fetchOpenOffer: (...args: unknown[]) => fetchOpenOffer(...args),
+  };
+});
+
 import EventScreen from '../clubs/[id]/events/[eventId]/index';
 
 const CLUB = {
@@ -137,6 +160,10 @@ beforeEach(() => {
   updateEventTable.mockResolvedValue({ error: null });
   removeEventTable.mockResolvedValue({ error: null });
   resetEventToSeries.mockResolvedValue({ error: null });
+  fetchEventSeating.mockReset();
+  fetchEventSeating.mockResolvedValue([]);
+  fetchOpenOffer.mockReset();
+  fetchOpenOffer.mockResolvedValue(null);
 });
 
 // A guard-ordering regression this repo has already hit on the club detail

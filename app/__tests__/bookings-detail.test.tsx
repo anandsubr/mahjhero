@@ -58,6 +58,9 @@ vi.mock('../../lib/events', async (importOriginal) => {
 const commitBooking = vi.fn();
 const cancelBooking = vi.fn();
 const fetchEventSeating = vi.fn();
+const fetchOpenOffer = vi.fn();
+const acceptPromotionOffer = vi.fn();
+const declinePromotionOffer = vi.fn();
 
 vi.mock('../../lib/bookings', async () => {
   const actual = await vi.importActual<typeof import('../../lib/bookings')>(
@@ -68,6 +71,9 @@ vi.mock('../../lib/bookings', async () => {
     fetchEventSeating: (...a: unknown[]) => fetchEventSeating(...a),
     commitBooking: (...a: unknown[]) => commitBooking(...a),
     cancelBooking: (...a: unknown[]) => cancelBooking(...a),
+    fetchOpenOffer: (...a: unknown[]) => fetchOpenOffer(...a),
+    acceptPromotionOffer: (...a: unknown[]) => acceptPromotionOffer(...a),
+    declinePromotionOffer: (...a: unknown[]) => declinePromotionOffer(...a),
   };
 });
 
@@ -140,6 +146,12 @@ beforeEach(() => {
   cancelBooking.mockReset();
   fetchEventSeating.mockReset();
   fetchEventSeating.mockResolvedValue([]);
+  fetchOpenOffer.mockReset();
+  fetchOpenOffer.mockResolvedValue(null);
+  acceptPromotionOffer.mockReset();
+  acceptPromotionOffer.mockResolvedValue({ error: null });
+  declinePromotionOffer.mockReset();
+  declinePromotionOffer.mockResolvedValue({ error: null });
 });
 
 describe('the event screen, for a member', () => {
@@ -294,5 +306,53 @@ describe('the event screen, for a member', () => {
     expect(seat.getAttribute('aria-disabled')).toBe('true');
     fireEvent.click(seat);
     expect(commitBooking).not.toHaveBeenCalled();
+  });
+
+  // The offer's `expires_at` is computed relative to the real clock, same
+  // reasoning as `FUTURE` above — the countdown text is asserted by pattern
+  // rather than an exact value, since the exact minute is a race between
+  // this line and the component's own `new Date()` inside `load()`.
+  const OFFER = {
+    id: 'offer-1',
+    group_id: 'g1',
+    offered_seat_count: 2,
+    expires_at: new Date(Date.now() + 45 * 60_000 + 30_000).toISOString(),
+  };
+
+  it('renders the held-offer banner with the seat count and a countdown', async () => {
+    fetchOpenOffer.mockResolvedValue(OFFER);
+    render(<EventScreen />);
+    expect(
+      await screen.findByText('2 seats are free for your group'),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/^\d+ (minute|minutes|hour|hours)( \d+ (minute|minutes))? left$/),
+    ).toBeTruthy();
+  });
+
+  it('renders no offer banner at all when there is no open offer', async () => {
+    fetchOpenOffer.mockResolvedValue(null);
+    render(<EventScreen />);
+    await screen.findByText('Thursday Mahjong');
+    expect(screen.queryByText(/free for your group/)).toBeNull();
+    expect(screen.queryByLabelText('Decline the offer')).toBeNull();
+  });
+
+  it('accepts a held offer by its id', async () => {
+    fetchOpenOffer.mockResolvedValue(OFFER);
+    render(<EventScreen />);
+    fireEvent.click(await screen.findByLabelText('Take the 2 seats'));
+    await waitFor(() =>
+      expect(acceptPromotionOffer).toHaveBeenCalledWith('offer-1'),
+    );
+  });
+
+  it('declines a held offer by its id', async () => {
+    fetchOpenOffer.mockResolvedValue(OFFER);
+    render(<EventScreen />);
+    fireEvent.click(await screen.findByLabelText('Decline the offer'));
+    await waitFor(() =>
+      expect(declinePromotionOffer).toHaveBeenCalledWith('offer-1'),
+    );
   });
 });

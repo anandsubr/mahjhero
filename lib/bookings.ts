@@ -333,6 +333,42 @@ export async function fetchEventSeating(
   }
 }
 
+/**
+ * The one open offer (if any) currently held for a group this caller
+ * belongs to, for this event.
+ *
+ * A plain select on `promotion_offers`, not another RPC: its own policy
+ * (`promotion_offers_select_group`, 20260825000000) is
+ * `is_booking_group_member(group_id)`, which checks `bookings.profile_id =
+ * auth.uid()` for that group. RLS already scopes this to an offer made to a
+ * group the caller is actually in — nothing here needs to re-derive that.
+ * `responded_at is null` is the same "still open" test the accept/decline
+ * RPCs and the sweep job use; `.maybeSingle()` relies on
+ * `promotion_offers_one_outstanding_idx` (one outstanding offer per group)
+ * to guarantee at most one row.
+ */
+export async function fetchOpenOffer(
+  eventId: string,
+): Promise<PromotionOffer | null> {
+  try {
+    const { data, error } = await supabase
+      .from('promotion_offers')
+      .select('id, group_id, offered_seat_count, expires_at')
+      .eq('event_id', eventId)
+      .is('responded_at', null)
+      .maybeSingle();
+
+    if (error) {
+      console.error('fetchOpenOffer failed', error);
+      return null;
+    }
+    return (data as PromotionOffer | null) ?? null;
+  } catch (cause) {
+    console.error('fetchOpenOffer failed', cause);
+    return null;
+  }
+}
+
 export async function fetchMyUpcomingBookings(): Promise<MyBooking[] | null> {
   try {
     const { data, error } = await supabase.rpc('my_upcoming_bookings');
