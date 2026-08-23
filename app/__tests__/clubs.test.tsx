@@ -314,6 +314,32 @@ describe('club detail screen upcoming events', () => {
     expect(screen.getByText('Venues')).toBeTruthy();
   });
 
+  // The third line of each card, which nothing asserted before Task 17. It
+  // is the only place the club screen reports how big a game is, and it is
+  // read straight off the embedded `event_tables` count in
+  // `lib/events.ts`'s `toClubEvent` -- a mapper that has already been caught
+  // once on this branch going unexercised.
+  it('names how many tables each game has, singular and plural', async () => {
+    fetchRoster.mockResolvedValue([
+      { profile_id: 'test-user', role: 'member', display_name: 'Ada', skill_level: null },
+    ]);
+    fetchUpcomingEvents.mockResolvedValue([
+      { ...EVENT, table_count: 3 },
+      {
+        ...EVENT,
+        id: 'event-2',
+        title: 'Sunday Mahjong',
+        starts_at: '2026-09-06T13:00:00.000Z',
+        ends_at: '2026-09-06T16:00:00.000Z',
+        table_count: 1,
+      },
+    ]);
+    render(<ClubDetailScreen />);
+
+    expect(await screen.findByText('3 tables')).toBeTruthy();
+    expect(screen.getByText('1 table')).toBeTruthy();
+  });
+
   it('marks a cancelled event without implying it can still be booked', async () => {
     fetchRoster.mockResolvedValue([
       { profile_id: 'test-user', role: 'host', display_name: 'Ada', skill_level: null },

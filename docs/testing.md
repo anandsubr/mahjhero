@@ -38,13 +38,22 @@ suite exists.
 
 After switching to `maxDiffPixels: 120`, the same two mutations were re-run:
 
-- The whole-theme accent mutation now fails all six baselines, with diffs
-  ranging from 2,866px (`notifications-mobile`) to 24,330px
-  (`notifications-desktop`) — every one far past the 120px budget.
+- The whole-theme accent mutation now fails all six baselines that existed
+  when this was measured, with diffs ranging from 2,866px
+  (`notifications-mobile`) to 24,330px (`notifications-desktop`) — every one
+  far past the 120px budget.
 - A narrower mutation, changing only the toggle track colour, fails both
   notifications baselines at 1,123px each. Under the old ratio, 1,123px is
   ~0.37% of the mobile page and ~0.28% of desktop — still comfortably under
   1%, so the ratio would have let this regression through too.
+
+Re-measured against the baselines Task 17 added, on the screen with the only
+Toggle outside the notifications screen: changing the toggle's on-track colour
+from `colors.accentColor` to an off-palette green fails
+`edit-event-series-mobile` and `edit-event-series-desktop` at 1,126px each,
+alongside the two notifications baselines — and nothing else in the suite
+moves. That is the point of the seeded baselines: the defect class this layer
+was built for now has a tripwire on a second screen.
 
 The lesson for future maintainers: do not "simplify" this back to a ratio to
 make a large layout change stop tripping the suite. A ratio that is loose
@@ -152,8 +161,8 @@ the visual layer's screenshots show under "Starts"/"Ends" is an
 different implementation. That is real coverage of `TimeField.web.tsx`, and no
 coverage whatsoever of the native picker behind it.
 
-**`DateField.web.tsx` has component-layer coverage, not visual-layer
-coverage yet.** `app/clubs/[id]/events/new.tsx` (Task 13) is the first
+**`DateField.web.tsx` now has coverage at both layers.**
+`app/clubs/[id]/events/new.tsx` (Task 13) is the first
 screen to import `DateField`, and `app/__tests__/events-new.test.tsx`
 renders it, interacting with the "Date" and "Stop repeating on" fields
 through `screen.getByLabelText` the same way the notifications screen's test
@@ -167,10 +176,18 @@ commit: this paragraph named empty-string handling while nothing fired a
 `''`, and deleting `if (event.target.value === '') return;` left the whole
 suite green.
 
-Not covered at this layer: how the control paints. It is still **not** in the
-visual suite — no baseline screenshot exists for this screen yet (Task 17
-adds one). Check that this paragraph is still true when you next touch this
-file.
+How the control paints is the visual layer's half, and as of Task 17 it has
+it: `new-event-mobile` and `new-event-desktop` screenshot the create-game
+screen with the "Date" field rendered and filled, at 375px and 1440px. What
+those baselines cover is the field's own resting appearance — the pill
+treatment `webInputStyle` applies, the calendar glyph the browser draws
+inside it, and the value text. What they do **not** cover is the picker
+*popup*: it is browser chrome rendered outside the page, so no screenshot of
+this page can contain it, at any width. The "Stop repeating on" `DateField`
+is not in a baseline either — it only renders on the create screen once a
+repeat option is chosen, and on the edit screen only when "Runs indefinitely"
+is switched off, and neither baseline is in that state. Check that this
+paragraph is still true when you next touch this file.
 
 The component layer does not reach them either. `resolve.extensions` in
 `vitest.config.mts` makes Vitest resolve `.web.tsx` first, exactly as the web
@@ -251,7 +268,7 @@ names the missing variables. That check exists because the failure without it
 was actively misleading: an unset variable is not an error to the shell, it
 expands to the empty string, so `expo export` would spend minutes building a
 bundle with an empty Supabase URL, `lib/supabase.ts`'s guard would throw in
-the browser, and all six tests would fail on `toBeVisible` timeouts.
+the browser, and every test would fail on `toBeVisible` timeouts.
 `mintSession`'s own guard would not fire either, because the URL it checks was
 fine. Every symptom pointed at Playwright; the cause was a missing export.
 
@@ -262,6 +279,52 @@ session minted against one Supabase project is not valid for another, so
 building against the hosted project would make every signed-in test fail to
 authenticate — and the failure would look like a Playwright problem rather than
 a configuration one.
+
+### What the visual suite has baselines for, and what seeds them
+
+Eleven screens, each at 375×812 and 1440×900:
+
+- signed out: `sign-in`
+- signed in, no club: `profile`, `notifications`, `clubs` (the empty state)
+- signed in, with a seeded club: `clubs-populated`, `club-detail`,
+  `event-detail`, `new-event`, `edit-event` ("This game" scope),
+  `edit-event-series` ("The whole series" scope), `venues`
+
+`mintSession` creates a brand-new user who belongs to no club, so the last
+seven would have screenshotted an empty state or a redirect. `seedClubWithEvent`
+in `e2e/session.ts` writes what they need: a club (`Riverside Mah Jongg`,
+timezone `America/New_York`), a host membership, two venues, a weekly Tuesday
+series, two of its occurrences — the first carrying an `overrides` entry for
+`venue_id` — and two tables on each. It runs through the same `adminClient`
+helper `mintSession` uses, which reads the `service_role` key from the
+environment and refuses any URL whose parsed hostname is not loopback. Nothing
+under `app/` or `lib/` may import that file.
+
+Two properties of the fixtures decide what the baselines say, and both are
+deliberate:
+
+- **The club's timezone, not the machine's.** Every event time on these
+  screens is rendered in the CLUB's zone. `America/New_York` is the fixture's
+  choice; the seeded instants (fixed dates in 2099, so an "upcoming" filter
+  keeps them and no baseline ages) are the 7pm those dates read as there.
+- **The seeded event is a series occurrence, not a one-off.** A one-off shows
+  no scope choice on the edit screen and no "Part of a series" line on the
+  event screen, which would have left the branch's most complex UI with no
+  picture of it.
+
+The one value on any of these screens that comes from the DEVICE clock is the
+create-game screen's "Date" field, which opens on today. Two things pin it:
+`playwright.config.ts` sets `use.timezoneId`, and the seeded block installs
+`page.clock.setFixedTime` before navigating. `new-event` asserts the resulting
+value explicitly, so if either override stops applying the suite says so
+instead of leaving a baseline that rots overnight.
+
+**The `venues` baselines show two club-only venues and no shared one.**
+`venues_public_name_idx` is unique on (name, locality) across public venues,
+so a seeded public venue would collide on the second test of a run, and a
+per-run suffix to dodge that would put a changing string in a baseline. The
+"Other clubs can use this venue" copy is covered at the component layer
+(`app/__tests__/venues.test.tsx`) and by no screenshot.
 
 ### Side effects of `npm run test:visual`
 
@@ -326,8 +389,19 @@ attached) and grows the viewport height to fit before shooting. Nothing about
 the render changes: these screens lay out top-down, so a taller window reveals
 the rest without moving anything above it. Width, which is what every layout
 defect in this app's history turned on, stays at the device value. Screens
-that already fit are not resized, so `sign-in` and `profile` baselines remain
-at true device dimensions; only `notifications-mobile` grows (375×907).
+that already fit are not resized, so `sign-in`, `profile`, `clubs` and
+`venues` baselines remain at true device dimensions. The taller ones grow:
+`notifications-mobile` to 375×907, and every screen Task 17 added a baseline
+for except the two `venues` ones and the two `clubs-populated` ones — up to
+375×1404 for `event-detail-mobile`.
+
+One screen this measurement does **not** protect: `app/clubs/index.tsx`
+renders `Screen` WITHOUT `scroll`, so there is no `screen-scroll` element to
+measure and `document.scrollHeight` stays at the viewport height. Its content
+fits today (`clubs` and `clubs-populated`, one club), and a list long enough
+to overflow would be clipped by the outer `flex: 1` View rather than growing
+the capture. If that screen ever gains enough rows to scroll, give it
+`scroll` before trusting its baseline.
 
 A baseline's height is therefore content-dependent. That is deliberate: if a
 screen grows or shrinks, Playwright reports a size mismatch, which is a diff,
@@ -342,6 +416,16 @@ When a design change is intentional:
 Then **look at every changed PNG** before committing. Review them in the pull
 request like any other change — a baseline regenerated without being examined
 turns a regression into the new expected state.
+
+**`--update-snapshots` does not rewrite a baseline whose diff is under
+`maxDiffPixels`.** It compares first and only writes when the comparison
+fails, so a change small enough to fit inside the 120px budget leaves the old
+PNG in place and reports a pass. This is not hypothetical: Task 17 changed a
+fixture so a club card read "2 tables" instead of "0 tables", re-ran with
+`--update-snapshots`, and got a green run and an unchanged baseline — one
+digit is under 120 pixels. If you know the render changed and the file did
+not, delete the PNG and re-run (missing snapshots are always written), or
+pass `--update-snapshots=all`.
 
 ## When a visual test fails
 

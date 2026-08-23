@@ -5,8 +5,8 @@ import { defineConfig } from '@playwright/test';
 // Every one of these is interpolated into a shell command or read by
 // e2e/session.ts. An unset variable is NOT an error to the shell — it expands
 // to the empty string, so the build silently succeeds with an empty Supabase
-// URL, lib/supabase.ts's own guard throws in the browser, and all six tests
-// fail on `toBeVisible` timeouts. `mintSession`'s guard does not catch that
+// URL, lib/supabase.ts's own guard throws in the browser, and every test
+// fails on `toBeVisible` timeouts. `mintSession`'s guard does not catch that
 // case either, because it only checks the URL, which was fine. The result is
 // exactly the "looks like a Playwright problem rather than a configuration
 // one" failure the webServer comment below warns about — so check here, where
@@ -93,6 +93,14 @@ export default defineConfig({
   },
   use: {
     baseURL: 'http://127.0.0.1:4173',
+    // Pinned so a baseline cannot depend on the timezone of the machine that
+    // took it. Only one screen currently renders anything derived from the
+    // DEVICE clock — the create-game screen's Date field, which opens on
+    // "today" — and combined with the fixed clock e2e/visual.spec.ts installs
+    // for the seeded tests, that value is now the same everywhere. Every
+    // other time in the app is rendered in the CLUB's timezone, which comes
+    // from the seeded row and never from here.
+    timezoneId: 'America/New_York',
   },
   expect: {
     toHaveScreenshot: {

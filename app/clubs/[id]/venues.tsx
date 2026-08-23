@@ -180,7 +180,7 @@ export default function VenuesScreen() {
 
       <Text style={styles.heading}>Venues</Text>
       <Text style={styles.help}>
-        Places this club plays. Add a new one while creating a game -- this
+        Places this club plays. Add a new one while creating a game — this
         is where you fix a name or retire a venue you no longer use.
       </Text>
 
@@ -239,7 +239,7 @@ export default function VenuesScreen() {
                 {venue.visibility === 'public' ? (
                   <Text style={styles.help}>
                     Other clubs can use this venue. It cannot be made private
-                    again -- their games point at it.
+                    again — their games point at it.
                   </Text>
                 ) : null}
 

@@ -213,6 +213,28 @@ describe('member view: what is shown, and what is not', () => {
     expect(screen.queryByText('Remove')).toBeNull();
   });
 
+  // The section heading over the table list, which no test reached before
+  // Task 17 went looking -- it is also the string e2e/visual.spec.ts anchors
+  // its event-detail capture on, so a silent change here would take the
+  // baseline's own precondition with it. Two capacities that differ, on
+  // purpose: every table in this app is created at the default capacity of 4,
+  // so a fixture of 4 + 4 would pass just as happily against
+  // `tables.length * 4` as against the real sum.
+  it('adds up the seats across tables rather than assuming every table is the same size', async () => {
+    fetchEventTables.mockResolvedValue([
+      { ...TABLE_1, capacity: 4 },
+      { id: 'table-2', label: 'Table 2', skill_tier: 'beginner' as const, capacity: 6, position: 2 },
+    ]);
+    render(<EventScreen />);
+    expect(await screen.findByText('2 tables · 10 seats')).toBeTruthy();
+  });
+
+  it('says "1 table", not "1 tables", for a game with one', async () => {
+    fetchEventTables.mockResolvedValue([TABLE_1]);
+    render(<EventScreen />);
+    expect(await screen.findByText('1 table · 4 seats')).toBeTruthy();
+  });
+
   it('offers no organizer controls at all', async () => {
     render(<EventScreen />);
     await screen.findByText('Thursday Mahjong');
