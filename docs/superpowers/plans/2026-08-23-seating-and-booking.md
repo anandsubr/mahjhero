@@ -2152,6 +2152,22 @@ begin
     raise exception 'no players' using errcode = '23514';
   end if;
 
+  -- A preferred table that does not belong to this event is not a
+  -- tiebreak, it is a mistake. seat_assignments only uses `preferred` to
+  -- order the event's OWN tables, so without this check a foreign or
+  -- just-deleted id degrades silently to position order and
+  -- propose_booking answers "seated" — then commit_booking dies on
+  -- booking_groups' composite foreign key with a bare 23503 and no
+  -- sentence anybody can act on. Reachable without tampering:
+  -- remove_event_table hard-deletes the row, so a member holding the
+  -- event screen open taps a table that no longer exists.
+  if preferred is not null and not exists (
+    select 1 from public.event_tables
+    where id = preferred and event_id = target_event)
+  then
+    raise exception 'no such table' using errcode = '23514';
+  end if;
+
   -- Admission is an EVENT-level question. No group is ever half-admitted
   -- at commit time; a group too big for the room waits as one.
   if public.event_free_seats(target_event) < n then
@@ -2208,8 +2224,13 @@ set search_path = public
 as $$
   select jsonb_build_object(
     'group_id', g.id,
-    'outcome', case when g.status = 'waitlisted' then 'waitlisted'
-                    else 'seated' end,
+    -- Three group statuses, not two. Lumping `cancelled` in with
+    -- `seated` would be wrong for the exact consumer the grant below
+    -- names: the data layer reading this back AFTER a cancellation.
+    'outcome', case g.status
+                 when 'waitlisted' then 'waitlisted'
+                 when 'cancelled'  then 'cancelled'
+                 else 'seated' end,
     'split', (
       select count(distinct b.event_table_id) > 1
       from public.bookings b
@@ -2573,6 +2594,10 @@ Add the script to `package.json`:
 ```json
 "test:concurrency": "TZ=America/New_York REQUIRE_LOCAL_SUPABASE=1 vitest run lib/booking-concurrency.test.ts"
 ```
+
+**The race must be run repeatedly, and the clients warmed first.** Measured on this branch: with the lock removed, the very first RPC after a cold start still produced a correct result about one run in seven — connection, auth and pool warm-up serialize the two calls by accident. CI only ever runs the cold case, so a single race is a detector with a ~14% false-green rate on the only run that happens. Issue one throwaway authenticated call per racer client in `beforeAll` after sign-in, and run the race over five fresh one-seat events, asserting exactly one seated and one waitlisted each time.
+
+**Reachability must skip, not pass.** `if (!reachable) return;` inside an `it` body is a passing test that asserted nothing, and `npm test` counts it. Probe at module scope and use `describe.runIf(reachable || required)`, exactly as `lib/schema-contract.test.ts` already does.
 
 - [ ] **Step 6: Run the concurrency test, then break the lock to prove it works**
 
@@ -4876,7 +4901,9 @@ export type MyBooking = {
 };
 
 export type BookingOutcome = {
-  outcome: 'seated' | 'waitlisted';
+  // Three, not two: booking_result reports a cancelled group as
+  // 'cancelled', and the data layer reads it back after a cancellation.
+  outcome: 'seated' | 'waitlisted' | 'cancelled';
   split: boolean;
   group_id: string | null;
   waitlist_position: number | null;
@@ -4925,6 +4952,11 @@ const BOOKING_REFUSALS: { code: string; contains: string; message: string }[] = 
     code: '23514',
     contains: 'table full',
     message: 'Someone just took the last seat at that table.',
+  },
+  {
+    code: '23514',
+    contains: 'no such table',
+    message: 'That table is no longer part of this game.',
   },
   {
     code: '23514',
@@ -7629,6 +7661,7 @@ The complete refusal vocabulary. The left column is what the database raises; th
 | `not a member` | 23514 | profile id | "Someone in your group is no longer in this club." |
 | `duplicate player` | 23514 | — | Unreachable from the UI — the picker cannot select twice. Falls back to the generic message deliberately. |
 | `table full` | 23514 | — | "Someone just took the last seat at that table." |
+| `no such table` | 23514 | — | "That table is no longer part of this game." — a host removed it while the member had the screen open |
 | `offer expired` | 23514 | — | "That offer has expired — you're still on the waitlist." |
 | `booking already closed` | 23514 | — | "That seat has already been given up." |
 | `table does not need a fourth` | 23514 | — | "That table needs more than one more player." |
