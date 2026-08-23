@@ -6,9 +6,24 @@ import Card from '../../../../../components/Card';
 import ErrorBanner from '../../../../../components/ErrorBanner';
 import Screen from '../../../../../components/Screen';
 import Tag from '../../../../../components/Tag';
+import TableCard from '../../../../../components/TableCard';
+import WaitlistPanel from '../../../../../components/WaitlistPanel';
 import { ChevronLeftIcon } from '../../../../../components/icons';
 import { canInvite, fetchClub, fetchRoster } from '../../../../../lib/clubs';
 import type { Club } from '../../../../../lib/clubs';
+import {
+  acceptPromotionOffer,
+  cancelBooking,
+  commitBooking,
+  declinePromotionOffer,
+  fetchEventSeating,
+  needsAFourth,
+  seatsRemaining,
+  tierWarning,
+  waitlistLabel,
+  type SeatOccupant,
+  type SkillLevel,
+} from '../../../../../lib/bookings';
 import {
   addEventTable,
   cancelEvent,
@@ -37,17 +52,18 @@ const TIERS: { value: SkillTier; label: string }[] = [
 
 /**
  * The member-facing view of one game. What a member sees: the time and
- * venue (in the club's own timezone, never the device's), any notes, and
- * every table with its tier and seat count. What a member does NOT see:
- * anything resembling a booking control or a "coming soon" label for one —
- * seat booking is the next plan, and a badge promising it now is exactly
- * the kind of thing that ages badly sitting on a screen between now and
- * whenever that plan ships. A member reads this screen and closes it.
+ * venue (in the club's own timezone, never the device's), any notes, every
+ * table with its tier and who is seated at it, and — for a game that is
+ * still `published` and in the future — a tap-to-book empty seat at each
+ * table, plus a waitlist panel once the game is full. A cancelled or
+ * already-started game gets no `onTakeSeat` at all (see `canBook` below):
+ * no disabled control that errors when pressed, just nothing to press.
  *
  * Organizers (host or co-organizer — `canInvite`, the same test the SQL
- * functions below enforce) additionally get table management, an edit
- * link (Task 15), a cancel action, and — only on a series occurrence they
- * have personally customised — a "Reset to the series" control.
+ * functions below enforce) additionally get table management (rendered
+ * into `TableCard`'s `children` slot), an edit link (Task 15), a cancel
+ * action, and — only on a series occurrence they have personally
+ * customised — a "Reset to the series" control.
  */
 export default function EventScreen() {
   const { id: clubId, eventId } = useLocalSearchParams<{
@@ -70,22 +86,69 @@ export default function EventScreen() {
   const [tablesFailed, setTablesFailed] = useState(false);
   const [series, setSeries] = useState<EventSeries | null>(null);
   const [isOrganizer, setIsOrganizer] = useState(false);
+  const [mySkillLevel, setMySkillLevel] = useState<SkillLevel | null>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // Who is coming: every live (confirmed or waitlisted) booking, plus
+  // whether the fetch itself failed. Kept separate from `tablesFailed` for
+  // the same reason that one is separate from the essential-data guard
+  // below: the tables can load fine while the guest list fails, or vice
+  // versa, and each failure should only blank its own section.
+  const [seating, setSeating] = useState<SeatOccupant[]>([]);
+  const [seatingFailed, setSeatingFailed] = useState(false);
+
+  // A promotion offer currently held open for this member's group. Nothing
+  // in lib/bookings.ts exposes a way to *read* `promotion_offers` yet
+  // (Task 8 shipped only the accept/decline writes), so this stays null
+  // until a later plan adds that fetch — the state and the panel wiring
+  // exist now so that plan only has to set it, not build the rendering.
+  const [offer, setOffer] = useState<{
+    id: string;
+    seats: number;
+    expires_at: string;
+  } | null>(null);
+
+  // The soft tier warning, held pending a "Book anyway?" confirm. This is
+  // the entire enforcement of skill tiers in this product — the database
+  // does not check, and the host can move people afterwards.
+  const [pendingTier, setPendingTier] = useState<{
+    tableId: string;
+    message: string;
+  } | null>(null);
+
+  // Immediate feedback from the member's own most recent booking attempt,
+  // shown alongside (not instead of) the reloaded seating/WaitlistPanel
+  // state — the reload is what stays correct as other people book, but a
+  // member who just tapped a seat and landed on the waitlist should not
+  // have to find their own position in a list to learn where they stand.
+  const [waitlistNote, setWaitlistNote] = useState<string | null>(null);
+
+  const me = session?.user.id ?? '';
+
   async function load() {
-    const [loadedClub, loadedEvent, loadedTables, roster] = await Promise.all([
-      fetchClub(clubId),
-      fetchEvent(eventId),
-      fetchEventTables(eventId),
-      fetchRoster(clubId),
-    ]);
+    const [loadedClub, loadedEvent, loadedTables, roster, seatingRows] =
+      await Promise.all([
+        fetchClub(clubId),
+        fetchEvent(eventId),
+        fetchEventTables(eventId),
+        fetchRoster(clubId),
+        fetchEventSeating(eventId),
+      ]);
 
     setClub(loadedClub);
     setEvent(loadedEvent);
     setTablesFailed(loadedTables === null);
     setTables(loadedTables ?? []);
+
+    // A failed fetch is not an empty game: `fetchEventSeating` returns
+    // `null` on failure and `[]` when nobody has booked yet. Reading the
+    // first as the second is exactly the bug `venuesFailed` exists to
+    // avoid on the venues screen (todo.md still records that screen
+    // getting it wrong) — this game's guest list gets the same treatment.
+    setSeatingFailed(seatingRows === null);
+    setSeating(seatingRows ?? []);
 
     // A roster fetch failure fails closed to "not an organizer" rather than
     // blanking the screen — the member-facing content above is unaffected,
@@ -93,8 +156,9 @@ export default function EventScreen() {
     // rather than a page that cannot render at all.
     const myRole = (roster ?? []).find(
       (m) => m.profile_id === session?.user.id,
-    )?.role;
-    setIsOrganizer(myRole ? canInvite(myRole) : false);
+    );
+    setIsOrganizer(myRole ? canInvite(myRole.role) : false);
+    setMySkillLevel(myRole?.skill_level ?? null);
 
     setSeries(
       loadedEvent?.series_id ? await fetchSeries(loadedEvent.series_id) : null,
@@ -184,6 +248,91 @@ export default function EventScreen() {
     await load();
   }
 
+  // One instant, shared by `canBook` and every table's `needsAFourth` call
+  // below, so a table's "needs a 4th" state and the screen's own bookable
+  // gate never disagree about what "now" means within a single render.
+  const now = new Date();
+
+  const canBook = event.status === 'published' && new Date(event.starts_at) > now;
+
+  // Every table full, counting only bookings actually placed at one — a
+  // booking still awaiting placement (`event_table_id === null`) occupies a
+  // seat somewhere but isn't blocking any *specific* table from showing an
+  // empty one, so it is deliberately excluded from this per-table count.
+  const gameFull =
+    !tablesFailed &&
+    tables.length > 0 &&
+    tables.every((t) => {
+      const confirmedHere = seating.filter(
+        (o) => o.status === 'confirmed' && o.event_table_id === t.id,
+      ).length;
+      return seatsRemaining(t.capacity, confirmedHere) === 0;
+    });
+
+  const myHoldsSeat = seating.some(
+    (o) => o.profile_id === me && (o.status === 'confirmed' || o.status === 'waitlisted'),
+  );
+
+  async function bookSeat(tableId: string | null) {
+    setPendingTier(null);
+    setBusy(true);
+    setError(null);
+    const { result, error: bookingError } = await commitBooking({
+      eventId,
+      players: [me],
+      preferredTableId: tableId,
+      allowSplit: true,
+    });
+    setBusy(false);
+    if (bookingError) {
+      setError(bookingError);
+      return;
+    }
+    // Told directly from this attempt's own result, not read back off the
+    // reload below: a real reload would eventually show the same thing via
+    // `WaitlistPanel`, but a member who just tapped a seat should not have
+    // to go find themselves in a list to learn where they landed.
+    setWaitlistNote(
+      result && result.outcome === 'waitlisted' && result.waitlist_position !== null
+        ? waitlistLabel(result.waitlist_position)
+        : null,
+    );
+    await load();
+  }
+
+  function takeSeat(table: EventTable) {
+    const warning = tierWarning(table.skill_tier, mySkillLevel, table.label);
+    // The soft warning, and the entire enforcement of skill tiers in this
+    // product. The database does not check; the host can move people.
+    if (warning) {
+      setPendingTier({ tableId: table.id, message: warning });
+      return;
+    }
+    void bookSeat(table.id);
+  }
+
+  function joinWaitlist() {
+    void bookSeat(null);
+  }
+
+  async function leaveWaitlist() {
+    const mine = seating.find(
+      (o) => o.profile_id === me && o.status === 'waitlisted',
+    );
+    if (!mine) return;
+    await run(() => cancelBooking(mine.booking_id));
+  }
+
+  async function acceptOffer() {
+    if (!offer) return;
+    await run(() => acceptPromotionOffer(offer.id));
+  }
+
+  async function declineOffer() {
+    if (!offer) return;
+    await run(() => declinePromotionOffer(offer.id));
+  }
+
   return (
     <Screen scroll contentStyle={styles.container}>
       <Button
@@ -249,66 +398,145 @@ export default function EventScreen() {
       <Text style={styles.sectionTitle}>
         {tablesFailed
           ? 'Tables'
-          : `${tables.length} ${tables.length === 1 ? 'table' : 'tables'} · ${tables.reduce(
-              (sum, t) => sum + t.capacity,
-              0,
-            )} seats`}
+          : `${tables.length} ${tables.length === 1 ? 'table' : 'tables'} · ${(() => {
+              const seats = tables.reduce((sum, t) => sum + t.capacity, 0);
+              return `${seats} ${seats === 1 ? 'seat' : 'seats'}`;
+            })()}`}
       </Text>
 
       {tablesFailed ? (
         <Text style={styles.help}>Could not load the tables for this game.</Text>
       ) : (
-        tables.map((table) => (
-          <Card key={table.id}>
-            <View style={styles.row}>
-              <Text style={styles.tableLabel}>{table.label}</Text>
-              <Text style={styles.help}>
-                {table.capacity} {table.capacity === 1 ? 'seat' : 'seats'}
-              </Text>
-            </View>
+        tables.map((table) => {
+          const tableOccupants = seating.filter(
+            (o) => o.event_table_id === table.id,
+          );
+          const confirmedHere = tableOccupants.filter(
+            (o) => o.status === 'confirmed',
+          ).length;
+          return (
+            <TableCard
+              key={table.id}
+              table={table}
+              occupants={tableOccupants}
+              youId={me}
+              // Omitted entirely — not a disabled control — for a cancelled
+              // or already-started game. See `canBook`'s own comment.
+              onTakeSeat={canBook ? () => takeSeat(table) : undefined}
+              busy={busy}
+              needsFourth={needsAFourth(
+                table.capacity,
+                confirmedHere,
+                new Date(event.starts_at),
+                now,
+              )}
+            >
+              {isOrganizer ? (
+                <>
+                  <View style={styles.chips}>
+                    {TIERS.map((tier) => (
+                      <Button
+                        key={tier.value}
+                        variant={
+                          table.skill_tier === tier.value ? 'primary' : 'secondary'
+                        }
+                        big={false}
+                        disabled={busy}
+                        onPress={() =>
+                          run(() => updateEventTable(table.id, { tier: tier.value }))
+                        }
+                        accessibilityLabel={`${table.label}: ${tier.label}`}
+                        accessibilityState={{
+                          selected: table.skill_tier === tier.value,
+                        }}
+                      >
+                        {tier.label}
+                      </Button>
+                    ))}
+                  </View>
 
-            {isOrganizer ? (
-              <View style={styles.chips}>
-                {TIERS.map((tier) => (
-                  <Button
-                    key={tier.value}
-                    variant={
-                      table.skill_tier === tier.value ? 'primary' : 'secondary'
-                    }
-                    big={false}
-                    disabled={busy}
-                    onPress={() =>
-                      run(() => updateEventTable(table.id, { tier: tier.value }))
-                    }
-                    accessibilityLabel={`${table.label}: ${tier.label}`}
-                    accessibilityState={{
-                      selected: table.skill_tier === tier.value,
-                    }}
-                  >
-                    {tier.label}
-                  </Button>
-                ))}
-              </View>
-            ) : (
-              <Text style={styles.help}>
-                {TIERS.find((t) => t.value === table.skill_tier)?.label}
-              </Text>
-            )}
-
-            {isOrganizer && tables.length > 1 ? (
-              <Button
-                variant="ghost"
-                big={false}
-                disabled={busy}
-                onPress={() => run(() => removeEventTable(table.id))}
-                accessibilityLabel={`Remove ${table.label}`}
-              >
-                Remove
-              </Button>
-            ) : null}
-          </Card>
-        ))
+                  {tables.length > 1 ? (
+                    <Button
+                      variant="ghost"
+                      big={false}
+                      disabled={busy}
+                      onPress={() => run(() => removeEventTable(table.id))}
+                      accessibilityLabel={`Remove ${table.label}`}
+                    >
+                      Remove
+                    </Button>
+                  ) : null}
+                </>
+              ) : null}
+            </TableCard>
+          );
+        })
       )}
+
+      {seatingFailed ? (
+        <Text style={styles.help}>
+          Could not load who is coming to this game.
+        </Text>
+      ) : !tablesFailed &&
+        seating.filter((o) => o.status === 'confirmed').length === 0 ? (
+        <Text style={styles.help}>Nobody has booked yet.</Text>
+      ) : null}
+
+      {pendingTier ? (
+        <Card>
+          <Text style={styles.help}>{pendingTier.message}</Text>
+          <View style={styles.chips}>
+            <Button
+              big={false}
+              disabled={busy}
+              onPress={() => {
+                const tableId = pendingTier.tableId;
+                setPendingTier(null);
+                void bookSeat(tableId);
+              }}
+              accessibilityLabel="Yes, book me"
+            >
+              Yes, book me
+            </Button>
+            <Button
+              variant="ghost"
+              big={false}
+              disabled={busy}
+              onPress={() => setPendingTier(null)}
+              accessibilityLabel="Never mind"
+            >
+              Never mind
+            </Button>
+          </View>
+        </Card>
+      ) : null}
+
+      {canBook && gameFull && !myHoldsSeat ? (
+        <Button
+          variant="secondary"
+          disabled={busy}
+          onPress={joinWaitlist}
+          accessibilityLabel="Join the waitlist"
+        >
+          Join the waitlist
+        </Button>
+      ) : null}
+
+      {waitlistNote ? <Text style={styles.help}>{waitlistNote}</Text> : null}
+
+      <WaitlistPanel
+        unseated={seating.filter(
+          (o) => o.status === 'confirmed' && o.event_table_id === null,
+        )}
+        waiting={seating.filter((o) => o.status === 'waitlisted')}
+        youId={me}
+        offer={offer}
+        now={now}
+        busy={busy}
+        onAcceptOffer={acceptOffer}
+        onDeclineOffer={declineOffer}
+        onLeaveWaitlist={leaveWaitlist}
+      />
 
       {isOrganizer && event.status !== 'cancelled' ? (
         <>
@@ -405,11 +633,6 @@ const styles = StyleSheet.create({
     fontSize: type.size.body,
     color: colors.text,
     marginTop: space[4],
-  },
-  tableLabel: {
-    fontFamily: type.bodySemiBold,
-    fontSize: type.size.body,
-    color: colors.text,
   },
   chips: {
     flexDirection: 'row',

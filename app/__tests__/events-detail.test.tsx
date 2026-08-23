@@ -200,13 +200,18 @@ describe('member view: what is shown, and what is not', () => {
     expect(screen.queryByText(newYorkWhen)).toBeNull();
   });
 
+  // Task 10 replaced this read-only table row with `TableCard`, which
+  // reports the seat count as "free", not raw capacity -- with nobody
+  // booked (lib/bookings isn't mocked in this file, so the real
+  // `fetchEventSeating` fails closed to an empty, `seatingFailed` list),
+  // all 4 of this table's seats are free.
   it('renders each table with tier as text and seat count, no edit controls', async () => {
     fetchEventTables.mockResolvedValue([
       { id: 'table-1', label: 'Table 1', skill_tier: 'advanced' as const, capacity: 4, position: 1 },
     ]);
     render(<EventScreen />);
     expect(await screen.findByText('Table 1')).toBeTruthy();
-    expect(screen.getByText('4 seats')).toBeTruthy();
+    expect(screen.getByText('4 seats free')).toBeTruthy();
     expect(screen.getByText('Advanced')).toBeTruthy();
     // No tier chip buttons -- a member cannot retier a table.
     expect(screen.queryByLabelText('Table 1: Mixed')).toBeNull();
@@ -244,11 +249,18 @@ describe('member view: what is shown, and what is not', () => {
     expect(screen.queryByText('Reset to the series')).toBeNull();
   });
 
-  // The core requirement of this task: no booking affordance and no
-  // "coming soon" badge anywhere on the screen, for anyone. Checked against
-  // the screen's full rendered text rather than one specific phrase, so a
-  // differently-worded booking control ("Reserve a seat", "Sign up",
-  // "Claim a spot") would still be caught.
+  // Written when this was the core requirement of the task that shipped
+  // this screen: no booking affordance and no "coming soon" badge anywhere,
+  // for anyone. Task 10 has since added real booking -- an empty seat's
+  // accessibility label reads "Take a seat at …", and a full game offers
+  // "Join the waitlist" -- but neither of those, nor anything else on this
+  // screen's *initial* render, uses the word "book" (that only appears in
+  // the tier-mismatch confirm's "Book anyway?", which needs a tap first).
+  // Kept here as a live regression guard against the literal, noisier
+  // wording ("Reserve a seat", "Sign up", "Claim a spot") this vocabulary
+  // was always meant to keep off the screen. Checked against the screen's
+  // full rendered text rather than one specific phrase, so a differently
+  // worded control would still be caught.
   it('has no booking affordance and no coming-soon badge anywhere', async () => {
     const { container } = render(<EventScreen />);
     await screen.findByText('Thursday Mahjong');
