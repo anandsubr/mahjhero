@@ -1,6 +1,6 @@
 import { Link, Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import BringSomeoneSheet from '../../../../../components/BringSomeoneSheet';
 import Button from '../../../../../components/Button';
 import Card from '../../../../../components/Card';
@@ -9,6 +9,7 @@ import HostSeating from '../../../../../components/HostSeating';
 import Screen from '../../../../../components/Screen';
 import Tag from '../../../../../components/Tag';
 import TableCard from '../../../../../components/TableCard';
+import TierPicker from '../../../../../components/TierPicker';
 import WaitlistPanel from '../../../../../components/WaitlistPanel';
 import { ChevronLeftIcon } from '../../../../../components/icons';
 import { canInvite, fetchClub, fetchRoster } from '../../../../../lib/clubs';
@@ -44,100 +45,9 @@ import {
   type ClubEvent,
   type EventSeries,
   type EventTable,
-  type SkillTier,
 } from '../../../../../lib/events';
 import { useSession } from '../../../../../lib/session';
-import { colors, radius, space, type } from '../../../../../lib/theme';
-
-const TIERS: { value: SkillTier; label: string }[] = [
-  { value: 'mixed', label: 'Mixed' },
-  { value: 'beginner', label: 'Beginner' },
-  { value: 'intermediate', label: 'Intermediate' },
-  { value: 'advanced', label: 'Advanced' },
-];
-
-/**
- * The organizer's per-table tier selector — a chip-style control where
- * "which one is selected" is the entire point, which is exactly the case
- * `Button` cannot serve: `Button` merges a caller's `accessibilityState`
- * straight into RN's `accessibilityState` prop, and react-native-web's
- * `createDOMProps` has no handling for `accessibilityState` at all (see
- * Toggle.tsx's docstring for the full account) — a `selected` value passed
- * that way never reaches the DOM on web. This used to be a `Button` with
- * `accessibilityState={{ selected }}`, which is exactly that dead prop;
- * Task 10's review flagged it and deferred the fix to this task, which
- * moves this block anyway. `BringSomeoneSheet`'s table/person chips
- * (components/BringSomeoneSheet.tsx) already established the fix for this
- * exact shape — a bespoke `Pressable` with the flat `aria-selected` prop —
- * so this follows the same pattern rather than inventing a second one.
- */
-function TierChip({
-  label,
-  selected,
-  disabled,
-  onPress,
-  accessibilityLabel,
-}: {
-  label: string;
-  selected: boolean;
-  disabled: boolean;
-  onPress: () => void;
-  accessibilityLabel: string;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel}
-      aria-selected={selected}
-      aria-disabled={disabled}
-      style={[
-        tierChipStyles.base,
-        selected ? tierChipStyles.selected : tierChipStyles.unselected,
-        disabled ? tierChipStyles.disabled : null,
-      ]}
-    >
-      <Text
-        style={selected ? tierChipStyles.labelSelected : tierChipStyles.label}
-      >
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
-const tierChipStyles = StyleSheet.create({
-  base: {
-    borderRadius: radius.pill,
-    minHeight: 46,
-    paddingHorizontal: space[5],
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-  },
-  selected: {
-    backgroundColor: colors.accentColor,
-    borderColor: 'transparent',
-  },
-  unselected: {
-    backgroundColor: colors.surface,
-    borderColor: colors.divider,
-  },
-  disabled: {
-    opacity: 0.45,
-  },
-  label: {
-    fontFamily: type.heading,
-    fontSize: type.size.body,
-    color: colors.text,
-  },
-  labelSelected: {
-    fontFamily: type.heading,
-    fontSize: type.size.body,
-    color: colors.bg,
-  },
-});
+import { colors, space, type } from '../../../../../lib/theme';
 
 /**
  * The member-facing view of one game. What a member sees: the time and
@@ -690,20 +600,14 @@ export default function EventScreen() {
             >
               {isOrganizer ? (
                 <>
-                  <View style={styles.chips}>
-                    {TIERS.map((tier) => (
-                      <TierChip
-                        key={tier.value}
-                        label={tier.label}
-                        selected={table.skill_tier === tier.value}
-                        disabled={busy}
-                        onPress={() =>
-                          run(() => updateEventTable(table.id, { tier: tier.value }))
-                        }
-                        accessibilityLabel={`${table.label}: ${tier.label}`}
-                      />
-                    ))}
-                  </View>
+                  <TierPicker
+                    tableLabel={table.label}
+                    tier={table.skill_tier}
+                    disabled={busy}
+                    onChange={(nextTier) =>
+                      run(() => updateEventTable(table.id, { tier: nextTier }))
+                    }
+                  />
 
                   {tables.length > 1 ? (
                     <Button

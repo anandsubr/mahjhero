@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Card from './Card';
 import SeatGrid from './SeatGrid';
+import SkillTierPips from './SkillTierPips';
 import Tag from './Tag';
 import type { SeatOccupant, SkillTier } from '../lib/bookings';
 import { seatsFreeLabel, seatsRemaining } from '../lib/bookings';
@@ -61,7 +62,19 @@ export default function TableCard({
         <Text style={styles.label}>{table.label}</Text>
         {needsFourth ? <Tag>Needs a 4th</Tag> : null}
       </View>
-      <Text style={styles.tier}>{TIER_LABELS[table.skill_tier]}</Text>
+      {/*
+        Pips plus the word, deliberately -- the human's design left this
+        choice to judgement, and the safe default was kept: this is a
+        member's read-only view of a table's tier, not the host's four-row
+        control that pips exist to compact, so there is no height pressure
+        here to justify dropping the word. `SkillTierPips` itself is
+        `aria-hidden` (see its docstring), so the word is what actually
+        carries the meaning for a screen reader.
+      */}
+      <View style={styles.tierRow}>
+        <SkillTierPips tier={table.skill_tier} />
+        <Text style={styles.tier}>{TIER_LABELS[table.skill_tier]}</Text>
+      </View>
 
       <SeatGrid
         tableLabel={table.label}
@@ -100,6 +113,11 @@ const styles = StyleSheet.create({
     fontFamily: type.bodySemiBold,
     fontSize: type.size.bodyLarge,
     color: colors.text,
+  },
+  tierRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[2],
   },
   // 16 is the ONLY sanctioned size below 18, and only for helper text.
   tier: {
