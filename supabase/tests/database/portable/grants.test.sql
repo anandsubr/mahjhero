@@ -525,7 +525,11 @@ select is(
        'public.decline_promotion_offer(uuid)',
        'public.propose_booking(uuid, uuid[], uuid, boolean)',
        'public.commit_booking(uuid, uuid[], uuid, boolean)',
-       'public.booking_result(uuid)'
+       'public.booking_result(uuid)',
+       'public.cancel_booking(uuid)',
+       'public.decline_booking(uuid)',
+       'public.cancel_booking_group(uuid)',
+       'public.place_booking(uuid, uuid)'
      ]) as f
    ) expected
    where not exists (
@@ -577,7 +581,11 @@ select is(
          'public.decline_promotion_offer(uuid)',
          'public.propose_booking(uuid, uuid[], uuid, boolean)',
          'public.commit_booking(uuid, uuid[], uuid, boolean)',
-         'public.booking_result(uuid)'
+         'public.booking_result(uuid)',
+         'public.cancel_booking(uuid)',
+         'public.decline_booking(uuid)',
+         'public.cancel_booking_group(uuid)',
+         'public.place_booking(uuid, uuid)'
        ]) as f
        where to_regprocedure(f) = p.oid::regprocedure
      )),
