@@ -113,6 +113,21 @@ begin
     raise exception 'no players' using errcode = '23514';
   end if;
 
+  -- `preferred` is only ever used as an ORDER BY tiebreak inside
+  -- seat_assignments, never checked against target_event, so a foreign or
+  -- deleted table id silently degraded to plain position order instead of
+  -- being refused. That let propose_booking answer "seated" for a table
+  -- that does not exist, with commit_booking then failing on
+  -- booking_groups' composite FK as a raw, unmessaged 23503 -- reachable
+  -- for real, since remove_event_table hard-deletes a table a member may
+  -- already be looking at.
+  if preferred is not null and not exists (
+    select 1 from public.event_tables
+    where id = preferred and event_id = target_event)
+  then
+    raise exception 'no such table' using errcode = '23514';
+  end if;
+
   -- Admission is an EVENT-level question. No group is ever half-admitted
   -- at commit time; a group too big for the room waits as one.
   if public.event_free_seats(target_event) < n then
@@ -170,6 +185,7 @@ as $$
   select jsonb_build_object(
     'group_id', g.id,
     'outcome', case when g.status = 'waitlisted' then 'waitlisted'
+                    when g.status = 'cancelled' then 'cancelled'
                     else 'seated' end,
     'split', (
       select count(distinct b.event_table_id) > 1

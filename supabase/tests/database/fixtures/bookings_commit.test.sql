@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(29);
+select plan(42);
 
 insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-000000000001', 'alice@example.com'),
@@ -90,6 +90,53 @@ set local request.jwt.claims =
   '{"sub": "aaaaaaaa-0000-0000-0000-000000000001", "role": "authenticated"}';
 
 -- ---------------------------------------------------------------------
+-- Refusals from the validation layer, checked with propose_booking before
+-- anyone in the fixture has actually been booked. propose_booking shares
+-- assert_event_bookable / assert_players_bookable / plan_seating with
+-- commit_booking but never writes, so these can run here for free without
+-- disturbing the sequence below.
+-- ---------------------------------------------------------------------
+select throws_ok(
+  $$select public.propose_booking(
+      '00000000-0000-0000-0000-000000000000',
+      array['aaaaaaaa-0000-0000-0000-000000000001']::uuid[],
+      null, true)$$,
+  '42501',
+  'no such event',
+  'an event id that matches nothing is refused');
+
+select throws_ok(
+  $$select public.propose_booking(
+      'e1e1e1e1-0000-0000-0000-000000000001',
+      '{}'::uuid[],
+      null, true)$$,
+  '23514',
+  'no players',
+  'an empty player list is refused rather than silently booking nobody');
+
+select throws_ok(
+  $$select public.propose_booking(
+      'e1e1e1e1-0000-0000-0000-000000000001',
+      array['aaaaaaaa-0000-0000-0000-000000000001',
+            'aaaaaaaa-0000-0000-0000-000000000001']::uuid[],
+      null, true)$$,
+  '23514',
+  'duplicate player',
+  'the same player twice in one group is refused up front, rather than left '
+  'to trip the one-active-booking unique index with a bare 23505');
+
+select throws_ok(
+  $$select public.propose_booking(
+      'e1e1e1e1-0000-0000-0000-000000000001',
+      array['aaaaaaaa-0000-0000-0000-000000000001']::uuid[],
+      '7ab1e000-0000-0000-0000-000000000003', true)$$,
+  '23514',
+  'no such table',
+  'a preferred table id that does not belong to this event is refused, not '
+  'silently downgraded to position order (7ab1e000...003 is Table 1 of E3, '
+  'a different event)');
+
+-- ---------------------------------------------------------------------
 -- One member, one seat, one tap.
 -- ---------------------------------------------------------------------
 select lives_ok(
@@ -109,6 +156,12 @@ select is(
     where profile_id = 'aaaaaaaa-0000-0000-0000-000000000001'),
   '7ab1e000-0000-0000-0000-000000000001'::uuid,
   'at the table they tapped');
+select is(
+  (select public.booking_result(group_id)->'placements'->0->>'table_label'
+     from public.bookings
+    where profile_id = 'aaaaaaaa-0000-0000-0000-000000000001'),
+  'Table 1',
+  'and booking_result''s placements array names the table by label, not just id');
 
 reset role;
 select is(public.event_free_seats('e1e1e1e1-0000-0000-0000-000000000001'), 5,
@@ -152,6 +205,18 @@ select is(
     where profile_id = 'dddddddd-0000-0000-0000-000000000004'),
   null,
   'an "any table" booking is placed nowhere');
+select is(
+  (select public.booking_result(group_id)->'placements'->0->>'event_table_id'
+     from public.bookings
+    where profile_id = 'dddddddd-0000-0000-0000-000000000004'),
+  null,
+  'and its placements element names no table id either');
+select is(
+  (select public.booking_result(group_id)->'placements'->0->>'table_label'
+     from public.bookings
+    where profile_id = 'dddddddd-0000-0000-0000-000000000004'),
+  null,
+  'nor a table label');
 
 reset role;
 select is(public.event_free_seats('e1e1e1e1-0000-0000-0000-000000000001'), 3,
@@ -226,6 +291,39 @@ select is(
       '7ab1e000-0000-0000-0000-000000000002', true)->>'split'),
   'true',
   'and it says plainly that they will be split up');
+-- `? 'key'` (key PRESENT) is checked alongside `->>'key' is null` (key
+-- present but null) because they are different jsonb facts: an omitted
+-- key and a key holding JSON null both read back as SQL NULL through
+-- `->>`, so a plain null check alone cannot tell "the contract promises
+-- this key and it is null" from "this key was never built" -- exactly the
+-- gap that let the brief's `|| jsonb_build_object(...)` tail go untested.
+select ok(
+  (select (x ? 'group_id') and (x->>'group_id' is null)
+     from public.propose_booking(
+       'e1e1e1e1-0000-0000-0000-000000000001',
+       array['eeeeeeee-0000-0000-0000-000000000005',
+             'ffffffff-0000-0000-0000-000000000006',
+             '99999999-0000-0000-0000-000000000007']::uuid[],
+       '7ab1e000-0000-0000-0000-000000000002', true) as x),
+  'a proposal writes nothing, so it carries a group_id key that is null');
+select ok(
+  (select (x ? 'waitlist_position') and (x->>'waitlist_position' is null)
+     from public.propose_booking(
+       'e1e1e1e1-0000-0000-0000-000000000001',
+       array['eeeeeeee-0000-0000-0000-000000000005',
+             'ffffffff-0000-0000-0000-000000000006',
+             '99999999-0000-0000-0000-000000000007']::uuid[],
+       '7ab1e000-0000-0000-0000-000000000002', true) as x),
+  'and a null waitlist_position key');
+select ok(
+  (select (x ? 'offer') and (x->>'offer' is null)
+     from public.propose_booking(
+       'e1e1e1e1-0000-0000-0000-000000000001',
+       array['eeeeeeee-0000-0000-0000-000000000005',
+             'ffffffff-0000-0000-0000-000000000006',
+             '99999999-0000-0000-0000-000000000007']::uuid[],
+       '7ab1e000-0000-0000-0000-000000000002', true) as x),
+  'and a null offer key');
 
 reset role;
 select is((select count(*)::int from public.bookings), 3,
@@ -271,13 +369,23 @@ set local role authenticated;
 set local request.jwt.claims =
   '{"sub": "88888888-0000-0000-0000-000000000008", "role": "authenticated"}';
 
-select is(
-  (select public.commit_booking(
+-- Captured once into a temp table (commit_booking is not idempotent — a
+-- second call would trip "already booked") so both its outcome and its
+-- group id can be checked against the SAME invocation's return value.
+create temporary table hank_commit on commit drop as
+  select public.commit_booking(
       'e1e1e1e1-0000-0000-0000-000000000001',
       array['88888888-0000-0000-0000-000000000008']::uuid[],
-      '7ab1e000-0000-0000-0000-000000000001', true)->>'outcome'),
+      '7ab1e000-0000-0000-0000-000000000001', true) as result;
+
+select is(
+  (select result->>'outcome' from hank_commit),
   'waitlisted',
   'a full game puts the next member on the waitlist');
+select isnt(
+  (select result->>'group_id' from hank_commit),
+  null,
+  'and commit_booking''s own return carries a non-null group id');
 select is(
   (select public.booking_result(id)->>'waitlist_position'
      from public.booking_groups
@@ -347,6 +455,33 @@ select is(
     where bg.created_by = '55555555-0000-0000-0000-000000000011'),
   1,
   'and is offered the one seat that exists, without waiting for the sweep');
+select is(
+  (select public.booking_result(bg.id)->'offer'->>'seats'
+     from public.booking_groups bg
+    where bg.created_by = '55555555-0000-0000-0000-000000000011'),
+  '1',
+  'and booking_result itself carries that offer -- reading only from '
+  'promotion_offers here would miss a rename inside the returned jsonb');
+
+-- ---------------------------------------------------------------------
+-- A cancelled group reports itself as cancelled, not lumped in with
+-- "seated". Task 4 owns cancellation itself and has not landed yet, so
+-- this sets booking_groups.status directly rather than calling a
+-- cancellation function that does not exist.
+-- ---------------------------------------------------------------------
+reset role;
+update public.booking_groups
+   set status = 'cancelled'
+ where id = (select group_id from public.bookings
+              where profile_id = 'cccccccc-0000-0000-0000-000000000003');
+
+select is(
+  (select public.booking_result(id)->>'outcome'
+     from public.booking_groups
+    where id = (select group_id from public.bookings
+                 where profile_id = 'cccccccc-0000-0000-0000-000000000003')),
+  'cancelled',
+  'a cancelled group is reported as cancelled, not seated');
 
 -- ---------------------------------------------------------------------
 -- Tenancy.
