@@ -22,21 +22,28 @@
  *      client ever calls commit_booking for real, so the connection each
  *      one uses for the actual race is already warm.
  *   2. The race runs five times, against five separate one-seat events,
- *      instead of once. This is NOT because five independent races make an
- *      accidental serialization exponentially less likely — five cold-start
- *      runs of this same suite (see the task report's second fix-pass
- *      section) showed the races are not independent trials: races 1–4
- *      came back red in all five runs (20/20), while race 5 was masked in
- *      every single one of those runs (5/5), a pattern a per-race-chance
- *      model does not predict. Cause undetermined — plausible candidates
- *      include fetch/undici keep-alive connection reuse maturing over the
- *      sequence, or local Supabase connection-handling changing under a
- *      short burst of prior calls — but not chased down. The measured,
- *      load-bearing fact is narrower: the FIRST race alone detected the
- *      missing lock in all five cold trials, so racing at least once after
- *      the warm-up is what this suite actually relies on; the extra four
- *      races are redundancy against whatever is masking race 5, not
- *      insurance against independent bad luck on any given race.
+ *      instead of once. NOT because five independent races make accidental
+ *      serialization exponentially less likely — the races are measurably
+ *      NOT independent trials, and no individual race can be trusted.
+ *      Two lock-removal experiments, both from cold (see the task report's
+ *      fix-pass sections):
+ *
+ *        - at five races: races 1-4 red in all five trials (20/20), race 5
+ *          masked in all five (5/5);
+ *        - at eight races: race 1 masked in all six trials (6/6).
+ *
+ *      So exactly one race is reliably masked, and WHICH one moves with the
+ *      count — it is not the last, and it is not the first. Cause
+ *      undetermined; candidates not chased down include fetch/undici
+ *      keep-alive reuse maturing across the sequence and local Supabase
+ *      connection handling under a short burst. Do not add a claim here
+ *      about which race is trustworthy: the five-race data appeared to make
+ *      race 1 the dependable one, and the eight-race run refuted it.
+ *
+ *      The measured, load-bearing fact is only this: in EVERY cold trial of
+ *      both configurations, the suite as a whole went red. That is the
+ *      verdict CI acts on, and repetition is what earns it — a single race
+ *      is a coin this suite has watched land wrong.
  *
  * Requires the local Supabase stack. Reachability is probed once at module
  * scope (the same pattern lib/schema-contract.test.ts uses) and the whole
