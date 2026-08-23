@@ -3861,7 +3861,9 @@ used in the transaction that created it."
 
 **Nothing about a call for a fourth is stored.** A table needs one when it holds `capacity - 1` confirmed bookings and the game starts within 48 hours; the call widens to adjacent tiers inside 12 hours. Both are pure functions of occupancy and time-to-start, so the screen derives them and nothing can go stale, and claiming the seat is an ordinary `commit_booking` — first commit wins on the event lock and the call disappears from everybody else's next read.
 
-**The only durable artifact is the outbox row**, and `dedupe_key = 'need_a_fourth:<table_id>:<stage>'` is what stops the 15-minute job announcing the same table over and over. Because the stage is part of the key, widening announces exactly once more.
+**The only durable artifact is the outbox row**, and its `dedupe_key` is what stops the 15-minute job announcing the same table over and over. Because the stage is part of the key, widening announces exactly once more.
+
+**The key must carry the recipient: `need_a_fourth:<table_id>:<stage>:<recipient_id>`.** An earlier version of this plan omitted the recipient, which is a silent, feature-breaking bug rather than a cosmetic one — the announcement is a single multi-row `insert … select … on conflict (dedupe_key) do nothing`, so one key shared by every recipient means **all but one row is dropped and exactly one club member is ever told**. Verified in Postgres: three recipients inserted that way leave one surviving row. Task 6's implementer caught it. Per-recipient keys keep the job idempotent for each person while still announcing to everyone.
 
 **Adjacency, precisely.** `mixed` matches everybody at either stage. At the narrow stage a member matches only their own tier, and a member with no `skill_level` matches nothing but `mixed`. At the wide stage `beginner ↔ intermediate ↔ advanced` (beginner and advanced are not adjacent to each other), and a member with no `skill_level` matches everything — they are unclassified, and by then the club needs a body more than it needs a grade.
 
