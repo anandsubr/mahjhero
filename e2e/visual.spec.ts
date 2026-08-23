@@ -167,7 +167,7 @@ test.describe('signed in', () => {
    * series occurrence with a venue override rather than a one-off.
    */
   test.describe('with a seeded club', () => {
-    let seeded: { clubId: string; eventId: string; seriesId: string };
+    let seeded: Awaited<ReturnType<typeof seedClubWithEvent>>;
 
     test.beforeEach(async ({ page }) => {
       // Freezes the page's clock BEFORE anything navigates.
@@ -199,7 +199,12 @@ test.describe('signed in', () => {
       test(`clubs list with a club at ${vp.name}`, async ({ page }) => {
         await page.setViewportSize({ width: vp.width, height: vp.height });
         await page.goto('/clubs');
-        await expect(page.getByText('Riverside Mah Jongg')).toBeVisible();
+        // `.first()` — Task 15's booking fixtures give the signed-in member
+        // a confirmed seat in this club's own seeded game, so "Riverside
+        // Mah Jongg" now also renders a second time as that booking's club
+        // name inside the "Your games" card above this list. Both are real;
+        // this line only needs to know the club list itself still has one.
+        await expect(page.getByText('Riverside Mah Jongg').first()).toBeVisible();
         await expect(
           page.getByRole('button', { name: 'Start another club' }),
         ).toBeVisible();
@@ -319,6 +324,125 @@ test.describe('signed in', () => {
         await expect(page.getByText('Newton Community Centre')).toBeVisible();
         await expect(page.getByText('Venues', { exact: true })).toBeVisible();
         await captureScreen(page, vp, `venues-${vp.name}.png`);
+      });
+
+      /*
+       * Five booking states, from `seedBookings` in e2e/session.ts (see
+       * that file's own comment for why four of these five games live in
+       * a SECOND club rather than Riverside). Every test anchors on the
+       * text that actually distinguishes its state before shooting —
+       * "pixels cannot catch a one-glyph regression" (docs/testing.md) —
+       * because none of the numbers below are things `toHaveScreenshot`
+       * itself could ever fail on.
+       */
+
+      // Table 1's own state: two of four seats taken (the signed-in member
+      // and one other), room left, and the per-table "Bring someone" both
+      // this table and the screen-level entry point offer. `exact: true`
+      // on the role query is load-bearing — TableCard's own "Bring
+      // someone" button carries the accessible name "Bring someone to
+      // Table 1", not the bare "Bring someone" the screen-level button
+      // uses, so without `exact` this would still resolve to one match by
+      // luck rather than by the query actually being specific.
+      test(`event booking at ${vp.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        await page.goto(`/clubs/${seeded.clubId}/events/${seeded.eventId}`);
+        await expect(page.getByText('You', { exact: true })).toBeVisible();
+        // `.first()` — since the signed-in member is this club's organizer,
+        // HostSeating renders Priya's name a SECOND time in its own "Move
+        // to …" / "Unseat" / "Remove" controls, distinct from her name in
+        // the seat grid itself. Both are real; this only needs to know her
+        // name appears on the page at all.
+        await expect(page.getByText('Priya Nair').first()).toBeVisible();
+        await expect(
+          page.getByRole('button', { name: 'Bring someone', exact: true }),
+        ).toBeVisible();
+        await expect(page.getByText('2 seats free')).toBeVisible();
+        await captureScreen(page, vp, `event-booking-${vp.name}.png`);
+      });
+
+      // Every seat at the game's one table taken by someone else — so the
+      // signed-in member holds no seat and "Join the waitlist" renders —
+      // plus one more person already queued, so WaitlistPanel's "Waiting
+      // for a seat" card has content rather than being the empty return
+      // `null` its own guard produces.
+      test(`event full at ${vp.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        await page.goto(
+          `/clubs/${seeded.bookingClubId}/events/${seeded.fullEventId}`,
+        );
+        await expect(page.getByText('0 seats free')).toBeVisible();
+        await expect(page.getByText('Waiting for a seat')).toBeVisible();
+        await expect(
+          page.getByRole('button', { name: 'Join the waitlist' }),
+        ).toBeVisible();
+        await captureScreen(page, vp, `event-full-${vp.name}.png`);
+      });
+
+      // The signed-in member's own group, waitlisted, with a promotion
+      // offer already outstanding for it — `fetchOpenOffer`'s RLS policy
+      // only surfaces an offer to a member of the group it was made to, so
+      // this is the one booking-state game where the member holds the
+      // waitlisted seat rather than a filler profile. The countdown text
+      // is fixed relative to OFFER_GAME's own starts_at and the suite's
+      // frozen clock (see e2e/session.ts) — not Date.now() — so it reads
+      // the same "2 hours 45 minutes left" on every run, forever, rather
+      // than counting down for real or reading "Expired" the next time
+      // anyone looks at this baseline. `getByText`, not `getByRole`, for
+      // the accept button: its accessible name is "Take the 1 seat"
+      // (WaitlistPanel builds that from `offer.seats`), which differs from
+      // the VISIBLE "Take the seat" this line actually checks.
+      test(`event offer at ${vp.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        await page.goto(
+          `/clubs/${seeded.bookingClubId}/events/${seeded.offerEventId}`,
+        );
+        await expect(
+          page.getByText('1 seat is free for your group'),
+        ).toBeVisible();
+        await expect(page.getByText('2 hours 45 minutes left')).toBeVisible();
+        await expect(page.getByText('Take the seat')).toBeVisible();
+        await captureScreen(page, vp, `event-offer-${vp.name}.png`);
+      });
+
+      // One table, three of its four seats taken by people who are not the
+      // signed-in member, inside `needsAFourth`'s 48-hour window — and the
+      // signed-in member is this club's host, so HostSeating's own early
+      // "Call for a 4th now" control renders too, not just the Tag.
+      // "1 seat free", not "3 seats free": `needsAFourth`'s own definition
+      // (lib/bookings.ts) is `confirmed === capacity - 1`, which on a
+      // 4-seat table always leaves exactly one seat, never three — the
+      // brief's own example snippet uses "3 seats free" only to illustrate
+      // the anchor-before-capture PATTERN, not this table's actual count.
+      test(`event needs a fourth at ${vp.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        await page.goto(
+          `/clubs/${seeded.bookingClubId}/events/${seeded.needsAFourthEventId}`,
+        );
+        await expect(page.getByText('Needs a 4th')).toBeVisible();
+        await expect(page.getByText('1 seat free')).toBeVisible();
+        await expect(page.getByText('Last seat')).toBeVisible();
+        await expect(page.getByText('Call for a 4th now')).toBeVisible();
+        await captureScreen(page, vp, `event-needs-a-fourth-${vp.name}.png`);
+      });
+
+      // The clubs screen's "Your games" section: one game the member
+      // booked themselves (Riverside's own seeded event, above) and one a
+      // friend booked for them (`seedBookings`' `friendEventId`, under the
+      // second club). A third card — the held offer above — also lands
+      // here via the same `my_upcoming_bookings` query; that is a real
+      // consequence of seeding the offer as the member's OWN group (see
+      // that test's own comment on why it has to be), not a fixture bug,
+      // so this only anchors on the two rows the brief actually asks for.
+      test(`your games at ${vp.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        await page.goto('/clubs');
+        await expect(page.getByText('Your games')).toBeVisible();
+        await expect(page.getByText('Tuesday night mahjong')).toBeVisible();
+        await expect(
+          page.getByText('Owen Bradley booked this for you'),
+        ).toBeVisible();
+        await captureScreen(page, vp, `your-games-${vp.name}.png`);
       });
     }
   });

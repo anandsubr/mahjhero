@@ -113,6 +113,187 @@ const SECOND_OCCURRENCE = {
 const SEEDED_NOTES =
   'Bring a set if you have one. Tea and biscuits are on the club.';
 
+/*
+ * ---------------------------------------------------------------------------
+ * Booking-state fixtures (Task 15).
+ * ---------------------------------------------------------------------------
+ *
+ * Five new baselines need a game to already have people in it: a mixed
+ * table with room left, a full table, a full game with a waitlist and a
+ * held offer, a table one short of "needs a fourth", and a friend-booked
+ * seat for "Your games". None of that fits FIRST_OCCURRENCE/
+ * SECOND_OCCURRENCE above — those exist to be safely far in the future
+ * (2099) so the "upcoming" filter never ages them out, and two of the new
+ * states are the opposite: `needsAFourth` (lib/bookings.ts) and
+ * `need_a_fourth_stage` (SQL) both gate on the game starting within 48
+ * hours of "now", and a promotion offer's countdown is `expires_at` minus
+ * "now" — both need an event close to whatever "now" the page reads.
+ *
+ * "Now" on every page in this suite is `e2e/visual.spec.ts`'s frozen
+ * clock (`page.clock.setFixedTime(new Date('2026-08-22T16:00:00Z'))`,
+ * set before this function ever runs), not the real wall clock — so an
+ * instant fixed relative to THAT frozen value is exactly as durable as
+ * FIRST_OCCURRENCE's 2099 dates are relative to the real one: it never
+ * moves, on any machine, on any day. FROZEN_NOW below is that value,
+ * restated here (not imported — e2e/session.ts and e2e/visual.spec.ts
+ * share no module) purely so the arithmetic in the comments is checkable
+ * without cross-referencing the other file.
+ *
+ * These four games live in a SECOND club (BOOKING_CLUB below), not
+ * Riverside. Riverside's `club-detail` baseline lists every future event
+ * for its own club id, unfiltered by status — so a near-term event added
+ * to Riverside would silently grow into a THIRD card on a baseline this
+ * task never touches. A second club keeps that list exactly as it was and
+ * gives `my_upcoming_bookings` (see its own comment: "across every club,
+ * which is the point") something to actually aggregate across.
+ */
+const FROZEN_NOW = '2026-08-22T16:00:00Z';
+
+// 26h after FROZEN_NOW — inside `needsAFourth`'s 48-hour window with
+// margin either side, so a slow CI run settling a few seconds late is
+// nowhere near either boundary.
+const NEEDS_A_FOURTH_GAME = {
+  startsAt: '2026-08-23T18:00:00Z',
+  endsAt: '2026-08-23T21:00:00Z',
+};
+// Not itself time-sensitive — a full table is full at any hour — but kept
+// close to FROZEN_NOW anyway so every booking-state game reads as part of
+// the same near-term week rather than one dated 73 years apart from the
+// others for no reason a reader could guess.
+const FULL_GAME = {
+  startsAt: '2026-08-23T20:00:00Z',
+  endsAt: '2026-08-23T23:00:00Z',
+};
+// 3h after FROZEN_NOW.
+const OFFER_GAME = {
+  startsAt: '2026-08-22T19:00:00Z',
+  endsAt: '2026-08-22T22:00:00Z',
+};
+// A fixed offset from OFFER_GAME's own starts_at (15 minutes before the
+// game), per the brief — not from Date.now(). Working out at 2h45m after
+// FROZEN_NOW, so `offerCountdown` renders the same "2 hours 45 minutes
+// left" on every run, forever, rather than counting down for real or
+// reading "Expired" the first time anyone looks at this baseline again.
+const OFFER_EXPIRES_AT = '2026-08-22T18:45:00Z';
+// Nothing about a friend-booked seat is time-sensitive, so this one keeps
+// FIRST_OCCURRENCE's own far-future pattern rather than living near
+// FROZEN_NOW like the three games above.
+const FRIEND_GAME = {
+  startsAt: '2099-09-22T23:00:00Z',
+  endsAt: '2099-09-23T02:00:00Z',
+};
+// An ordering key only — event_seating/booking_result/my_upcoming_bookings
+// all compare one group's waitlisted_at against ANOTHER group's, inside
+// the same event, never against "now" — so any fixed instant satisfies it.
+// Fixed here for the same reason every other timestamp on this page is:
+// this file has no wall-clock reads anywhere.
+const WAITLISTED_AT = '2026-08-20T12:00:00Z';
+
+/**
+ * A club member who exists only to occupy a seat or hold a waitlist spot in
+ * a booking-state baseline — never signed in, never screenshotted
+ * themselves. Reuses the admin-API user creation `mintSession` uses (no
+ * magic link needed, nobody signs in as these), so the seat grid shows a
+ * real name instead of the roster's 'Member' placeholder for an unset
+ * `display_name`.
+ *
+ * `label` plus the caller's own per-run `suffix` keep the email unique
+ * across runs; `admin.auth.admin.createUser` fails on a collision the same
+ * as any other unique-email insert would.
+ */
+async function seedFillerProfile(
+  admin: SupabaseClient,
+  displayName: string,
+  label: string,
+  suffix: string,
+): Promise<string> {
+  const email = `filler-${label}-${suffix}@example.com`;
+  const { data, error } = await admin.auth.admin.createUser({
+    email,
+    email_confirm: true,
+  });
+  if (error || !data.user) {
+    throw new Error(
+      `seedClubWithEvent: filler profile "${displayName}" failed: ${JSON.stringify(error)}`,
+    );
+  }
+  const { error: updateError } = await admin
+    .from('profiles')
+    .update({ display_name: displayName, skill_level: 'intermediate' })
+    .eq('id', data.user.id);
+  if (updateError) {
+    throw new Error(
+      `seedClubWithEvent: filler profile "${displayName}" update failed: ${JSON.stringify(updateError)}`,
+    );
+  }
+  return data.user.id;
+}
+
+/**
+ * One person's booking: a `booking_groups` row plus its `bookings` row,
+ * written directly rather than through `commit_booking` — service_role
+ * carries no JWT here, so the RPC's own `auth.uid()` checks have nothing to
+ * authenticate against, the same reason every other row in this file is a
+ * direct insert.
+ *
+ * `bookedBy` defaults to the seated profile itself; passing a different id
+ * is what produces the "X booked this for you" / decline-affordance state
+ * `bookings.booked_by` exists for. `waitlisted: true` seats nobody — per
+ * `bookings_waitlisted_has_no_table`, a waitlisted booking's `event_table_id`
+ * must be null — and stamps both rows with the fixed `WAITLISTED_AT` above.
+ */
+async function seatBooking(
+  admin: SupabaseClient,
+  need: <T>(what: string, result: { data: unknown; error: unknown }) => T,
+  args: {
+    eventId: string;
+    clubId: string;
+    profileId: string;
+    bookedBy?: string;
+    tableId?: string;
+    waitlisted?: boolean;
+  },
+): Promise<{ groupId: string; bookingId: string }> {
+  const bookedBy = args.bookedBy ?? args.profileId;
+  const waitlisted = args.waitlisted ?? false;
+  const tableId = waitlisted ? null : (args.tableId ?? null);
+
+  const group = need<{ id: string }>(
+    'booking group insert',
+    await admin
+      .from('booking_groups')
+      .insert({
+        event_id: args.eventId,
+        club_id: args.clubId,
+        created_by: bookedBy,
+        preferred_table_id: tableId,
+        status: waitlisted ? 'waitlisted' : 'confirmed',
+        waitlisted_at: waitlisted ? WAITLISTED_AT : null,
+      })
+      .select('id')
+      .single(),
+  );
+
+  const booking = need<{ id: string }>(
+    'booking insert',
+    await admin
+      .from('bookings')
+      .insert({
+        group_id: group.id,
+        event_id: args.eventId,
+        club_id: args.clubId,
+        event_table_id: tableId,
+        profile_id: args.profileId,
+        booked_by: bookedBy,
+        status: waitlisted ? 'waitlisted' : 'confirmed',
+      })
+      .select('id')
+      .single(),
+  );
+
+  return { groupId: group.id, bookingId: booking.id };
+}
+
 /**
  * Seeds a club, two venues, a weekly series, two of its occurrences and their
  * tables for a freshly minted user, so the visual baselines capture real
@@ -148,9 +329,21 @@ const SEEDED_NOTES =
  * per-run suffix to dodge that would put a changing string in a baseline. That
  * copy is covered at the component layer instead (app/__tests__/venues.test.tsx).
  */
-export async function seedClubWithEvent(
-  profileId: string,
-): Promise<{ clubId: string; eventId: string; seriesId: string }> {
+export async function seedClubWithEvent(profileId: string): Promise<{
+  clubId: string;
+  eventId: string;
+  seriesId: string;
+  /** The second club the booking-state fixtures live in. See its own block below. */
+  bookingClubId: string;
+  /** A completely full game with a waitlist, for the `event full` baseline. */
+  fullEventId: string;
+  /** A completely full game where the signed-in member's own group holds
+   * a fixed-countdown offer, for the `event offer` baseline. */
+  offerEventId: string;
+  /** A table one short of a fourth, inside the 48-hour call window, for
+   * the `event needs a fourth` baseline. */
+  needsAFourthEventId: string;
+}> {
   const admin = adminClient('seed fixtures');
 
   // Every insert below is checked. An unchecked `.insert()` that fails
@@ -325,31 +518,324 @@ export async function seedClubWithEvent(
   // on every row for the same PostgREST key-unioning reason as `overrides`
   // above — omitting it on some rows would send an explicit NULL into a
   // `not null` column.
-  const { error: tableError } = await admin.from('event_tables').insert(
-    occurrences.flatMap((occurrence) => [
-      {
-        event_id: occurrence.id,
-        club_id: clubId,
-        label: 'Table 1',
-        position: 1,
-        skill_tier: 'mixed',
-      },
-      {
-        event_id: occurrence.id,
-        club_id: clubId,
-        label: 'Table 2',
-        position: 2,
-        skill_tier: 'beginner',
-      },
-    ]),
+  // `.select('id, event_id, label')` — not the fire-and-forget insert this
+  // used to be — because the booking-state fixtures below need the FIRST
+  // occurrence's two table ids to seat anyone at them.
+  const tables = need<{ id: string; event_id: string; label: string }[]>(
+    'table insert',
+    await admin.from('event_tables').insert(
+      occurrences.flatMap((occurrence) => [
+        {
+          event_id: occurrence.id,
+          club_id: clubId,
+          label: 'Table 1',
+          position: 1,
+          skill_tier: 'mixed',
+        },
+        {
+          event_id: occurrence.id,
+          club_id: clubId,
+          label: 'Table 2',
+          position: 2,
+          skill_tier: 'beginner',
+        },
+      ]),
+    ).select('id, event_id, label'),
   );
-  if (tableError) {
+
+  const table1Id = tables.find(
+    (t) => t.event_id === eventId && t.label === 'Table 1',
+  )!.id;
+  const table2Id = tables.find(
+    (t) => t.event_id === eventId && t.label === 'Table 2',
+  )!.id;
+
+  // -------------------------------------------------------------------
+  // Booking-state fixtures (Task 15). See the constants block above for
+  // why these four games live in a second club and why their dates are
+  // what they are.
+  // -------------------------------------------------------------------
+
+  const bookingClub = need<{ id: string }>(
+    'second club insert',
+    await admin
+      .from('clubs')
+      .insert({
+        name: 'Thursday Casuals',
+        slug: `thursday-${suffix}`,
+        rhythm: 'Thursday evenings',
+        timezone: 'America/New_York',
+        created_by: profileId,
+      })
+      .select('id')
+      .single(),
+  );
+  const bookingClubId = bookingClub.id;
+
+  // Host, same as Riverside above — Event D (`needsAFourthEventId`) needs
+  // the signed-in member to be an organizer for the host's early-call
+  // button to render at all.
+  const { error: bookingMemberError } = await admin
+    .from('club_members')
+    .insert({ club_id: bookingClubId, profile_id: profileId, role: 'host' });
+  if (bookingMemberError) {
     throw new Error(
-      `seedClubWithEvent: table insert failed: ${JSON.stringify(tableError)}`,
+      `seedClubWithEvent: booking club membership insert failed: ${JSON.stringify(bookingMemberError)}`,
     );
   }
 
-  return { clubId, eventId, seriesId };
+  const bookingVenue = need<{ id: string }>(
+    'booking club venue insert',
+    await admin
+      .from('venues')
+      .insert({
+        name: 'Club Two Hall',
+        address_line: '4 Elm Street',
+        locality: 'Newton',
+        added_by_club_id: bookingClubId,
+        created_by: profileId,
+      })
+      .select('id')
+      .single(),
+  );
+
+  // Four one-off games (no series — nothing about these needs a recurrence),
+  // titled distinctly so `getByText` on any one of them cannot accidentally
+  // match another.
+  const bookingEvents = need<{ id: string; title: string }[]>(
+    'booking events insert',
+    await admin
+      .from('events')
+      .insert([
+        {
+          club_id: bookingClubId,
+          title: 'Full house game',
+          venue_id: bookingVenue.id,
+          notes: '',
+          starts_at: FULL_GAME.startsAt,
+          ends_at: FULL_GAME.endsAt,
+          created_by: profileId,
+        },
+        {
+          club_id: bookingClubId,
+          title: 'Offer night',
+          venue_id: bookingVenue.id,
+          notes: '',
+          starts_at: OFFER_GAME.startsAt,
+          ends_at: OFFER_GAME.endsAt,
+          created_by: profileId,
+        },
+        {
+          club_id: bookingClubId,
+          title: 'Short table game',
+          venue_id: bookingVenue.id,
+          notes: '',
+          starts_at: NEEDS_A_FOURTH_GAME.startsAt,
+          ends_at: NEEDS_A_FOURTH_GAME.endsAt,
+          created_by: profileId,
+        },
+        {
+          club_id: bookingClubId,
+          title: 'Saturday pickup game',
+          venue_id: bookingVenue.id,
+          notes: '',
+          starts_at: FRIEND_GAME.startsAt,
+          ends_at: FRIEND_GAME.endsAt,
+          created_by: profileId,
+        },
+      ])
+      .select('id, title'),
+  );
+  const fullEventId = bookingEvents.find((e) => e.title === 'Full house game')!.id;
+  const offerEventId = bookingEvents.find((e) => e.title === 'Offer night')!.id;
+  const needsAFourthEventId = bookingEvents.find(
+    (e) => e.title === 'Short table game',
+  )!.id;
+  const friendEventId = bookingEvents.find(
+    (e) => e.title === 'Saturday pickup game',
+  )!.id;
+
+  // One table apiece, at the default capacity of 4 — every booking-state
+  // scenario below is written in terms of that default.
+  const bookingTables = need<{ id: string; event_id: string }[]>(
+    'booking tables insert',
+    await admin
+      .from('event_tables')
+      .insert([
+        { event_id: fullEventId, club_id: bookingClubId, label: 'Table 1', position: 1 },
+        { event_id: offerEventId, club_id: bookingClubId, label: 'Table 1', position: 1 },
+        {
+          event_id: needsAFourthEventId,
+          club_id: bookingClubId,
+          label: 'Table 1',
+          position: 1,
+        },
+        { event_id: friendEventId, club_id: bookingClubId, label: 'Table 1', position: 1 },
+      ])
+      .select('id, event_id'),
+  );
+  const fullTableId = bookingTables.find((t) => t.event_id === fullEventId)!.id;
+  const offerTableId = bookingTables.find((t) => t.event_id === offerEventId)!.id;
+  const needsAFourthTableId = bookingTables.find(
+    (t) => t.event_id === needsAFourthEventId,
+  )!.id;
+  const friendTableId = bookingTables.find((t) => t.event_id === friendEventId)!.id;
+
+  // Ten filler profiles, five per club — reused across a club's own games
+  // (a booking's uniqueness is scoped per EVENT, not globally, so the same
+  // person can hold a seat in more than one of these without conflict).
+  const [priya, marcus, dana, leo, hana] = await Promise.all([
+    seedFillerProfile(admin, 'Priya Nair', 'priya', suffix),
+    seedFillerProfile(admin, 'Marcus Webb', 'marcus', suffix),
+    seedFillerProfile(admin, 'Dana Osei', 'dana', suffix),
+    seedFillerProfile(admin, 'Leo Fitzgerald', 'leo', suffix),
+    seedFillerProfile(admin, 'Hana Suzuki', 'hana', suffix),
+  ]);
+  const [owen, sofia, ravi, naomi, theo] = await Promise.all([
+    seedFillerProfile(admin, 'Owen Bradley', 'owen', suffix),
+    seedFillerProfile(admin, 'Sofia Marchetti', 'sofia', suffix),
+    seedFillerProfile(admin, 'Ravi Kapoor', 'ravi', suffix),
+    seedFillerProfile(admin, 'Naomi Clarke', 'naomi', suffix),
+    seedFillerProfile(admin, 'Theo Nguyen', 'theo', suffix),
+  ]);
+
+  // State 1 + 2: a mixed table with room left (the signed-in member plus
+  // one other), and a second table, full — both on the FIRST occurrence of
+  // Riverside's own series, which is also what `event-detail`'s baseline
+  // now screenshots and why that baseline grew.
+  await seatBooking(admin, need, { eventId, clubId, profileId, tableId: table1Id });
+  await seatBooking(admin, need, { eventId, clubId, profileId: priya, tableId: table1Id });
+  await seatBooking(admin, need, { eventId, clubId, profileId: marcus, tableId: table2Id });
+  await seatBooking(admin, need, { eventId, clubId, profileId: dana, tableId: table2Id });
+  await seatBooking(admin, need, { eventId, clubId, profileId: leo, tableId: table2Id });
+  await seatBooking(admin, need, { eventId, clubId, profileId: hana, tableId: table2Id });
+
+  // `event full`: every seat at the one table taken by someone else, plus
+  // one more person waitlisted (not the member) so WaitlistPanel's "Waiting
+  // for a seat" card has something in it, not just the "Join the waitlist"
+  // button.
+  await seatBooking(admin, need, {
+    eventId: fullEventId,
+    clubId: bookingClubId,
+    profileId: owen,
+    tableId: fullTableId,
+  });
+  await seatBooking(admin, need, {
+    eventId: fullEventId,
+    clubId: bookingClubId,
+    profileId: sofia,
+    tableId: fullTableId,
+  });
+  await seatBooking(admin, need, {
+    eventId: fullEventId,
+    clubId: bookingClubId,
+    profileId: ravi,
+    tableId: fullTableId,
+  });
+  await seatBooking(admin, need, {
+    eventId: fullEventId,
+    clubId: bookingClubId,
+    profileId: naomi,
+    tableId: fullTableId,
+  });
+  await seatBooking(admin, need, {
+    eventId: fullEventId,
+    clubId: bookingClubId,
+    profileId: theo,
+    waitlisted: true,
+  });
+
+  // `event offer`: the table full again, and the signed-in member's OWN
+  // group waitlisted with an outstanding offer — it has to be the member's
+  // own group, because `fetchOpenOffer`'s RLS policy
+  // (`promotion_offers_select_group`) only lets a caller see an offer made
+  // to a group they are actually in.
+  await seatBooking(admin, need, {
+    eventId: offerEventId,
+    clubId: bookingClubId,
+    profileId: owen,
+    tableId: offerTableId,
+  });
+  await seatBooking(admin, need, {
+    eventId: offerEventId,
+    clubId: bookingClubId,
+    profileId: sofia,
+    tableId: offerTableId,
+  });
+  await seatBooking(admin, need, {
+    eventId: offerEventId,
+    clubId: bookingClubId,
+    profileId: ravi,
+    tableId: offerTableId,
+  });
+  await seatBooking(admin, need, {
+    eventId: offerEventId,
+    clubId: bookingClubId,
+    profileId: naomi,
+    tableId: offerTableId,
+  });
+  const memberWaitlisted = await seatBooking(admin, need, {
+    eventId: offerEventId,
+    clubId: bookingClubId,
+    profileId,
+    waitlisted: true,
+  });
+  const { error: offerError } = await admin.from('promotion_offers').insert({
+    group_id: memberWaitlisted.groupId,
+    event_id: offerEventId,
+    offered_seat_count: 1,
+    expires_at: OFFER_EXPIRES_AT,
+  });
+  if (offerError) {
+    throw new Error(
+      `seedClubWithEvent: promotion offer insert failed: ${JSON.stringify(offerError)}`,
+    );
+  }
+
+  // `event needs a fourth`: one table, three of its four seats taken by
+  // people who are NOT the signed-in member, inside the 48-hour call
+  // window — `needsAFourth`'s exact trigger.
+  await seatBooking(admin, need, {
+    eventId: needsAFourthEventId,
+    clubId: bookingClubId,
+    profileId: owen,
+    tableId: needsAFourthTableId,
+  });
+  await seatBooking(admin, need, {
+    eventId: needsAFourthEventId,
+    clubId: bookingClubId,
+    profileId: sofia,
+    tableId: needsAFourthTableId,
+  });
+  await seatBooking(admin, need, {
+    eventId: needsAFourthEventId,
+    clubId: bookingClubId,
+    profileId: ravi,
+    tableId: needsAFourthTableId,
+  });
+
+  // `your games`'s second row: a seat Owen booked FOR the signed-in member
+  // (`bookedBy: owen`, `profileId` the member's own) — the
+  // `booked_by !== youId` state that renders "Owen Bradley booked this for
+  // you" and the Decline control, distinct from the member's own
+  // self-booked seat on Riverside's event above.
+  await seatBooking(admin, need, {
+    eventId: friendEventId,
+    clubId: bookingClubId,
+    profileId,
+    bookedBy: owen,
+    tableId: friendTableId,
+  });
+
+  return {
+    clubId,
+    eventId,
+    seriesId,
+    bookingClubId,
+    fullEventId,
+    offerEventId,
+    needsAFourthEventId,
+  };
 }
 
 /**

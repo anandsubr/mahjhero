@@ -271,6 +271,7 @@ looks like a wrong-platform import, this option is the first thing to check.
 
     npm test              # logic + component
     npm run test:contract # schema contract (needs the local stack)
+    npm run test:concurrency # two clients racing for one seat (needs the local stack)
     npm run test:visual   # visual regression (needs the local stack)
     npm run test:db       # pgTAP, local (needs the local stack)
     npm run test:db:remote # pgTAP, against the linked project
@@ -287,6 +288,32 @@ The rest of the suite lives in `fixtures/` and runs locally only, because
 creating a signed-in member means inserting into `auth.users` and the linked
 project denies that. See `supabase/tests/database/README.md` for why granting
 it would be the wrong fix.
+
+## The booking concurrency suite
+
+`lib/booking-concurrency.test.ts` is the one suite that proves two people
+cannot take the same seat, and it is the only layer that can: pgTAP runs
+every assertion inside one session, so it can check the RULES `commit_booking`
+follows but never that two *simultaneous* callers actually serialize. This
+test signs in two real users against the local stack and fires
+`commit_booking` for the same one-seat table at the same moment — five times,
+against five independent one-seat events, not once, because a single race is
+"a coin this suite has watched land wrong" (see the file's own docblock for
+the measured cold-start numbers behind that phrase, and why there is a
+warm-up call before either racer's real request).
+
+**What makes it red:** `commit_booking` takes `perform 1 from public.events
+where id = target_event for update;` before it re-derives the seating plan —
+that lock is the entire concurrency design (every seat-changing function
+takes it before reading any count). Removing that one line from the live
+local database and re-running `npm run test:concurrency` seats both racers
+at the same 1-seat table — the exact double-booking the lock exists to
+prevent — and the suite fails. Restore it with `npx supabase db reset`.
+
+Needs the local stack, same as the schema-contract suite, and degrades to
+skipped rather than failing when `npm test` runs it without one; `npm run
+test:concurrency` sets `REQUIRE_LOCAL_SUPABASE=1` to make an unreachable
+stack fatal instead, exactly as `test:contract` does.
 
 ## Prerequisites
 
@@ -328,23 +355,96 @@ a configuration one.
 
 ### What the visual suite has baselines for, and what seeds them
 
-Eleven screens, each at 375×812 and 1440×900:
+Sixteen screens, each at 375×812 and 1440×900 — 32 baselines total:
 
 - signed out: `sign-in`
 - signed in, no club: `profile`, `notifications`, `clubs` (the empty state)
 - signed in, with a seeded club: `clubs-populated`, `club-detail`,
   `event-detail`, `new-event`, `edit-event` ("This game" scope),
   `edit-event-series` ("The whole series" scope), `venues`
+- signed in, with the booking-state fixtures (Task 15): `event-booking`,
+  `event-full`, `event-offer`, `event-needs-a-fourth`, `your-games`
 
-`mintSession` creates a brand-new user who belongs to no club, so the last
-seven would have screenshotted an empty state or a redirect. `seedClubWithEvent`
-in `e2e/session.ts` writes what they need: a club (`Riverside Mah Jongg`,
-timezone `America/New_York`), a host membership, two venues, a weekly Tuesday
-series, two of its occurrences — the first carrying an `overrides` entry for
-`venue_id` — and two tables on each. It runs through the same `adminClient`
-helper `mintSession` uses, which reads the `service_role` key from the
-environment and refuses any URL whose parsed hostname is not loopback. Nothing
-under `app/` or `lib/` may import that file.
+`mintSession` creates a brand-new user who belongs to no club, so everything
+past `clubs` would have screenshotted an empty state or a redirect.
+`seedClubWithEvent` in `e2e/session.ts` writes what they need: a club
+(`Riverside Mah Jongg`, timezone `America/New_York`), a host membership, two
+venues, a weekly Tuesday series, two of its occurrences — the first carrying
+an `overrides` entry for `venue_id` — and two tables on each. It runs through
+the same `adminClient` helper `mintSession` uses, which reads the
+`service_role` key from the environment and refuses any URL whose parsed
+hostname is not loopback. Nothing under `app/` or `lib/` may import that file.
+
+#### The booking-state fixtures (Task 15)
+
+The same `seedClubWithEvent` call also seats people into the games above, so
+the five new baselines are real seat grids and a real waitlist rather than
+another empty state:
+
+- **A mixed table** on Riverside's own seeded event — two of Table 1's four
+  seats taken (the signed-in member and one filler profile), Table 2 full.
+  This is also why `event-detail`'s own baseline grew: it is the same event,
+  the same seat grid, the same waitlist panel.
+- **Four one-off games in a SECOND club** ("Thursday Casuals"), not
+  Riverside — `event full`, `event offer`, `event needs a fourth`, and the
+  friend-booked game "Your games" needs. A second club, not a second event on
+  Riverside, on purpose: Riverside's `club-detail` baseline lists every
+  future event for its own club id with no status filter, so a near-term
+  event added there would have silently become a third card on a baseline
+  this task otherwise never touches.
+- **Ten filler profiles** (five per club), created the same way
+  `mintSession` creates its own user, purely so the seat grid shows real
+  names instead of the roster's `Member` placeholder for an unset
+  `display_name`. Reused freely across a club's own games — a booking's
+  uniqueness is per EVENT, not global, so the same filler can hold a seat in
+  more than one of a club's fixtures.
+
+**Every seeded timestamp here is relative to a FIXED instant, never
+`Date.now()` — the same rule `FIRST_OCCURRENCE`/`SECOND_OCCURRENCE` above
+follow, extended to cover a second clock.** Two client-side rules read
+`page.clock.setFixedTime`'s frozen value (`2026-08-22T16:00:00Z`, set before
+`seedClubWithEvent` ever runs) rather than the real wall clock:
+`needsAFourth` (`lib/bookings.ts`) needs its game to start within 48 hours of
+"now" for the "Needs a 4th" call to render, and a promotion offer's countdown
+(`offerCountdown`) is `expires_at` minus "now". `NEEDS_A_FOURTH_GAME`,
+`FULL_GAME` and `OFFER_GAME` in `e2e/session.ts` are therefore all fixed
+instants a day or so after that frozen value — close enough to be "soon" by
+the frozen clock's own reckoning, on every run, forever — and
+`OFFER_EXPIRES_AT` is a fixed offset from `OFFER_GAME`'s own `starts_at`
+(15 minutes before it), not from `Date.now()`. The countdown renders the same
+"2 hours 45 minutes left" today, tomorrow, and on every run after that.
+`FRIEND_GAME` carries no such constraint — nothing about a friend-booked seat
+is time-sensitive — so it keeps `FIRST_OCCURRENCE`'s own far-future (2099)
+pattern instead.
+
+**The frozen clock and the database's `now()` are two different clocks, and
+different queries read different ones — this is worth knowing before adding
+a sixth fixture.** `canBook`, `needsAFourth`, `fetchEvent` and `fetchOpenOffer`
+all either take no time filter or read the CLIENT's clock (frozen, in the
+browser), so they are exactly as durable as `FIRST_OCCURRENCE`'s 2099 dates:
+never mind what day it really is. `my_upcoming_bookings`, by contrast, is a
+`security definer` SQL function whose `e.starts_at > now()` filter runs
+against the DATABASE server's REAL clock. That is why "Your games" shows
+only two rows — the member's own Riverside booking and the friend-booked
+game, both dated 2099 — and not a third for the held offer on "Offer night":
+`OFFER_GAME`'s near-term date is, by design, close to the frozen clock's own
+2026-08-22, which recedes further into the real past every day this suite
+runs and so is permanently excluded from `my_upcoming_bookings`' real-time
+filter. The offer itself is unaffected — `fetchOpenOffer` carries no time
+filter at all, which is why `event offer`'s own baseline still shows it —
+only an aggregate view built on `now()` loses it. A future fixture that
+needs a near-term game to also appear in "Your games" (or any other
+`now()`-filtered list) cannot use a date this close to the frozen clock.
+
+**One rule, implemented twice, that must change together:** `needsAFourth` in
+`lib/bookings.ts` and `need_a_fourth_stage` in
+`supabase/migrations/20260825050000_need_a_fourth.sql` both encode "exactly
+one seat short, and the game starts soon" — the client copy for what the
+seat grid shows, the SQL copy for what `call_for_a_fourth` and the 15-minute
+announcement job actually honour. They were already two copies before this
+task; the `event needs a fourth` baseline is the first thing in this suite
+that renders the client half at all, so a future change to either rule
+needs the other one checked by hand, not just by this baseline going green.
 
 Two properties of the fixtures decide what the baselines say, and both are
 deliberate:
