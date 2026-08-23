@@ -19,17 +19,37 @@ type ToggleProps = {
  * three platforms needed a component the design system actually draws
  * itself, not one each OS renders its own way.
  *
- * `accessibilityRole="switch"` plus `accessibilityState.checked` is what
- * keeps this announced by a screen reader as a switch with its current
- * state — the same information the native `Switch` it replaces provided
- * via `value`.
+ * `accessibilityRole="switch"` plus `aria-checked` is what keeps this
+ * announced by a screen reader as a switch with its current state — the same
+ * information the native `Switch` it replaces provided via `value`.
+ *
+ * `aria-checked`, and NOT `accessibilityState={{ checked: value }}`, which is
+ * what this component used to send. That prop reaches the DOM on exactly no
+ * platform this app ships to: react-native-web's createDOMProps destructures
+ * the flat `accessibilityChecked` and the raw `aria-checked` prop and has no
+ * handling for `accessibilityState` at all (node_modules/react-native-web/
+ * dist/modules/createDOMProps/index.js, ~line 56 and ~line 212), so every
+ * Toggle on web rendered `role="switch"` with no state on it — a screen
+ * reader could not tell an on switch from an off one, including the "Other
+ * clubs can use this venue" switch that decides whether a member's home
+ * address becomes public.
+ *
+ * One prop covers both platforms rather than two that could drift: React
+ * Native's own Pressable resolves `checked: ariaChecked ?? accessibilityState
+ * ?.checked` (node_modules/react-native/Libraries/Components/Pressable/
+ * Pressable.js:229), so `aria-checked` is what the native accessibility tree
+ * gets too.
+ *
+ * components/__tests__/Toggle.test.tsx asserts the rendered `aria-checked`
+ * attribute in both states; reverting this prop to `accessibilityState` turns
+ * it red.
  */
 export default function Toggle({ value, onValueChange, accessibilityLabel }: ToggleProps) {
   return (
     <Pressable
       onPress={() => onValueChange(!value)}
       accessibilityRole="switch"
-      accessibilityState={{ checked: value }}
+      aria-checked={value}
       accessibilityLabel={accessibilityLabel}
       style={[styles.track, value ? styles.trackOn : styles.trackOff]}
     >

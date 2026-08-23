@@ -10,7 +10,7 @@ Five layers, each covering something the others structurally cannot.
 | Component | Vitest + @testing-library/react | Screen structure, navigation, state transitions — of the **web** files (`.web.tsx` wins, same as the bundle) | Colour, layout, truncation, **and all native rendering — see below** |
 | Visual | Playwright | Colour, layout, truncation, at real viewport widths | Logic, data, and native rendering (Chromium web only) |
 
-Nothing in this table covers the native time picker. See
+Nothing in this table covers the native time or date pickers. See
 "`@react-native-community/datetimepicker` has no coverage anywhere" below.
 
 ## Why the visual layer exists
@@ -38,19 +38,74 @@ suite exists.
 
 After switching to `maxDiffPixels: 120`, the same two mutations were re-run:
 
-- The whole-theme accent mutation now fails all six baselines, with diffs
-  ranging from 2,866px (`notifications-mobile`) to 24,330px
-  (`notifications-desktop`) — every one far past the 120px budget.
+- The whole-theme accent mutation now fails all six baselines that existed
+  when this was measured, with diffs ranging from 2,866px
+  (`notifications-mobile`) to 24,330px (`notifications-desktop`) — every one
+  far past the 120px budget.
 - A narrower mutation, changing only the toggle track colour, fails both
   notifications baselines at 1,123px each. Under the old ratio, 1,123px is
   ~0.37% of the mobile page and ~0.28% of desktop — still comfortably under
   1%, so the ratio would have let this regression through too.
+
+Re-measured against the baselines Task 17 added, on the only Toggle outside
+the notifications screen that a baseline actually captures: changing the
+toggle's on-track colour from `colors.accentColor` to an off-palette green
+fails `edit-event-series-mobile` and `edit-event-series-desktop` at 1,126px
+each, alongside the two notifications baselines — and nothing else in the
+suite moves. That is the point of the seeded baselines: the defect class this
+layer was built for now has a tripwire on a second screen.
+
+**This is not the only Toggle outside notifications, only the only one in a
+baseline.** `components/VenuePicker.tsx` renders a `Toggle`
+("Other clubs can use this venue") in its "New venue" sub-form, reachable
+from both the create-game and edit-game screens by typing a venue name that
+matches nothing and choosing "Add". No seeded test enters that state, so this
+control has zero visual coverage — listed under "Known visual gaps" below.
 
 The lesson for future maintainers: do not "simplify" this back to a ratio to
 make a large layout change stop tripping the suite. A ratio that is loose
 enough to tolerate a full-page redesign is also loose enough to hide a single
 mis-coloured control, which is precisely the failure mode this layer was
 built to close.
+
+## Why the pixel budget cannot catch a text regression, and what does
+
+`maxDiffPixels: 120` is sized to stay under a control the size of a toggle
+knob (above), and that same sizing has a consequence worth stating plainly:
+**it is far too small to ever fail on a one-glyph text substitution.** A
+single digit in this app's body type (18pt) is on the order of 16px tall;
+measured across the baselines, substituting one digit for another changes
+roughly 67–94 pixels — comfortably under the 120px budget on its own, before
+antialiasing jitter even enters the picture. So a defect that swaps "2
+tables" for "0 tables", or any other single-character text regression, cannot
+make `toHaveScreenshot` fail. This is not a flaw to fix by lowering the
+budget — a budget tight enough to catch a one-digit diff would also fail on
+ordinary antialiasing jitter between machines, which is the opposite problem
+this section already covers.
+
+**Text regressions are caught by the `getByText`/`toBeVisible` preconditions
+each test asserts before it screenshots, not by the pixel comparison.** Every
+test in `e2e/visual.spec.ts` asserts on specific visible text before calling
+`captureScreen` — `page.getByText('2 tables').first()` in `club detail`,
+`page.getByText('Moved from the usual venue')` in `event detail`, and so on.
+Those assertions fail outright, independent of any pixel budget, if the text
+they name is wrong or absent. That is a deliberate division of labour: **a
+baseline's job is colour, layout, and truncation — not the correctness of the
+words on the page.** A baseline can prove "2 tables" renders in the right
+place, in the right colour, without truncating; it takes a `getByText`
+assertion to prove it says "2" and not "0". Task 17's Fix pass 1 found this
+gap directly: the club-card table count (`toClubEvent`'s
+`event_tables?.length ?? 0` mapping in `lib/events.ts`) had no assertion at
+either the component or visual layer that could fail on it, and a
+`table_count: 0` mutation passed all 293 Vitest tests and would have passed
+the visual suite too, on pixels alone, until the `club detail` test gained
+its own `getByText('2 tables')` precondition.
+
+When adding a baseline for a screen whose text matters, add the
+`getByText`/`toBeVisible` assertion for that text FIRST, then let the
+screenshot cover appearance. Do not rely on the pixel comparison to catch a
+wrong word, a wrong number, or a wrong pluralisation — it structurally
+cannot, for exactly the arithmetic above.
 
 ## Which library, and why
 
@@ -144,26 +199,55 @@ Maestro.
 Read this before assuming otherwise — an earlier version of this document
 claimed the visual layer covered it, and that claim was wrong.
 
-`components/TimeField.web.tsx` exists. Metro's platform-extension resolution
-picks it for web builds, so **the web bundle never imports
-`@react-native-community/datetimepicker` at all**. What the visual layer's
-screenshots show under "Starts"/"Ends" is an `<input type="time">` — a
-different control, from a different file, with a different implementation. It
-is real coverage of `TimeField.web.tsx`, and it is no coverage whatsoever of
-the native picker.
+`components/TimeField.web.tsx` and `components/DateField.web.tsx` both exist.
+Metro's platform-extension resolution picks them for web builds, so **the web
+bundle never imports `@react-native-community/datetimepicker` at all**. What
+the visual layer's screenshots show under "Starts"/"Ends" is an
+`<input type="time">` — a different control, from a different file, with a
+different implementation. That is real coverage of `TimeField.web.tsx`, and no
+coverage whatsoever of the native picker behind it.
 
-The component layer does not reach it either. `resolve.extensions` in
+**`DateField.web.tsx` now has coverage at both layers.**
+`app/clubs/[id]/events/new.tsx` (Task 13) is the first
+screen to import `DateField`, and `app/__tests__/events-new.test.tsx`
+renders it, interacting with the "Date" and "Stop repeating on" fields
+through `screen.getByLabelText` the same way the notifications screen's test
+drives `TimeField.web.tsx`. Covered, specifically: the `<input type="date">`
+markup resolves by `aria-label`; an ordinary onChange reaches the screen's
+state (every date in that file is set this way, and the value shows up in the
+`createEvent`/`createEventSeries` arguments); and the empty-string guard —
+"clearing a date field" fires a `''` change and asserts the previously picked
+date is still what the screen sends. That last one was an overclaim for one
+commit: this paragraph named empty-string handling while nothing fired a
+`''`, and deleting `if (event.target.value === '') return;` left the whole
+suite green.
+
+How the control paints is the visual layer's half, and as of Task 17 it has
+it: `new-event-mobile` and `new-event-desktop` screenshot the create-game
+screen with the "Date" field rendered and filled, at 375px and 1440px. What
+those baselines cover is the field's own resting appearance — the pill
+treatment `webInputStyle` applies, the calendar glyph the browser draws
+inside it, and the value text. What they do **not** cover is the picker
+*popup*: it is browser chrome rendered outside the page, so no screenshot of
+this page can contain it, at any width. The "Stop repeating on" `DateField`
+is not in a baseline either — it only renders on the create screen once a
+repeat option is chosen, and on the edit screen only when "Runs indefinitely"
+is switched off, and neither baseline is in that state. Check that this
+paragraph is still true when you next touch this file.
+
+The component layer does not reach them either. `resolve.extensions` in
 `vitest.config.mts` makes Vitest resolve `.web.tsx` first, exactly as the web
-bundle does, so `import TimeField from '../components/TimeField'` under Vitest
-also loads `TimeField.web.tsx`. Nothing under test imports the package. (This
-is why the old `test/stubs/datetimepicker.tsx` stub was deleted: with web
-resolution in place, no test pulls the package in, so there is nothing left
-to stub.)
+bundle does, so `import TimeField from '../components/TimeField'` (and the
+same for `DateField`) under Vitest loads the `.web.tsx` file. Nothing under
+test imports the package. (This is why the old
+`test/stubs/datetimepicker.tsx` stub was deleted: with web resolution in
+place, no test pulls the package in, so there is nothing left to stub.)
 
-**So: `@react-native-community/datetimepicker` and `components/TimeField.tsx`
-— the native picker and the file that drives it — are exercised by zero
-layers in this repo, and will stay that way until Maestro.** An overclaim is
-worse than a gap: a gap gets filled, false confidence does not.
+**So: `@react-native-community/datetimepicker`, `components/TimeField.tsx`,
+and `components/DateField.tsx` — the native picker and the two files that
+drive it — are exercised by zero layers in this repo, and will stay that way
+until Maestro.** An overclaim is worse than a gap: a gap gets filled, false
+confidence does not.
 
 ### Which platform's files the component layer resolves
 
@@ -230,7 +314,7 @@ names the missing variables. That check exists because the failure without it
 was actively misleading: an unset variable is not an error to the shell, it
 expands to the empty string, so `expo export` would spend minutes building a
 bundle with an empty Supabase URL, `lib/supabase.ts`'s guard would throw in
-the browser, and all six tests would fail on `toBeVisible` timeouts.
+the browser, and every test would fail on `toBeVisible` timeouts.
 `mintSession`'s own guard would not fire either, because the URL it checks was
 fine. Every symptom pointed at Playwright; the cause was a missing export.
 
@@ -241,6 +325,101 @@ session minted against one Supabase project is not valid for another, so
 building against the hosted project would make every signed-in test fail to
 authenticate — and the failure would look like a Playwright problem rather than
 a configuration one.
+
+### What the visual suite has baselines for, and what seeds them
+
+Eleven screens, each at 375×812 and 1440×900:
+
+- signed out: `sign-in`
+- signed in, no club: `profile`, `notifications`, `clubs` (the empty state)
+- signed in, with a seeded club: `clubs-populated`, `club-detail`,
+  `event-detail`, `new-event`, `edit-event` ("This game" scope),
+  `edit-event-series` ("The whole series" scope), `venues`
+
+`mintSession` creates a brand-new user who belongs to no club, so the last
+seven would have screenshotted an empty state or a redirect. `seedClubWithEvent`
+in `e2e/session.ts` writes what they need: a club (`Riverside Mah Jongg`,
+timezone `America/New_York`), a host membership, two venues, a weekly Tuesday
+series, two of its occurrences — the first carrying an `overrides` entry for
+`venue_id` — and two tables on each. It runs through the same `adminClient`
+helper `mintSession` uses, which reads the `service_role` key from the
+environment and refuses any URL whose parsed hostname is not loopback. Nothing
+under `app/` or `lib/` may import that file.
+
+Two properties of the fixtures decide what the baselines say, and both are
+deliberate:
+
+- **The club's timezone, not the machine's.** Every event time on these
+  screens is rendered in the CLUB's zone. `America/New_York` is the fixture's
+  choice; the seeded instants (fixed dates in 2099, so an "upcoming" filter
+  keeps them and no baseline ages) are the 7pm those dates read as there.
+- **The seeded event is a series occurrence, not a one-off.** A one-off shows
+  no scope choice on the edit screen and no "Part of a series" line on the
+  event screen, which would have left the branch's most complex UI with no
+  picture of it.
+
+**Three** things on these screens read the DEVICE clock, not one — a claim
+this section previously understated. Besides the create-game screen's "Date"
+field (opens on today), `fetchFutureOccurrenceCount` and
+`fetchOverriddenOccurrences` in `lib/events.ts` both filter on client-side
+`new Date().toISOString()`, which decides what the series-scope edit screen
+lists as upcoming/customised, and the event screen's `canReset` gate compares
+`event.starts_at` against `Date.now()` to decide whether "Reset to the
+series" renders at all. All three feed the `edit-event-series` baseline (the
+overridden-occurrences toggle text and the reset button's visibility on the
+occurrence baselines) as well as `new-event`.
+
+They do not move, and the fixture is why: the seeded occurrences sit in
+2099, so "future" never flips regardless of what day the suite runs, and the
+frozen clock (below) pins `Date.now()` itself besides. But all three run in
+the SAME browser page, so the fix is one mechanism, not three: `page.clock.
+setFixedTime` in the seeded `beforeEach` freezes `Date`/`Date.now()` for
+whichever of them a given screen happens to call, not just the Date field.
+`playwright.config.ts` additionally pins `use.timezoneId` (so the wall-clock
+digits these produce do not depend on the machine) and `use.locale` (so the
+separators and ordering those digits render in do not either — see that
+file's comment). `new-event` asserts the Date field's resulting value
+explicitly, so if the clock override or either pin stops applying, the suite
+says so instead of leaving a baseline that rots overnight. A future
+maintainer adding a screen that reads `Date.now()` should assume it needs
+the same protection, not treat the Date field as the only such case.
+
+**The `venues` baselines show two club-only venues and no shared one.**
+`venues_public_name_idx` is unique on (name, locality) across public venues,
+so a seeded public venue would collide on the second test of a run, and a
+per-run suffix to dodge that would put a changing string in a baseline. The
+"Other clubs can use this venue" copy is covered at the component layer
+(`app/__tests__/venues.test.tsx`) and by no screenshot.
+
+### Known visual gaps
+
+States that render in this app but are in no baseline, gathered here so the
+next person does not have to rediscover each one by reading a diff that never
+comes:
+
+- **`components/VenuePicker.tsx`'s "New venue" sub-form**, reachable from
+  both the create-game and edit-game screens by typing a venue name that
+  matches nothing and choosing "Add". It renders this suite's *other*
+  `Toggle` ("Other clubs can use this venue") and the "Other clubs can use
+  this venue" copy — both covered at the component layer
+  (`app/__tests__/venues.test.tsx`) and by no screenshot. See "Why the
+  threshold is an absolute pixel budget, not a ratio" above for why this
+  specifically matters: it is the one other place in the app the
+  wrong-coloured-Toggle defect class could recur unseen.
+- **The `DateField` picker popup** — the calendar the browser opens when the
+  "Date" field is tapped — is native browser chrome rendered outside the
+  page's DOM. No screenshot of this page can ever contain it, at any width;
+  what `new-event-*` covers is only the field's resting appearance (see
+  "`@react-native-community/datetimepicker` has no coverage anywhere" above).
+- **The "Stop repeating on" `DateField`** on both the create and edit
+  screens. It only renders once a repeat option is chosen (create) or when
+  "Runs indefinitely" is switched off (edit), and no seeded test puts either
+  screen in that state.
+- **The signed-in member view.** Every seeded baseline is the *organizer*
+  view (the seeded membership is `host`); a plain member sees strictly less
+  on the club-detail and event-detail screens, and that reduced layout has no
+  baseline of its own. Covered at the component layer
+  (`app/__tests__/clubs.test.tsx`, `events-detail.test.tsx`) but not visually.
 
 ### Side effects of `npm run test:visual`
 
@@ -305,8 +484,19 @@ attached) and grows the viewport height to fit before shooting. Nothing about
 the render changes: these screens lay out top-down, so a taller window reveals
 the rest without moving anything above it. Width, which is what every layout
 defect in this app's history turned on, stays at the device value. Screens
-that already fit are not resized, so `sign-in` and `profile` baselines remain
-at true device dimensions; only `notifications-mobile` grows (375×907).
+that already fit are not resized, so `sign-in`, `profile`, `clubs` and
+`venues` baselines remain at true device dimensions. The taller ones grow:
+`notifications-mobile` to 375×907, and every screen Task 17 added a baseline
+for except the two `venues` ones and the two `clubs-populated` ones — up to
+375×1404 for `event-detail-mobile`.
+
+One screen this measurement does **not** protect: `app/clubs/index.tsx`
+renders `Screen` WITHOUT `scroll`, so there is no `screen-scroll` element to
+measure and `document.scrollHeight` stays at the viewport height. Its content
+fits today (`clubs` and `clubs-populated`, one club), and a list long enough
+to overflow would be clipped by the outer `flex: 1` View rather than growing
+the capture. If that screen ever gains enough rows to scroll, give it
+`scroll` before trusting its baseline.
 
 A baseline's height is therefore content-dependent. That is deliberate: if a
 screen grows or shrinks, Playwright reports a size mismatch, which is a diff,
@@ -321,6 +511,16 @@ When a design change is intentional:
 Then **look at every changed PNG** before committing. Review them in the pull
 request like any other change — a baseline regenerated without being examined
 turns a regression into the new expected state.
+
+**`--update-snapshots` does not rewrite a baseline whose diff is under
+`maxDiffPixels`.** It compares first and only writes when the comparison
+fails, so a change small enough to fit inside the 120px budget leaves the old
+PNG in place and reports a pass. This is not hypothetical: Task 17 changed a
+fixture so a club card read "2 tables" instead of "0 tables", re-ran with
+`--update-snapshots`, and got a green run and an unchanged baseline — one
+digit is under 120 pixels. If you know the render changed and the file did
+not, delete the PNG and re-run (missing snapshots are always written), or
+pass `--update-snapshots=all`.
 
 ## When a visual test fails
 
@@ -339,3 +539,73 @@ edge. Raise the timeout; do not raise `maxDiffPixels`.
 
 A size mismatch rather than a pixel diff is a different signal: the screen's
 content height changed. See "Why the visual suite resizes the viewport".
+
+## Scheduled work
+
+`pg_cron` runs the nightly job that keeps recurring events materialized about
+six weeks ahead. It was verified on both the local stack and the hosted
+project before anything depended on it — `shared_preload_libraries` contains
+`pg_cron` in both, `create extension pg_cron` succeeds and persists in both,
+and `cron.schedule`/`cron.unschedule` round-trip as `postgres` (the role the
+local stack and `supabase db push` both connect as).
+
+That round-trip does **not** work as `cli_login_postgres`, the restricted
+role `supabase test db --linked` provisions for pgTAP runs against the hosted
+project (see `supabase/tests/database/README.md`). It has no `USAGE` on the
+`cron` schema the extension owns —
+`has_schema_privilege(current_user, 'cron', 'USAGE')` returns `false` — and
+scheduling fails with `permission denied for schema cron`, the same error a
+plain `select count(*) from cron.job` gets. pgTAP's own
+`has_table('cron', 'job', ...)` still passes for this role, because that
+check reads `pg_class`/`pg_namespace` directly, which every role can see
+regardless of schema `USAGE`: the row is visible in the catalog even though
+the role cannot query the table itself. The distinction was confirmed with a
+temporary pgTAP probe run via
+`npx supabase test db --linked supabase/tests/database/portable`, deleted
+after use — not checked in, since it exists to answer this one question, not
+to run on every suite invocation.
+
+This is not the same situation as the missing `USAGE` on `extensions`
+documented in that README, and does not call for the same fix. That grant was
+load-bearing: without it, `plan()` itself did not resolve, so every file in
+`portable/` failed before a single assertion ran — the whole hosted suite was
+dead without it. A `cron` grant would not do that; it would upgrade one
+already-passing suite by one convenience assertion, nothing more. It also
+would not change what actually schedules the job: `supabase db push` applies
+migrations as `postgres`, which owns the `cron` schema outright as the role
+that created it, so `cron.schedule` in a later migration needs no grant on
+`cli_login_postgres` to run. The precedent this follows instead is the `auth`
+schema one in `supabase/tests/database/README.md`: migrations are
+forward-only and apply to every environment, so a grant added purely for test
+convenience ships permanently to production, whatever it grants. There the
+stakes were high — `INSERT` on `auth.users` would be a writable path into the
+real user table. Here the stakes are much lower — `USAGE` on `cron` only
+exposes visibility into a job schedule — but the same principle applies at a
+smaller scale: a grant that exists only to make one optional assertion pass
+in an otherwise-green suite is not worth adding to every environment forever,
+so this gap stays as a documented limitation rather than a grant.
+
+The job is `materialize-event-series`, defined in
+`20260823060000_schedule_materialize_event_series.sql`. It calls
+`public.materialize_event_series()`, which is ordinary SQL — so it is tested
+by pgTAP calling it directly, with no HTTP, no secrets, and no Edge Function
+in the loop. To run it by hand:
+
+    select public.materialize_event_series();
+
+Inspect the schedule with `select * from cron.job;` and its history with
+`select * from cron.job_run_details order by start_time desc limit 20;`.
+
+The sweep wraps each series in its own exception block (see
+`20260823000000_harden_event_series_materialization.sql`), so one club's bad
+data — a timezone the `clubs_validate_timezone` trigger didn't exist to
+reject when the row was written, a venue deleted out from under a series,
+anything else `materialize_one_series` can throw on — is skipped rather than
+rolling back the whole run. The skip is not silent: it `raise warning`s the
+series id, title, club id, and the underlying error before moving on. A
+`WARNING` raised inside a function called by `cron.schedule` does not go
+anywhere a client would see it; it lands in `cron.job_run_details.return_message`
+for that run (`cli_login_postgres` cannot read that table — see above — so
+this is a `postgres`/dashboard-only inspection) and in the Postgres server
+log for whichever environment ran it. Nobody currently polls either one, so
+today a skipped series is discoverable but not alerted on.

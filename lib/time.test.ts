@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { dateToTimeString, formatTimeLabel, timeStringToDate } from './time';
+import {
+  dateStringToDate,
+  dateToDateString,
+  dateToTimeString,
+  formatTimeLabel,
+  timeStringToDate,
+} from './time';
 
 describe('timeStringToDate', () => {
   it('sets the hour and minute from an HH:MM string', () => {
@@ -99,4 +105,27 @@ describe('round trip', () => {
       expect(dateToTimeString(timeStringToDate(value))).toBe(value);
     });
   }
+});
+
+describe('dateStringToDate / dateToDateString', () => {
+  it('round-trips a calendar date', () => {
+    expect(dateToDateString(dateStringToDate('2027-03-14'))).toBe('2027-03-14');
+  });
+
+  it('builds a local date, so a picker shows the day that was typed', () => {
+    const d = dateStringToDate('2027-03-14');
+    expect(d.getFullYear()).toBe(2027);
+    expect(d.getMonth()).toBe(2);
+    expect(d.getDate()).toBe(14);
+  });
+
+  it('pads single-digit months and days', () => {
+    expect(dateToDateString(new Date(2027, 0, 5))).toBe('2027-01-05');
+  });
+
+  it('survives a DST boundary date', () => {
+    // 2027-03-14 is the US spring-forward date. A UTC-based implementation
+    // would render the 13th for anyone west of Greenwich.
+    expect(dateToDateString(dateStringToDate('2027-03-14'))).toBe('2027-03-14');
+  });
 });

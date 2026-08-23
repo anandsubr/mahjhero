@@ -57,7 +57,7 @@ export default function ClubsScreen() {
 
   if (loadFailed) {
     return (
-      <Screen>
+      <Screen contentStyle={styles.container}>
         <Text style={styles.heading}>Your clubs</Text>
         <ErrorBanner message={GENERIC_ERROR} />
       </Screen>
@@ -67,7 +67,7 @@ export default function ClubsScreen() {
   const list = clubs ?? [];
 
   return (
-    <Screen>
+    <Screen contentStyle={styles.container}>
       <Text style={styles.heading}>Your clubs</Text>
 
       {list.length === 0 ? (
@@ -127,6 +127,9 @@ export default function ClubsScreen() {
 
 const styles = StyleSheet.create({
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  container: {
+    gap: space[4],
+  },
   heading: {
     fontFamily: type.heading,
     fontSize: type.size.h2,
