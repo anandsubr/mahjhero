@@ -284,7 +284,7 @@ test.describe('signed in', () => {
         // query actually being specific. `.first()` on Priya's name —
         // since the signed-in member is this club's organizer, HostSeating
         // renders her name a SECOND time in its own "Move to …" / "Unseat"
-        // / "Remove" controls, distinct from her name in the seat grid
+        // / "Remove from game" controls, distinct from her name in the seat grid
         // itself. Both are real; this only needs to know her name appears
         // on the page at all.
         await expect(page.getByText('You', { exact: true })).toBeVisible();
@@ -397,7 +397,12 @@ test.describe('signed in', () => {
         await page.goto(
           `/clubs/${seeded.bookingClubId}/events/${seeded.fullEventId}`,
         );
-        await expect(page.getByText('0 seats free')).toBeVisible();
+        // TableCard now says "Full" rather than "0 seats free" (seatsFreeLabel,
+        // lib/bookings.ts) -- a bare zero-count sentence nobody writes.
+        // `exact: true` is load-bearing: this event's own title is "Full
+        // house game" (bookingClubId fixture), which also matches a bare
+        // substring search.
+        await expect(page.getByText('Full', { exact: true })).toBeVisible();
         await expect(page.getByText('Waiting for a seat')).toBeVisible();
         await expect(
           page.getByRole('button', { name: 'Join the waitlist' }),

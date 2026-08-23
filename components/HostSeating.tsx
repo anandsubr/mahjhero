@@ -86,7 +86,7 @@ export default function HostSeating({
               onPress={() => onRemove(person.booking_id)}
               accessibilityLabel={`Remove ${person.display_name} from this game`}
             >
-              Remove
+              Remove from game
             </Button>
           </View>
         </View>

@@ -296,6 +296,24 @@ export function seatsRemaining(capacity: number, confirmed: number): number {
   return Math.max(0, capacity - confirmed);
 }
 
+/**
+ * The three-case "how many seats are left" rule, shared by the club list's
+ * `eventStatusLine` (lib/events.ts) and each table's own `TableCard`. Bare
+ * "0 seats free" is a sentence nobody writes — plan 3's visual review
+ * caught a card that said "0 tables" for the identical reason — so a full
+ * table says "Full" instead.
+ *
+ * This lived as two separate copies of the same three-case branch until a
+ * pass over the branch found it: this app has already been bitten more
+ * than once by one rule drifting across several call sites (the
+ * "needs a fourth" gate reached three copies before one of them fell out of
+ * sync). One function, two callers.
+ */
+export function seatsFreeLabel(free: number): string {
+  if (free === 0) return 'Full';
+  return `${free} ${free === 1 ? 'seat' : 'seats'} free`;
+}
+
 export function waitlistLabel(position: number): string {
   const rest = position % 100;
   const last = position % 10;

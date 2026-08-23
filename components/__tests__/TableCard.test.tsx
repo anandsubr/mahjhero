@@ -64,6 +64,19 @@ describe('TableCard', () => {
     expect(screen.getByText('1 seat free')).toBeTruthy();
   });
 
+  it('says Full rather than "0 seats free"', () => {
+    render(
+      <TableCard
+        table={{ ...table, capacity: 1 }}
+        occupants={occupants}
+        youId="p9"
+        onTakeSeat={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('Full')).toBeTruthy();
+    expect(screen.queryByText('0 seats free')).toBeNull();
+  });
+
   it('shows your own seat as yours', () => {
     render(
       <TableCard

@@ -1,4 +1,4 @@
-import { needsAFourth } from './bookings';
+import { needsAFourth, seatsFreeLabel } from './bookings';
 import { GENERIC_ERROR } from './constants';
 import { supabase } from './supabase';
 
@@ -359,10 +359,9 @@ export function eventStatusLine(
 
   const capacity = event.event_tables.reduce((sum, t) => sum + t.capacity, 0);
   const free = Math.max(0, capacity - confirmed.length);
-  // "0 seats free" is a sentence nobody writes. Plan 3's visual review
-  // caught a card reading "0 tables" for the same reason.
-  if (free === 0) return 'Full';
-  return `${free} ${free === 1 ? 'seat' : 'seats'} free`;
+  // seatsFreeLabel (lib/bookings.ts) owns the "0 seats free" → "Full" rule
+  // — shared with TableCard so it cannot drift between the two again.
+  return seatsFreeLabel(free);
 }
 
 // ---------------------------------------------------------------------------

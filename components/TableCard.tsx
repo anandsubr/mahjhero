@@ -4,7 +4,7 @@ import Card from './Card';
 import SeatGrid from './SeatGrid';
 import Tag from './Tag';
 import type { SeatOccupant, SkillTier } from '../lib/bookings';
-import { seatsRemaining } from '../lib/bookings';
+import { seatsFreeLabel, seatsRemaining } from '../lib/bookings';
 import { colors, space, type } from '../lib/theme';
 
 const TIER_LABELS: Record<SkillTier, string> = {
@@ -76,9 +76,7 @@ export default function TableCard({
         needsFourth={needsFourth}
       />
 
-      <Text style={styles.free}>
-        {free} {free === 1 ? 'seat' : 'seats'} free
-      </Text>
+      <Text style={styles.free}>{seatsFreeLabel(free)}</Text>
 
       {bookedForYou ? (
         <Text style={styles.help}>

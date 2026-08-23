@@ -713,7 +713,7 @@ export default function EventScreen() {
                       onPress={() => run(() => removeEventTable(table.id))}
                       accessibilityLabel={`Remove ${table.label}`}
                     >
-                      Remove
+                      Remove this table
                     </Button>
                   ) : null}
 
