@@ -1,0 +1,368 @@
+begin;
+set local search_path to extensions, public;
+
+select plan(29);
+
+insert into auth.users (id, email) values
+  ('aaaaaaaa-0000-0000-0000-000000000001', 'alice@example.com'),
+  ('bbbbbbbb-0000-0000-0000-000000000002', 'bob@example.com'),
+  ('cccccccc-0000-0000-0000-000000000003', 'carol@example.com'),
+  ('dddddddd-0000-0000-0000-000000000004', 'dan@example.com'),
+  ('eeeeeeee-0000-0000-0000-000000000005', 'erin@example.com'),
+  ('ffffffff-0000-0000-0000-000000000006', 'fred@example.com'),
+  ('99999999-0000-0000-0000-000000000007', 'gina@example.com'),
+  ('88888888-0000-0000-0000-000000000008', 'hank@example.com'),
+  ('77777777-0000-0000-0000-000000000009', 'ivy@example.com'),
+  ('66666666-0000-0000-0000-000000000010', 'jack@example.com'),
+  ('55555555-0000-0000-0000-000000000011', 'kim@example.com'),
+  ('44444444-0000-0000-0000-000000000012', 'lee@example.com');
+
+update public.profiles set skill_level = 'beginner'
+ where id = 'cccccccc-0000-0000-0000-000000000003';
+
+insert into public.clubs (id, name, slug, timezone, created_by) values
+  ('c1c1c1c1-0000-0000-0000-000000000001', 'Riverside', 'riverside',
+   'America/New_York', 'aaaaaaaa-0000-0000-0000-000000000001'),
+  ('c2c2c2c2-0000-0000-0000-000000000002', 'Oakfield', 'oakfield',
+   'America/New_York', 'bbbbbbbb-0000-0000-0000-000000000002');
+
+-- Everyone but Bob is in Riverside. Bob is the outsider.
+insert into public.club_members (club_id, profile_id, role)
+select 'c1c1c1c1-0000-0000-0000-000000000001', id,
+       case when id = 'aaaaaaaa-0000-0000-0000-000000000001'
+            then 'host'::public.club_role else 'member'::public.club_role end
+from auth.users where id <> 'bbbbbbbb-0000-0000-0000-000000000002';
+
+insert into public.club_members (club_id, profile_id, role) values
+  ('c2c2c2c2-0000-0000-0000-000000000002',
+   'bbbbbbbb-0000-0000-0000-000000000002', 'host');
+
+-- Bob also carries a STALE, removed Riverside row: he was a member once and
+-- left. Without this, "somebody outside the club" would be proven purely by
+-- the absence of any row at all, and a mutation that deletes the
+-- `status = 'active'` clause from the membership check would sail through
+-- undetected — exists() would already be false either way. This row gives
+-- that filter something to actually catch.
+insert into public.club_members (club_id, profile_id, role, status) values
+  ('c1c1c1c1-0000-0000-0000-000000000001',
+   'bbbbbbbb-0000-0000-0000-000000000002', 'member', 'removed');
+
+insert into public.venues (id, name, added_by_club_id, created_by) values
+  ('11111111-0000-0000-0000-000000000001', 'The Hall',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   'aaaaaaaa-0000-0000-0000-000000000001');
+
+-- E1 is the game under test: Table 1 (mixed, 4) and Table 2 (advanced, 2),
+-- capacity 6. E2 is cancelled and E3 has already started; both exist only
+-- to be refused.
+insert into public.events
+  (id, club_id, title, venue_id, starts_at, ends_at, status, created_by) values
+  ('e1e1e1e1-0000-0000-0000-000000000001',
+   'c1c1c1c1-0000-0000-0000-000000000001', 'Tuesday game',
+   '11111111-0000-0000-0000-000000000001',
+   now() + interval '7 days', now() + interval '7 days 3 hours',
+   'published', 'aaaaaaaa-0000-0000-0000-000000000001'),
+  ('e2e2e2e2-0000-0000-0000-000000000002',
+   'c1c1c1c1-0000-0000-0000-000000000001', 'Cancelled game',
+   '11111111-0000-0000-0000-000000000001',
+   now() + interval '8 days', now() + interval '8 days 3 hours',
+   'cancelled', 'aaaaaaaa-0000-0000-0000-000000000001'),
+  ('e3e3e3e3-0000-0000-0000-000000000003',
+   'c1c1c1c1-0000-0000-0000-000000000001', 'Last week',
+   '11111111-0000-0000-0000-000000000001',
+   now() - interval '1 day', now() - interval '21 hours',
+   'published', 'aaaaaaaa-0000-0000-0000-000000000001');
+
+insert into public.event_tables
+  (id, event_id, club_id, label, skill_tier, capacity, position) values
+  ('7ab1e000-0000-0000-0000-000000000001',
+   'e1e1e1e1-0000-0000-0000-000000000001',
+   'c1c1c1c1-0000-0000-0000-000000000001', 'Table 1', 'mixed', 4, 1),
+  ('7ab1e000-0000-0000-0000-000000000002',
+   'e1e1e1e1-0000-0000-0000-000000000001',
+   'c1c1c1c1-0000-0000-0000-000000000001', 'Table 2', 'advanced', 2, 2),
+  ('7ab1e000-0000-0000-0000-000000000003',
+   'e3e3e3e3-0000-0000-0000-000000000003',
+   'c1c1c1c1-0000-0000-0000-000000000001', 'Table 1', 'mixed', 4, 1);
+
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "aaaaaaaa-0000-0000-0000-000000000001", "role": "authenticated"}';
+
+-- ---------------------------------------------------------------------
+-- One member, one seat, one tap.
+-- ---------------------------------------------------------------------
+select lives_ok(
+  $$select public.commit_booking(
+      'e1e1e1e1-0000-0000-0000-000000000001',
+      array['aaaaaaaa-0000-0000-0000-000000000001']::uuid[],
+      '7ab1e000-0000-0000-0000-000000000001', true)$$,
+  'a member books themselves a seat');
+
+select is(
+  (select status::text from public.bookings
+    where profile_id = 'aaaaaaaa-0000-0000-0000-000000000001'),
+  'confirmed',
+  'the booking is confirmed, not pending anything');
+select is(
+  (select event_table_id from public.bookings
+    where profile_id = 'aaaaaaaa-0000-0000-0000-000000000001'),
+  '7ab1e000-0000-0000-0000-000000000001'::uuid,
+  'at the table they tapped');
+
+reset role;
+select is(public.event_free_seats('e1e1e1e1-0000-0000-0000-000000000001'), 5,
+  'a seat is gone from the game');
+
+-- ---------------------------------------------------------------------
+-- Tiers are advisory. Carol is a beginner; Table 2 is advanced. The
+-- WARNING is the client's job, and this assertion exists so nobody
+-- "fixes" that by adding a check here.
+-- ---------------------------------------------------------------------
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "cccccccc-0000-0000-0000-000000000003", "role": "authenticated"}';
+
+select lives_ok(
+  $$select public.commit_booking(
+      'e1e1e1e1-0000-0000-0000-000000000001',
+      array['cccccccc-0000-0000-0000-000000000003']::uuid[],
+      '7ab1e000-0000-0000-0000-000000000002', true)$$,
+  'the database does not enforce skill tiers');
+select is(
+  (select event_table_id from public.bookings
+    where profile_id = 'cccccccc-0000-0000-0000-000000000003'),
+  '7ab1e000-0000-0000-0000-000000000002'::uuid,
+  'a beginner may sit at the advanced table if they choose to');
+
+-- ---------------------------------------------------------------------
+-- "Any table": confirmed, unplaced, and it still costs the game a seat.
+-- ---------------------------------------------------------------------
+set local request.jwt.claims =
+  '{"sub": "dddddddd-0000-0000-0000-000000000004", "role": "authenticated"}';
+
+select lives_ok(
+  $$select public.commit_booking(
+      'e1e1e1e1-0000-0000-0000-000000000001',
+      array['dddddddd-0000-0000-0000-000000000004']::uuid[],
+      null, true)$$,
+  'a member books without caring where they sit');
+select is(
+  (select event_table_id from public.bookings
+    where profile_id = 'dddddddd-0000-0000-0000-000000000004'),
+  null,
+  'an "any table" booking is placed nowhere');
+
+reset role;
+select is(public.event_free_seats('e1e1e1e1-0000-0000-0000-000000000001'), 3,
+  'and still costs the game a seat');
+select is(public.table_free_seats('7ab1e000-0000-0000-0000-000000000001'), 3,
+  'while costing no table one');
+
+-- ---------------------------------------------------------------------
+-- Refusals.
+-- ---------------------------------------------------------------------
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "aaaaaaaa-0000-0000-0000-000000000001", "role": "authenticated"}';
+
+select throws_ok(
+  $$select public.commit_booking(
+      'e1e1e1e1-0000-0000-0000-000000000001',
+      array['aaaaaaaa-0000-0000-0000-000000000001']::uuid[],
+      '7ab1e000-0000-0000-0000-000000000001', true)$$,
+  '23514',
+  'already booked',
+  'a second seat for the same person in the same game is refused');
+
+select throws_ok(
+  $$select public.commit_booking(
+      'e1e1e1e1-0000-0000-0000-000000000001',
+      array['bbbbbbbb-0000-0000-0000-000000000002']::uuid[],
+      '7ab1e000-0000-0000-0000-000000000001', true)$$,
+  '23514',
+  'not a member',
+  'somebody outside the club cannot be booked into its game');
+
+select throws_ok(
+  $$select public.commit_booking(
+      'e2e2e2e2-0000-0000-0000-000000000002',
+      array['eeeeeeee-0000-0000-0000-000000000005']::uuid[],
+      null, true)$$,
+  '23514',
+  'event not bookable',
+  'a cancelled game takes no bookings');
+
+select throws_ok(
+  $$select public.commit_booking(
+      'e3e3e3e3-0000-0000-0000-000000000003',
+      array['eeeeeeee-0000-0000-0000-000000000005']::uuid[],
+      '7ab1e000-0000-0000-0000-000000000003', true)$$,
+  '23514',
+  'event already started',
+  'a game that has started takes no bookings');
+
+-- ---------------------------------------------------------------------
+-- Three friends, three free seats, two tables. Propose first.
+-- ---------------------------------------------------------------------
+set local request.jwt.claims =
+  '{"sub": "eeeeeeee-0000-0000-0000-000000000005", "role": "authenticated"}';
+
+select is(
+  (select public.propose_booking(
+      'e1e1e1e1-0000-0000-0000-000000000001',
+      array['eeeeeeee-0000-0000-0000-000000000005',
+            'ffffffff-0000-0000-0000-000000000006',
+            '99999999-0000-0000-0000-000000000007']::uuid[],
+      '7ab1e000-0000-0000-0000-000000000002', true)->>'outcome'),
+  'seated',
+  'three into three fits');
+select is(
+  (select public.propose_booking(
+      'e1e1e1e1-0000-0000-0000-000000000001',
+      array['eeeeeeee-0000-0000-0000-000000000005',
+            'ffffffff-0000-0000-0000-000000000006',
+            '99999999-0000-0000-0000-000000000007']::uuid[],
+      '7ab1e000-0000-0000-0000-000000000002', true)->>'split'),
+  'true',
+  'and it says plainly that they will be split up');
+
+reset role;
+select is((select count(*)::int from public.bookings), 3,
+  'proposing wrote nothing');
+
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "eeeeeeee-0000-0000-0000-000000000005", "role": "authenticated"}';
+
+select lives_ok(
+  $$select public.commit_booking(
+      'e1e1e1e1-0000-0000-0000-000000000001',
+      array['eeeeeeee-0000-0000-0000-000000000005',
+            'ffffffff-0000-0000-0000-000000000006',
+            '99999999-0000-0000-0000-000000000007']::uuid[],
+      '7ab1e000-0000-0000-0000-000000000002', true)$$,
+  'committing the split books all three');
+
+reset role;
+select is(
+  (select count(distinct event_table_id)::int from public.bookings
+    where booked_by = 'eeeeeeee-0000-0000-0000-000000000005'),
+  2,
+  'across the two tables the proposal named');
+select is(
+  (select count(*)::int from public.notification_outbox
+    where kind = 'booked_by_friend'),
+  2,
+  'the two friends are told their seats were booked for them');
+select is(
+  (select count(*)::int from public.notification_outbox
+    where kind = 'booked_by_friend'
+      and recipient_id = 'eeeeeeee-0000-0000-0000-000000000005'),
+  0,
+  'and the booker is not told about her own seat');
+select is(public.event_free_seats('e1e1e1e1-0000-0000-0000-000000000001'), 0,
+  'the game is now full');
+
+-- ---------------------------------------------------------------------
+-- Full: the next member waits.
+-- ---------------------------------------------------------------------
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "88888888-0000-0000-0000-000000000008", "role": "authenticated"}';
+
+select is(
+  (select public.commit_booking(
+      'e1e1e1e1-0000-0000-0000-000000000001',
+      array['88888888-0000-0000-0000-000000000008']::uuid[],
+      '7ab1e000-0000-0000-0000-000000000001', true)->>'outcome'),
+  'waitlisted',
+  'a full game puts the next member on the waitlist');
+select is(
+  (select public.booking_result(id)->>'waitlist_position'
+     from public.booking_groups
+    where created_by = '88888888-0000-0000-0000-000000000008'),
+  '1',
+  'and tells them where they stand');
+
+-- ---------------------------------------------------------------------
+-- Two seats free but no single table holds two, and this group will not
+-- split. It waits — even though the game has room.
+--
+-- Cancelling Carol (Table 2) and Dan (the "any table" seat, which frees an
+-- EVENT seat without freeing a TABLE seat) leaves Table 1 with exactly one
+-- free seat and Table 2 with exactly one free seat: two seats free overall,
+-- neither table able to hold the pair alone. Cancelling Carol and Gina
+-- instead (as this fixture originally read) leaves Table 1 with TWO free
+-- seats on its own — enough to seat the pair outright — which contradicts
+-- the very point this block exists to prove and would have made the
+-- assertion below fail against a correct implementation.
+-- ---------------------------------------------------------------------
+reset role;
+update public.bookings
+   set status = 'cancelled', cancelled_at = now(),
+       cancelled_by = profile_id
+ where profile_id in ('cccccccc-0000-0000-0000-000000000003',
+                      'dddddddd-0000-0000-0000-000000000004');
+
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "77777777-0000-0000-0000-000000000009", "role": "authenticated"}';
+
+select is(
+  (select public.commit_booking(
+      'e1e1e1e1-0000-0000-0000-000000000001',
+      array['77777777-0000-0000-0000-000000000009',
+            '66666666-0000-0000-0000-000000000010']::uuid[],
+      '7ab1e000-0000-0000-0000-000000000001', false)->>'outcome'),
+  'waitlisted',
+  'a group that will not split waits until one table can hold it');
+
+reset role;
+select is(
+  (select status::text from public.bookings
+    where profile_id = '88888888-0000-0000-0000-000000000008'),
+  'confirmed',
+  'and committing it promoted the member who was already waiting');
+
+-- ---------------------------------------------------------------------
+-- One seat free, a splittable pair: an offer, immediately.
+-- ---------------------------------------------------------------------
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "55555555-0000-0000-0000-000000000011", "role": "authenticated"}';
+
+select lives_ok(
+  $$select public.commit_booking(
+      'e1e1e1e1-0000-0000-0000-000000000001',
+      array['55555555-0000-0000-0000-000000000011',
+            '44444444-0000-0000-0000-000000000012']::uuid[],
+      '7ab1e000-0000-0000-0000-000000000001', true)$$,
+  'a splittable pair with one seat free is accepted onto the waitlist');
+
+reset role;
+select is(
+  (select offered_seat_count from public.promotion_offers po
+     join public.booking_groups bg on bg.id = po.group_id
+    where bg.created_by = '55555555-0000-0000-0000-000000000011'),
+  1,
+  'and is offered the one seat that exists, without waiting for the sweep');
+
+-- ---------------------------------------------------------------------
+-- Tenancy.
+-- ---------------------------------------------------------------------
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "bbbbbbbb-0000-0000-0000-000000000002", "role": "authenticated"}';
+
+select throws_ok(
+  $$select public.commit_booking(
+      'e1e1e1e1-0000-0000-0000-000000000001',
+      array['bbbbbbbb-0000-0000-0000-000000000002']::uuid[],
+      null, true)$$,
+  '42501',
+  null,
+  'a member of another club cannot book into this one''s game');
+
+select * from finish();
+rollback;
