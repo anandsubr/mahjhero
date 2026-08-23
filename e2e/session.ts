@@ -118,10 +118,17 @@ const SEEDED_NOTES =
  * Booking-state fixtures (Task 15).
  * ---------------------------------------------------------------------------
  *
- * Five new baselines need a game to already have people in it: a mixed
+ * Five booking states need a game to already have people in it: a mixed
  * table with room left, a full table, a full game with a waitlist and a
  * held offer, a table one short of "needs a fourth", and a friend-booked
- * seat for "Your games". None of that fits FIRST_OCCURRENCE/
+ * seat. Three of those get their own new baseline (`event-full`,
+ * `event-offer`, `event-needs-a-fourth`); the other two — the mixed table
+ * and the friend-booked seat — land on `event-detail` and
+ * `clubs-populated`, two baselines that already existed, so their text
+ * anchors were folded into those two tests instead of living behind a
+ * same-picture `event-booking`/`your-games` baseline that could only ever
+ * be byte-identical to the original (see e2e/visual.spec.ts). None of that
+ * fits FIRST_OCCURRENCE/
  * SECOND_OCCURRENCE above — those exist to be safely far in the future
  * (2099) so the "upcoming" filter never ages them out, and two of the new
  * states are the opposite: `needsAFourth` (lib/bookings.ts) and
@@ -814,8 +821,8 @@ export async function seedClubWithEvent(profileId: string): Promise<{
     tableId: needsAFourthTableId,
   });
 
-  // `your games`'s second row: a seat Owen booked FOR the signed-in member
-  // (`bookedBy: owen`, `profileId` the member's own) — the
+  // `clubs-populated`'s "Your games" second row: a seat Owen booked FOR the
+  // signed-in member (`bookedBy: owen`, `profileId` the member's own) — the
   // `booked_by !== youId` state that renders "Owen Bradley booked this for
   // you" and the Decline control, distinct from the member's own
   // self-booked seat on Riverside's event above.

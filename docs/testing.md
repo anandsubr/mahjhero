@@ -355,15 +355,26 @@ a configuration one.
 
 ### What the visual suite has baselines for, and what seeds them
 
-Sixteen screens, each at 375×812 and 1440×900 — 32 baselines total:
+Fourteen screens, each at 375×812 and 1440×900 — 28 baselines total:
 
 - signed out: `sign-in`
 - signed in, no club: `profile`, `notifications`, `clubs` (the empty state)
 - signed in, with a seeded club: `clubs-populated`, `club-detail`,
   `event-detail`, `new-event`, `edit-event` ("This game" scope),
   `edit-event-series` ("The whole series" scope), `venues`
-- signed in, with the booking-state fixtures (Task 15): `event-booking`,
-  `event-full`, `event-offer`, `event-needs-a-fourth`, `your-games`
+- signed in, with the booking-state fixtures (Task 15): `event-full`,
+  `event-offer`, `event-needs-a-fourth`
+
+Two of the five booking states this task adds do not get their own
+baseline. A mixed table with room left and a friend-booked seat both land
+on pages that already have baselines — `event-detail` (Riverside's own
+seeded event) and `clubs-populated` (the "Your games" section of `/clubs`)
+— so a separate `event-booking` or `your-games` screenshot would have
+visited the exact same URL in the exact same seeded state and produced a
+byte-identical PNG. Their distinguishing text is asserted inside
+`event-detail`'s and `clubs-populated`'s own tests instead (see
+`e2e/visual.spec.ts`); the states are still covered, just not by a second
+copy of a picture that already exists under another name.
 
 `mintSession` creates a brand-new user who belongs to no club, so everything
 past `clubs` would have screenshotted an empty state or a redirect.
@@ -378,20 +389,27 @@ hostname is not loopback. Nothing under `app/` or `lib/` may import that file.
 #### The booking-state fixtures (Task 15)
 
 The same `seedClubWithEvent` call also seats people into the games above, so
-the five new baselines are real seat grids and a real waitlist rather than
-another empty state:
+the new and existing baselines it touches are real seat grids and a real
+waitlist rather than another empty state:
 
 - **A mixed table** on Riverside's own seeded event — two of Table 1's four
   seats taken (the signed-in member and one filler profile), Table 2 full.
   This is also why `event-detail`'s own baseline grew: it is the same event,
-  the same seat grid, the same waitlist panel.
+  the same seat grid, the same waitlist panel. There is no separate
+  `event-booking` baseline for this state — it would have visited the exact
+  same URL in the exact same seeded state and produced a byte-identical
+  PNG, so its distinguishing text ("You", "Priya Nair", "Bring someone",
+  "2 seats free") is asserted inside the `event-detail` test itself.
 - **Four one-off games in a SECOND club** ("Thursday Casuals"), not
   Riverside — `event full`, `event offer`, `event needs a fourth`, and the
-  friend-booked game "Your games" needs. A second club, not a second event on
-  Riverside, on purpose: Riverside's `club-detail` baseline lists every
-  future event for its own club id with no status filter, so a near-term
-  event added there would have silently become a third card on a baseline
-  this task otherwise never touches.
+  friend-booked game the `clubs-populated` baseline's "Your games" section
+  needs. (There is no separate `your-games` baseline either, for the same
+  byte-identical reason as `event-booking` above — see `clubs-populated`'s
+  own test.) A second club, not a second event on Riverside, on purpose:
+  Riverside's `club-detail` baseline lists every future event for its own
+  club id with no status filter, so a near-term event added there would
+  have silently become a third card on a baseline this task otherwise
+  never touches.
 - **Ten filler profiles** (five per club), created the same way
   `mintSession` creates its own user, purely so the seat grid shows real
   names instead of the roster's `Member` placeholder for an unset

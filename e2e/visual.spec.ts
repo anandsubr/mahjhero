@@ -208,6 +208,24 @@ test.describe('signed in', () => {
         await expect(
           page.getByRole('button', { name: 'Start another club' }),
         ).toBeVisible();
+        // The "Your games" section above the club list: one game the
+        // member booked themselves (Riverside's own seeded event above)
+        // and one a friend booked for them (`seedBookings`'s
+        // `friendEventId`, under the second club). This is the same
+        // `/clubs` page in the same seeded state a dedicated `your games`
+        // baseline would have shot — there is no such baseline, since it
+        // could only ever be byte-identical to this one — so its anchors
+        // live here instead. A third card — the held offer — also lands
+        // here via the same `my_upcoming_bookings` query; that is a real
+        // consequence of seeding the offer as the member's OWN group (see
+        // the `event offer` test's own comment on why it has to be), not
+        // a fixture bug, so this only anchors on the two rows the brief
+        // actually asks for.
+        await expect(page.getByText('Your games')).toBeVisible();
+        await expect(page.getByText('Tuesday night mahjong')).toBeVisible();
+        await expect(
+          page.getByText('Owen Bradley booked this for you'),
+        ).toBeVisible();
         await captureScreen(page, vp, `clubs-populated-${vp.name}.png`);
       });
 
@@ -252,6 +270,29 @@ test.describe('signed in', () => {
         // would still "pass" on the seats line alone.
         await expect(page.getByText('Moved from the usual venue')).toBeVisible();
         await expect(page.getByText('Every Tuesday')).toBeVisible();
+        // Table 1's own booking state (Task 15): two of four seats taken
+        // (the signed-in member and one other), room left, and the
+        // per-table "Bring someone" both this table and the screen-level
+        // entry point offer. This is the same page a dedicated `event
+        // booking` baseline would have shot — same club, same event, same
+        // seeded state — so there is no such baseline; it could only ever
+        // be byte-identical to this one. `exact: true` on the role query
+        // is load-bearing — TableCard's own "Bring someone" button carries
+        // the accessible name "Bring someone to Table 1", not the bare
+        // "Bring someone" the screen-level button uses, so without `exact`
+        // this would still resolve to one match by luck rather than by the
+        // query actually being specific. `.first()` on Priya's name —
+        // since the signed-in member is this club's organizer, HostSeating
+        // renders her name a SECOND time in its own "Move to …" / "Unseat"
+        // / "Remove" controls, distinct from her name in the seat grid
+        // itself. Both are real; this only needs to know her name appears
+        // on the page at all.
+        await expect(page.getByText('You', { exact: true })).toBeVisible();
+        await expect(page.getByText('Priya Nair').first()).toBeVisible();
+        await expect(
+          page.getByRole('button', { name: 'Bring someone', exact: true }),
+        ).toBeVisible();
+        await expect(page.getByText('2 seats free')).toBeVisible();
         await captureScreen(page, vp, `event-detail-${vp.name}.png`);
       });
 
@@ -329,37 +370,22 @@ test.describe('signed in', () => {
       /*
        * Five booking states, from `seedBookings` in e2e/session.ts (see
        * that file's own comment for why four of these five games live in
-       * a SECOND club rather than Riverside). Every test anchors on the
-       * text that actually distinguishes its state before shooting —
-       * "pixels cannot catch a one-glyph regression" (docs/testing.md) —
-       * because none of the numbers below are things `toHaveScreenshot`
-       * itself could ever fail on.
+       * a SECOND club rather than Riverside), captured across the three
+       * NEW baselines below plus two that already existed. There is no
+       * dedicated `event booking` or `your games` baseline: both would
+       * have visited the exact same URL, in the exact same seeded state,
+       * as `event detail` and `clubs list with a club` respectively — the
+       * fixtures are seeded once per `describe`, so two tests hitting the
+       * same route in the same state can only ever produce byte-identical
+       * PNGs. Their text anchors were folded into those two tests instead
+       * (see each test's own comment below); the states themselves are
+       * still fully covered, just not by a second copy of the same
+       * picture under a different name. Every test anchors on the text
+       * that actually distinguishes its state before shooting — "pixels
+       * cannot catch a one-glyph regression" (docs/testing.md) — because
+       * none of the numbers below are things `toHaveScreenshot` itself
+       * could ever fail on.
        */
-
-      // Table 1's own state: two of four seats taken (the signed-in member
-      // and one other), room left, and the per-table "Bring someone" both
-      // this table and the screen-level entry point offer. `exact: true`
-      // on the role query is load-bearing — TableCard's own "Bring
-      // someone" button carries the accessible name "Bring someone to
-      // Table 1", not the bare "Bring someone" the screen-level button
-      // uses, so without `exact` this would still resolve to one match by
-      // luck rather than by the query actually being specific.
-      test(`event booking at ${vp.name}`, async ({ page }) => {
-        await page.setViewportSize({ width: vp.width, height: vp.height });
-        await page.goto(`/clubs/${seeded.clubId}/events/${seeded.eventId}`);
-        await expect(page.getByText('You', { exact: true })).toBeVisible();
-        // `.first()` — since the signed-in member is this club's organizer,
-        // HostSeating renders Priya's name a SECOND time in its own "Move
-        // to …" / "Unseat" / "Remove" controls, distinct from her name in
-        // the seat grid itself. Both are real; this only needs to know her
-        // name appears on the page at all.
-        await expect(page.getByText('Priya Nair').first()).toBeVisible();
-        await expect(
-          page.getByRole('button', { name: 'Bring someone', exact: true }),
-        ).toBeVisible();
-        await expect(page.getByText('2 seats free')).toBeVisible();
-        await captureScreen(page, vp, `event-booking-${vp.name}.png`);
-      });
 
       // Every seat at the game's one table taken by someone else — so the
       // signed-in member holds no seat and "Join the waitlist" renders —
@@ -424,25 +450,6 @@ test.describe('signed in', () => {
         await expect(page.getByText('Last seat')).toBeVisible();
         await expect(page.getByText('Call for a 4th now')).toBeVisible();
         await captureScreen(page, vp, `event-needs-a-fourth-${vp.name}.png`);
-      });
-
-      // The clubs screen's "Your games" section: one game the member
-      // booked themselves (Riverside's own seeded event, above) and one a
-      // friend booked for them (`seedBookings`' `friendEventId`, under the
-      // second club). A third card — the held offer above — also lands
-      // here via the same `my_upcoming_bookings` query; that is a real
-      // consequence of seeding the offer as the member's OWN group (see
-      // that test's own comment on why it has to be), not a fixture bug,
-      // so this only anchors on the two rows the brief actually asks for.
-      test(`your games at ${vp.name}`, async ({ page }) => {
-        await page.setViewportSize({ width: vp.width, height: vp.height });
-        await page.goto('/clubs');
-        await expect(page.getByText('Your games')).toBeVisible();
-        await expect(page.getByText('Tuesday night mahjong')).toBeVisible();
-        await expect(
-          page.getByText('Owen Bradley booked this for you'),
-        ).toBeVisible();
-        await captureScreen(page, vp, `your-games-${vp.name}.png`);
       });
     }
   });
