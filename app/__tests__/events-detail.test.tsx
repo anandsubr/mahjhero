@@ -228,10 +228,13 @@ describe('member view: what is shown, and what is not', () => {
   });
 
   // Task 10 replaced this read-only table row with `TableCard`, which
-  // reports the seat count as "free", not raw capacity -- with nobody
-  // booked (lib/bookings isn't mocked in this file, so the real
-  // `fetchEventSeating` fails closed to an empty, `seatingFailed` list),
-  // all 4 of this table's seats are free.
+  // reports the seat count as "free", not raw capacity -- and `lib/bookings`
+  // is mocked at the top of this file with `fetchEventSeating` resolving an
+  // empty array, so nobody is booked and all 4 of this table's seats are
+  // free. It resolves rather than rejects deliberately: this file's tests
+  // are about the event's own rendering, not about seating, and a
+  // `seatingFailed` state would put an unrelated error banner on every one
+  // of them.
   it('renders each table with tier as text and seat count, no edit controls', async () => {
     fetchEventTables.mockResolvedValue([
       { id: 'table-1', label: 'Table 1', skill_tier: 'advanced' as const, capacity: 4, position: 1 },
