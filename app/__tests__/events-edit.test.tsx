@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
+import { useState } from 'react';
 
 const push = vi.fn();
 const replace = vi.fn();
@@ -67,6 +68,17 @@ vi.mock('../../lib/events', async (importOriginal) => {
 // otherwise invisible from outside: the real VenuePicker never surfaces
 // `valueName` as a queryable string on its own, and the bug was exactly
 // that the wrong scope's venue name reached this prop.
+//
+// `valueName` is seeded into local state ONCE on mount, `const [q] =
+// useState(valueName)`, mirroring the real component's own mount-only
+// seeding (components/VenuePicker.tsx: `useState(valueName)`, never
+// resynced on a later prop change). A stub that instead read `valueName`
+// live on every render (`<span>{valueName}</span>`) cannot observe a
+// remount at all, so it stays green whether or not the edit screen's
+// `key={isSeriesScope ? 'series' : 'event'}` on <VenuePicker> is present —
+// silently disabling this suite's only way to catch that key being
+// removed, which is what actually forces a fresh instance (and therefore a
+// fresh seed) when the host switches scope.
 vi.mock('../../components/VenuePicker', () => ({
   default: ({
     valueName,
@@ -74,14 +86,17 @@ vi.mock('../../components/VenuePicker', () => ({
   }: {
     valueName: string;
     onChange: (id: string, name: string) => void;
-  }) => (
-    <div>
-      <span>{valueName}</span>
-      <button onClick={() => onChange('venue-2', 'New Venue')}>
-        Pick venue (test stub)
-      </button>
-    </div>
-  ),
+  }) => {
+    const [q] = useState(valueName);
+    return (
+      <div>
+        <span>{q}</span>
+        <button onClick={() => onChange('venue-2', 'New Venue')}>
+          Pick venue (test stub)
+        </button>
+      </div>
+    );
+  },
 }));
 
 import EditEventScreen from '../clubs/[id]/events/[eventId]/edit';

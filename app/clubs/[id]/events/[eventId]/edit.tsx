@@ -248,11 +248,15 @@ export default function EditEventScreen() {
   }
 
   // Which snapshot the visible form fields (and onSave below) read from.
-  // `series` must also be non-null, matching onSave's own condition -- a
-  // scope of 'series' left over from a series that then failed to load
-  // (a real sequence: fetchSeries can resolve null while `scope` state
-  // persists across the re-render) must fall back to the event's own
-  // fields, not a series snapshot that was never populated.
+  // `series` must also be non-null, matching onSave's own condition. On
+  // this screen the guard is currently unreachable: the scope buttons that
+  // set `scope` to 'series' only render when `series` is already truthy
+  // (see the `{series ? ... }` block below), and the single load effect
+  // never resets `series` back to null once set, so there is no render
+  // where `scope === 'series'` and `series === null` both hold. Kept
+  // anyway as a defensive pairing with onSave's identical condition --
+  // cheap insurance against a future change to either the load effect or
+  // the scope buttons' render guard reintroducing that combination.
   const isSeriesScope = scope === 'series' && series !== null;
   const title = isSeriesScope ? seriesTitle : eventTitle;
   const setTitle = isSeriesScope ? setSeriesTitle : setEventTitle;

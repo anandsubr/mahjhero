@@ -70,6 +70,7 @@ import {
   EVENT_TABLE_COLUMNS,
   endEventSeries,
   fetchEventTables,
+  fetchSeries,
   removeEventTable,
   resetEventToSeries,
   SERIES_COLUMNS,
@@ -546,6 +547,17 @@ describe.runIf(reachable || required)('events schema contract', () => {
     // venue rather than the occurrence's — the seed row reuses the same
     // venue ("Contract Hall") both events and event_series point at above.
     expect((row.venues as { name: string }).name).toBe('Contract Hall');
+
+    // The raw-row assertion above pins the PostgREST embed shape but never
+    // runs it through `toEventSeries` — the mapper that turns `venues.name`
+    // into the flat `venue_name` the edit screen actually reads (Task 15
+    // fix pass 2). Every Vitest suite mocks `fetchSeries` wholesale, so a
+    // broken mapper (or PostgREST returning `venues` as an array instead of
+    // an object) would ship as a silently blank venue name. Calling the
+    // real `fetchSeries` here closes that gap.
+    const series = await fetchSeries(seriesId);
+    expect(series).not.toBeNull();
+    expect(series!.venue_name).toBe('Contract Hall');
   });
 
   it('exposes exactly the columns lib/events.ts names on event_tables', async () => {
