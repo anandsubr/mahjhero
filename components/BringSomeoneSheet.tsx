@@ -46,7 +46,17 @@ export default function BringSomeoneSheet({
   onCommit,
   onClose,
 }: Props) {
-  const [players, setPlayers] = useState<string[]>([youId]);
+  // The opener may already hold a seat at this game — "I'm in, and Jane
+  // wants to come too" is plausibly the commonest reason to open this sheet
+  // at all. Seeding `players` with `youId` unconditionally would mean every
+  // confirm for an already-seated opener re-proposes themselves alongside
+  // their friend, and the database (commit_booking's assert_players_bookable)
+  // refuses the whole group because one member of it already has a seat.
+  // So: only seed (and only show the non-removable "You" chip) when the
+  // opener is not already seated. An already-seated opener sees just the
+  // friends they pick.
+  const alreadySeated = booked.includes(youId);
+  const [players, setPlayers] = useState<string[]>(alreadySeated ? [] : [youId]);
   const [tableId, setTableId] = useState<string | null>(initialTableId);
   const [allowSplit, setAllowSplit] = useState(true);
   const [plan, setPlan] = useState<BookingOutcome | null>(null);
@@ -73,6 +83,15 @@ export default function BringSomeoneSheet({
   }
 
   async function confirm() {
+    // An already-seated opener with nobody picked has nothing to propose --
+    // proposing an empty group either round-trips for nothing or (worse)
+    // hits the database's own "at least one player" shape unexpectedly.
+    // The Confirm button is also disabled in this state (see below); this
+    // guard is the one that actually matters, since it holds regardless of
+    // how the press reached here.
+    if (players.length === 0) {
+      return;
+    }
     setBusy(true);
     setError(null);
     const { plan: proposed, error: failed } = await onPropose({
@@ -114,9 +133,11 @@ export default function BringSomeoneSheet({
       <Text style={styles.heading}>Who's coming?</Text>
 
       <View style={styles.people}>
-        <View style={[styles.person, styles.personOn]}>
-          <Text style={styles.personTextOn}>You</Text>
-        </View>
+        {alreadySeated ? null : (
+          <View style={[styles.person, styles.personOn]}>
+            <Text style={styles.personTextOn}>You</Text>
+          </View>
+        )}
         {available.map((member) => {
           const on = players.includes(member.profile_id);
           return (
@@ -199,7 +220,13 @@ export default function BringSomeoneSheet({
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
       {plan === null ? (
-        <Button block loading={busy} onPress={confirm} accessibilityLabel="Confirm this booking">
+        <Button
+          block
+          loading={busy}
+          disabled={players.length === 0}
+          onPress={confirm}
+          accessibilityLabel="Confirm this booking"
+        >
           Confirm
         </Button>
       ) : plan.outcome === 'seated' ? (

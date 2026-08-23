@@ -314,18 +314,24 @@ export default function EventScreen() {
   );
 
   // Gates both BringSomeoneSheet entry points (TableCard's per-table one and
-  // the screen-level "any table" one below). Two of its three conditions
-  // mirror gates the screen already applies elsewhere for the same reason —
-  // `canBook` matches `onTakeSeat`'s own guard, and `!myHoldsSeat` matches
-  // "Join the waitlist"'s. The third, `!rosterFailed`, is this sheet's own:
-  // BringSomeoneSheet always seats the opener as its first player (it has no
-  // way to remove "You" from the group), so a member who already holds a
-  // seat would meet an immediate "already booked" refusal on confirm — and a
-  // roster that failed to load would open the sheet onto a picker with
-  // nobody in it, reading as "you have no one to bring" rather than as the
-  // fetch failure it actually is. Both are exactly the predictable refusal
-  // this screen otherwise avoids offering.
-  const canBringSomeone = canBook && !myHoldsSeat && !rosterFailed;
+  // the screen-level "any table" one below). `canBook` matches `onTakeSeat`'s
+  // own guard (no booking action on a cancelled/started game). `!rosterFailed`
+  // is this sheet's own: a roster that failed to load would open the sheet
+  // onto a picker with nobody in it, reading as "you have no one to bring"
+  // rather than as the fetch failure it actually is.
+  //
+  // This used to also require `!myHoldsSeat` -- on the theory that
+  // BringSomeoneSheet always seats the opener as its first player, so an
+  // already-seated member would meet a guaranteed "already booked" refusal.
+  // That was true, but the fix belonged in the sheet, not here: an
+  // already-seated member bringing a friend ("I'm in, and Jane wants to
+  // come too") is plausibly the commonest use of this feature, and hiding
+  // the entry point for it entirely -- with no error explaining why the
+  // button just isn't there -- was the wrong remedy for a shape problem in
+  // BringSomeoneSheet's player list. The sheet now omits "You" and seeds no
+  // seat for an opener already in `booked`, so this gate no longer needs
+  // `myHoldsSeat` at all.
+  const canBringSomeone = canBook && !rosterFailed;
 
   async function bookSeat(tableId: string | null) {
     setPendingTier(null);

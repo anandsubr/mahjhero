@@ -144,6 +144,55 @@ describe('BringSomeoneSheet', () => {
     expect(after.getAttribute('aria-selected')).toBe('true');
   });
 
+  /**
+   * The regression this fix pass exists for: `booked` is checked with
+   * `me` (`youId`) already in it -- the shape a member who is already
+   * coming to this game actually has. Before this fix, `players` was
+   * always seeded with `youId`, so this same setup would call `onPropose`
+   * with `['me', 'p2']` and the database would refuse the whole group
+   * because `me` already holds a seat.
+   */
+  describe('when the opener already holds a seat', () => {
+    function renderAlreadySeated(extra = {}) {
+      return renderSheet({ booked: ['me', 'p3'], ...extra });
+    }
+
+    it('renders no "You" chip', () => {
+      renderAlreadySeated();
+      expect(screen.queryByText('You')).toBeNull();
+    });
+
+    it('proposes just the friend picked, not [you, friend]', async () => {
+      propose.mockResolvedValue({
+        plan: { outcome: 'seated', split: false, placements: [] },
+        error: null,
+      });
+      renderAlreadySeated();
+      fireEvent.click(screen.getByLabelText('Add Jane P.'));
+      fireEvent.click(screen.getByText('Confirm'));
+      await waitFor(() => expect(propose).toHaveBeenCalled());
+      expect(propose).toHaveBeenCalledWith(
+        expect.objectContaining({ players: ['p2'] }),
+      );
+    });
+
+    it('does not propose an empty group when nobody is picked', () => {
+      renderAlreadySeated();
+      const confirmButton = screen.getByText('Confirm').closest('[aria-disabled]');
+      expect(confirmButton?.getAttribute('aria-disabled')).toBe('true');
+      fireEvent.click(screen.getByText('Confirm'));
+      expect(propose).not.toHaveBeenCalled();
+    });
+  });
+
+  it('still seeds and shows "You", non-removable, when the opener is not already seated', () => {
+    renderSheet({ booked: ['p3'] });
+    expect(screen.getByText('You')).toBeTruthy();
+    // "You" is a plain View, not a Pressable -- there is no accessible
+    // "Remove You" control to find.
+    expect(screen.queryByLabelText('Remove You')).toBeNull();
+  });
+
   it('marks the chips aria-disabled while a proposal is in flight', async () => {
     let resolvePropose: (value: {
       plan: { outcome: 'seated'; split: false; placements: never[] };

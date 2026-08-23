@@ -355,4 +355,34 @@ describe('the event screen, for a member', () => {
       expect(declinePromotionOffer).toHaveBeenCalledWith('offer-1'),
     );
   });
+
+  // The regression this fix pass exists for. `canBringSomeone` used to also
+  // require `!myHoldsSeat`, on the theory that BringSomeoneSheet always
+  // re-adds the opener and so an already-seated member would hit a
+  // guaranteed "already booked" refusal on every confirm -- but that hid the
+  // entry point entirely for what is plausibly the commonest use of the
+  // feature ("I'm in, and Jane wants to come too"), with no explanation.
+  // BringSomeoneSheet itself now omits the opener when they are already
+  // seated (see components/__tests__/BringSomeoneSheet.test.tsx), so the
+  // screen no longer needs to hide the button to avoid that refusal.
+  it('still offers "Bring someone" to a member who already holds a seat', async () => {
+    fetchEventSeating.mockResolvedValue([
+      {
+        booking_id: 'b1',
+        group_id: 'g1',
+        profile_id: 'me',
+        display_name: 'Ada',
+        skill_level: null,
+        event_table_id: 't1',
+        status: 'confirmed' as const,
+        booked_by: 'me',
+        booked_by_name: 'Ada',
+        group_status: 'confirmed' as const,
+        waitlist_position: null,
+        created_at: '2026-01-01T00:00:00.000Z',
+      },
+    ]);
+    render(<EventScreen />);
+    expect(await screen.findByLabelText('Bring someone')).toBeTruthy();
+  });
 });
