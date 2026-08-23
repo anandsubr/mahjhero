@@ -182,8 +182,8 @@ the same facts, but only one of them is ever the source.
 widens to adjacent tiers inside 12 hours. Both are pure functions of occupancy and
 time-to-start, so the screen derives them and nothing can go stale. The only durable
 artifact is the outbox row, and its `dedupe_key`
-(`need_a_fourth:<table_id>:<stage>`) is what stops the 15-minute job announcing the
-same table twice.
+(`need_a_fourth:<table_id>:<stage>:<recipient_id>`) is what stops the 15-minute job
+announcing the same table twice.
 
 `checkins`, `broadcasts` and `notification_log` from the parent spec's data model
 stay unbuilt. They belong to plans 5 and 6.
@@ -330,6 +330,12 @@ are plain intervals against an instant, so no timezone arithmetic is involved.
 row to each club member who matches the tier for the current stage, is not already
 booked for that event, and has not set `mute_need_a_fourth`. The `dedupe_key` carries
 the stage, so widening announces exactly once more and no more.
+
+**It carries the recipient too, by necessity rather than tidiness.** The announcement
+is one multi-row `insert … select … on conflict (dedupe_key) do nothing`, so a key
+shared across recipients drops every row but the first and tells exactly one member —
+a feature that looks like it works. Verified in Postgres, and caught during
+implementation.
 
 **Claiming is an ordinary booking.** First commit wins on the event lock. The call
 resolves for everyone else immediately because it was never stored — the next read
