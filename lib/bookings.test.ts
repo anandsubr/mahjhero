@@ -8,6 +8,7 @@ vi.mock('./supabase', () => ({ supabase: { rpc: (...args: unknown[]) => rpc(...a
 
 import {
   bookingErrorMessage,
+  callForAFourth,
   cancelBooking,
   commitBooking,
   fetchEventSeating,
@@ -205,6 +206,20 @@ describe('cancelBooking', () => {
   });
 });
 
+describe('callForAFourth', () => {
+  // A member's organizer role can be revoked between render and tap, or the
+  // screen can simply be stale — either way, assert_club_organizer refuses,
+  // and the member deserves the real sentence, not "check your connection".
+  it('reports a non-organizer refusal plainly, not as a connection failure', async () => {
+    rpc.mockResolvedValue({
+      error: { code: '42501', message: 'not an organizer of this club' },
+    });
+    const { error } = await callForAFourth('t1');
+    expect(error).toBe('Only a club organizer can do that.');
+    expect(error).not.toBe(GENERIC_ERROR);
+  });
+});
+
 /**
  * The self-auditing test for BOOKING_REFUSALS.
  *
@@ -241,10 +256,11 @@ describe('BOOKING_REFUSALS (self-audit against the migrations)', () => {
   //      GENERIC_ERROR on purpose.
   //   2. Raised by a function this module does not call, but that DOES have
   //      its own client-side mapping in the module that does call it —
-  //      lib/events.ts's RPC_ERROR_MESSAGES (verified true by
-  //      lib/events.test.ts's "the table/series mutations report their own
-  //      refusals" describe block, which asserts every one of these exact
-  //      strings maps to a real sentence there).
+  //      lib/events.ts's RPC_ERROR_MESSAGES. Each of these exact strings is
+  //      individually asserted against a real sentence in lib/events.test.ts,
+  //      spread across its "deliberate refusals are reported as refusals,
+  //      not as network failures" and "the table/series mutations report
+  //      their own refusals" describe blocks — not one single block.
   //   3. Raised by a function lib/clubs.ts or lib/venues.ts calls, or by an
   //      internal trigger/helper no lib/*.ts function calls at all. Neither
   //      is this module's responsibility either way; whether clubs.ts and
@@ -305,13 +321,13 @@ describe('BOOKING_REFUSALS (self-audit against the migrations)', () => {
       'raised by add_event_table — mapped by lib/events.ts’s own RPC_ERROR_MESSAGES, not this module’s',
     'venue not available to this club':
       'raised (via assert_venue_available) by create_event/update_event/update_event_series — mapped by lib/events.ts’s own RPC_ERROR_MESSAGES, not this module’s',
-    // Shared infrastructure (assert_club_organizer): every host-only
-    // mutation in events.ts, clubs.ts and venues.ts calls it first. Mapped
-    // here in lib/events.ts's RPC_ERROR_MESSAGES for the paths this branch
-    // touches; clubs.ts/venues.ts calling the same guard does not make it
-    // this module's to map.
-    'not an organizer of this club':
-      'raised (via assert_club_organizer) by every host-only mutation in events.ts/clubs.ts/venues.ts — mapped by lib/events.ts’s own RPC_ERROR_MESSAGES for this branch, not this module’s',
+    // 'not an organizer of this club' (assert_club_organizer) used to be
+    // allowlisted here on the claim that lib/events.ts alone mapped it. That
+    // was false: call_for_a_fourth (lib/bookings.ts's own callForAFourth)
+    // raises it too, and this module never consulted lib/events.ts's
+    // vocabulary. It is now a real entry in BOOKING_REFUSALS above, so it is
+    // deliberately absent from this allowlist — the self-audit below covers
+    // it for real.
 
     // --- Category 3: lib/clubs.ts's own functions. Neither this module nor
     // lib/clubs.ts maps these today — every clubs.ts RPC error still falls

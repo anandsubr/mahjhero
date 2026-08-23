@@ -149,6 +149,16 @@ const BOOKING_REFUSALS: { contains: string; message: string; codes: string[] }[]
     codes: ['23514'],
   },
   {
+    // assert_club_organizer, raised by call_for_a_fourth (among every other
+    // host-only mutation). A member whose organizer role is revoked between
+    // render and tap — or a stale screen — used to be told the connection
+    // was down; this module actually calls call_for_a_fourth, so it owns
+    // this mapping too (lib/events.ts's own copy covers its own functions).
+    contains: 'not an organizer of this club',
+    message: 'Only a club organizer can do that.',
+    codes: ['42501'],
+  },
+  {
     contains: 'no players',
     message: 'Pick at least one player.',
     codes: ['23514'],

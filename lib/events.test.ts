@@ -733,6 +733,60 @@ describe('deliberate refusals are reported as refusals, not as network failures'
     });
   });
 
+  it('createEvent: no date or start time says so', async () => {
+    rpcMock.mockResolvedValueOnce({
+      data: null,
+      error: { code: '23514', message: 'an event must have a date and a start time' },
+    });
+    const result = await createEvent({
+      clubId: 'club-1',
+      title: 'Tuesday game',
+      venueId: 'venue-1',
+      notes: '',
+      date: '',
+      startTime: '',
+      durationMinutes: 180,
+      tableCount: 1,
+    });
+    expect(result.error).toBe('Give the game a date and a start time.');
+  });
+
+  it('createEvent: a table count out of range says so', async () => {
+    rpcMock.mockResolvedValueOnce({
+      data: null,
+      error: { code: '23514', message: 'table count out of range' },
+    });
+    const result = await createEvent({
+      clubId: 'club-1',
+      title: 'Tuesday game',
+      venueId: 'venue-1',
+      notes: '',
+      date: '2027-01-01',
+      startTime: '19:00',
+      durationMinutes: 180,
+      tableCount: 99,
+    });
+    expect(result.error).toBe('Choose between 1 and 20 tables.');
+  });
+
+  it('updateEvent: an end time before the start says so', async () => {
+    rpcMock.mockResolvedValueOnce({
+      error: { code: '23514', message: 'an event must end after it starts' },
+    });
+    await expect(
+      updateEvent('event-1', { durationMinutes: 15 }),
+    ).resolves.toEqual({ error: 'The game must end after it starts.' });
+  });
+
+  it('updateEvent: a cancelled event says it cannot be edited', async () => {
+    rpcMock.mockResolvedValueOnce({
+      error: { code: '42501', message: 'a cancelled event cannot be edited' },
+    });
+    await expect(updateEvent('event-1', { title: 'x' })).resolves.toEqual({
+      error: 'This game was cancelled and can no longer be edited.',
+    });
+  });
+
   it('an actual connection failure still says the connection failed', async () => {
     rpcMock.mockResolvedValueOnce({ error: unknown });
     await expect(updateEvent('event-1', { title: 'x' })).resolves.toEqual({
