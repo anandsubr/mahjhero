@@ -44,4 +44,28 @@ describe('profile screen', () => {
       await screen.findByText(/Add your name and skill level/),
     ).toBeTruthy();
   });
+
+  // Guards against `accessibilityState={{ selected }}` creeping back into
+  // SkillLevelPicker: react-native-web's createDOMProps has no handling for
+  // `accessibilityState` at all (components/Toggle.tsx's docstring has the
+  // full account), so that prop renders `role="radio"` with no state at all
+  // -- a screen reader could not tell a member's saved skill level from the
+  // other two tiles. Both states are pinned against their literal strings,
+  // not `not.toBe('true')`, since a missing attribute would also satisfy
+  // that.
+  it('marks the saved skill level with aria-selected, and the others as not selected', async () => {
+    fetchProfile.mockResolvedValueOnce({
+      id: 'test-user',
+      display_name: 'Pat',
+      skill_level: 'intermediate',
+      avatar_url: null,
+      timezone: 'America/New_York',
+    });
+    render(<ProfileScreen />);
+    const selected = await screen.findByRole('radio', { name: 'Intermediate' });
+    expect(selected.getAttribute('aria-selected')).toBe('true');
+
+    const beginner = screen.getByRole('radio', { name: 'Beginner' });
+    expect(beginner.getAttribute('aria-selected')).toBe('false');
+  });
 });

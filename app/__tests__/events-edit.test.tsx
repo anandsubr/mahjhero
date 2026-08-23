@@ -266,6 +266,30 @@ describe('a series occurrence', () => {
     expect(screen.getByText('Every Thursday')).toBeTruthy();
   });
 
+  // This is the control that decides whether a save touches one night or
+  // silently rewrites every future week of a recurring series, so a screen
+  // reader that cannot tell which one is currently chosen is not a cosmetic
+  // gap. Guards against `accessibilityState={{ selected }}` creeping back
+  // in: react-native-web's createDOMProps has no handling for
+  // `accessibilityState` at all (components/Toggle.tsx's docstring has the
+  // full account), so that prop rendered `role="button"` with no state at
+  // all. Both states are pinned against their literal strings, not
+  // `not.toBe('true')`, since a missing attribute would also satisfy that.
+  it('marks the default "This game" scope as selected, and flips aria-selected when "The whole series" is chosen', async () => {
+    render(<EditEventScreen />);
+    await screen.findByText('The whole series');
+
+    const thisGame = screen.getByRole('button', { name: 'This game only' });
+    const wholeSeries = screen.getByRole('button', { name: 'The whole series' });
+    expect(thisGame.getAttribute('aria-selected')).toBe('true');
+    expect(wholeSeries.getAttribute('aria-selected')).toBe('false');
+
+    fireEvent.click(wholeSeries);
+
+    expect(thisGame.getAttribute('aria-selected')).toBe('false');
+    expect(wholeSeries.getAttribute('aria-selected')).toBe('true');
+  });
+
   // Fix pass 1's regression test (Task 15's review): an occurrence whose
   // title/venue/notes/start time are all overridden, so they differ from
   // the series' own values in every field. Switching to "The whole series"

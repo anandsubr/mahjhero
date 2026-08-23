@@ -464,3 +464,52 @@ describe('venue is required', () => {
     expect(createEventSeries).not.toHaveBeenCalled();
   });
 });
+
+// Guards against `accessibilityState={{ selected }}` creeping back into the
+// duration/table-count/repeat chips: react-native-web's createDOMProps has
+// no handling for `accessibilityState` at all (components/Toggle.tsx's
+// docstring has the full account), so that prop renders `role="button"` with
+// no state at all -- a host could not tell which duration, table count, or
+// repeat rhythm was chosen. Both states are pinned against their literal
+// strings, not `not.toBe('true')`, since a missing attribute would also
+// satisfy that.
+describe('the duration/table-count/repeat chips reach the DOM with aria-selected', () => {
+  it('marks the default chips as selected and their siblings as not', async () => {
+    render(<NewEventScreen />);
+    await screen.findByText('Add a game');
+
+    const selectedDuration = screen.getByRole('button', { name: '3 hours' });
+    expect(selectedDuration.getAttribute('aria-selected')).toBe('true');
+    expect(
+      screen.getByRole('button', { name: '2 hours' }).getAttribute('aria-selected'),
+    ).toBe('false');
+
+    expect(
+      screen.getByRole('button', { name: '1 table' }).getAttribute('aria-selected'),
+    ).toBe('true');
+    expect(
+      screen.getByRole('button', { name: '2 tables' }).getAttribute('aria-selected'),
+    ).toBe('false');
+
+    expect(
+      screen.getByRole('button', { name: 'Just once' }).getAttribute('aria-selected'),
+    ).toBe('true');
+    expect(
+      screen.getByRole('button', { name: 'Every week' }).getAttribute('aria-selected'),
+    ).toBe('false');
+  });
+
+  it('flips aria-selected to the newly chosen duration chip', async () => {
+    render(<NewEventScreen />);
+    await screen.findByText('Add a game');
+
+    fireEvent.click(screen.getByRole('button', { name: '2 hours' }));
+
+    expect(
+      screen.getByRole('button', { name: '2 hours' }).getAttribute('aria-selected'),
+    ).toBe('true');
+    expect(
+      screen.getByRole('button', { name: '3 hours' }).getAttribute('aria-selected'),
+    ).toBe('false');
+  });
+});

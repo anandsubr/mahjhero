@@ -49,4 +49,20 @@ describe('notifications screen', () => {
     const options = screen.getAllByText(/Push and email|Push only|Email only/);
     expect(options[0].textContent).toBe('Push and email');
   });
+
+  // Guards against `accessibilityState={{ selected }}` creeping back in:
+  // react-native-web's createDOMProps has no handling for
+  // `accessibilityState` at all (components/Toggle.tsx's docstring has the
+  // full account), so that prop renders `role="radio"` with no state at all
+  // -- a screen reader could not tell the chosen channel from the others.
+  // Both states are pinned against their literal strings, not
+  // `not.toBe('true')`, since a missing attribute would also satisfy that.
+  it('marks the selected channel with aria-selected, and the others as not selected', async () => {
+    render(<NotificationSettings />);
+    const selected = await screen.findByRole('radio', { name: 'Push and email' });
+    expect(selected.getAttribute('aria-selected')).toBe('true');
+
+    const pushOnly = screen.getByRole('radio', { name: 'Push only' });
+    expect(pushOnly.getAttribute('aria-selected')).toBe('false');
+  });
 });

@@ -168,7 +168,17 @@ export default function NotificationSettings() {
               style={[styles.channelOption, selected ? styles.channelOptionSelected : null]}
               onPress={() => change({ notify_channel: channel })}
               accessibilityRole="radio"
-              accessibilityState={{ selected }}
+              // Flat `aria-selected`, not `accessibilityState={{ selected }}`
+              // (which this used to send): react-native-web's createDOMProps
+              // has no handling for `accessibilityState` at all, so every
+              // channel row rendered `role="radio"` with no state a screen
+              // reader could read. See components/Toggle.tsx's docstring for
+              // the full account; React Native's own Pressable resolves
+              // `selected: ariaSelected ?? accessibilityState?.selected`, so
+              // this one prop still reaches the native accessibility tree
+              // too. app/__tests__/notifications.test.tsx asserts the
+              // rendered attribute.
+              aria-selected={selected}
             >
               <Text style={styles.channelOptionText}>{CHANNEL_LABEL[channel]}</Text>
               <View style={styles.radioOuter}>

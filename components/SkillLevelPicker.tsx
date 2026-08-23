@@ -31,7 +31,15 @@ export default function SkillLevelPicker({ value, onChange }: SkillLevelPickerPr
             key={level.value}
             onPress={() => onChange(level.value)}
             accessibilityRole="radio"
-            accessibilityState={{ selected }}
+            // Flat `aria-selected`, not `accessibilityState={{ selected }}`
+            // (which this used to send) -- react-native-web's createDOMProps
+            // has no handling for `accessibilityState` at all, so every tile
+            // rendered `role="radio"` with no state a screen reader could
+            // read. See components/Toggle.tsx's docstring for the full
+            // account; React Native's own Pressable resolves `selected:
+            // ariaSelected ?? accessibilityState?.selected`, so this one prop
+            // still reaches the native accessibility tree too.
+            aria-selected={selected}
             accessibilityLabel={level.label}
             style={[styles.tile, selected ? styles.tileSelected : null]}
           >
