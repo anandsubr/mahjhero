@@ -5288,6 +5288,37 @@ export async function placeBooking(
   }
 }
 
+/**
+ * The open offer for a game, if the caller's own group holds one.
+ *
+ * A plain select, not an RPC: `promotion_offers`' policy is
+ * `is_booking_group_member(group_id)`, so RLS already limits this to offers
+ * made to a group the caller is actually in. The event screen and "Your
+ * games" both need it — `my_upcoming_bookings` carries the offer for the
+ * latter, and this is how the former gets it.
+ */
+export async function fetchOpenOffer(
+  eventId: string,
+): Promise<PromotionOffer | null> {
+  try {
+    const { data, error } = await supabase
+      .from('promotion_offers')
+      .select('id, group_id, offered_seat_count, expires_at')
+      .eq('event_id', eventId)
+      .is('responded_at', null)
+      .maybeSingle();
+
+    if (error) {
+      console.error('fetchOpenOffer failed', error);
+      return null;
+    }
+    return (data as PromotionOffer | null) ?? null;
+  } catch (cause) {
+    console.error('fetchOpenOffer failed', cause);
+    return null;
+  }
+}
+
 export async function acceptPromotionOffer(
   offerId: string,
 ): Promise<{ error: string | null }> {
@@ -6294,7 +6325,7 @@ const [pendingTier, setPendingTier] = useState<
 >(null);
 ```
 
-2. In the existing `load()`, add the seating fetch alongside the tables fetch — and set `seatingFailed` from a null result, never render null as empty:
+2. In the existing `load()`, add the seating fetch **and the offer fetch** alongside the tables fetch — and set `seatingFailed` from a null result, never render null as empty. `fetchOpenOffer(eventId)` returns the caller's own group's open offer or null; without it the offer banner is plumbing that can never render, which is what Task 10 shipped before this was noticed:
 
 ```tsx
 const rows = await fetchEventSeating(eventId);
