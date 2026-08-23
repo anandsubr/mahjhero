@@ -6419,6 +6419,8 @@ a control that errors when pressed."
 
 **Choosing "Any table" hides the split toggle.** Nobody in an any-table group is placed, so there is nothing to split — leaving the toggle visible would be offering a choice that changes nothing.
 
+**A member who already holds a seat can still bring a friend.** The sheet omits the non-removable "You" chip in that case and commits just the friends — `commit_booking`'s only caller check is `is_club_member`, so the caller need not be among the players. Gating the whole control on "you have no seat" removes the commonest case of the feature (*"I'm in, and Jane wants to come too"*) with no explanation, which is worse than the refusal it avoids.
+
 **Only club members can be added.** The picker lists the roster minus anybody already holding a live booking for this game; the database refuses both cases anyway, and the picker not offering them is what stops the member meeting a refusal they could not have predicted.
 
 - [ ] **Step 1: Write the failing test**
@@ -6597,7 +6599,17 @@ export default function BringSomeoneSheet({
   onCommit,
   onClose,
 }: Props) {
-  const [players, setPlayers] = useState<string[]>([youId]);
+  // Seeded WITHOUT you when you already hold a seat: a member who is
+  // coming and wants to add a friend is the commonest "bring someone"
+  // case, and commit_booking does not require the caller to be among the
+  // players (its only caller check is is_club_member). Seeding [youId]
+  // unconditionally would put you in every group and guarantee an
+  // `already booked` refusal, which an earlier draft "solved" by hiding
+  // the control — removing the capability instead of fixing the shape.
+  const alreadySeated = booked.includes(youId);
+  const [players, setPlayers] = useState<string[]>(
+    alreadySeated ? [] : [youId],
+  );
   const [tableId, setTableId] = useState<string | null>(initialTableId);
   const [allowSplit, setAllowSplit] = useState(true);
   const [plan, setPlan] = useState<BookingOutcome | null>(null);
@@ -6667,9 +6679,11 @@ export default function BringSomeoneSheet({
       <Text style={styles.heading}>Who's coming?</Text>
 
       <View style={styles.people}>
-        <View style={[styles.person, styles.personOn]}>
-          <Text style={styles.personTextOn}>You</Text>
-        </View>
+        {alreadySeated ? null : (
+          <View style={[styles.person, styles.personOn]}>
+            <Text style={styles.personTextOn}>You</Text>
+          </View>
+        )}
         {available.map((member) => {
           const on = players.includes(member.profile_id);
           return (
