@@ -4959,6 +4959,11 @@ const BOOKING_REFUSALS: { code: string; contains: string; message: string }[] = 
     message: 'That table is no longer part of this game.',
   },
   {
+    code: '42501',
+    contains: 'no such event',
+    message: 'This game is no longer listed.',
+  },
+  {
     code: '23514',
     contains: 'offer expired',
     message: "That offer has expired — you're still on the waitlist.",
@@ -7662,6 +7667,7 @@ The complete refusal vocabulary. The left column is what the database raises; th
 | `duplicate player` | 23514 | — | Unreachable from the UI — the picker cannot select twice. Falls back to the generic message deliberately. |
 | `table full` | 23514 | — | "Someone just took the last seat at that table." |
 | `no such table` | 23514 | — | "That table is no longer part of this game." — a host removed it while the member had the screen open |
+| `no such event` | 42501 | — | "This game is no longer listed." Raised by `assert_event_bookable` for an event id that resolves to nothing. Unmapped, it would surface as `GENERIC_ERROR` — which claims the server was unreachable — and the constraint above forbids exactly that |
 | `offer expired` | 23514 | — | "That offer has expired — you're still on the waitlist." |
 | `booking already closed` | 23514 | — | "That seat has already been given up." |
 | `table does not need a fourth` | 23514 | — | "That table needs more than one more player." |
