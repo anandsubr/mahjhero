@@ -662,6 +662,15 @@ export default function EventScreen() {
                     exactly that window", per that migration's own comment.
                     `canBook` already carries the "published and not yet
                     started" half of that rule.
+
+                    `table.capacity >= 2` mirrors `needsAFourth`'s own
+                    `capacity < 2` guard (and need_a_fourth_stage's identical
+                    `when t.capacity < 2 then null`), which the expression
+                    below would otherwise drop: on a capacity-1 table with
+                    zero confirmed, `0 === 1 - 1` is true even though such a
+                    table can never need a fourth. Not delegated to
+                    `needsAFourth` itself, since that function also applies
+                    the 48-hour window this gate deliberately skips.
                   */}
                   <HostSeating
                     occupants={confirmedAtTable}
@@ -669,7 +678,11 @@ export default function EventScreen() {
                     tables={tables}
                     table={table}
                     busy={busy}
-                    canCallForAFourth={confirmedHere === table.capacity - 1 && canBook}
+                    canCallForAFourth={
+                      table.capacity >= 2 &&
+                      confirmedHere === table.capacity - 1 &&
+                      canBook
+                    }
                     onPlace={hostPlace}
                     onRemove={hostRemove}
                     onCallForAFourth={hostCallForAFourth}

@@ -509,7 +509,9 @@ describe('organizer view', () => {
         { ...SEATED, booking_id: 'booking-4', profile_id: 'p4', display_name: 'Lee C.' },
       ]);
       render(<EventScreen />);
-      fireEvent.click(await screen.findByText('Call for a 4th now'));
+      fireEvent.click(
+        await screen.findByLabelText('Call for a fourth at Table 1'),
+      );
       await vi.waitFor(() =>
         expect(callForAFourth).toHaveBeenCalledWith('table-1'),
       );
@@ -520,7 +522,9 @@ describe('organizer view', () => {
       fetchEventSeating.mockResolvedValue([SEATED]);
       render(<EventScreen />);
       await screen.findByText('Thursday Mahjong');
-      expect(screen.queryByText('Call for a 4th now')).toBeNull();
+      expect(
+        screen.queryByLabelText('Call for a fourth at Table 1'),
+      ).toBeNull();
     });
 
     // The occupancy count alone is not the whole gate: a table that is one
@@ -540,7 +544,28 @@ describe('organizer view', () => {
       ]);
       render(<EventScreen />);
       await screen.findByText('Thursday Mahjong');
-      expect(screen.queryByText('Call for a 4th now')).toBeNull();
+      expect(
+        screen.queryByLabelText('Call for a fourth at Table 1'),
+      ).toBeNull();
+    });
+
+    // `needsAFourth` (lib/bookings.ts) and need_a_fourth_stage
+    // (20260825050000_need_a_fourth.sql) both open with
+    // `if (capacity < 2) return false` / `when t.capacity < 2 then null` --
+    // a table that can only ever hold one player can never "need a fourth".
+    // The screen's own canCallForAFourth expression must carry the same
+    // guard: without it, a capacity-1 table with zero confirmed occupants
+    // satisfies `0 === capacity - 1` and would offer a control that
+    // call_for_a_fourth's own 23514 check ("table does not need a fourth")
+    // can only refuse.
+    it('hides "Call for a 4th now" on a capacity-1 table with nobody booked', async () => {
+      fetchEventTables.mockResolvedValue([{ ...TABLE_1, capacity: 1 }]);
+      fetchEventSeating.mockResolvedValue([]);
+      render(<EventScreen />);
+      await screen.findByText('Thursday Mahjong');
+      expect(
+        screen.queryByLabelText('Call for a fourth at Table 1'),
+      ).toBeNull();
     });
   });
 
