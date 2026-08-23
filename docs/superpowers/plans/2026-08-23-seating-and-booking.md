@@ -58,6 +58,8 @@ Every task's requirements implicitly include these.
 | `supabase/migrations/20260825020000_booking_mutations.sql` | `assert_event_bookable`, `assert_players_bookable`, `plan_seating`, `propose_booking`, `commit_booking` |
 | `supabase/migrations/20260825030000_booking_cancellation.sql` | `cancel_booking`, `decline_booking`, `cancel_booking_group`, `place_booking`, `close_group_if_empty` |
 | `supabase/migrations/20260825040000_event_disruption.sql` | *(replaces)* `cancel_event` and `remove_event_table`; `add_event_table` gains a promotion call |
+| `supabase/migrations/20260825041000_scope_booking_group_preferred_fk.sql` | *(added during Task 5)* scopes the composite FK's `set null` to `preferred_table_id` so it cannot null the NOT NULL `event_id` |
+| `supabase/migrations/20260825042000_series_shortening_tells_the_booked.sql` | *(added during Task 5)* an `event_cancelled` outbox row per member whose booked week a series shortening deletes |
 | `supabase/migrations/20260825050000_need_a_fourth.sql` | `tier_matches`, `tables_needing_a_fourth`, `announce_need_a_fourth`, `call_for_a_fourth` |
 | `supabase/migrations/20260825060000_schedule_booking_jobs.sql` | The two `cron.schedule` calls |
 | `supabase/tests/database/fixtures/bookings_schema.test.sql` | Tables, constraints, RLS, tenancy, capacity helpers |
@@ -3412,6 +3414,8 @@ seat must not outlive the group it was held for."
 **`cancel_event` currently sets a status and stops.** It now voids every confirmed and waitlisted booking, expires every outstanding offer, cancels the groups, and writes one `event_cancelled` row per affected member. Nothing un-cancels — matching plan 3, where a cancelled occurrence stays cancelled.
 
 **`add_event_table` gains one line.** More capacity means a waiting group may now fit, and the whole design says promotion happens in the transaction that creates the room.
+
+**The `add_event_table` body quoted below is STALE — do not write it verbatim.** It reproduces plan 3's original from `20260823010000`, but `20260823020000` later replaced that function with a version carrying a cancelled-event guard and a count-based table cap. `create or replace` with the body below would silently revert both and regress two existing assertions. Read the shipped function first and add only the `promote_waitlist` call. Task 5's implementer caught this; the same caution applies anywhere this plan quotes a plan-3 function.
 
 - [ ] **Step 1: Write the failing test**
 
