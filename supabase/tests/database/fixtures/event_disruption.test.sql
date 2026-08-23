@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(11);
+select plan(16);
 
 insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-000000000001', 'alice@example.com'),
@@ -200,9 +200,17 @@ select is(
     where id = 'b00c0000-0000-0000-0000-000000000001'),
   null,
   'and becomes an "any table" booking for the host to place');
+-- A scalar subquery against a nonexistent row also reads NULL, so the
+-- assertion above cannot by itself tell "nulled" from "deleted". Guard it.
+select is(
+  (select count(*)::int from public.bookings
+    where id = 'b00c0000-0000-0000-0000-000000000001'),
+  1,
+  'and the booking row itself still exists, merely unplaced');
 select is(
   (select count(*)::int from public.notification_outbox
     where kind = 'unseated'
+      and event_id = 'e1e1e1e1-0000-0000-0000-000000000001'
       and recipient_id = 'cccccccc-0000-0000-0000-000000000003'),
   1,
   'and is told they need seating');
@@ -231,6 +239,22 @@ select throws_ok(
 -- ---------------------------------------------------------------------
 -- Cancelling the game voids everything.
 -- ---------------------------------------------------------------------
+-- An offer outstanding on Ivy's group when the host cancels: it must be
+-- expired, not left dangling forever with nothing left to answer. Direct
+-- insert, so `reset role` first -- authenticated has no DML grant on
+-- promotion_offers, only the security-definer functions do.
+reset role;
+insert into public.promotion_offers
+  (id, group_id, event_id, offered_seat_count, expires_at) values
+  ('0ffe0000-0000-0000-0000-000000000001',
+   '9909aaaa-0000-0000-0000-000000000005',
+   'e1e1e1e1-0000-0000-0000-000000000001',
+   1, now() + interval '2 hours');
+
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "aaaaaaaa-0000-0000-0000-000000000001", "role": "authenticated"}';
+
 select lives_ok(
   $$select public.cancel_event('e1e1e1e1-0000-0000-0000-000000000001')$$,
   'an organizer cancels the game');
@@ -242,11 +266,41 @@ select is(
       and status in ('confirmed', 'waitlisted')),
   0,
   'no booking survives a cancelled game');
+-- The assertion above only proves the rows are no longer confirmed or
+-- waitlisted -- deleting them entirely would pass it just as well. The
+-- rule is VOID, never destroy: check the rows are still there, explicitly
+-- cancelled.
+select is(
+  (select count(*)::int from public.bookings
+    where event_id = 'e1e1e1e1-0000-0000-0000-000000000001'
+      and status = 'cancelled'),
+  7,
+  'and every one of those bookings is a cancelled record, not a gone one');
 select is(
   (select count(distinct recipient_id)::int from public.notification_outbox
-    where kind = 'event_cancelled'),
+    where kind = 'event_cancelled'
+      and event_id = 'e1e1e1e1-0000-0000-0000-000000000001'),
   7,
   'and everybody who held or awaited a seat is told once');
+-- "distinct" collapses duplicates -- it cannot tell "told once" from
+-- "told several times, to the same seven people". Count the rows too.
+select is(
+  (select count(*)::int from public.notification_outbox
+    where kind = 'event_cancelled'
+      and event_id = 'e1e1e1e1-0000-0000-0000-000000000001'),
+  7,
+  'and not one of them hears it twice');
+select is(
+  (select outcome::text from public.promotion_offers
+    where id = '0ffe0000-0000-0000-0000-000000000001'),
+  'expired',
+  'an outstanding offer is expired along with the game, not left hanging');
+select is(
+  (select count(*)::int from public.booking_groups
+    where event_id = 'e1e1e1e1-0000-0000-0000-000000000001'
+      and status = 'cancelled'),
+  5,
+  'and every booking group carries the same cancelled status');
 
 select * from finish();
 rollback;
