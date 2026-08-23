@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(32);
+select plan(41);
 
 insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-000000000001', 'alice@example.com'),
@@ -528,6 +528,169 @@ select throws_ok(
   'a null caller cannot accept an offer at all');
 
 reset role;
+
+-- ---------------------------------------------------------------------
+-- CRITICAL FIX (20260825090000): an unanswered offer used to regenerate
+-- forever and starve the group waiting behind it.
+--
+-- A second, isolated event: capacity 2, one seat already taken. A pair
+-- (allow_split, wants 2) waitlists and is offered the single free seat
+-- (too big to fit whole). A solo member waitlists behind them. Before the
+-- fix: the moment that offer lapsed, promote_waitlist reached the pair
+-- again in the SAME pass, still could not seat it whole, and minted a
+-- BRAND NEW offer for the same one seat -- which immediately re-held it,
+-- so the walk's `exit when free <= 0` stopped before ever reaching the
+-- solo member. Identical on every subsequent pass, forever, because
+-- nothing about the situation ever changed. After the fix: a group whose
+-- own offer has just lapsed is skipped for a NEW offer (place kept,
+-- waitlisted_at untouched) and the walk continues to the solo member, who
+-- fits in the seat the lapsed offer released.
+-- ---------------------------------------------------------------------
+insert into public.events
+  (id, club_id, title, venue_id, starts_at, ends_at, created_by) values
+  ('e1e1e1e1-0000-0000-0000-000000000002',
+   'c1c1c1c1-0000-0000-0000-000000000001', 'Wednesday game',
+   '11111111-0000-0000-0000-000000000001',
+   now() + interval '7 days', now() + interval '7 days 3 hours',
+   'aaaaaaaa-0000-0000-0000-000000000001');
+
+insert into public.event_tables
+  (id, event_id, club_id, label, skill_tier, capacity, position) values
+  ('7ab1e000-0000-0000-0000-000000000003',
+   'e1e1e1e1-0000-0000-0000-000000000002',
+   'c1c1c1c1-0000-0000-0000-000000000001', 'Table 1', 'mixed', 2, 1);
+
+-- Alice holds the one taken seat.
+insert into public.booking_groups
+  (id, event_id, club_id, created_by, preferred_table_id) values
+  ('9909aaaa-0000-0000-0000-000000000007',
+   'e1e1e1e1-0000-0000-0000-000000000002',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   'aaaaaaaa-0000-0000-0000-000000000001',
+   '7ab1e000-0000-0000-0000-000000000003');
+
+insert into public.bookings
+  (group_id, event_id, club_id, event_table_id, profile_id, booked_by) values
+  ('9909aaaa-0000-0000-0000-000000000007',
+   'e1e1e1e1-0000-0000-0000-000000000002',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   '7ab1e000-0000-0000-0000-000000000003',
+   'aaaaaaaa-0000-0000-0000-000000000001',
+   'aaaaaaaa-0000-0000-0000-000000000001');
+
+-- Bob and Carol want two seats together, any table, split allowed so a
+-- partial offer is possible. They wait first.
+insert into public.booking_groups
+  (id, event_id, club_id, created_by, allow_split, status, waitlisted_at,
+   created_at) values
+  ('9909aaaa-0000-0000-0000-000000000008',
+   'e1e1e1e1-0000-0000-0000-000000000002',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   'bbbbbbbb-0000-0000-0000-000000000002', true, 'waitlisted',
+   now() - interval '20 minutes', now() - interval '20 minutes');
+
+insert into public.bookings
+  (group_id, event_id, club_id, profile_id, booked_by, status) values
+  ('9909aaaa-0000-0000-0000-000000000008',
+   'e1e1e1e1-0000-0000-0000-000000000002',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   'bbbbbbbb-0000-0000-0000-000000000002',
+   'bbbbbbbb-0000-0000-0000-000000000002', 'waitlisted'),
+  ('9909aaaa-0000-0000-0000-000000000008',
+   'e1e1e1e1-0000-0000-0000-000000000002',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   'cccccccc-0000-0000-0000-000000000003',
+   'bbbbbbbb-0000-0000-0000-000000000002', 'waitlisted');
+
+-- Fred waits alone, behind the pair.
+insert into public.booking_groups
+  (id, event_id, club_id, created_by, status, waitlisted_at, created_at)
+  values
+  ('9909aaaa-0000-0000-0000-000000000009',
+   'e1e1e1e1-0000-0000-0000-000000000002',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   'ffffffff-0000-0000-0000-000000000006', 'waitlisted',
+   now() - interval '10 minutes', now() - interval '10 minutes');
+
+insert into public.bookings
+  (group_id, event_id, club_id, profile_id, booked_by, status) values
+  ('9909aaaa-0000-0000-0000-000000000009',
+   'e1e1e1e1-0000-0000-0000-000000000002',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   'ffffffff-0000-0000-0000-000000000006',
+   'ffffffff-0000-0000-0000-000000000006', 'waitlisted');
+
+select public.promote_waitlist('e1e1e1e1-0000-0000-0000-000000000002');
+
+select is(
+  (select offered_seat_count from public.promotion_offers
+    where group_id = '9909aaaa-0000-0000-0000-000000000008'),
+  1,
+  'the pair is offered the one free seat, since it does not fit whole');
+select is(
+  (select status::text from public.bookings
+    where profile_id = 'ffffffff-0000-0000-0000-000000000006'
+      and group_id = '9909aaaa-0000-0000-0000-000000000009'),
+  'waitlisted',
+  'the solo member behind it is not reached while the offer holds the only free seat');
+
+create temporary table _pair_waitlisted_at_before as
+  select waitlisted_at from public.booking_groups
+  where id = '9909aaaa-0000-0000-0000-000000000008';
+
+-- Resolve the pair's offer as expired, then run the walk again in the
+-- same statement sequence sweep_promotion_offers itself uses (see its
+-- body in 20260825010000: resolve, THEN promote_waitlist) -- this proves
+-- the fix in promote_waitlist directly, without depending on which other
+-- offers happen to be outstanding elsewhere in this fixture's shared
+-- transaction.
+update public.promotion_offers
+   set responded_at = now(), outcome = 'expired'
+ where group_id = '9909aaaa-0000-0000-0000-000000000008'
+   and responded_at is null;
+
+select public.promote_waitlist('e1e1e1e1-0000-0000-0000-000000000002');
+
+select is(
+  (select status::text from public.bookings
+    where profile_id = 'ffffffff-0000-0000-0000-000000000006'
+      and group_id = '9909aaaa-0000-0000-0000-000000000009'),
+  'confirmed',
+  'the solo member behind the lapsed offer is finally seated');
+-- Fred's group named no preferred table ("any table"), so seat_assignments'
+-- `preferred is null` branch seats him unplaced — the "any table" state
+-- the schema already has (see 20260825040000's header comment) — not
+-- assigned to the table that happened to have the free seat.
+select ok(
+  exists (
+    select 1 from public.bookings
+    where profile_id = 'ffffffff-0000-0000-0000-000000000006'
+      and group_id = '9909aaaa-0000-0000-0000-000000000009'
+      and status = 'confirmed' and event_table_id is null),
+  'seated unplaced, exactly as an "any table" group is confirmed');
+select is(
+  (select status::text from public.booking_groups
+    where id = '9909aaaa-0000-0000-0000-000000000008'),
+  'waitlisted',
+  'the pair is still waiting -- it was skipped, not seated');
+select is(
+  (select waitlisted_at from public.booking_groups
+    where id = '9909aaaa-0000-0000-0000-000000000008'),
+  (select waitlisted_at from _pair_waitlisted_at_before),
+  'and keeps its ORIGINAL waitlisted_at -- not demoted for missing a notification the app cannot yet send');
+select is(
+  (select count(*)::int from public.promotion_offers
+    where group_id = '9909aaaa-0000-0000-0000-000000000008'),
+  1,
+  'no second offer was minted for the pair in the same pass');
+select is(
+  (select count(*)::int from public.promotion_offers
+    where group_id = '9909aaaa-0000-0000-0000-000000000008'
+      and responded_at is null),
+  0,
+  'and none is left outstanding for it to (not) answer');
+select is(public.event_free_seats('e1e1e1e1-0000-0000-0000-000000000002'), 0,
+  'the seat the solo member took is no longer free');
 
 select * from finish();
 rollback;

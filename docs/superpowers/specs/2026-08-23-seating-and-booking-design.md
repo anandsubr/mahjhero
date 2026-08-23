@@ -553,7 +553,15 @@ and a removed table unseating rather than deleting.
    who knows two regulars always drop out cannot pre-empt it. If this bites, the fix
    is an explicit per-event overbooking allowance, not a quiet exception.
 4. **A held offer keeps a seat empty for up to two hours** while a club plays a player
-   short. This is the parent spec's deliberate trade, and the expiry is the cap on it.
+   short. This is the parent spec's deliberate trade. The expiry caps how long ANY ONE
+   offer holds its seats, but it is not a cap on the group's place in line: a group
+   whose offer lapses unanswered is treated exactly like a group that does not fit —
+   it keeps its `waitlisted_at` and is not offered that same partial fit again, but it
+   remains eligible to be seated outright the moment enough seats are free at once.
+   (An earlier version of `promote_waitlist` minted a fresh offer for the same seats
+   the instant the old one lapsed, which re-held them and could starve every smaller
+   group waiting behind it indefinitely — fixed in 20260825090000; see that
+   migration's header for the full account.)
 5. **Group placement order is booker-first**, then join order. Nobody has asked for
    the booker to choose who gets the partial seats; if they do, it is an argument to
    `accept_promotion_offer`, not a redesign.
