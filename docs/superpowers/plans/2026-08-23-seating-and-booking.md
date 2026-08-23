@@ -21,7 +21,7 @@ Every task's requirements implicitly include these.
 - **Every new function gets `revoke execute on function … from public, anon` before its `grant`.** A null `proacl` means EXECUTE to PUBLIC.
 - **Every `security definer` function pins `set search_path = public`** and checks membership or organizer role against the row's **own** club as its first statement, using plan 3's shared `public.assert_club_organizer(uuid)` or `public.is_club_member(uuid)`. RLS does not protect a definer function.
 - **Every seat-changing function takes `perform 1 from public.events where id = <event> for update;` before it reads any count.** This is the entire concurrency design. A function that computes free seats without holding that lock is wrong even when its tests pass.
-- **Never gate authorization on `<>` against `auth.uid()`.** A null `auth.uid()` makes `x <> auth.uid()` evaluate to NULL, the guard does not fire, and the function proceeds — a check that fails *open*. Bind `caller uuid := auth.uid()`, refuse a null caller explicitly, and compare with `=` or `is distinct from`. `20260822044023_accept_club_invite.sql` is the codebase's existing shape for this. Task 2's review caught two functions doing it the wrong way.
+- **Bind `caller uuid := auth.uid()` and refuse a null caller explicitly, as the FIRST thing every guard does.** Do not compare against `auth.uid()` inline in any form. A null `auth.uid()` makes `x = auth.uid()` and `x <> auth.uid()` both evaluate to NULL rather than false; `NULL or NULL or false` is NULL; `not NULL` is NULL; and plpgsql treats a NULL `if` condition as not-true, so the guard silently falls through and the function proceeds. **This defeats the `not (a = auth.uid() or b = auth.uid() or is_club_organizer(...))` shape too** — an earlier version of this constraint claimed that chain was null-safe, Task 4 shipped three functions on that advice, and its review caught them. Verified in Postgres: `not (null::uuid = 'a'::uuid or null::uuid = 'b'::uuid or false)` is NULL and the `if` body does not run. `20260822044023_accept_club_invite.sql` is the codebase's existing correct shape. A `where profile_id <> auth.uid()` used as a notification *filter* is unaffected — nobody is authorized by it.
 - **`lib/` functions never reject.** They catch internally, `console.error('<fn> failed', cause)` the original, and return `GENERIC_ERROR` from `lib/constants.ts` through an `{ error: string | null }` channel. Callers must consume that channel.
 - **A refusal from the database is never reported as a connection failure.** Plan 3 shipped that bug and fixed it at merge: a `raise exception` with a known errcode maps to the written sentence in the "Error handling" table below; only an unreachable server yields `GENERIC_ERROR`.
 - **Every write uses `.select(...)` and treats zero rows as failure.** PostgREST answers 204 with `error: null` when an update matches nothing, which is what an RLS denial looks like.
@@ -3070,16 +3070,28 @@ security definer
 set search_path = public
 as $$
 declare
-  bk record;
-  ev record;
+  bk     record;
+  ev     record;
+  caller uuid;
 begin
+  -- Bound and null-checked before anything else. `not (a = auth.uid() or
+  -- b = auth.uid() or is_club_organizer(...))` is NOT null-safe: with a
+  -- null uid the two comparisons are NULL, is_club_organizer is false,
+  -- `NULL or NULL or false` is NULL, `not NULL` is NULL, and plpgsql does
+  -- not run an `if` whose condition is NULL — so the guard falls through
+  -- and the caller cancels anybody's seat.
+  caller := auth.uid();
+  if caller is null then
+    raise exception 'not your booking' using errcode = '42501';
+  end if;
+
   select * into bk from public.bookings where id = target_booking;
   if bk.id is null then
     raise exception 'no such booking' using errcode = '42501';
   end if;
 
-  if not (bk.profile_id = auth.uid()
-          or bk.booked_by = auth.uid()
+  if not (bk.profile_id = caller
+          or bk.booked_by = caller
           or public.is_club_organizer(bk.club_id)) then
     raise exception 'not your booking' using errcode = '42501';
   end if;
@@ -3096,7 +3108,7 @@ begin
   perform 1 from public.events where id = bk.event_id for update;
 
   update public.bookings
-     set status = 'cancelled', cancelled_at = now(), cancelled_by = auth.uid()
+     set status = 'cancelled', cancelled_at = now(), cancelled_by = caller
    where id = target_booking;
 
   -- Somebody else ended this person's booking; they are owed the news.
@@ -3198,16 +3210,22 @@ security definer
 set search_path = public
 as $$
 declare
-  g  record;
-  ev record;
-  bk record;
+  g      record;
+  ev     record;
+  bk     record;
+  caller uuid;
 begin
+  caller := auth.uid();
+  if caller is null then
+    raise exception 'not your booking' using errcode = '42501';
+  end if;
+
   select * into g from public.booking_groups where id = target_group;
   if g.id is null then
     raise exception 'no such group' using errcode = '42501';
   end if;
 
-  if not (g.created_by = auth.uid() or public.is_club_organizer(g.club_id)) then
+  if not (g.created_by = caller or public.is_club_organizer(g.club_id)) then
     raise exception 'not your booking' using errcode = '42501';
   end if;
 
@@ -3224,7 +3242,7 @@ begin
   loop
     update public.bookings
        set status = 'cancelled', cancelled_at = now(),
-           cancelled_by = auth.uid()
+           cancelled_by = caller
      where id = bk.id;
 
     if bk.profile_id <> auth.uid() then
@@ -3263,16 +3281,22 @@ security definer
 set search_path = public
 as $$
 declare
-  bk       record;
-  ev       record;
-  tbl      record;
+  bk     record;
+  ev     record;
+  tbl    record;
+  caller uuid;
 begin
+  caller := auth.uid();
+  if caller is null then
+    raise exception 'not your booking' using errcode = '42501';
+  end if;
+
   select * into bk from public.bookings where id = target_booking;
   if bk.id is null then
     raise exception 'no such booking' using errcode = '42501';
   end if;
 
-  if not (bk.profile_id = auth.uid()
+  if not (bk.profile_id = caller
           or public.is_club_organizer(bk.club_id)) then
     raise exception 'not your booking' using errcode = '42501';
   end if;
