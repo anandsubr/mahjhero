@@ -113,6 +113,17 @@ declare
   t     record;
   told  int;
 begin
+  -- Guards against a stage that is not 'wide' behaving as narrow *and*
+  -- minting its own distinct dedupe key -- a mistyped caller (Task 7's
+  -- cron job, or any future one) would silently duplicate the call rather
+  -- than fail. Unreachable today: this function is revoked from public
+  -- and anon, and its only two callers (announce_need_a_fourth,
+  -- call_for_a_fourth) both derive at_stage from need_a_fourth_stage,
+  -- which only ever returns 'tier' or 'wide'.
+  if at_stage not in ('tier', 'wide') then
+    raise exception 'unrecognized stage: %', at_stage using errcode = '23514';
+  end if;
+
   select tt.id, tt.event_id, tt.club_id, tt.label, tt.skill_tier
   into t
   from public.event_tables tt where tt.id = target_table;
