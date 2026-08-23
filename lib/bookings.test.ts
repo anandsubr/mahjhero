@@ -182,7 +182,7 @@ describe('commitBooking', () => {
       preferredTableId: 't1',
       allowSplit: true,
     });
-    expect(error).toBe('Someone in your group already has a seat at this game.');
+    expect(error).toBe('You or someone in your group already has a seat at this game.');
     expect(error).not.toBe(GENERIC_ERROR);
   });
 });

@@ -398,9 +398,14 @@ export default function EventScreen() {
       return seatsRemaining(t.capacity, confirmedHere) === 0;
     });
 
-  const myHoldsSeat = seating.some(
+  // This member's own live booking, if any — the thing a seat tap now needs
+  // to route on. `myHoldsSeat` below is just this narrowed to a boolean;
+  // kept as a separate name because most call sites only ever care whether
+  // one exists, not which table it's at or what status it's in.
+  const myBooking = seating.find(
     (o) => o.profile_id === me && (o.status === 'confirmed' || o.status === 'waitlisted'),
   );
+  const myHoldsSeat = myBooking !== undefined;
 
   // Confirmed but not placed at any table — "any table" bookings and the
   // outcome of an Unseat. Shared by HostSeating (a host can seat one of
@@ -458,15 +463,58 @@ export default function EventScreen() {
     await load();
   }
 
+  // Moves an already-confirmed booking onto a different table via
+  // `place_booking` — the RPC that already permits a member to move their
+  // own booking, and already refuses a full table, a non-confirmed booking,
+  // and a started game. Mirrors `bookSeat`'s own shape (clear any pending
+  // warning, go busy, reload on success) but through `placeBooking` rather
+  // than `commitBooking`, and with no waitlist outcome to report: a move can
+  // only land you at a table, never on the waitlist, so any note left over
+  // from an earlier booking attempt is stale and cleared here.
+  async function moveSeat(bookingId: string, tableId: string) {
+    setPendingTier(null);
+    setBusy(true);
+    setError(null);
+    const { error: moveError } = await placeBooking(bookingId, tableId);
+    setBusy(false);
+    if (moveError) {
+      setError(moveError);
+      return;
+    }
+    setWaitlistNote(null);
+    await load();
+  }
+
+  // The single place a seat tap's outcome is decided: a fresh booking via
+  // `commitBooking` when this member holds nothing yet, or — when they
+  // already hold a CONFIRMED booking somewhere (a specific table, or "any
+  // table" with a null event_table_id) — a move of that same booking via
+  // `placeBooking` instead. `onTakeSeat` below never offers a tap at all
+  // for a seat at the table the member already occupies, or for any seat
+  // when their booking is only waitlisted (`place_booking` refuses a
+  // non-confirmed booking), so by the time this runs the only two live
+  // cases are "book" and "move".
+  function commitSeat(tableId: string) {
+    if (myBooking && myBooking.status === 'confirmed') {
+      void moveSeat(myBooking.booking_id, tableId);
+      return;
+    }
+    void bookSeat(tableId);
+  }
+
   function takeSeat(table: EventTable) {
     const warning = tierWarning(table.skill_tier, mySkillLevel, table.label);
     // The soft warning, and the entire enforcement of skill tiers in this
-    // product. The database does not check; the host can move people.
+    // product. The database does not check; the host can move people. Applies
+    // equally to a move onto a mismatched table — `commitSeat` (called from
+    // here directly, and again from the confirm below) is what decides
+    // book-vs-move, so the warning gate does not need to know which one is
+    // coming.
     if (warning) {
       setPendingTier({ tableId: table.id, message: warning });
       return;
     }
-    void bookSeat(table.id);
+    commitSeat(table.id);
   }
 
   function joinWaitlist() {
@@ -613,8 +661,24 @@ export default function EventScreen() {
               occupants={tableOccupants}
               youId={me}
               // Omitted entirely — not a disabled control — for a cancelled
-              // or already-started game. See `canBook`'s own comment.
-              onTakeSeat={canBook ? () => takeSeat(table) : undefined}
+              // or already-started game (see `canBook`'s own comment), for
+              // every seat once this member's own booking is only
+              // waitlisted (`place_booking` refuses a non-confirmed
+              // booking, so there is nothing a tap here could do), and for
+              // this specific table once a confirmed booking is already
+              // seated at it — tapping a seat you already hold has nothing
+              // to do. Any other seat — a fresh booking, or a confirmed
+              // booking elsewhere (a different table, or "any table")
+              // wanting to move — still offers a tap; `takeSeat` (via
+              // `commitSeat`) is what decides book vs. move.
+              onTakeSeat={
+                canBook &&
+                (!myBooking ||
+                  (myBooking.status === 'confirmed' &&
+                    myBooking.event_table_id !== table.id))
+                  ? () => takeSeat(table)
+                  : undefined
+              }
               onBringSomeone={
                 canBringSomeone ? () => openBringSomeone(table.id) : undefined
               }
@@ -713,7 +777,7 @@ export default function EventScreen() {
               onPress={() => {
                 const tableId = pendingTier.tableId;
                 setPendingTier(null);
-                void bookSeat(tableId);
+                commitSeat(tableId);
               }}
               accessibilityLabel="Yes, book me"
             >

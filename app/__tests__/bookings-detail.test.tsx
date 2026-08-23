@@ -56,6 +56,7 @@ vi.mock('../../lib/events', async (importOriginal) => {
 });
 
 const commitBooking = vi.fn();
+const placeBooking = vi.fn();
 const cancelBooking = vi.fn();
 const fetchEventSeating = vi.fn();
 const fetchOpenOffer = vi.fn();
@@ -70,6 +71,7 @@ vi.mock('../../lib/bookings', async () => {
     ...actual,
     fetchEventSeating: (...a: unknown[]) => fetchEventSeating(...a),
     commitBooking: (...a: unknown[]) => commitBooking(...a),
+    placeBooking: (...a: unknown[]) => placeBooking(...a),
     cancelBooking: (...a: unknown[]) => cancelBooking(...a),
     fetchOpenOffer: (...a: unknown[]) => fetchOpenOffer(...a),
     acceptPromotionOffer: (...a: unknown[]) => acceptPromotionOffer(...a),
@@ -143,6 +145,8 @@ beforeEach(() => {
   fetchEventTables.mockResolvedValue([TABLE_1, TABLE_2]);
   fetchSeries.mockResolvedValue(null);
   commitBooking.mockReset();
+  placeBooking.mockReset();
+  placeBooking.mockResolvedValue({ error: null });
   cancelBooking.mockReset();
   fetchEventSeating.mockReset();
   fetchEventSeating.mockResolvedValue([]);
@@ -384,5 +388,136 @@ describe('the event screen, for a member', () => {
     ]);
     render(<EventScreen />);
     expect(await screen.findByLabelText('Bring someone')).toBeTruthy();
+  });
+});
+
+// The bug this fix pass exists for: tapping an empty seat while already
+// holding a live booking used to route through `commitBooking` regardless —
+// the exact RPC `assert_players_bookable` refuses with "already booked" for
+// a member who already has one. Every case below routes through
+// `placeBooking` (the RPC that already permits moving a member's own
+// booking) instead, or offers no tap at all where a move could not
+// possibly succeed.
+describe('moving a seat once already booked', () => {
+  const MY_SEAT_AT_T1 = {
+    booking_id: 'my-booking',
+    group_id: 'g-me',
+    profile_id: 'me',
+    display_name: 'Ada',
+    skill_level: 'beginner' as const,
+    event_table_id: 't1' as string | null,
+    status: 'confirmed' as const,
+    booked_by: 'me',
+    booked_by_name: 'Ada',
+    group_status: 'confirmed' as const,
+    waitlist_position: null as number | null,
+    created_at: '2026-01-01T00:00:00.000Z',
+  };
+
+  // Table 2 re-tiered to 'mixed' for the tests that are not themselves
+  // about the tier warning — TABLE_2's real fixture is 'advanced' and the
+  // member is a 'beginner' (MEMBER_ROLE), which would otherwise interpose
+  // the "Book anyway?" confirm these tests are not exercising.
+  const TABLE_2_MIXED = { ...TABLE_2, skill_tier: 'mixed' as const };
+
+  it('moves an existing booking, not a second commit, when tapping a seat at another table', async () => {
+    fetchEventTables.mockResolvedValue([TABLE_1, TABLE_2_MIXED]);
+    fetchEventSeating.mockResolvedValue([MY_SEAT_AT_T1]);
+    render(<EventScreen />);
+    const [seat] = await screen.findAllByLabelText('Take a seat at Table 2');
+    fireEvent.click(seat);
+    await waitFor(() =>
+      expect(placeBooking).toHaveBeenCalledWith('my-booking', 't2'),
+    );
+    expect(commitBooking).not.toHaveBeenCalled();
+  });
+
+  // A callback-only assertion would not prove what actually reached the
+  // DOM — SeatGrid's own `disabled` prop is what genuinely blocks a jsdom
+  // click, per its docstring, so this asserts the rendered `aria-disabled`
+  // the same way events-detail.test.tsx's cancelled-game test does.
+  it('offers no action on the seats at the table the member already occupies', async () => {
+    fetchEventTables.mockResolvedValue([TABLE_1, TABLE_2_MIXED]);
+    fetchEventSeating.mockResolvedValue([MY_SEAT_AT_T1]);
+    render(<EventScreen />);
+    await screen.findByText('Thursday Mahjong');
+    // Table 1: capacity 4, one seat (the member's own) filled -> three
+    // empty cells, all sharing this label.
+    const ownTableSeats = await screen.findAllByLabelText(
+      'Take a seat at Table 1',
+    );
+    expect(ownTableSeats.length).toBe(3);
+    for (const seat of ownTableSeats) {
+      expect(seat.getAttribute('aria-disabled')).toBe('true');
+    }
+    fireEvent.click(ownTableSeats[0]);
+    expect(placeBooking).not.toHaveBeenCalled();
+    expect(commitBooking).not.toHaveBeenCalled();
+
+    // Table 2 is a different table, so it stays tappable.
+    const otherTableSeats = await screen.findAllByLabelText(
+      'Take a seat at Table 2',
+    );
+    expect(otherTableSeats[0].getAttribute('aria-disabled')).not.toBe('true');
+  });
+
+  it('places an "any table" booking at the tapped table', async () => {
+    fetchEventTables.mockResolvedValue([TABLE_1, TABLE_2_MIXED]);
+    fetchEventSeating.mockResolvedValue([
+      { ...MY_SEAT_AT_T1, event_table_id: null },
+    ]);
+    render(<EventScreen />);
+    const [seat] = await screen.findAllByLabelText('Take a seat at Table 1');
+    fireEvent.click(seat);
+    await waitFor(() =>
+      expect(placeBooking).toHaveBeenCalledWith('my-booking', 't1'),
+    );
+    expect(commitBooking).not.toHaveBeenCalled();
+  });
+
+  // `place_booking` raises 'booking not confirmed' for a waitlisted one, so
+  // no seat anywhere should offer a tap at all.
+  it('offers a waitlisted member no tappable seat anywhere', async () => {
+    fetchEventTables.mockResolvedValue([TABLE_1, TABLE_2_MIXED]);
+    fetchEventSeating.mockResolvedValue([
+      { ...MY_SEAT_AT_T1, status: 'waitlisted' as const, event_table_id: null },
+    ]);
+    render(<EventScreen />);
+    await screen.findByText('Thursday Mahjong');
+    const seats = [
+      ...(await screen.findAllByLabelText('Take a seat at Table 1')),
+      ...(await screen.findAllByLabelText('Take a seat at Table 2')),
+    ];
+    expect(seats.length).toBeGreaterThan(0);
+    for (const seat of seats) {
+      expect(seat.getAttribute('aria-disabled')).toBe('true');
+    }
+    fireEvent.click(seats[0]);
+    expect(placeBooking).not.toHaveBeenCalled();
+    expect(commitBooking).not.toHaveBeenCalled();
+  });
+
+  // The tier warning applies just as much to a move as to a fresh booking —
+  // this reuses TABLE_2's real 'advanced' fixture against the 'beginner'
+  // member (MEMBER_ROLE), the same mismatch "asks first when the table is
+  // set up for another tier" above exercises for a fresh booking.
+  it('still warns before a move to a mismatched table, and moves only on confirm', async () => {
+    fetchEventTables.mockResolvedValue([TABLE_1, TABLE_2]);
+    fetchEventSeating.mockResolvedValue([MY_SEAT_AT_T1]);
+    render(<EventScreen />);
+    const [seat] = await screen.findAllByLabelText('Take a seat at Table 2');
+    fireEvent.click(seat);
+    expect(
+      await screen.findByText(
+        'Table 2 is set up for advanced players. Book anyway?',
+      ),
+    ).toBeTruthy();
+    expect(placeBooking).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByText('Yes, book me'));
+    await waitFor(() =>
+      expect(placeBooking).toHaveBeenCalledWith('my-booking', 't2'),
+    );
+    expect(commitBooking).not.toHaveBeenCalled();
   });
 });

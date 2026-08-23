@@ -133,8 +133,18 @@ const BOOKING_REFUSALS: { contains: string; message: string; codes: string[] }[]
     codes: ['23514'],
   },
   {
+    // `assert_players_bookable` raises this for a solo booking exactly as
+    // it does for a group one — the caller can be the offending player
+    // themselves. `details` does carry the offending profile id, but this
+    // module has no caller identity to compare it against (bookSeat only
+    // ever passes `[me]` — see the event screen — while BringSomeoneSheet's
+    // commit can pass several players, so the module cannot assume "the
+    // player" means "the caller" either way without threading the caller's
+    // own id through every call site). Worded to read correctly either way
+    // instead: true whether it was the caller alone or someone they were
+    // booking for.
     contains: 'already booked',
-    message: 'Someone in your group already has a seat at this game.',
+    message: 'You or someone in your group already has a seat at this game.',
     codes: ['23514'],
   },
   {
