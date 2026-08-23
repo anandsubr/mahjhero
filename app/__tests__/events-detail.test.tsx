@@ -253,7 +253,7 @@ describe('member view: what is shown, and what is not', () => {
     expect(screen.getByText('4 seats free')).toBeTruthy();
     expect(screen.getByText('Advanced')).toBeTruthy();
     // No tier chip buttons -- a member cannot retier a table.
-    expect(screen.queryByLabelText('Table 1: Mixed')).toBeNull();
+    expect(screen.queryByLabelText('Table 1: Any level')).toBeNull();
     expect(screen.queryByText('Remove')).toBeNull();
   });
 
@@ -411,7 +411,7 @@ describe('organizer view', () => {
     render(<EventScreen />);
     await screen.findByText('Thursday Mahjong');
 
-    expect(screen.getByLabelText('Table 1: Mixed').getAttribute('aria-selected')).toBe(
+    expect(screen.getByLabelText('Table 1: Any level').getAttribute('aria-selected')).toBe(
       'true',
     );
     expect(

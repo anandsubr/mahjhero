@@ -4,7 +4,7 @@ import type { SkillTier } from '../lib/bookings';
 import { colors, radius, space, type } from '../lib/theme';
 
 export const TIER_OPTIONS: { value: SkillTier; label: string }[] = [
-  { value: 'mixed', label: 'Mixed' },
+  { value: 'mixed', label: 'Any level' },
   { value: 'beginner', label: 'Beginner' },
   { value: 'intermediate', label: 'Intermediate' },
   { value: 'advanced', label: 'Advanced' },
@@ -60,6 +60,7 @@ export default function TierPicker({
 
   return (
     <View style={styles.wrap}>
+      <Text style={styles.current}>{current.label}</Text>
       <View style={styles.row}>
         {TIER_OPTIONS.map((option) => {
           const selected = option.value === tier;
@@ -83,7 +84,6 @@ export default function TierPicker({
           );
         })}
       </View>
-      <Text style={styles.current}>{current.label}</Text>
     </View>
   );
 }
@@ -92,20 +92,24 @@ const styles = StyleSheet.create({
   wrap: {
     // This app's content column is capped at 440px even on a desktop
     // viewport (lib/theme.ts's `layout.contentMaxWidth`), so the space
-    // actually available here is ~360px regardless of window width --
-    // confirmed empirically with a debug Playwright page.evaluate(), not
-    // assumed. `pill`'s padding below is trimmed to the minimum that still
-    // clears this app's 46px touch-target floor, which turned out to be
-    // enough for all four pips PLUS "Intermediate" (the longest tier word)
-    // to sit on one line inside that budget, at every supported width --
-    // also re-verified the same way, after the first attempt at this
-    // (`alignSelf: 'stretch'` on this container, since removed) measured as
-    // a genuine no-op: the row was never being shrunk by its container: it
-    // was consistently ~12px too wide for the word at the old padding, on
-    // EVERY viewport, because the 440px cap makes every viewport the same
-    // effective width. `flexWrap: 'wrap'` stays as a real fallback for
-    // anything narrower than this app's own minimum supported width -- the
-    // word is never lost, which is the actual requirement.
+    // actually available here is ~360px on desktop -- but mobile viewports
+    // narrower than 440px never hit that cap at all, so their real budget
+    // is smaller still. `current` (the word) is placed FIRST in this row,
+    // ahead of the pips, precisely so that when there isn't room for both
+    // on one line, `flexWrap` drops the PIPS to their own line below the
+    // word rather than the other way around -- the word then sits directly
+    // above its own pip row, not below it where it can misread as a label
+    // for whatever control follows this one (see this component's own
+    // git history / .superpowers/sdd/tier-pips-and-unseat.md for the bug
+    // this replaced: "Mixed" wrapping below the pips read as a caption for
+    // the "Remove this table" button underneath). `pill`'s size below is
+    // trimmed toward, not below, this app's 44px touch-target floor, which
+    // buys back some of that budget so the common-length words ("Beginner",
+    // "Advanced", "Any level") do fit beside the pips even on a narrow
+    // phone; "Intermediate", the longest tier word, still wraps to its own
+    // line under some viewports -- confirmed by reading the regenerated
+    // screenshots, not assumed. The word is never lost either way, which is
+    // the actual requirement.
     flexDirection: 'row',
     flexWrap: 'wrap',
     alignItems: 'center',
@@ -118,9 +122,9 @@ const styles = StyleSheet.create({
   },
   pill: {
     borderRadius: radius.pill,
-    minHeight: 46,
-    minWidth: 46,
-    paddingHorizontal: space[2],
+    minHeight: 44,
+    minWidth: 44,
+    paddingHorizontal: space[1],
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,

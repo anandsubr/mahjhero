@@ -12,7 +12,7 @@ describe('TierPicker', () => {
 
   it('keeps a full word accessibilityLabel on every option, not just the current one', () => {
     render(<TierPicker tableLabel="Table 1" tier="mixed" onChange={vi.fn()} />);
-    expect(screen.getByLabelText('Table 1: Mixed')).toBeTruthy();
+    expect(screen.getByLabelText('Table 1: Any level')).toBeTruthy();
     expect(screen.getByLabelText('Table 1: Beginner')).toBeTruthy();
     expect(screen.getByLabelText('Table 1: Intermediate')).toBeTruthy();
     expect(screen.getByLabelText('Table 1: Advanced')).toBeTruthy();
@@ -49,7 +49,7 @@ describe('TierPicker', () => {
   // caller could plausibly wire the wrong tier into the wrong option.
   it("renders the mixed option's pips as a dash", () => {
     render(<TierPicker tableLabel="Table 1" tier="mixed" onChange={vi.fn()} />);
-    const mixedOption = screen.getByLabelText('Table 1: Mixed');
+    const mixedOption = screen.getByLabelText('Table 1: Any level');
     expect(within(mixedOption).getByTestId('pip-dash')).toBeTruthy();
   });
 });
