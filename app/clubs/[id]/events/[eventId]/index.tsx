@@ -1,6 +1,7 @@
 import { Link, Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import BringSomeoneSheet from '../../../../../components/BringSomeoneSheet';
 import Button from '../../../../../components/Button';
 import Card from '../../../../../components/Card';
 import ErrorBanner from '../../../../../components/ErrorBanner';
@@ -10,7 +11,7 @@ import TableCard from '../../../../../components/TableCard';
 import WaitlistPanel from '../../../../../components/WaitlistPanel';
 import { ChevronLeftIcon } from '../../../../../components/icons';
 import { canInvite, fetchClub, fetchRoster } from '../../../../../lib/clubs';
-import type { Club } from '../../../../../lib/clubs';
+import type { Club, ClubMember } from '../../../../../lib/clubs';
 import {
   acceptPromotionOffer,
   cancelBooking,
@@ -19,6 +20,7 @@ import {
   fetchEventSeating,
   fetchOpenOffer,
   needsAFourth,
+  proposeBooking,
   seatsRemaining,
   tierWarning,
   waitlistLabel,
@@ -100,6 +102,24 @@ export default function EventScreen() {
   const [seating, setSeating] = useState<SeatOccupant[]>([]);
   const [seatingFailed, setSeatingFailed] = useState(false);
 
+  // The roster BringSomeoneSheet's picker offers, kept separate from the
+  // organizer-only `isOrganizer`/`mySkillLevel` derivation the roster fetch
+  // already fed below. `rosterFailed` matters for the same reason
+  // `tablesFailed`/`seatingFailed` do: a failed fetch and a genuinely empty
+  // roster must not read the same way. Reading a failure as "you have nobody
+  // to bring" would be a false statement, not just a missing feature — so the
+  // sheet's entry points are hidden on failure rather than opened onto an
+  // empty picker.
+  const [roster, setRoster] = useState<ClubMember[]>([]);
+  const [rosterFailed, setRosterFailed] = useState(false);
+
+  // Which table (if any) BringSomeoneSheet is currently open for. `null`
+  // means "any table" — the screen-level entry point, not "closed"; the
+  // sheet itself is only mounted when this is non-undefined.
+  const [bringSomeone, setBringSomeone] = useState<{ tableId: string | null } | null>(
+    null,
+  );
+
   // A promotion offer currently held open for this member's group, read via
   // `fetchOpenOffer`. RLS (`promotion_offers_select_group`) already scopes
   // the fetch to a group this member actually belongs to, so no client-side
@@ -130,7 +150,7 @@ export default function EventScreen() {
   const me = session?.user.id ?? '';
 
   async function load() {
-    const [loadedClub, loadedEvent, loadedTables, roster, seatingRows, openOffer] =
+    const [loadedClub, loadedEvent, loadedTables, rosterRows, seatingRows, openOffer] =
       await Promise.all([
         fetchClub(clubId),
         fetchEvent(eventId),
@@ -171,11 +191,14 @@ export default function EventScreen() {
     // blanking the screen — the member-facing content above is unaffected,
     // and the worst case is a host who temporarily loses their controls
     // rather than a page that cannot render at all.
-    const myRole = (roster ?? []).find(
+    const myRole = (rosterRows ?? []).find(
       (m) => m.profile_id === session?.user.id,
     );
     setIsOrganizer(myRole ? canInvite(myRole.role) : false);
     setMySkillLevel(myRole?.skill_level ?? null);
+
+    setRosterFailed(rosterRows === null);
+    setRoster(rosterRows ?? []);
 
     setSeries(
       loadedEvent?.series_id ? await fetchSeries(loadedEvent.series_id) : null,
@@ -290,6 +313,20 @@ export default function EventScreen() {
     (o) => o.profile_id === me && (o.status === 'confirmed' || o.status === 'waitlisted'),
   );
 
+  // Gates both BringSomeoneSheet entry points (TableCard's per-table one and
+  // the screen-level "any table" one below). Two of its three conditions
+  // mirror gates the screen already applies elsewhere for the same reason —
+  // `canBook` matches `onTakeSeat`'s own guard, and `!myHoldsSeat` matches
+  // "Join the waitlist"'s. The third, `!rosterFailed`, is this sheet's own:
+  // BringSomeoneSheet always seats the opener as its first player (it has no
+  // way to remove "You" from the group), so a member who already holds a
+  // seat would meet an immediate "already booked" refusal on confirm — and a
+  // roster that failed to load would open the sheet onto a picker with
+  // nobody in it, reading as "you have no one to bring" rather than as the
+  // fetch failure it actually is. Both are exactly the predictable refusal
+  // this screen otherwise avoids offering.
+  const canBringSomeone = canBook && !myHoldsSeat && !rosterFailed;
+
   async function bookSeat(tableId: string | null) {
     setPendingTier(null);
     setBusy(true);
@@ -348,6 +385,23 @@ export default function EventScreen() {
   async function declineOffer() {
     if (!offer) return;
     await run(() => declinePromotionOffer(offer.id));
+  }
+
+  // `tableId` is `null` for the screen-level "any table" entry point, and a
+  // specific table's id for TableCard's own "Bring someone" — see
+  // BringSomeoneSheet's own comment on why that hides the split toggle.
+  function openBringSomeone(tableId: string | null) {
+    setBringSomeone({ tableId });
+  }
+
+  // Reloads even when the sheet is dismissed via "Never mind" rather than a
+  // real commit — the reload is a no-op then (nothing changed), and this
+  // keeps the seating/table lists correct in the one case that matters
+  // (a successful group booking) without the sheet needing to tell its
+  // caller which kind of close just happened.
+  function closeBringSomeone() {
+    setBringSomeone(null);
+    void load();
   }
 
   return (
@@ -440,6 +494,9 @@ export default function EventScreen() {
               // Omitted entirely — not a disabled control — for a cancelled
               // or already-started game. See `canBook`'s own comment.
               onTakeSeat={canBook ? () => takeSeat(table) : undefined}
+              onBringSomeone={
+                canBringSomeone ? () => openBringSomeone(table.id) : undefined
+              }
               busy={busy}
               needsFourth={needsAFourth(
                 table.capacity,
@@ -526,6 +583,30 @@ export default function EventScreen() {
             </Button>
           </View>
         </Card>
+      ) : null}
+
+      {canBringSomeone ? (
+        <Button
+          variant="secondary"
+          disabled={busy}
+          onPress={() => openBringSomeone(null)}
+          accessibilityLabel="Bring someone"
+        >
+          Bring someone
+        </Button>
+      ) : null}
+
+      {bringSomeone ? (
+        <BringSomeoneSheet
+          roster={roster}
+          booked={seating.map((o) => o.profile_id)}
+          youId={me}
+          tables={tables}
+          initialTableId={bringSomeone.tableId}
+          onPropose={(input) => proposeBooking({ eventId, ...input })}
+          onCommit={(input) => commitBooking({ eventId, ...input })}
+          onClose={closeBringSomeone}
+        />
       ) : null}
 
       {canBook && gameFull && !myHoldsSeat ? (
