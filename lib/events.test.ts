@@ -1,13 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Only addEventTable needs a supabase double: every other test in this file
-// exercises a pure function. The chain is just `.rpc(name, args)`, so the
-// mock models that directly rather than the fuller from/select/eq chain
-// lib/profile.test.ts uses for table writes.
+// Only addEventTable and fetchEvent need a supabase double: every other test
+// in this file exercises a pure function. addEventTable's chain is just
+// `.rpc(name, args)`. fetchEvent's read path is
+// `.from('events').select(EVENT_COLUMNS).eq('id', eventId).single()` — the
+// same shape lib/profile.test.ts's `singleAfterSelect` models for its own
+// read path.
 const rpcMock = vi.fn();
+const singleAfterSelect = vi.fn();
 
 vi.mock('./supabase', () => ({
-  supabase: { rpc: (...args: unknown[]) => rpcMock(...args) },
+  supabase: {
+    rpc: (...args: unknown[]) => rpcMock(...args),
+    from: vi.fn(() => ({
+      select: vi.fn(() => ({
+        eq: vi.fn(() => ({ single: singleAfterSelect })),
+      })),
+    })),
+  },
 }));
 
 import { GENERIC_ERROR } from './constants';
@@ -16,12 +26,37 @@ import {
   createEvent,
   createEventSeries,
   eventStartTimeInZone,
+  fetchEvent,
   formatEventWhen,
   frequencyLabel,
   nextOccurrences,
   updateEvent,
   updateEventSeries,
 } from './events';
+
+/**
+ * A minimal, otherwise-valid row shape for the `.single()` response
+ * `toClubEvent` maps — every field `fetchEvent` needs present, so a test can
+ * vary just the one field it cares about (`event_tables`) without a
+ * TypeScript complaint about a missing property.
+ */
+function eventRow(event_tables: { id: string }[] | null) {
+  return {
+    id: 'event-1',
+    club_id: 'club-1',
+    series_id: null,
+    title: 'Tuesday Mahjong',
+    venue_id: 'venue-1',
+    notes: '',
+    starts_at: '2027-09-07T23:00:00Z',
+    ends_at: '2027-09-08T02:00:00Z',
+    status: 'published',
+    occurrence_date: null,
+    overrides: [],
+    venues: { name: 'St Mary’s Hall' },
+    event_tables,
+  };
+}
 
 describe('nextOccurrences', () => {
   it('finds the next Tuesdays from a Friday start', () => {
@@ -233,6 +268,39 @@ describe('frequencyLabel', () => {
     expect(frequencyLabel('monthly_nth_weekday', 2, -1)).toBe(
       'The last Tuesday of the month',
     );
+  });
+});
+
+describe('fetchEvent (the embedded table_count mapping)', () => {
+  // IMPORTANT 2 from Task 17's Fix pass 1 review: mutating toClubEvent's
+  // `table_count: event_tables?.length ?? 0` to `table_count: 0` passed all
+  // 293 Vitest tests that existed before this block. The club-card test
+  // (app/__tests__/clubs.test.tsx) supplies `table_count` directly through a
+  // mocked fetchUpcomingEvents, so it covers the screen's rendering, never
+  // the mapper that produces the value in the first place. This is the
+  // mapper test that closes that gap.
+  beforeEach(() => {
+    singleAfterSelect.mockReset();
+  });
+
+  it('counts the embedded event_tables rows into table_count', async () => {
+    singleAfterSelect.mockResolvedValue({
+      data: eventRow([{ id: 't1' }, { id: 't2' }, { id: 't3' }]),
+      error: null,
+    });
+
+    const event = await fetchEvent('event-1');
+    expect(event?.table_count).toBe(3);
+  });
+
+  it('reports 0 tables when the embed comes back missing, not null/undefined', async () => {
+    singleAfterSelect.mockResolvedValue({
+      data: eventRow(null),
+      error: null,
+    });
+
+    const event = await fetchEvent('event-1');
+    expect(event?.table_count).toBe(0);
   });
 });
 

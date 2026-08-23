@@ -224,6 +224,17 @@ test.describe('signed in', () => {
         // would otherwise match too, turning a red test into an ambiguity
         // error that names the wrong problem.
         await expect(page.getByText('Upcoming', { exact: true })).toBeVisible();
+        // The table count on each card, as text — not just as pixels.
+        // `toClubEvent` in lib/events.ts derives this from the embedded
+        // `event_tables` array (`event_tables?.length ?? 0`), and nothing
+        // else in the suite pins that mapping: a mutation collapsing it to a
+        // constant 0 still produces "0 tables", a one-digit change that fits
+        // well inside the 120px `maxDiffPixels` budget and so cannot fail the
+        // screenshot comparison (see docs/testing.md, "Why the threshold is
+        // an absolute pixel budget"). Both seeded occurrences have 2 tables,
+        // so `.first()` is enough to catch the mapper regressing without
+        // needing to disambiguate the two cards.
+        await expect(page.getByText('2 tables').first()).toBeVisible();
         await captureScreen(page, vp, `club-detail-${vp.name}.png`);
       });
 
@@ -255,9 +266,12 @@ test.describe('signed in', () => {
       // Two baselines for this screen, because it is two screens wearing one
       // route. The scope buttons swap the entire form between an
       // occurrence-scoped and a series-scoped snapshot, and the series scope
-      // is the only place in the app outside the notifications screen where a
-      // Toggle paints — the control whose wrong-coloured knob is why this
-      // suite exists at all.
+      // is the only place a Toggle paints in any BASELINE outside the
+      // notifications screen — the control whose wrong-coloured knob is why
+      // this suite exists at all. It is not the only place a Toggle exists
+      // outside notifications: components/VenuePicker.tsx's "New venue"
+      // sub-form has one too, unreached by any seeded test here — see
+      // docs/testing.md, "Known visual gaps".
       test(`edit event, this game, at ${vp.name}`, async ({ page }) => {
         await page.setViewportSize({ width: vp.width, height: vp.height });
         await page.goto(

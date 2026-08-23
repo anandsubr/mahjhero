@@ -47,19 +47,65 @@ After switching to `maxDiffPixels: 120`, the same two mutations were re-run:
   ~0.37% of the mobile page and ~0.28% of desktop — still comfortably under
   1%, so the ratio would have let this regression through too.
 
-Re-measured against the baselines Task 17 added, on the screen with the only
-Toggle outside the notifications screen: changing the toggle's on-track colour
-from `colors.accentColor` to an off-palette green fails
-`edit-event-series-mobile` and `edit-event-series-desktop` at 1,126px each,
-alongside the two notifications baselines — and nothing else in the suite
-moves. That is the point of the seeded baselines: the defect class this layer
-was built for now has a tripwire on a second screen.
+Re-measured against the baselines Task 17 added, on the only Toggle outside
+the notifications screen that a baseline actually captures: changing the
+toggle's on-track colour from `colors.accentColor` to an off-palette green
+fails `edit-event-series-mobile` and `edit-event-series-desktop` at 1,126px
+each, alongside the two notifications baselines — and nothing else in the
+suite moves. That is the point of the seeded baselines: the defect class this
+layer was built for now has a tripwire on a second screen.
+
+**This is not the only Toggle outside notifications, only the only one in a
+baseline.** `components/VenuePicker.tsx` renders a `Toggle`
+("Other clubs can use this venue") in its "New venue" sub-form, reachable
+from both the create-game and edit-game screens by typing a venue name that
+matches nothing and choosing "Add". No seeded test enters that state, so this
+control has zero visual coverage — listed under "Known visual gaps" below.
 
 The lesson for future maintainers: do not "simplify" this back to a ratio to
 make a large layout change stop tripping the suite. A ratio that is loose
 enough to tolerate a full-page redesign is also loose enough to hide a single
 mis-coloured control, which is precisely the failure mode this layer was
 built to close.
+
+## Why the pixel budget cannot catch a text regression, and what does
+
+`maxDiffPixels: 120` is sized to stay under a control the size of a toggle
+knob (above), and that same sizing has a consequence worth stating plainly:
+**it is far too small to ever fail on a one-glyph text substitution.** A
+single digit in this app's body type (18pt) is on the order of 16px tall;
+measured across the baselines, substituting one digit for another changes
+roughly 67–94 pixels — comfortably under the 120px budget on its own, before
+antialiasing jitter even enters the picture. So a defect that swaps "2
+tables" for "0 tables", or any other single-character text regression, cannot
+make `toHaveScreenshot` fail. This is not a flaw to fix by lowering the
+budget — a budget tight enough to catch a one-digit diff would also fail on
+ordinary antialiasing jitter between machines, which is the opposite problem
+this section already covers.
+
+**Text regressions are caught by the `getByText`/`toBeVisible` preconditions
+each test asserts before it screenshots, not by the pixel comparison.** Every
+test in `e2e/visual.spec.ts` asserts on specific visible text before calling
+`captureScreen` — `page.getByText('2 tables').first()` in `club detail`,
+`page.getByText('Moved from the usual venue')` in `event detail`, and so on.
+Those assertions fail outright, independent of any pixel budget, if the text
+they name is wrong or absent. That is a deliberate division of labour: **a
+baseline's job is colour, layout, and truncation — not the correctness of the
+words on the page.** A baseline can prove "2 tables" renders in the right
+place, in the right colour, without truncating; it takes a `getByText`
+assertion to prove it says "2" and not "0". Task 17's Fix pass 1 found this
+gap directly: the club-card table count (`toClubEvent`'s
+`event_tables?.length ?? 0` mapping in `lib/events.ts`) had no assertion at
+either the component or visual layer that could fail on it, and a
+`table_count: 0` mutation passed all 293 Vitest tests and would have passed
+the visual suite too, on pixels alone, until the `club detail` test gained
+its own `getByText('2 tables')` precondition.
+
+When adding a baseline for a screen whose text matters, add the
+`getByText`/`toBeVisible` assertion for that text FIRST, then let the
+screenshot cover appearance. Do not rely on the pixel comparison to catch a
+wrong word, a wrong number, or a wrong pluralisation — it structurally
+cannot, for exactly the arithmetic above.
 
 ## Which library, and why
 
@@ -312,12 +358,31 @@ deliberate:
   event screen, which would have left the branch's most complex UI with no
   picture of it.
 
-The one value on any of these screens that comes from the DEVICE clock is the
-create-game screen's "Date" field, which opens on today. Two things pin it:
-`playwright.config.ts` sets `use.timezoneId`, and the seeded block installs
-`page.clock.setFixedTime` before navigating. `new-event` asserts the resulting
-value explicitly, so if either override stops applying the suite says so
-instead of leaving a baseline that rots overnight.
+**Three** things on these screens read the DEVICE clock, not one — a claim
+this section previously understated. Besides the create-game screen's "Date"
+field (opens on today), `fetchFutureOccurrenceCount` and
+`fetchOverriddenOccurrences` in `lib/events.ts` both filter on client-side
+`new Date().toISOString()`, which decides what the series-scope edit screen
+lists as upcoming/customised, and the event screen's `canReset` gate compares
+`event.starts_at` against `Date.now()` to decide whether "Reset to the
+series" renders at all. All three feed the `edit-event-series` baseline (the
+overridden-occurrences toggle text and the reset button's visibility on the
+occurrence baselines) as well as `new-event`.
+
+They do not move, and the fixture is why: the seeded occurrences sit in
+2099, so "future" never flips regardless of what day the suite runs, and the
+frozen clock (below) pins `Date.now()` itself besides. But all three run in
+the SAME browser page, so the fix is one mechanism, not three: `page.clock.
+setFixedTime` in the seeded `beforeEach` freezes `Date`/`Date.now()` for
+whichever of them a given screen happens to call, not just the Date field.
+`playwright.config.ts` additionally pins `use.timezoneId` (so the wall-clock
+digits these produce do not depend on the machine) and `use.locale` (so the
+separators and ordering those digits render in do not either — see that
+file's comment). `new-event` asserts the Date field's resulting value
+explicitly, so if the clock override or either pin stops applying, the suite
+says so instead of leaving a baseline that rots overnight. A future
+maintainer adding a screen that reads `Date.now()` should assume it needs
+the same protection, not treat the Date field as the only such case.
 
 **The `venues` baselines show two club-only venues and no shared one.**
 `venues_public_name_idx` is unique on (name, locality) across public venues,
@@ -325,6 +390,36 @@ so a seeded public venue would collide on the second test of a run, and a
 per-run suffix to dodge that would put a changing string in a baseline. The
 "Other clubs can use this venue" copy is covered at the component layer
 (`app/__tests__/venues.test.tsx`) and by no screenshot.
+
+### Known visual gaps
+
+States that render in this app but are in no baseline, gathered here so the
+next person does not have to rediscover each one by reading a diff that never
+comes:
+
+- **`components/VenuePicker.tsx`'s "New venue" sub-form**, reachable from
+  both the create-game and edit-game screens by typing a venue name that
+  matches nothing and choosing "Add". It renders this suite's *other*
+  `Toggle` ("Other clubs can use this venue") and the "Other clubs can use
+  this venue" copy — both covered at the component layer
+  (`app/__tests__/venues.test.tsx`) and by no screenshot. See "Why the
+  threshold is an absolute pixel budget, not a ratio" above for why this
+  specifically matters: it is the one other place in the app the
+  wrong-coloured-Toggle defect class could recur unseen.
+- **The `DateField` picker popup** — the calendar the browser opens when the
+  "Date" field is tapped — is native browser chrome rendered outside the
+  page's DOM. No screenshot of this page can ever contain it, at any width;
+  what `new-event-*` covers is only the field's resting appearance (see
+  "`@react-native-community/datetimepicker` has no coverage anywhere" above).
+- **The "Stop repeating on" `DateField`** on both the create and edit
+  screens. It only renders once a repeat option is chosen (create) or when
+  "Runs indefinitely" is switched off (edit), and no seeded test puts either
+  screen in that state.
+- **The signed-in member view.** Every seeded baseline is the *organizer*
+  view (the seeded membership is `host`); a plain member sees strictly less
+  on the club-detail and event-detail screens, and that reduced layout has no
+  baseline of its own. Covered at the component layer
+  (`app/__tests__/clubs.test.tsx`, `events-detail.test.tsx`) but not visually.
 
 ### Side effects of `npm run test:visual`
 

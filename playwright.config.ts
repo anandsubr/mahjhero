@@ -93,14 +93,37 @@ export default defineConfig({
   },
   use: {
     baseURL: 'http://127.0.0.1:4173',
-    // Pinned so a baseline cannot depend on the timezone of the machine that
-    // took it. Only one screen currently renders anything derived from the
-    // DEVICE clock — the create-game screen's Date field, which opens on
-    // "today" — and combined with the fixed clock e2e/visual.spec.ts installs
-    // for the seeded tests, that value is now the same everywhere. Every
-    // other time in the app is rendered in the CLUB's timezone, which comes
-    // from the seeded row and never from here.
+    // Pinned so a baseline cannot depend on the timezone OR the locale of the
+    // machine that took it.
+    //
+    // timezoneId affects which wall-clock digits `Intl`/`Date` formatting
+    // produces; locale affects which SEPARATORS and ORDER those digits come
+    // out in. Both matter here because `DateField.web.tsx` and
+    // `TimeField.web.tsx` are plain `<input type="date">`/`<input
+    // type="time">` — the browser renders their displayed value in whatever
+    // locale it runs under, not in one this app chooses. Without `locale`
+    // pinned, Playwright defaults to the SYSTEM locale, so the same seeded
+    // state reads "08/22/2026"/"07:00 PM" under en-US and
+    // "22/08/2026"/"19:00" under en-GB — a baseline that is fine on the
+    // machine that generated it and unreadably different on the next one.
+    // `toHaveValue('2026-08-22')` in e2e/visual.spec.ts does not catch this:
+    // the underlying DOM `.value` is always ISO regardless of locale, only
+    // the on-screen text changes.
+    //
+    // Three things on these screens read the DEVICE clock rather than the
+    // club's timezone or a stored value — the create-game screen's Date
+    // field (opens on "today"), the "future occurrence" filters
+    // (fetchFutureOccurrenceCount, fetchOverriddenOccurrences) that decide
+    // what the series-scope edit screen lists as customised/upcoming, and
+    // the event screen's "Reset to the series" visibility gate. All three
+    // run in the browser page, so `page.clock.setFixedTime` in the seeded
+    // `beforeEach` of e2e/visual.spec.ts pins all of them at once, not just
+    // the Date field — see docs/testing.md's "What the visual suite has
+    // baselines for" section for which baseline each one feeds and why none
+    // of them moves. Every other time in the app is rendered in the CLUB's
+    // timezone, which comes from the seeded row and never from here.
     timezoneId: 'America/New_York',
+    locale: 'en-US',
   },
   expect: {
     toHaveScreenshot: {
