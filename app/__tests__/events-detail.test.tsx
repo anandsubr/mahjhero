@@ -80,6 +80,9 @@ vi.mock('../../lib/events', async (importOriginal) => {
 // have done from the start.
 const fetchEventSeating = vi.fn();
 const fetchOpenOffer = vi.fn();
+const placeBooking = vi.fn();
+const cancelBooking = vi.fn();
+const callForAFourth = vi.fn();
 
 vi.mock('../../lib/bookings', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../lib/bookings')>();
@@ -87,6 +90,9 @@ vi.mock('../../lib/bookings', async (importOriginal) => {
     ...actual,
     fetchEventSeating: (...args: unknown[]) => fetchEventSeating(...args),
     fetchOpenOffer: (...args: unknown[]) => fetchOpenOffer(...args),
+    placeBooking: (...args: unknown[]) => placeBooking(...args),
+    cancelBooking: (...args: unknown[]) => cancelBooking(...args),
+    callForAFourth: (...args: unknown[]) => callForAFourth(...args),
   };
 });
 
@@ -164,6 +170,9 @@ beforeEach(() => {
   fetchEventSeating.mockResolvedValue([]);
   fetchOpenOffer.mockReset();
   fetchOpenOffer.mockResolvedValue(null);
+  placeBooking.mockResolvedValue({ error: null });
+  cancelBooking.mockResolvedValue({ error: null });
+  callForAFourth.mockResolvedValue({ error: null });
 });
 
 // A guard-ordering regression this repo has already hit on the club detail
@@ -388,6 +397,151 @@ describe('organizer view', () => {
     // A mutation always reloads, so the retiered table is reflected without
     // a manual refresh.
     await vi.waitFor(() => expect(fetchEventTables).toHaveBeenCalledTimes(2));
+  });
+
+  // This chip used to be a `Button` with `accessibilityState={{ selected }}`
+  // — a prop react-native-web's createDOMProps never forwards to the DOM
+  // (see Toggle.tsx's docstring), so a screen reader on web could never
+  // tell the current tier from the other three. Task 10's review flagged
+  // it and deferred the fix here. Asserts the rendered `aria-selected`
+  // attribute itself, not just the click behaviour above, on both the
+  // selected chip and an unselected one — a regression back to
+  // `accessibilityState` would leave this `null` on both.
+  it('marks the table\'s current tier, and only that one, as aria-selected', async () => {
+    render(<EventScreen />);
+    await screen.findByText('Thursday Mahjong');
+
+    expect(screen.getByLabelText('Table 1: Mixed').getAttribute('aria-selected')).toBe(
+      'true',
+    );
+    expect(
+      screen.getByLabelText('Table 1: Advanced').getAttribute('aria-selected'),
+    ).toBe('false');
+  });
+
+  describe('HostSeating: wired into the event screen', () => {
+    const TABLE_2 = {
+      id: 'table-2',
+      label: 'Table 2',
+      skill_tier: 'mixed' as const,
+      capacity: 4,
+      position: 2,
+    };
+
+    const SEATED = {
+      booking_id: 'booking-1',
+      group_id: 'group-1',
+      profile_id: 'p1',
+      display_name: 'Ravi K.',
+      skill_level: null,
+      event_table_id: 'table-1',
+      status: 'confirmed' as const,
+      booked_by: 'p1',
+      booked_by_name: 'Ravi K.',
+      group_status: 'confirmed' as const,
+      waitlist_position: null,
+      created_at: '2026-08-20T10:00:00Z',
+    };
+
+    const UNSEATED = {
+      ...SEATED,
+      booking_id: 'booking-2',
+      profile_id: 'p2',
+      display_name: 'Mei L.',
+      event_table_id: null as string | null,
+      booked_by: 'p2',
+      booked_by_name: 'Mei L.',
+    };
+
+    it('lets the host seat an unplaced booking, move a seated player, unseat them, and remove them from the game', async () => {
+      fetchEventTables.mockResolvedValue([TABLE_1, TABLE_2]);
+      fetchEventSeating.mockResolvedValue([SEATED, UNSEATED]);
+      render(<EventScreen />);
+      await screen.findByText('Thursday Mahjong');
+
+      // Every control on this screen shares one `busy` flag, which a click
+      // sets true for the duration of its own request-plus-reload and which
+      // a disabled `<button>` genuinely blocks at the DOM level in jsdom
+      // (unlike a bare `disabled` style). `fetchEventSeating`'s call count
+      // only proves `load()` has STARTED, not that React has committed
+      // `busy: false` back to the DOM — so each step below waits on the
+      // next button's own `aria-disabled` attribute, the actual precondition
+      // for its click to do anything, rather than racing that commit.
+      async function waitEnabled(label: string) {
+        await vi.waitFor(() =>
+          expect(
+            screen.getByLabelText(label).getAttribute('aria-disabled'),
+          ).not.toBe('true'),
+        );
+        return screen.getByLabelText(label);
+      }
+
+      fireEvent.click(await waitEnabled('Seat Mei L. at Table 1'));
+      await vi.waitFor(() =>
+        expect(placeBooking).toHaveBeenCalledWith('booking-2', 'table-1'),
+      );
+
+      fireEvent.click(await waitEnabled('Move Ravi K. to Table 2'));
+      await vi.waitFor(() =>
+        expect(placeBooking).toHaveBeenCalledWith('booking-1', 'table-2'),
+      );
+
+      fireEvent.click(await waitEnabled('Unseat Ravi K.'));
+      await vi.waitFor(() =>
+        expect(placeBooking).toHaveBeenCalledWith('booking-1', null),
+      );
+
+      fireEvent.click(await waitEnabled('Remove Ravi K. from this game'));
+      await vi.waitFor(() =>
+        expect(cancelBooking).toHaveBeenCalledWith('booking-1'),
+      );
+    });
+
+    // canCallForAFourth is computed by the screen, not HostSeating itself —
+    // this is the one place that computation is actually exercised.
+    // Mirrors need_a_fourth_stage's own occupancy check
+    // (20260825050000_need_a_fourth.sql), minus the 48-hour window.
+    it('offers "Call for a 4th now" once a table is exactly one player short', async () => {
+      fetchEventTables.mockResolvedValue([TABLE_1]);
+      fetchEventSeating.mockResolvedValue([
+        SEATED,
+        { ...SEATED, booking_id: 'booking-3', profile_id: 'p3', display_name: 'Sam T.' },
+        { ...SEATED, booking_id: 'booking-4', profile_id: 'p4', display_name: 'Lee C.' },
+      ]);
+      render(<EventScreen />);
+      fireEvent.click(await screen.findByText('Call for a 4th now'));
+      await vi.waitFor(() =>
+        expect(callForAFourth).toHaveBeenCalledWith('table-1'),
+      );
+    });
+
+    it('hides "Call for a 4th now" when the table needs more than one more player', async () => {
+      fetchEventTables.mockResolvedValue([TABLE_1]);
+      fetchEventSeating.mockResolvedValue([SEATED]);
+      render(<EventScreen />);
+      await screen.findByText('Thursday Mahjong');
+      expect(screen.queryByText('Call for a 4th now')).toBeNull();
+    });
+
+    // The occupancy count alone is not the whole gate: a table that is one
+    // short of a game that has already started must not offer the early
+    // call either, matching `canBook`/`need_a_fourth_stage`'s own
+    // `e.starts_at <= now()` guard.
+    it('hides "Call for a 4th now" on a table that is one short but whose game has already started', async () => {
+      fetchEventTables.mockResolvedValue([TABLE_1]);
+      fetchEvent.mockResolvedValue({
+        ...EVENT,
+        starts_at: new Date(Date.now() - 60_000).toISOString(),
+      });
+      fetchEventSeating.mockResolvedValue([
+        SEATED,
+        { ...SEATED, booking_id: 'booking-3', profile_id: 'p3', display_name: 'Sam T.' },
+        { ...SEATED, booking_id: 'booking-4', profile_id: 'p4', display_name: 'Lee C.' },
+      ]);
+      render(<EventScreen />);
+      await screen.findByText('Thursday Mahjong');
+      expect(screen.queryByText('Call for a 4th now')).toBeNull();
+    });
   });
 
   it('adds a table', async () => {
