@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import Button from './Button';
 import Card from './Card';
 import SeatGrid from './SeatGrid';
 import Tag from './Tag';
@@ -20,7 +19,6 @@ type Props = {
   occupants: SeatOccupant[];
   youId: string;
   onTakeSeat?: () => void;
-  onBringSomeone?: () => void;
   busy?: boolean;
   needsFourth?: boolean;
   /** Organizer controls, injected by the event screen. */
@@ -28,18 +26,25 @@ type Props = {
 };
 
 /**
- * One table: who is at it, how many seats are left, and the two ways in.
+ * One table: who is at it, how many seats are left, and the one way in.
  *
  * Tapping an empty seat books YOU, immediately — the common case is one
- * tap. "Bring someone" is the quieter control that opens the group sheet.
- * Everything else on this card is read-only.
+ * tap. Everything else on this card is read-only.
+ *
+ * This card used to also carry its own "Bring someone" button, opening
+ * BringSomeoneSheet pre-selected to this table. The human removed it: the
+ * sheet already asks "Where?" with every table plus "Any table", so the
+ * per-table button only pre-selected a chip the member could change in the
+ * next breath — and it vanished once a table had one seat or fewer free,
+ * disappearing one by one on a busy game with no explanation. The
+ * screen-level "Bring someone" (app/clubs/[id]/events/[eventId]/index.tsx)
+ * is the only entry point now.
  */
 export default function TableCard({
   table,
   occupants,
   youId,
   onTakeSeat,
-  onBringSomeone,
   busy = false,
   needsFourth = false,
   children,
@@ -79,18 +84,6 @@ export default function TableCard({
         <Text style={styles.help}>
           {bookedForYou.booked_by_name} booked this for you
         </Text>
-      ) : null}
-
-      {onBringSomeone && free > 1 ? (
-        <Button
-          variant="secondary"
-          big={false}
-          disabled={busy}
-          onPress={onBringSomeone}
-          accessibilityLabel={`Bring someone to ${table.label}`}
-        >
-          Bring someone
-        </Button>
       ) : null}
 
       {children}

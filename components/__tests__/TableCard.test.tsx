@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import TableCard from '../TableCard';
 
@@ -34,7 +34,6 @@ describe('TableCard', () => {
         occupants={occupants}
         youId="p9"
         onTakeSeat={vi.fn()}
-        onBringSomeone={vi.fn()}
       />,
     );
     expect(screen.getByText('Table 2')).toBeTruthy();
@@ -48,7 +47,6 @@ describe('TableCard', () => {
         occupants={occupants}
         youId="p9"
         onTakeSeat={vi.fn()}
-        onBringSomeone={vi.fn()}
       />,
     );
     expect(screen.getByText('3 seats free')).toBeTruthy();
@@ -61,7 +59,6 @@ describe('TableCard', () => {
         occupants={occupants}
         youId="p9"
         onTakeSeat={vi.fn()}
-        onBringSomeone={vi.fn()}
       />,
     );
     expect(screen.getByText('1 seat free')).toBeTruthy();
@@ -74,7 +71,6 @@ describe('TableCard', () => {
         occupants={occupants}
         youId="p1"
         onTakeSeat={vi.fn()}
-        onBringSomeone={vi.fn()}
       />,
     );
     expect(screen.getByText('You')).toBeTruthy();
@@ -91,7 +87,6 @@ describe('TableCard', () => {
         ]}
         youId="p9"
         onTakeSeat={vi.fn()}
-        onBringSomeone={vi.fn()}
       />,
     );
     expect(screen.getByText('Ravi K. booked this for you')).toBeTruthy();
@@ -105,70 +100,8 @@ describe('TableCard', () => {
         youId="p9"
         needsFourth
         onTakeSeat={vi.fn()}
-        onBringSomeone={vi.fn()}
       />,
     );
     expect(screen.getByText('Needs a 4th')).toBeTruthy();
-  });
-
-  // "Bring someone" is one of the card's two documented ways in (see
-  // TableCard's own docstring). capacity 4, one occupant -> 3 free, so the
-  // `free > 1` gate is open.
-  it('offers "Bring someone" when more than one seat is free', () => {
-    render(
-      <TableCard
-        table={table}
-        occupants={occupants}
-        youId="p9"
-        onTakeSeat={vi.fn()}
-        onBringSomeone={vi.fn()}
-      />,
-    );
-    expect(
-      screen.getByLabelText('Bring someone to Table 2'),
-    ).toBeTruthy();
-  });
-
-  it('calls onBringSomeone when pressed', () => {
-    const onBringSomeone = vi.fn();
-    render(
-      <TableCard
-        table={table}
-        occupants={occupants}
-        youId="p9"
-        onTakeSeat={vi.fn()}
-        onBringSomeone={onBringSomeone}
-      />,
-    );
-    fireEvent.click(screen.getByLabelText('Bring someone to Table 2'));
-    expect(onBringSomeone).toHaveBeenCalledTimes(1);
-  });
-
-  // The gate is deliberate: with exactly one seat left there is nobody left
-  // to "bring" — the last seat is for whoever taps it themselves. capacity 2,
-  // one occupant -> 1 free.
-  it('does not offer "Bring someone" when only one seat is free', () => {
-    render(
-      <TableCard
-        table={{ ...table, capacity: 2 }}
-        occupants={occupants}
-        youId="p9"
-        onTakeSeat={vi.fn()}
-        onBringSomeone={vi.fn()}
-      />,
-    );
-    expect(screen.queryByLabelText('Bring someone to Table 2')).toBeNull();
-  });
-
-  it('does not offer "Bring someone" when no handler is supplied', () => {
-    render(
-      <TableCard
-        table={table}
-        occupants={occupants}
-        youId="p9"
-        onTakeSeat={vi.fn()}
-      />,
-    );
-    expect(screen.queryByLabelText('Bring someone to Table 2')).toBeNull();
   });
 });

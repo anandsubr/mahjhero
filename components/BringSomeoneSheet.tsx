@@ -8,6 +8,10 @@ import type { EventTable } from '../lib/events';
 import type { ClubMember } from '../lib/clubs';
 import { colors, radius, space, type } from '../lib/theme';
 
+// Shared by the visible label and the Toggle's `accessibilityLabel` so a
+// sighted reader and a screen reader are never told two different things.
+const SPLIT_TOGGLE_LABEL = "Split us up if we can't sit together";
+
 type Props = {
   roster: ClubMember[];
   /** profile ids already holding a live booking for this game. */
@@ -56,6 +60,11 @@ export default function BringSomeoneSheet({
   // opener is not already seated. An already-seated opener sees just the
   // friends they pick.
   const alreadySeated = booked.includes(youId);
+  // Whether the club has anyone else to offer at all, independent of who is
+  // already coming to this specific game -- distinguishes the two reasons
+  // `available` below can be empty (see its empty state, rendered further
+  // down).
+  const soloClub = roster.length <= 1;
   const [players, setPlayers] = useState<string[]>(alreadySeated ? [] : [youId]);
   const [tableId, setTableId] = useState<string | null>(initialTableId);
   const [allowSplit, setAllowSplit] = useState(true);
@@ -159,6 +168,25 @@ export default function BringSomeoneSheet({
         })}
       </View>
 
+      {/*
+        Without this, an opener who already holds a seat -- the "You" chip
+        above is correctly omitted for them -- combined with nobody else in
+        `available` renders the "Who's coming?" heading over nothing: no
+        chips, no explanation, just Confirm sitting there disabled (see
+        `confirm`'s own guard) for a reason the member has no way to guess.
+        Two distinct reasons `available` can be empty, told apart so the
+        copy is actually true rather than a generic "nobody available":
+        the club itself has nobody else yet, versus everybody it does have
+        is already coming to this game.
+      */}
+      {available.length === 0 ? (
+        <Text style={styles.helper}>
+          {soloClub
+            ? "You're the only member of this club so far. Invite people from the club page to fill a table."
+            : 'Everyone else in the club already has a seat at this game.'}
+        </Text>
+      ) : null}
+
       <Text style={styles.heading}>Where?</Text>
       <View style={styles.people}>
         {tables.map((table) => {
@@ -207,14 +235,25 @@ export default function BringSomeoneSheet({
         offering one that changes nothing.
       */}
       {tableId !== null ? (
-        <Toggle
-          value={allowSplit}
-          onValueChange={(next) => {
-            setPlan(null);
-            setAllowSplit(next);
-          }}
-          accessibilityLabel="Split us up if we can't sit together"
-        />
+        <View style={styles.splitRow}>
+          {/*
+            Toggle takes only value/onValueChange/accessibilityLabel (see
+            its own docstring) -- it draws no visible text of its own, so
+            without this the switch renders bare, with nothing beside it
+            explaining what it does. `accessibilityLabel` below is the
+            exact same string, so a screen reader and a sighted reader are
+            told the same thing.
+          */}
+          <Text style={styles.splitLabel}>{SPLIT_TOGGLE_LABEL}</Text>
+          <Toggle
+            value={allowSplit}
+            onValueChange={(next) => {
+              setPlan(null);
+              setAllowSplit(next);
+            }}
+            accessibilityLabel={SPLIT_TOGGLE_LABEL}
+          />
+        </View>
       ) : null}
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -296,6 +335,25 @@ const styles = StyleSheet.create({
     fontSize: type.size.body,
     color: colors.text,
     marginTop: space[1],
+  },
+  helper: {
+    fontFamily: type.bodyRegular,
+    fontSize: type.size.helper,
+    color: colors.textMuted,
+    marginTop: space[1],
+  },
+  splitRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: space[3],
+    marginTop: space[3],
+  },
+  splitLabel: {
+    fontFamily: type.bodyRegular,
+    fontSize: type.size.body,
+    color: colors.text,
+    flexShrink: 1,
   },
   error: {
     fontFamily: type.bodyRegular,

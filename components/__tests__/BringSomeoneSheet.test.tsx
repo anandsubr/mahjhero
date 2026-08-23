@@ -56,6 +56,57 @@ describe('BringSomeoneSheet', () => {
     expect(toggle.getAttribute('aria-checked')).toBe('true');
   });
 
+  /**
+   * The regression this fix pass exists for: the split toggle used to
+   * carry only `accessibilityLabel`, with no visible text anywhere near
+   * it -- a bare switch floating under the table chips with nothing
+   * explaining what it does. `getByLabelText` alone would not have caught
+   * this (it also matches `accessibilityLabel`, which was correct the
+   * whole time), so this asserts the visible copy specifically, the way a
+   * sighted member actually reads the screen.
+   */
+  it('labels the split toggle with visible text, not just an accessibility label', () => {
+    renderSheet();
+    expect(
+      screen.getByText("Split us up if we can't sit together"),
+    ).toBeTruthy();
+  });
+
+  describe('the "Who\'s coming?" empty state', () => {
+    it('explains that the club has nobody else yet, when it is solo', () => {
+      renderSheet({
+        roster: [
+          { profile_id: 'me', role: 'member' as const, display_name: 'You', skill_level: null },
+        ],
+        booked: [],
+      });
+      expect(
+        screen.getByText(
+          "You're the only member of this club so far. Invite people from the club page to fill a table.",
+        ),
+      ).toBeTruthy();
+    });
+
+    it('explains that everyone else is already booked, when the club has other members', () => {
+      renderSheet({ booked: ['p2', 'p3'] });
+      expect(
+        screen.getByText('Everyone else in the club already has a seat at this game.'),
+      ).toBeTruthy();
+    });
+
+    it('renders neither empty-state message when somebody is available', () => {
+      renderSheet();
+      expect(
+        screen.queryByText(
+          "You're the only member of this club so far. Invite people from the club page to fill a table.",
+        ),
+      ).toBeNull();
+      expect(
+        screen.queryByText('Everyone else in the club already has a seat at this game.'),
+      ).toBeNull();
+    });
+  });
+
   it('shows exactly who sits where before committing a split', async () => {
     propose.mockResolvedValue({
       plan: {
