@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(31);
+select plan(34);
 
 insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-000000000001', 'alice@example.com'),
@@ -226,6 +226,50 @@ update public.promotion_offers
 
 select is(public.event_free_seats('e1e1e1e1-0000-0000-0000-000000000001'), 6,
   'a resolved offer releases its hold');
+
+-- ---------------------------------------------------------------------
+-- The composite FK to event_tables is scoped: deleting a table a group
+-- prefers nulls only preferred_table_id, never event_id (20260825041000).
+-- An unscoped `on delete set null` nulls every referencing column, and
+-- event_id is NOT NULL, so this would otherwise raise 23502 the moment the
+-- table is gone -- not "the group is fine, just unplaced".
+-- ---------------------------------------------------------------------
+insert into public.event_tables
+  (id, event_id, club_id, label, skill_tier, capacity, position) values
+  ('7ab1e000-0000-0000-0000-000000000004',
+   'e1e1e1e1-0000-0000-0000-000000000001',
+   'c1c1c1c1-0000-0000-0000-000000000001', 'Table 4', 'mixed', 4, 4);
+insert into public.booking_groups
+  (id, event_id, club_id, created_by, preferred_table_id) values
+  ('9909aaaa-0000-0000-0000-000000000003',
+   'e1e1e1e1-0000-0000-0000-000000000001',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   'cccccccc-0000-0000-0000-000000000003',
+   '7ab1e000-0000-0000-0000-000000000004');
+
+-- Nobody is seated at Table 4, so this delete goes straight through
+-- bookings' own FK (nothing to violate) and exercises only booking_groups'.
+-- Done as a raw DELETE, bypassing remove_event_table entirely, because the
+-- property under test is the constraint's own behaviour, not the
+-- function's belt-and-braces UPDATE in front of it.
+delete from public.event_tables
+  where id = '7ab1e000-0000-0000-0000-000000000004';
+
+select is(
+  (select count(*)::int from public.booking_groups
+    where id = '9909aaaa-0000-0000-0000-000000000003'),
+  1,
+  'the group survives the preferred table''s deletion');
+select is(
+  (select preferred_table_id from public.booking_groups
+    where id = '9909aaaa-0000-0000-0000-000000000003'),
+  null,
+  'its preferred_table_id is nulled');
+select is(
+  (select event_id from public.booking_groups
+    where id = '9909aaaa-0000-0000-0000-000000000003'),
+  'e1e1e1e1-0000-0000-0000-000000000001',
+  'and its event_id is untouched, not also nulled into its own NOT NULL');
 
 -- ---------------------------------------------------------------------
 -- RLS. Carol is a Riverside member; Bob is not.

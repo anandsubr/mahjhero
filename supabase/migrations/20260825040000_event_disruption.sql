@@ -72,15 +72,13 @@ begin
      set event_table_id = null
    where event_table_id = target_table;
 
-  -- booking_groups' own FK to event_tables is composite --
-  -- (preferred_table_id, event_id) references (id, event_id) on delete
-  -- set null -- and Postgres's ON DELETE SET NULL for a composite key
-  -- nulls EVERY referencing column, not just the one that matched,
-  -- which would null booking_groups.event_id too and violate its NOT
-  -- NULL constraint (23502). Never reachable before this migration: the
-  -- DELETE below always aborted first on bookings' own FK. Nulling
-  -- preferred_table_id here first means the FK trigger finds no matching
-  -- row left when the table is deleted, so it never fires for this table.
+  -- Explicit, not load-bearing: 20260825041000 scopes booking_groups' composite
+  -- FK to event_tables so its ON DELETE SET NULL only ever touches
+  -- preferred_table_id, never event_id, so the DELETE below would leave
+  -- this column correctly nulled on its own. Kept anyway so the effect is
+  -- visible right here, before promote_waitlist reads booking_groups a few
+  -- lines down, rather than asking a reader to know which ON DELETE action
+  -- a constraint two migrations away performs.
   update public.booking_groups
      set preferred_table_id = null
    where preferred_table_id = target_table;
