@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(42);
+select plan(43);
 
 insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-000000000001', 'alice@example.com'),
@@ -206,17 +206,23 @@ select is(
   null,
   'an "any table" booking is placed nowhere');
 select is(
-  (select public.booking_result(group_id)->'placements'->0->>'event_table_id'
+  (select jsonb_array_length(public.booking_result(group_id)->'placements')
      from public.bookings
     where profile_id = 'dddddddd-0000-0000-0000-000000000004'),
-  null,
-  'and its placements element names no table id either');
-select is(
-  (select public.booking_result(group_id)->'placements'->0->>'table_label'
+  1,
+  'the "any table" booking still has exactly one placements element');
+select ok(
+  (select (public.booking_result(group_id)->'placements'->0 ? 'event_table_id')
+      and (public.booking_result(group_id)->'placements'->0->>'event_table_id' is null)
      from public.bookings
     where profile_id = 'dddddddd-0000-0000-0000-000000000004'),
-  null,
-  'nor a table label');
+  'and its placements element names no table id either (key present, value null)');
+select ok(
+  (select (public.booking_result(group_id)->'placements'->0 ? 'table_label')
+      and (public.booking_result(group_id)->'placements'->0->>'table_label' is null)
+     from public.bookings
+    where profile_id = 'dddddddd-0000-0000-0000-000000000004'),
+  'nor a table label (key present, value null)');
 
 reset role;
 select is(public.event_free_seats('e1e1e1e1-0000-0000-0000-000000000001'), 3,

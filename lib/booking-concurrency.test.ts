@@ -22,11 +22,21 @@
  *      client ever calls commit_booking for real, so the connection each
  *      one uses for the actual race is already warm.
  *   2. The race runs five times, against five separate one-seat events,
- *      instead of once. A masked race on any one of the five still fails
- *      the suite, so the residual chance of every one of the five
- *      accidentally serializing is far smaller than the already-small
- *      per-race chance — not zero, but no longer the roughly-1-in-7 shot a
- *      single cold run would be.
+ *      instead of once. This is NOT because five independent races make an
+ *      accidental serialization exponentially less likely — five cold-start
+ *      runs of this same suite (see the task report's second fix-pass
+ *      section) showed the races are not independent trials: races 1–4
+ *      came back red in all five runs (20/20), while race 5 was masked in
+ *      every single one of those runs (5/5), a pattern a per-race-chance
+ *      model does not predict. Cause undetermined — plausible candidates
+ *      include fetch/undici keep-alive connection reuse maturing over the
+ *      sequence, or local Supabase connection-handling changing under a
+ *      short burst of prior calls — but not chased down. The measured,
+ *      load-bearing fact is narrower: the FIRST race alone detected the
+ *      missing lock in all five cold trials, so racing at least once after
+ *      the warm-up is what this suite actually relies on; the extra four
+ *      races are redundancy against whatever is masking race 5, not
+ *      insurance against independent bad luck on any given race.
  *
  * Requires the local Supabase stack. Reachability is probed once at module
  * scope (the same pattern lib/schema-contract.test.ts uses) and the whole
@@ -128,9 +138,14 @@ describe.runIf(reachable || required)('two members racing for the last seat', ()
     // This is the direct fix for the named cause of the cold-start false
     // green (see the file docblock): whatever connection/auth/pool setup
     // happens on a client's first real request happens here, on a query
-    // whose result nobody checks, rather than on the race itself.
-    await racerA!.client.from('clubs').select('id').limit(1);
-    await racerB!.client.from('clubs').select('id').limit(1);
+    // whose data nobody needs — but its `.error` is still checked. If this
+    // call itself failed (an auth or RLS regression, say), silently
+    // ignoring that would leave the connection cold and quietly regress
+    // the race to the undetected cold case this warm-up exists to close.
+    const warmA = await racerA!.client.from('clubs').select('id').limit(1);
+    if (warmA.error) throw new Error(`racer A warm-up failed: ${warmA.error.message}`);
+    const warmB = await racerB!.client.from('clubs').select('id').limit(1);
+    if (warmB.error) throw new Error(`racer B warm-up failed: ${warmB.error.message}`);
 
     const club = await admin
       .from('clubs')
@@ -242,10 +257,10 @@ describe.runIf(reachable || required)('two members racing for the last seat', ()
     }
   });
 
-  it.each(Array.from({ length: RACE_COUNT }, (_, i) => i))(
+  it.each(Array.from({ length: RACE_COUNT }, (_, i) => i + 1))(
     'gives the seat to exactly one racer (race %i)',
-    async (i) => {
-      const { eventId, tableId } = races[i]!;
+    async (raceNumber) => {
+      const { eventId, tableId } = races[raceNumber - 1]!;
 
       const [a, b] = await Promise.all([
         players[0]!.client.rpc('commit_booking', {
