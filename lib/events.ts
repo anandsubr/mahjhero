@@ -277,6 +277,74 @@ export function eventStartTimeInZone(startsAt: string, timezone: string): string
 // strand the member with a spinner and no message.
 // ---------------------------------------------------------------------------
 
+/**
+ * The shape of a PostgREST error, loosely — enough to read a code and a
+ * message off it without importing supabase-js's own type into every call
+ * site, and without asserting a `code` that a thrown non-PostgREST error
+ * would not have.
+ */
+type RpcError = { code?: string | null; message?: string | null } | null | undefined;
+
+/**
+ * Rejections the database makes on purpose, and what to tell the host.
+ *
+ * GENERIC_ERROR says "Could not reach MahjHero. Check your connection and try
+ * again." That is a FALSE STATEMENT about a request that reached MahjHero
+ * fine and was refused for a reason the host can act on — clearing the title,
+ * naming an end date before the start, choosing a date that has already gone
+ * past. Every one of those used to be reported as a broken internet
+ * connection, and the create screen and the edit screen disagreed about the
+ * very same rule (create already said "Give the game a name.").
+ *
+ * Matched on SQLSTATE **and** message text, because 23514 is the code for
+ * every deliberate `raise` in the event functions as well as for a table
+ * CHECK violation — the code alone cannot tell an empty title from a past
+ * date. The strings are the ones the functions raise
+ * (supabase/migrations/20260824001000) or the constraint name Postgres puts
+ * in the message for a CHECK violation (`event_series_ends_after_start`, from
+ * 20260822194000). Both are pinned end-to-end against the real database in
+ * lib/schema-contract.test.ts, so a renamed constraint or a reworded `raise`
+ * turns that suite red rather than silently falling back to the lie.
+ *
+ * Anything unrecognised still gets GENERIC_ERROR. A vague statement is worse
+ * than a precise one and better than a false one.
+ */
+const RPC_ERROR_MESSAGES: { code: string; contains: string; message: string }[] = [
+  {
+    code: '23514',
+    contains: 'title is required',
+    // Word-for-word what the create screen's own client-side check says, so
+    // the two screens stop disagreeing about one rule.
+    message: 'Give the game a name.',
+  },
+  {
+    code: '23514',
+    contains: 'event_series_ends_after_start',
+    message: 'That end date is before the series starts.',
+  },
+  {
+    code: '23514',
+    contains: 'that start time has already passed',
+    message: 'That start time has already passed. Pick a later one.',
+  },
+  {
+    code: '23514',
+    contains: 'no games before that end date',
+    // Matches the create screen's own preview copy for the same situation.
+    message: 'No games would be created before that end date.',
+  },
+];
+
+function rpcErrorMessage(error: RpcError): string {
+  if (!error) return GENERIC_ERROR;
+  const text = error.message ?? '';
+  const match = RPC_ERROR_MESSAGES.find(
+    (candidate) =>
+      candidate.code === error.code && text.includes(candidate.contains),
+  );
+  return match ? match.message : GENERIC_ERROR;
+}
+
 type EventRow = Omit<ClubEvent, 'venue_name' | 'table_count'> & {
   venues: { name: string } | null;
   event_tables: { id: string }[] | null;
@@ -486,7 +554,7 @@ export async function createEvent(input: {
 
     if (error || !data) {
       console.error('createEvent failed', error);
-      return { eventId: null, error: GENERIC_ERROR };
+      return { eventId: null, error: rpcErrorMessage(error) };
     }
     return { eventId: data as string, error: null };
   } catch (cause) {
@@ -531,7 +599,7 @@ export async function updateEvent(
 
     if (error) {
       console.error('updateEvent failed', error);
-      return { error: GENERIC_ERROR };
+      return { error: rpcErrorMessage(error) };
     }
     return { error: null };
   } catch (cause) {
@@ -703,7 +771,7 @@ export async function createEventSeries(input: {
 
     if (error || !data) {
       console.error('createEventSeries failed', error);
-      return { seriesId: null, error: GENERIC_ERROR };
+      return { seriesId: null, error: rpcErrorMessage(error) };
     }
     return { seriesId: data as string, error: null };
   } catch (cause) {
@@ -751,7 +819,7 @@ export async function updateEventSeries(
 
     if (error) {
       console.error('updateEventSeries failed', error);
-      return { error: GENERIC_ERROR };
+      return { error: rpcErrorMessage(error) };
     }
     return { error: null };
   } catch (cause) {

@@ -7,6 +7,16 @@ type DateFieldProps = {
   value: string;
   onChange: (next: string) => void;
   label: string;
+  /**
+   * "YYYY-MM-DD", rendered as the input's `min`. See the native
+   * components/DateField.tsx for why every caller passes today.
+   *
+   * `min` is a courtesy, not a control: it greys out earlier days in the
+   * browser's own calendar popup and marks the field `:invalid`, but it does
+   * not block a typed value or a submit. The refusal that actually holds is
+   * supabase/migrations/20260824001000's, in the database.
+   */
+  minimum?: string;
 };
 
 /**
@@ -29,7 +39,12 @@ type DateFieldProps = {
  * the "Date" field and asserts the previously picked date is what the screen
  * still sends. Deleting the guard below turns that test red.
  */
-export default function DateField({ value, onChange, label }: DateFieldProps) {
+export default function DateField({
+  value,
+  onChange,
+  label,
+  minimum,
+}: DateFieldProps) {
   function handleChange(event: ChangeEvent<HTMLInputElement>) {
     if (event.target.value === '') return;
     onChange(event.target.value);
@@ -41,6 +56,7 @@ export default function DateField({ value, onChange, label }: DateFieldProps) {
         type="date"
         value={value}
         onChange={handleChange}
+        min={minimum}
         aria-label={label}
         style={webInputStyle}
       />

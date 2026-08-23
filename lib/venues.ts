@@ -152,6 +152,17 @@ export async function updateVenue(
 
     if (error) {
       console.error('updateVenue failed', error);
+      // The same mapping createVenue has carried since it was written, and
+      // for the same reason: renaming a public venue onto a name another
+      // public venue already holds trips the partial unique index, which is
+      // a real answer the host can act on, not a system fault. Without this,
+      // the rename reported "Could not reach MahjHero. Check your
+      // connection" — a false statement about a request that arrived and was
+      // refused on purpose — so the create and edit paths disagreed about
+      // one rule.
+      if (error.code === '23505') {
+        return { error: 'A shared venue with that name already exists here.' };
+      }
       return { error: GENERIC_ERROR };
     }
     return { error: null };

@@ -1,29 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import VenuePicker from '../VenuePicker';
-import { colors } from '../../lib/theme';
-
-// react-native-web (the version pinned here) never wires Pressable's
-// `accessibilityState={{ checked }}` through to `aria-checked` on web — see
-// createDOMProps, which recognises the deprecated `accessibilityChecked` /
-// `aria-checked` *props* but has no handling for `accessibilityState` at
-// all. So `aria-checked` is simply absent from Toggle's rendered output in
-// this environment; asserting it (as an earlier draft of this test did)
-// would silently pass for the wrong reason (`null !== 'false'` — actually
-// fails, good — but "true" would look identical to "not present", a false
-// negative waiting to happen) rather than checking anything about which
-// track color rendered. What Toggle actually renders instead is the
-// track's background color (`colors.neutral[400]` off vs
-// `colors.accentColor` on, per components/Toggle.tsx's own styles), so
-// that's what this test reads.
-function hexToRgb(hex: string): string {
-  const clean = hex.replace('#', '');
-  const value = parseInt(clean, 16);
-  const r = (value >> 16) & 255;
-  const g = (value >> 8) & 255;
-  const b = value & 255;
-  return `rgb(${r}, ${g}, ${b})`;
-}
 
 vi.mock('../../lib/venues', () => ({
   searchVenues: vi.fn(),
@@ -197,16 +174,17 @@ describe('VenuePicker', () => {
     fireEvent.click(screen.getByRole('button', { name: /Add “Marie/ }));
 
     // The privacy default, asserted rather than assumed. A great deal of
-    // mahjong is played in members' homes. Checked against the OFF track
-    // color, not the ON one, so this fails loudly (not silently) if the
-    // default is ever flipped.
+    // mahjong is played in members' homes.
+    //
+    // This used to read the switch's rendered TRACK COLOR, because
+    // `accessibilityState={{ checked }}` never reached the DOM under
+    // react-native-web and there was no state attribute to read. Toggle now
+    // sends `aria-checked` (see components/Toggle.tsx), so this asserts the
+    // thing a screen reader actually announces rather than a proxy for it —
+    // and the literal 'false' comparison also fails if the attribute goes
+    // missing again, which a `not.toBe('true')` check would not.
     const share = screen.getByLabelText('Other clubs can use this venue');
-    expect(getComputedStyle(share).backgroundColor).toBe(
-      hexToRgb(colors.neutral[400]),
-    );
-    expect(getComputedStyle(share).backgroundColor).not.toBe(
-      hexToRgb(colors.accentColor),
-    );
+    expect(share.getAttribute('aria-checked')).toBe('false');
   });
 
   it('creates the venue and reports it back', async () => {

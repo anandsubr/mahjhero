@@ -410,6 +410,33 @@ describe('a series occurrence', () => {
     });
   });
 
+  it('floors the end date at today, so a mistyped year cannot wipe the run', async () => {
+    /*
+     * Shortening a run now DELETES the future weeks beyond the new end
+     * (supabase/migrations/20260824000000), which is what makes the change
+     * reversible -- but it also means a mistyped year in this one field
+     * clears the whole run in a single save. The database does not refuse a
+     * past end date, and should not: pulling a run's end back legitimately
+     * means "this series is over". So the picker declining to offer the day
+     * is where that mistake is stopped, and this is the only assertion that
+     * would notice the prop going missing.
+     */
+    const now = new Date();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const today = `${now.getFullYear()}-${month}-${day}`;
+
+    render(<EditEventScreen />);
+    await screen.findByText('The whole series');
+    fireEvent.click(screen.getByText('The whole series'));
+
+    expect(
+      (screen.getByLabelText('Stop repeating on') as HTMLInputElement).getAttribute(
+        'min',
+      ),
+    ).toBe(today);
+  });
+
   it('offers "Change the schedule", naming how many future games ending it cancels', async () => {
     fetchFutureOccurrenceCount.mockResolvedValue(5);
     render(<EditEventScreen />);

@@ -59,6 +59,22 @@ export default function NewEventScreen() {
   const [venueId, setVenueId] = useState<string | null>(null);
   const [venueName, setVenueName] = useState('');
   const [date, setDate] = useState(dateToDateString(new Date()));
+  /*
+   * The floor under both date fields on this screen.
+   *
+   * A game dated in the past saves fine and then appears nowhere:
+   * `fetchUpcomingEvents` filters `starts_at >= now()` and is the only events
+   * listing the app has, so a mistyped year used to give a host a success
+   * redirect and a game that exists only in the database. Snapshotted once
+   * per mount rather than recomputed on every render -- it is a floor, not a
+   * clock, and a value that changed mid-form would make the field the host is
+   * looking at change under them at midnight.
+   *
+   * The device's own calendar day, which is not necessarily the club's. Close
+   * enough for a picker; the club's zone is where the real refusal lives
+   * (supabase/migrations/20260824001000).
+   */
+  const [today] = useState(() => dateToDateString(new Date()));
   const [startTime, setStartTime] = useState('19:00');
   const [duration, setDuration] = useState(180);
   const [tableCount, setTableCount] = useState(1);
@@ -215,7 +231,7 @@ export default function NewEventScreen() {
       />
 
       <Text style={styles.label}>Date</Text>
-      <DateField value={date} onChange={setDate} label="Date" />
+      <DateField value={date} onChange={setDate} label="Date" minimum={today} />
 
       <Text style={styles.label}>Start time</Text>
       <TimeField value={startTime} onChange={setStartTime} label="Start time" />
@@ -296,7 +312,12 @@ export default function NewEventScreen() {
             one value the host could not select: a controlled input already
             holding it fires no change event when you pick it again.
           */}
-          <DateField value={endsOn} onChange={setEndsOn} label="Stop repeating on" />
+          <DateField
+            value={endsOn}
+            onChange={setEndsOn}
+            label="Stop repeating on"
+            minimum={today}
+          />
         </>
       ) : null}
 

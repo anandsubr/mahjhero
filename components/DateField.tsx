@@ -11,6 +11,21 @@ type DateFieldProps = {
   value: string;
   onChange: (next: string) => void;
   label: string; // accessibility label, e.g. "Date"
+  /**
+   * "YYYY-MM-DD", the earliest date this field will offer. Omitted means no
+   * floor at all.
+   *
+   * Every caller in the app passes today, because a game dated in the past
+   * saves fine and then appears nowhere: `fetchUpcomingEvents` filters
+   * `starts_at >= now()` and is the only events listing there is, so a
+   * mistyped year used to give a host a success redirect and an invisible
+   * game. This is the cheap, helpful half of that fix -- the picker simply
+   * does not offer the day. The guarantee is
+   * supabase/migrations/20260824001000, which refuses the save outright: a
+   * date picker constrains a DAY and the listing filters on an INSTANT, so
+   * this alone could never be enough.
+   */
+  minimum?: string;
 };
 
 /**
@@ -33,10 +48,18 @@ type DateFieldProps = {
  * the native picker cannot render one, so the picker anchors on today while
  * the Android button says so in words rather than naming a date.
  */
-export default function DateField({ value, onChange, label }: DateFieldProps) {
+export default function DateField({
+  value,
+  onChange,
+  label,
+  minimum,
+}: DateFieldProps) {
   const [open, setOpen] = useState(false);
   const hasValue = value.length > 0;
   const date = hasValue ? dateStringToDate(value) : new Date();
+  // `undefined`, not `null`: DateTimePicker treats an explicit null as a real
+  // value and warns about it, where an absent prop is simply no floor.
+  const minimumDate = minimum ? dateStringToDate(minimum) : undefined;
 
   function handleValueChange(
     _event: DateTimePickerChangeEvent,
@@ -69,6 +92,7 @@ export default function DateField({ value, onChange, label }: DateFieldProps) {
             value={date}
             mode="date"
             display="default"
+            minimumDate={minimumDate}
             onValueChange={handleValueChange}
             onDismiss={handleDismiss}
           />
@@ -83,6 +107,7 @@ export default function DateField({ value, onChange, label }: DateFieldProps) {
         value={date}
         mode="date"
         display="compact"
+        minimumDate={minimumDate}
         onValueChange={handleValueChange}
         accessibilityLabel={label}
         style={styles.iosPicker}

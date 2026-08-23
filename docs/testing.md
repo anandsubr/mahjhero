@@ -559,9 +559,8 @@ plain `select count(*) from cron.job` gets. pgTAP's own
 `has_table('cron', 'job', ...)` still passes for this role, because that
 check reads `pg_class`/`pg_namespace` directly, which every role can see
 regardless of schema `USAGE`: the row is visible in the catalog even though
-the role cannot query the table itself. An earlier draft of this section
-blurred those two facts into "can... read `cron.job`"; it cannot. The
-distinction was confirmed with a temporary pgTAP probe run via
+the role cannot query the table itself. The distinction was confirmed with a
+temporary pgTAP probe run via
 `npx supabase test db --linked supabase/tests/database/portable`, deleted
 after use — not checked in, since it exists to answer this one question, not
 to run on every suite invocation.

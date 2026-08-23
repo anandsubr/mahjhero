@@ -26,6 +26,7 @@ import {
   type EventSeries,
 } from '../../../../../lib/events';
 import { useSession } from '../../../../../lib/session';
+import { dateToDateString } from '../../../../../lib/time';
 import { colors, space, type } from '../../../../../lib/theme';
 
 type Scope = 'event' | 'series';
@@ -139,6 +140,10 @@ export default function EditEventScreen() {
   // supabase/migrations/20260823080000 added `clear_ends_on` as a second,
   // unambiguous signal. This toggle is what drives that argument.
   const [runsIndefinitely, setRunsIndefinitely] = useState(false);
+  // Snapshotted once per mount, not recomputed per render -- a floor, not a
+  // clock. Device-local, which is close enough for a picker; see
+  // components/DateField.tsx.
+  const [today] = useState(() => dateToDateString(new Date()));
   const [includeOverridden, setIncludeOverridden] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -427,7 +432,22 @@ export default function EditEventScreen() {
           {runsIndefinitely ? (
             <Text style={styles.help}>This series runs indefinitely.</Text>
           ) : (
-            <DateField value={endsOn} onChange={setEndsOn} label="Stop repeating on" />
+            <DateField
+              value={endsOn}
+              onChange={setEndsOn}
+              label="Stop repeating on"
+              // Today, for the same reason the create screen passes it: an
+              // end date in the past is a date this screen should not offer.
+              // It is not refused by the database -- pulling a run's end back
+              // to a past date legitimately means "this series is over", and
+              // update_event_series has no past guard
+              // (supabase/migrations/20260824001000 says why) -- but it does
+              // now DELETE every future week beyond it
+              // (supabase/migrations/20260824000000), so a mistyped year here
+              // would silently clear the whole run. The picker declining to
+              // offer the day is where that mistake is cheapest to stop.
+              minimum={today}
+            />
           )}
           <View style={styles.shareRow}>
             <Toggle

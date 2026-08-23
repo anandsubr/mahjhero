@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(97);
+select plan(118);
 
 /*
  * Series creation, series editing, resetting one week, ending a series, and
@@ -910,7 +910,7 @@ select is(
 );
 
 -- 13d. Shortening ends_on, chosen to fall before BOTH past occurrences, so
--- the shortening cancel's own `starts_at > now()` guard -- not the one on the
+-- the shortening branch's own `starts_at > now()` guard -- not the one on the
 -- other four propagation statements -- is what has to hold. Closes x3 (the
 -- whole branch deleted) and x4 (that guard specifically dropped).
 select lives_ok(
@@ -920,28 +920,78 @@ select lives_ok(
   'series C''s planned end is pulled back before both of its past weeks'
 );
 
+/*
+ * DELETED, not cancelled (20260824000000).
+ *
+ * These two assertions used to read `is(status, 'cancelled')`, and section
+ * 14c below used to assert, under the description "clearing the end date
+ * cancels nothing new", that the count of cancelled rows was still 2. All
+ * three were true, and all three ratified a bug: a cancelled row goes on
+ * occupying its `(series_id, occurrence_date)` slot, so materialization's
+ * `on conflict ... do nothing` skipped it forever and clearing the end date
+ * again -- the edit screen's "Runs indefinitely" toggle -- could never
+ * restore the run. Section 15 asserts the round trip those assertions were
+ * standing in the way of.
+ *
+ * `not exists`, not `is(status, null)`: `is()` against a scalar subquery that
+ * returns no row would also pass for a row whose status column was somehow
+ * null, and "the row is gone" is the claim.
+ */
+select ok(
+  not exists (
+    select 1 from public.events
+    where series_id = '55555555-0000-0000-0000-000000000004'
+      and occurrence_date = current_date + 5
+  ),
+  'a live future week beyond the shortened end is DELETED, not cancelled -- and this one carries two overrides, so a customised week goes with the rest of the run rather than being detached or spared'
+);
+
+select ok(
+  not exists (
+    select 1 from public.events
+    where series_id = '55555555-0000-0000-0000-000000000004'
+      and occurrence_date = current_date + 12
+  ),
+  'so is the un-customised one'
+);
+
+-- The other half of "deleted, not cancelled": nothing about this edit is a
+-- cancellation. Cancelling is a statement to the members who were told the
+-- game was on, and shortening a run is not that statement -- so a shortened
+-- series must not acquire cancelled rows it never had.
 select is(
-  (select status::text from public.events where occurrence_date = current_date + 5),
-  'cancelled',
-  'a live future week beyond the shortened end is cancelled'
+  (select count(*)::int from public.events
+   where series_id = '55555555-0000-0000-0000-000000000004'
+     and status = 'cancelled'),
+  0,
+  'and nothing in series C is cancelled by the shortening'
+);
+
+/*
+ * History, asserted as PRESENT rather than as merely not-cancelled.
+ *
+ * These two were `isnt(status, 'cancelled')`, which was adequate while the
+ * branch cancelled and is useless now that it deletes: pgTAP's `isnt()` reads
+ * a missing row as NULL, and NULL is not 'cancelled', so a mutant that drops
+ * the `starts_at > now()` guard and deletes both past weeks would have SAILED
+ * THROUGH both of them. `is(status, 'published')` fails on a deleted row and
+ * on a cancelled one alike, which is the claim: shortening a series never
+ * rewrites history, in either direction.
+ */
+select is(
+  (select status::text from public.events
+   where series_id = '55555555-0000-0000-0000-000000000004'
+     and occurrence_date = current_date - 30),
+  'published',
+  'a past week that also falls beyond the shortened end is left exactly where it is -- shortening a series never rewrites history'
 );
 
 select is(
-  (select status::text from public.events where occurrence_date = current_date + 12),
-  'cancelled',
-  'so is the other one'
-);
-
-select isnt(
-  (select status::text from public.events where occurrence_date = current_date - 30),
-  'cancelled',
-  'a past week that also falls beyond the shortened end is NOT cancelled -- shortening a series never rewrites history'
-);
-
-select isnt(
-  (select status::text from public.events where occurrence_date = current_date - 50),
-  'cancelled',
-  'nor is the other past week'
+  (select status::text from public.events
+   where series_id = '55555555-0000-0000-0000-000000000004'
+     and occurrence_date = current_date - 50),
+  'published',
+  'nor is the other past week touched'
 );
 
 select is(
@@ -992,14 +1042,31 @@ select ok(
 );
 
 -- 14c. Clearing never cancels anything -- there is nothing to cancel when
--- the boundary moves to infinity. The two occurrences 13d already cancelled
--- stay exactly as they were; nothing else joins them.
+-- the boundary moves to infinity, and 13d removed rather than cancelled the
+-- weeks that fell outside the shortened run, so series C holds no cancelled
+-- row at all by this point and clearing must not create one.
 select is(
   (select count(*)::int from public.events
    where series_id = '55555555-0000-0000-0000-000000000004'
      and status = 'cancelled'),
-  2,
-  'clearing the end date cancels nothing new'
+  0,
+  'clearing the end date cancels nothing'
+);
+
+-- ...and it does the opposite: with the slots freed, the horizon refills.
+-- Series C is weekly on today's weekday, so clearing its end date
+-- materializes current_date, +7, +14, +21, +28, +35 and +42 -- seven dates,
+-- counted by occurrence_date rather than against now(), so the assertion does
+-- not change meaning depending on whether the suite happens to run before or
+-- after 19:00 in the club's zone. This is the first half of the restoration
+-- claim; section 15 proves the other half, on a run whose weeks were removed
+-- by a shortening in the same test.
+select is(
+  (select count(*)::int from public.events
+   where series_id = '55555555-0000-0000-0000-000000000004'
+     and occurrence_date >= current_date),
+  7,
+  'and the horizon materializes again once the boundary is gone'
 );
 
 -- 14d. With clear_ends_on left at its default (false), new_ends_on still
@@ -1040,6 +1107,239 @@ select throws_ok(
   '42501',
   'not an organizer of this club',
   'a plain member cannot clear a series end date'
+);
+
+-- ---------------------------------------------------------------------------
+-- 15. The round trip: shorten, then put the boundary back.
+--
+--     This is the assertion the whole of section 13/14 was missing, and its
+--     absence is what let the defect ship. Every existing assertion about
+--     shortening looked at the weeks it removed; none looked at what happened
+--     when the host changed their mind. Under the old behaviour those weeks
+--     were CANCELLED, and a cancelled row keeps its
+--     `(series_id, occurrence_date)` slot, so materialization's
+--     `on conflict ... do nothing` skipped it forever: clearing the end date
+--     -- the edit screen's "Runs indefinitely" toggle, which exists for
+--     exactly this -- re-materialized nothing, and the run had a permanent
+--     hole in it rendered as "Cancelled" cards.
+--
+--     A dedicated series, D, built by create_event_series so its occurrences
+--     sit on the rule's own dates (series C's are hand-planted off-rule, and
+--     a re-materialization therefore cannot land on them). Open-ended to
+--     start with, which is the case the toggle returns a series to.
+--
+--     Every query below is scoped by series_id. Series A's occurrences share
+--     several of these calendar dates, and an unscoped `occurrence_date =`
+--     would quietly read the wrong club's game.
+-- ---------------------------------------------------------------------------
+
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "aaaaaaaa-0000-0000-0000-000000000001", "role": "authenticated"}';
+
+select lives_ok(
+  $$select public.create_event_series(
+      'c1c1c1c1-0000-0000-0000-000000000001', 'Round trip series',
+      '11111111-0000-0000-0000-000000000001', '',
+      'weekly', extract(dow from current_date + 3)::smallint, null,
+      '19:00'::time, 180, 2, current_date, null)$$,
+  'an open-ended weekly series is created for the round trip'
+);
+
+select results_eq(
+  $$select occurrence_date from public.events
+    where series_id = (select id from public.event_series
+                       where title = 'Round trip series')
+    order by occurrence_date$$,
+  $$values (current_date + 3), (current_date + 10), (current_date + 17),
+           (current_date + 24), (current_date + 31), (current_date + 38)$$,
+  'and materializes the six weeks of its rule that fall inside the horizon'
+);
+
+-- One week the host cancels ON PURPOSE, five weeks out -- beyond the end date
+-- the next statement sets, so the shortening meets it. This is the row that
+-- must survive as a cancelled row: nobody un-tells the members.
+select lives_ok(
+  $$select public.cancel_event(
+      (select id from public.events
+       where series_id = (select id from public.event_series
+                          where title = 'Round trip series')
+         and occurrence_date = current_date + 31))$$,
+  'the host deliberately cancels the week five weeks out'
+);
+
+select lives_ok(
+  $$select public.update_event_series(
+      (select id from public.event_series where title = 'Round trip series'),
+      null, null, null, null, null, null, (current_date + 10), false)$$,
+  'the host caps the run on the date of its own second week'
+);
+
+select results_eq(
+  $$select occurrence_date from public.events
+    where series_id = (select id from public.event_series
+                       where title = 'Round trip series')
+    order by occurrence_date$$,
+  $$values (current_date + 3), (current_date + 10), (current_date + 31)$$,
+  'the three live weeks past the new end are gone outright; the week landing exactly ON the new end survives (ends_on is inclusive, matching series_occurrence_dates); and the cancelled one is still there'
+);
+
+select is(
+  (select status::text from public.events
+   where series_id = (select id from public.event_series
+                      where title = 'Round trip series')
+     and occurrence_date = current_date + 31),
+  'cancelled',
+  'a week the host cancelled is left cancelled and left in place -- that statement was made to the members and shortening the run does not retract it'
+);
+
+select is(
+  (select count(*)::int from public.event_tables t
+   join public.events e on e.id = t.event_id
+   where e.series_id = (select id from public.event_series
+                        where title = 'Round trip series')),
+  6,
+  'and the removed weeks took their tables with them -- three events, two tables each'
+);
+
+-- The toggle. THE assertion the suite never had.
+select lives_ok(
+  $$select public.update_event_series(
+      (select id from public.event_series where title = 'Round trip series'),
+      null, null, null, null, null, null, null, false, true)$$,
+  'the host turns "Runs indefinitely" back on'
+);
+
+select results_eq(
+  $$select occurrence_date, status::text from public.events
+    where series_id = (select id from public.event_series
+                       where title = 'Round trip series')
+    order by occurrence_date$$,
+  $$values ((current_date + 3),  'published'),
+           ((current_date + 10), 'published'),
+           ((current_date + 17), 'published'),
+           ((current_date + 24), 'published'),
+           ((current_date + 31), 'cancelled'),
+           ((current_date + 38), 'published')$$,
+  'clearing the end date restores every week the shortening removed, published -- and does not resurrect the week the host cancelled'
+);
+
+select is(
+  (select count(*)::int from public.event_tables t
+   join public.events e on e.id = t.event_id
+   where e.series_id = (select id from public.event_series
+                        where title = 'Round trip series')),
+  12,
+  'and the restored weeks come back with their tables'
+);
+
+-- The same round trip through the other door: extending the end date rather
+-- than removing it. `clear_ends_on` and a widened `new_ends_on` reach the
+-- restoration by different branches, so one passing says nothing about the
+-- other.
+select lives_ok(
+  $$select public.update_event_series(
+      (select id from public.event_series where title = 'Round trip series'),
+      null, null, null, null, null, null, (current_date + 10), false)$$,
+  'the run is capped on its second week a second time'
+);
+
+select is(
+  (select count(*)::int from public.events
+   where series_id = (select id from public.event_series
+                      where title = 'Round trip series')
+     and occurrence_date > current_date + 10
+     and status <> 'cancelled'),
+  0,
+  'nothing live survives past the cap'
+);
+
+select lives_ok(
+  $$select public.update_event_series(
+      (select id from public.event_series where title = 'Round trip series'),
+      null, null, null, null, null, null, (current_date + 90), false)$$,
+  'and the host then extends the end date well past the horizon instead'
+);
+
+select results_eq(
+  $$select occurrence_date, status::text from public.events
+    where series_id = (select id from public.event_series
+                       where title = 'Round trip series')
+    order by occurrence_date$$,
+  $$values ((current_date + 3),  'published'),
+           ((current_date + 10), 'published'),
+           ((current_date + 17), 'published'),
+           ((current_date + 24), 'published'),
+           ((current_date + 31), 'cancelled'),
+           ((current_date + 38), 'published')$$,
+  'extending the end date restores the run exactly as clearing it does'
+);
+
+-- ---------------------------------------------------------------------------
+-- 16. A series that would produce no game at all must not save
+--     (20260824001000).
+--
+--     Same failure as a past-dated one-off, one level up: a run whose end
+--     date is already behind us, or capped before its own rule's first
+--     occurrence, materializes nothing and used to return a uuid and a
+--     success message anyway. The only events listing in the app shows
+--     upcoming games, so the host would have had a series they could never
+--     see a single game from.
+-- ---------------------------------------------------------------------------
+
+select throws_ok(
+  $$select public.create_event_series(
+      'c1c1c1c1-0000-0000-0000-000000000001', 'Already over',
+      '11111111-0000-0000-0000-000000000001', '',
+      'weekly', extract(dow from current_date + 3)::smallint, null,
+      '19:00'::time, 180, 1, current_date - 60, current_date - 1)$$,
+  '23514',
+  'no games before that end date',
+  'a series whose run ended yesterday is refused rather than saved empty'
+);
+
+-- And the refusal takes the insert with it -- the check runs after the row
+-- exists (so event_series' own constraints get to report their problems
+-- first) and relies on the exception to roll it back.
+select is(
+  (select count(*)::int from public.event_series where title = 'Already over'),
+  0,
+  'and no half-made series is left behind by the refusal'
+);
+
+-- The sharper case: an end date that is in the FUTURE but still lands before
+-- the rule's own first occurrence. Weekly on the weekday five days out,
+-- stopping in two. A guard that only compared ends_on against today would
+-- accept this and produce the same empty series.
+select throws_ok(
+  $$select public.create_event_series(
+      'c1c1c1c1-0000-0000-0000-000000000001', 'Stops too soon',
+      '11111111-0000-0000-0000-000000000001', '',
+      'weekly', extract(dow from current_date + 5)::smallint, null,
+      '19:00'::time, 180, 1, current_date, current_date + 2)$$,
+  '23514',
+  'no games before that end date',
+  'so is one whose end date falls before its rule''s first occurrence'
+);
+
+-- The other side of that boundary: move the end date to the day the first
+-- occurrence actually lands on, and it is a perfectly good series. `ends_on`
+-- is inclusive, exactly as series_occurrence_dates reads it.
+select lives_ok(
+  $$select public.create_event_series(
+      'c1c1c1c1-0000-0000-0000-000000000001', 'Stops just in time',
+      '11111111-0000-0000-0000-000000000001', '',
+      'weekly', extract(dow from current_date + 5)::smallint, null,
+      '19:00'::time, 180, 1, current_date, current_date + 5)$$,
+  'a run ending exactly on its single occurrence is created'
+);
+
+select is(
+  (select count(*)::int from public.events
+   where series_id = (select id from public.event_series
+                      where title = 'Stops just in time')),
+  1,
+  'and that one game is materialized'
 );
 
 select * from finish();

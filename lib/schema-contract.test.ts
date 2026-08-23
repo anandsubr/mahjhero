@@ -52,6 +52,7 @@ vi.mock('./supabase', () => ({
   }),
 }));
 
+import { GENERIC_ERROR } from './constants';
 import {
   fetchPreferences,
   fetchProfile,
@@ -1219,3 +1220,232 @@ describe.runIf(reachable || required)(
     });
   },
 );
+
+/*
+ * The refusal contract.
+ *
+ * lib/events.ts's `rpcErrorMessage` and lib/venues.ts's `updateVenue` decide
+ * what the host is told by matching a SQLSTATE against a substring of the
+ * message Postgres produced — either a function's own `raise ... using
+ * errcode`, or the constraint name Postgres writes into a CHECK/UNIQUE
+ * violation. Both halves of that key live in migrations, and neither is
+ * something the Vitest suites can see: they mock supabase-js and hand the
+ * mapper a payload written by hand, which proves the mapper reads the shape
+ * it was given and nothing at all about whether the database still produces
+ * it.
+ *
+ * That gap is where the original bug lived — three deliberate refusals
+ * reaching the host as "Could not reach MahjHero. Check your connection and
+ * try again.", a false statement about a request that arrived and was refused
+ * on purpose. So these run the real RPCs against the real database and assert
+ * the message the host would actually read. Reword a `raise`, rename
+ * `event_series_ends_after_start`, or drop a mapping, and this block goes
+ * red with the exact wrong sentence in the failure output.
+ */
+describe.runIf(reachable || required)('deliberate refusals reach the host as refusals', () => {
+  let admin: SupabaseClient;
+  let userId: string;
+  let clubId: string;
+  let venueId: string;
+  let otherVenueId: string;
+  let eventId: string;
+  let seriesId: string;
+
+  beforeAll(async () => {
+    expect(
+      reachable,
+      `Local Supabase stack not reachable at ${local.url}. Run \`npx supabase start\`.`,
+    ).toBe(true);
+    ({ admin, userId } = await signInFreshUser());
+
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    const { data: club, error: clubError } = await admin
+      .from('clubs')
+      .insert({
+        name: 'Refusal Club',
+        slug: `refusal-club-${suffix}`,
+        timezone: 'America/New_York',
+        created_by: userId,
+      })
+      .select('id')
+      .single();
+    expect(clubError, `seeding club failed: ${clubError?.message}`).toBeNull();
+    clubId = club!.id;
+
+    const { error: memberError } = await admin.from('club_members').insert({
+      club_id: clubId,
+      profile_id: userId,
+      role: 'host',
+      status: 'active',
+    });
+    expect(memberError, `seeding host failed: ${memberError?.message}`).toBeNull();
+
+    // Two PUBLIC venues, so renaming one onto the other's name is the real
+    // unique-index collision updateVenue has to translate. The names carry a
+    // per-run suffix because this suite runs against the persistent local
+    // stack, where a leftover row from an earlier run would otherwise make
+    // the first insert, not the rename, the thing that collides.
+    const { data: venues, error: venueError } = await admin
+      .from('venues')
+      .insert([
+        {
+          name: `Refusal Hall ${suffix}`,
+          visibility: 'public',
+          added_by_club_id: clubId,
+          created_by: userId,
+        },
+        {
+          name: `Refusal Annex ${suffix}`,
+          visibility: 'public',
+          added_by_club_id: clubId,
+          created_by: userId,
+        },
+      ])
+      .select('id, name')
+      .order('name');
+    expect(venueError, `seeding venues failed: ${venueError?.message}`).toBeNull();
+    // Ordered by name: "Annex" before "Hall".
+    otherVenueId = venues![0].id;
+    venueId = venues![1].id;
+
+    const { eventId: created, error: createError } = await createEvent({
+      clubId,
+      title: 'A real future game',
+      venueId,
+      notes: '',
+      date: '2027-09-07',
+      startTime: '19:00',
+      durationMinutes: 180,
+      tableCount: 1,
+    });
+    expect(createError, `seeding event failed: ${createError}`).toBeNull();
+    eventId = created!;
+
+    const { data: series, error: seriesError } = await admin
+      .from('event_series')
+      .insert({
+        club_id: clubId,
+        title: 'A real series',
+        venue_id: venueId,
+        notes: '',
+        frequency: 'weekly',
+        weekday: 2,
+        start_time: '19:00:00',
+        duration_minutes: 180,
+        table_count: 1,
+        starts_on: '2027-06-01',
+        created_by: userId,
+      })
+      .select('id')
+      .single();
+    expect(seriesError, `seeding series failed: ${seriesError?.message}`).toBeNull();
+    seriesId = series!.id;
+  });
+
+  afterAll(async () => {
+    await supabase.auth.signOut();
+    if (admin) {
+      if (eventId) await admin.from('event_tables').delete().eq('event_id', eventId);
+      await admin.from('events').delete().eq('club_id', clubId);
+      await admin.from('event_series').delete().eq('club_id', clubId);
+      if (venueId) await admin.from('venues').delete().eq('id', venueId);
+      if (otherVenueId) await admin.from('venues').delete().eq('id', otherVenueId);
+      if (clubId) await admin.from('club_members').delete().eq('club_id', clubId);
+      if (clubId) await admin.from('clubs').delete().eq('id', clubId);
+    }
+    if (admin && userId) await admin.auth.admin.deleteUser(userId);
+  });
+
+  it('createEvent on a date that has gone by says so, and creates nothing', async () => {
+    const { eventId: created, error } = await createEvent({
+      clubId,
+      title: 'The mistyped year',
+      venueId,
+      notes: '',
+      date: '2020-01-01',
+      startTime: '19:00',
+      durationMinutes: 180,
+      tableCount: 1,
+    });
+    expect(created).toBeNull();
+    expect(error).toBe('That start time has already passed. Pick a later one.');
+    expect(error).not.toBe(GENERIC_ERROR);
+
+    // The other half of the finding: it used to SAVE and then be visible
+    // nowhere, because fetchUpcomingEvents is the only listing there is.
+    const { count } = await supabase
+      .from('events')
+      .select('id', { count: 'exact', head: true })
+      .eq('club_id', clubId)
+      .eq('title', 'The mistyped year');
+    expect(count).toBe(0);
+  });
+
+  it('updateEvent with a cleared title says what the create screen says', async () => {
+    const { error } = await updateEvent(eventId, { title: '   ' });
+    expect(error).toBe('Give the game a name.');
+    expect(error).not.toBe(GENERIC_ERROR);
+  });
+
+  it('updateEvent moving a game backwards into the past says so', async () => {
+    const { error } = await updateEvent(eventId, { date: '2020-01-01' });
+    expect(error).toBe('That start time has already passed. Pick a later one.');
+    expect(error).not.toBe(GENERIC_ERROR);
+  });
+
+  it('updateEventSeries with a cleared title says the same thing', async () => {
+    const { error } = await updateEventSeries(seriesId, { title: '   ' });
+    expect(error).toBe('Give the game a name.');
+    expect(error).not.toBe(GENERIC_ERROR);
+  });
+
+  it('updateEventSeries with an end date before the start says so', async () => {
+    // This one is a table CHECK violation, not a `raise`, so what is being
+    // pinned here is that `event_series_ends_after_start` still appears in
+    // the message PostgREST returns.
+    const { error } = await updateEventSeries(seriesId, { endsOn: '2027-01-01' });
+    expect(error).toBe('That end date is before the series starts.');
+    expect(error).not.toBe(GENERIC_ERROR);
+  });
+
+  it('createEventSeries whose run is already over says so, and creates nothing', async () => {
+    const { seriesId: created, error } = await createEventSeries({
+      clubId,
+      title: 'Already over',
+      venueId,
+      notes: '',
+      frequency: 'weekly',
+      weekday: 2,
+      nthWeek: null,
+      startTime: '19:00',
+      durationMinutes: 180,
+      tableCount: 1,
+      startsOn: '2020-01-01',
+      endsOn: '2020-02-01',
+    });
+    expect(created).toBeNull();
+    expect(error).toBe('No games would be created before that end date.');
+    expect(error).not.toBe(GENERIC_ERROR);
+
+    const { count } = await supabase
+      .from('event_series')
+      .select('id', { count: 'exact', head: true })
+      .eq('club_id', clubId)
+      .eq('title', 'Already over');
+    expect(count).toBe(0);
+  });
+
+  it('updateVenue renaming onto an existing public name says so', async () => {
+    const { data: other } = await supabase
+      .from('venues')
+      .select('name')
+      .eq('id', otherVenueId)
+      .single();
+    const { error } = await updateVenue(venueId, {
+      name: (other as { name: string }).name,
+    });
+    expect(error).toBe('A shared venue with that name already exists here.');
+    expect(error).not.toBe(GENERIC_ERROR);
+  });
+});

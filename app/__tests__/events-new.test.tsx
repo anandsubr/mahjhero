@@ -404,6 +404,50 @@ describe('clearing a date field', () => {
   });
 });
 
+describe('a date in the past is not offered', () => {
+  /*
+   * A game dated in the past used to save, redirect on success, and then be
+   * visible nowhere: `fetchUpcomingEvents` filters `starts_at >= now()` and
+   * is the only events listing the app has, so a mistyped year produced a
+   * game that existed only in the database.
+   *
+   * The `min` attribute is the cheap half of the fix -- the browser's
+   * calendar simply greys out earlier days. It is advisory (it blocks no
+   * submit), so it is not the guarantee; the guarantee is
+   * supabase/migrations/20260824001000, covered by the pgTAP suite and by
+   * lib/schema-contract.test.ts. What this asserts is that the screen
+   * actually passes the floor down to both of its date fields, which nothing
+   * else in the suite would notice.
+   */
+  function todayLocal(): string {
+    const now = new Date();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${now.getFullYear()}-${month}-${day}`;
+  }
+
+  it('floors the game date at today', async () => {
+    render(<NewEventScreen />);
+    await screen.findByText('Add a game');
+
+    expect(
+      (screen.getByLabelText('Date') as HTMLInputElement).getAttribute('min'),
+    ).toBe(todayLocal());
+  });
+
+  it('floors the series end date at today too', async () => {
+    render(<NewEventScreen />);
+    await screen.findByText('Add a game');
+    fireEvent.click(screen.getByText('Every week'));
+
+    expect(
+      (screen.getByLabelText('Stop repeating on') as HTMLInputElement).getAttribute(
+        'min',
+      ),
+    ).toBe(todayLocal());
+  });
+});
+
 describe('venue is required', () => {
   it('refuses to save without a venue and never calls createEvent', async () => {
     render(<NewEventScreen />);

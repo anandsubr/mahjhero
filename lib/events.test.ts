@@ -578,3 +578,166 @@ describe('addEventTable', () => {
     expect(rpcMock).toHaveBeenCalledTimes(1);
   });
 });
+
+/*
+ * Deliberate refusals, reported as refusals.
+ *
+ * Every unmapped error out of these functions became GENERIC_ERROR — "Could
+ * not reach MahjHero. Check your connection and try again." — which is a
+ * false statement about a request that reached MahjHero and was refused on
+ * purpose. Three of them were reachable from the shipped screens: clearing
+ * the title on either edit scope, an end date before the series' start, and
+ * (since 20260824001000) a date that has already gone by.
+ *
+ * Each case is asserted against its real payload shape — the SQLSTATE plus
+ * the message text Postgres actually produces, either from the function's own
+ * `raise` or from the constraint name in a CHECK violation — so a mapper that
+ * matched on the code alone, or on the wrong substring, fails here.
+ */
+describe('deliberate refusals are reported as refusals, not as network failures', () => {
+  beforeEach(() => {
+    rpcMock.mockReset();
+  });
+
+  const pastStart = {
+    code: '23514',
+    message:
+      'that start time has already passed',
+  };
+  const titleRequired = { code: '23514', message: 'title is required' };
+  const endsBeforeStart = {
+    code: '23514',
+    message:
+      'new row for relation "event_series" violates check constraint ' +
+      '"event_series_ends_after_start"',
+  };
+  const noGames = {
+    code: '23514',
+    message: 'no games before that end date',
+  };
+  const unknown = { code: '08006', message: 'connection failure' };
+
+  it('createEvent: a past date says so', async () => {
+    rpcMock.mockResolvedValueOnce({ data: null, error: pastStart });
+    const result = await createEvent({
+      clubId: 'club-1',
+      title: 'Tuesday game',
+      venueId: 'venue-1',
+      notes: '',
+      date: '2020-01-01',
+      startTime: '19:00',
+      durationMinutes: 180,
+      tableCount: 1,
+    });
+    expect(result.error).toBe('That start time has already passed. Pick a later one.');
+    expect(result.error).not.toBe(GENERIC_ERROR);
+  });
+
+  it('updateEvent: an empty title says the same thing the create screen says', async () => {
+    rpcMock.mockResolvedValueOnce({ error: titleRequired });
+    // Word-for-word the create screen's own client-side message. The two
+    // screens used to disagree about one rule: create said "Give the game a
+    // name." and edit said the internet was down.
+    await expect(updateEvent('event-1', { title: '  ' })).resolves.toEqual({
+      error: 'Give the game a name.',
+    });
+  });
+
+  it('updateEvent: moving a game into the past says so', async () => {
+    rpcMock.mockResolvedValueOnce({ error: pastStart });
+    await expect(updateEvent('event-1', { date: '2020-01-01' })).resolves.toEqual({
+      error: 'That start time has already passed. Pick a later one.',
+    });
+  });
+
+  it('updateEventSeries: an empty title says so', async () => {
+    rpcMock.mockResolvedValueOnce({ error: titleRequired });
+    await expect(updateEventSeries('series-1', { title: '  ' })).resolves.toEqual({
+      error: 'Give the game a name.',
+    });
+  });
+
+  it('updateEventSeries: an end date before the start says so', async () => {
+    rpcMock.mockResolvedValueOnce({ error: endsBeforeStart });
+    // The message here is the one Postgres writes for a CHECK violation, so
+    // the substring being matched is the constraint's own name. Renaming
+    // `event_series_ends_after_start` without updating the mapper puts this
+    // back to claiming the connection failed — which is why
+    // lib/schema-contract.test.ts pins the same pairing against a real
+    // database rather than only against this hand-written payload.
+    await expect(
+      updateEventSeries('series-1', { endsOn: '2020-01-01' }),
+    ).resolves.toEqual({ error: 'That end date is before the series starts.' });
+  });
+
+  it('createEventSeries: a run that would produce no game says so', async () => {
+    rpcMock.mockResolvedValueOnce({ data: null, error: noGames });
+    const result = await createEventSeries({
+      clubId: 'club-1',
+      title: 'Weekly game',
+      venueId: 'venue-1',
+      notes: '',
+      frequency: 'weekly',
+      weekday: 2,
+      nthWeek: null,
+      startTime: '19:00',
+      durationMinutes: 180,
+      tableCount: 1,
+      startsOn: '2020-01-01',
+      endsOn: '2020-01-02',
+    });
+    // Word-for-word the create screen's own preview copy for the same
+    // situation.
+    expect(result.error).toBe('No games would be created before that end date.');
+  });
+
+  it('createEventSeries: an end date before the start says so', async () => {
+    rpcMock.mockResolvedValueOnce({ data: null, error: endsBeforeStart });
+    const result = await createEventSeries({
+      clubId: 'club-1',
+      title: 'Weekly game',
+      venueId: 'venue-1',
+      notes: '',
+      frequency: 'weekly',
+      weekday: 2,
+      nthWeek: null,
+      startTime: '19:00',
+      durationMinutes: 180,
+      tableCount: 1,
+      startsOn: '2027-06-01',
+      endsOn: '2027-01-01',
+    });
+    expect(result.error).toBe('That end date is before the series starts.');
+  });
+
+  it('a 23514 nobody has mapped still falls back, rather than borrowing another message', async () => {
+    // The code alone is not the key. `update_event` raises 23514 for an
+    // out-of-range duration too, and that must not come back reading as an
+    // empty title or a past date.
+    rpcMock.mockResolvedValueOnce({
+      error: { code: '23514', message: 'duration out of range' },
+    });
+    await expect(
+      updateEvent('event-1', { durationMinutes: 5 }),
+    ).resolves.toEqual({ error: GENERIC_ERROR });
+  });
+
+  it('an actual connection failure still says the connection failed', async () => {
+    rpcMock.mockResolvedValueOnce({ error: unknown });
+    await expect(updateEvent('event-1', { title: 'x' })).resolves.toEqual({
+      error: GENERIC_ERROR,
+    });
+  });
+
+  it('a matching message under a different SQLSTATE is not mapped', async () => {
+    // Both halves of the key are load-bearing. A mapper that matched on the
+    // message alone would be one string away from mistranslating an
+    // unrelated error.
+    rpcMock.mockResolvedValueOnce({
+      error: { code: '42501', message: 'title is required' },
+    });
+    await expect(updateEvent('event-1', { title: '  ' })).resolves.toEqual({
+      error: GENERIC_ERROR,
+    });
+  });
+});

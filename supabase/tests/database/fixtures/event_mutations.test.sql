@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(76);
+select plan(81);
 
 insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-000000000001', 'alice@example.com'),
@@ -956,6 +956,109 @@ select results_eq(
     where id = 'e3e3e3e3-0000-0000-0000-000000000002'$$,
   $$values (array['title'])$$,
   'and records only the title, never a starts_at it did not change'
+);
+
+-- ---------------------------------------------------------------------
+-- A game nobody could ever see must not save (20260824001000).
+--
+-- `fetchUpcomingEvents` filters `starts_at >= now()` and is the only events
+-- listing the app has, so a past-dated game -- a mistyped year is enough --
+-- used to return a uuid, redirect on success, and then exist nowhere a host
+-- could find it.
+-- ---------------------------------------------------------------------
+
+select throws_ok(
+  $$select public.create_event(
+      'c1c1c1c1-0000-0000-0000-000000000001', 'Yesterday''s game',
+      '11111111-0000-0000-0000-000000000001', '',
+      (current_date - 1), '19:00', 180, 1)$$,
+  '23514',
+  'that start time has already passed',
+  'a game dated before today is refused instead of saving somewhere invisible'
+);
+
+/*
+ * The guard is against the INSTANT, not the calendar date, and this is the
+ * assertion that says so -- built so that it cannot become an accident of
+ * what time the suite happens to run at.
+ *
+ * A club in Asia/Tokyo, nine hours AHEAD of the server's UTC. Midnight on
+ * `current_date` in Tokyo is 15:00 UTC on the day BEFORE, so that instant is
+ * behind `now()` at every moment of every day -- while `event_date` is
+ * `current_date` itself, not before it. A date-granularity check
+ * (`event_date < current_date`) therefore accepts it and saves a game the
+ * host can never see, which is the whole failure one day smaller; the
+ * instant check refuses it. Written against a US-zone club instead, this
+ * assertion is only sharp for twenty of every twenty-four hours, and a
+ * mutation run in the other four would have called it green.
+ */
+set local role postgres;
+insert into public.clubs (id, name, slug, timezone, created_by) values
+  ('c3c3c3c3-0000-0000-0000-000000000003', 'Shinjuku', 'shinjuku',
+   'Asia/Tokyo', 'aaaaaaaa-0000-0000-0000-000000000001');
+insert into public.club_members (club_id, profile_id, role) values
+  ('c3c3c3c3-0000-0000-0000-000000000003',
+   'aaaaaaaa-0000-0000-0000-000000000001', 'host');
+insert into public.venues (id, name, added_by_club_id, created_by) values
+  ('11111111-0000-0000-0000-000000000005', 'Kissaten',
+   'c3c3c3c3-0000-0000-0000-000000000003',
+   'aaaaaaaa-0000-0000-0000-000000000001');
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "aaaaaaaa-0000-0000-0000-000000000001", "role": "authenticated"}';
+
+select throws_ok(
+  $$select public.create_event(
+      'c3c3c3c3-0000-0000-0000-000000000003', 'Midnight in Tokyo',
+      '11111111-0000-0000-0000-000000000005', '',
+      current_date, '00:00', 180, 1)$$,
+  '23514',
+  'that start time has already passed',
+  'and so is one dated today whose start time has already gone by -- the check is on the instant, not the day'
+);
+
+-- The other side of the boundary, so a mutant that simply refuses everything
+-- cannot pass. current_date + 1 at 19:00 New York is at least twenty hours
+-- ahead of any `now()` this can run at.
+select lives_ok(
+  $$select public.create_event(
+      'c1c1c1c1-0000-0000-0000-000000000001', 'Tomorrow''s game',
+      '11111111-0000-0000-0000-000000000001', '',
+      (current_date + 1), '19:00', 180, 1)$$,
+  'a game dated tomorrow is created as normal'
+);
+
+select throws_ok(
+  $$select public.update_event(
+      'e3e3e3e3-0000-0000-0000-000000000001',
+      null, null, null, (current_date - 5), null, null)$$,
+  '23514',
+  'that start time has already passed',
+  'and an edit cannot move a live game backwards into the past either'
+);
+
+-- ...but editing a game that is ALREADY in the past is not the same act and
+-- stays allowed. The guard is conditioned on the instant actually changing
+-- (`eff_starts is distinct from ev.starts_at`); dropping that half would
+-- refuse every correction to every game that has already happened, which is
+-- the mutant this assertion exists to kill.
+set local role postgres;
+insert into public.events
+  (id, club_id, title, venue_id, starts_at, ends_at, created_by) values
+  ('e4e4e4e4-0000-0000-0000-000000000001',
+   'c1c1c1c1-0000-0000-0000-000000000001', 'Last month''s game',
+   '11111111-0000-0000-0000-000000000001',
+   now() - interval '30 days', now() - interval '30 days' + interval '3 hours',
+   'aaaaaaaa-0000-0000-0000-000000000001');
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "aaaaaaaa-0000-0000-0000-000000000001", "role": "authenticated"}';
+
+select lives_ok(
+  $$select public.update_event(
+      'e4e4e4e4-0000-0000-0000-000000000001',
+      'Last month''s game, corrected', null, null, null, null, null)$$,
+  'a game that already happened can still have its name corrected'
 );
 
 select * from finish();
