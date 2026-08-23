@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(7);
+select plan(8);
 
 /*
  * update_event_series (20260825042000) has to tell the people it unseats
@@ -24,8 +24,10 @@ select plan(7);
  * Two host actions, same series:
  *
  *   1. Cap ends_on to current_date + 10. Occurrences at +17, +24, +31, +38
- *      fall outside the run and are deleted. Mallory (confirmed, +17) and
- *      Ned (waitlisted, +24) are still booked into two of them; Carol
+ *      fall outside the run and are deleted. Mallory (confirmed) is booked
+ *      into two of them, +17 and +31, so this also exercises the
+ *      `distinct on (b.profile_id)` de-duplication -- she must be told
+ *      once, not twice. Ned (waitlisted, +24) is booked into a third; Carol
  *      (confirmed, +3) is not -- her occurrence is kept.
  *   2. Cap ends_on again, to current_date + 3. This deletes +10, which
  *      nobody is booked into. Nothing should be written.
@@ -134,6 +136,45 @@ insert into public.bookings
    '11110000-0000-0000-0000-000000000003',
    '11110000-0000-0000-0000-000000000003');
 
+-- Mallory holds a second live booking on another occurrence that is about
+-- to be dropped (+31, not +17). Without `distinct on (b.profile_id)` in
+-- the notification insert, she would get two outbox rows instead of one;
+-- this is what makes that de-duplication reachable (Finding 4).
+insert into public.booking_groups (id, event_id, club_id, created_by) values
+  ('99990000-0000-0000-0000-000000000004',
+   (select id from public.events
+     where series_id = (select id from public.event_series
+                          where title = 'Weekly game')
+       and occurrence_date = current_date + 31),
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   '11110000-0000-0000-0000-000000000001');
+insert into public.bookings
+  (group_id, event_id, club_id, profile_id, booked_by) values
+  ('99990000-0000-0000-0000-000000000004',
+   (select id from public.events
+     where series_id = (select id from public.event_series
+                          where title = 'Weekly game')
+       and occurrence_date = current_date + 31),
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   '11110000-0000-0000-0000-000000000001',
+   '11110000-0000-0000-0000-000000000001');
+
+-- Captured before the shortening runs, keyed by the recipient, so the
+-- "payload survives the cascade" assertion below can check each outbox
+-- row's payload against the *specific* occurrence its recipient is the
+-- representative booking for (Mallory's is +17, the earlier of her two
+-- doomed bookings; Ned's is +24) -- not just against "some non-null
+-- value". A payload missing the key entirely would otherwise still read
+-- as "not exists", since `payload->>'event_id'` on a missing key is NULL
+-- and `e.id = NULL` matches nothing under `not exists`.
+create temporary table doomed_occurrences as
+select b.profile_id, e.id as event_id, e.starts_at
+from public.bookings b
+join public.events e on e.id = b.event_id
+where e.series_id = (select id from public.event_series
+                       where title = 'Weekly game')
+  and e.occurrence_date in (current_date + 17, current_date + 24);
+
 -- ---------------------------------------------------------------------
 -- 1. Shortening to +10 deletes +17, +24, +31, +38. Mallory and Ned are
 --    still sitting in two of those; Carol is not.
@@ -151,7 +192,12 @@ select lives_ok(
 
 reset role;
 
-select set_eq(
+-- bag_eq, not set_eq: set_eq would still pass if Mallory's `distinct on`
+-- collapse failed to fire and she were told twice (a set has no room for
+-- a duplicate to show up in). bag_eq compares multiset-wise, so a
+-- duplicate row changes the count of how many times her id appears and
+-- the comparison fails.
+select bag_eq(
   $$select recipient_id from public.notification_outbox
      where kind = 'event_cancelled'
        and payload->>'series_id'
@@ -162,23 +208,43 @@ select set_eq(
   'exactly the two members still booked on a dropped week are told, once each'
 );
 
+-- Mallory holds two live bookings on two occurrences dropped in this same
+-- edit (+17 and +31). `distinct on (b.profile_id)` must collapse those
+-- into the single representative row asserted above -- confirm directly
+-- that she was not, in fact, told twice.
+select is(
+  (select count(*)::int from public.notification_outbox
+    where kind = 'event_cancelled'
+      and recipient_id = '11110000-0000-0000-0000-000000000001'),
+  1,
+  'Mallory, booked on two dropped weeks in the same edit, is told once, not twice'
+);
+
 -- Both rows have event_id = null (the occurrence they describe is gone),
--- and the occurrence id each one carries in its payload really is gone --
--- proving the outbox row outlived the DELETE that produced it, rather than
--- being cascade-deleted along with the row it pointed at.
+-- and the occurrence id and start time each one carries in its payload
+-- match the real, now-deleted occurrence its recipient was the
+-- representative booking for -- proving the outbox row outlived the
+-- DELETE that produced it, carrying real data, rather than being either
+-- cascade-deleted along with the row it pointed at or written with the
+-- key simply missing (which `not exists (... = null)` alone cannot tell
+-- apart from a genuinely vanished row).
 select is(
   (select count(*)::int from public.notification_outbox o
+    join doomed_occurrences d on d.profile_id = o.recipient_id
     where o.kind = 'event_cancelled'
       and o.payload->>'series_id'
             = (select id from public.event_series
                 where title = 'Weekly game')::text
       and o.event_id is null
+      and (o.payload->>'event_id') is not null
+      and (o.payload->>'event_id')::uuid = d.event_id
+      and (o.payload->>'starts_at') is not null
+      and (o.payload->>'starts_at')::timestamptz = d.starts_at
       and not exists (
-        select 1 from public.events e
-         where e.id = (o.payload->>'event_id')::uuid
+        select 1 from public.events e where e.id = d.event_id
       )),
   2,
-  'both outbox rows survive the delete, carrying the vanished occurrence''s id'
+  'both outbox rows survive the delete, carrying the vanished occurrence''s real id and start time'
 );
 
 select is(

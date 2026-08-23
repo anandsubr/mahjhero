@@ -20,12 +20,14 @@
  * is not a property anybody should have to reason about, let alone rely
  * on for correctness.
  *
- * Postgres (9.5+, confirmed on 17.6 both locally and on the hosted
- * project) lets a composite FK's ON DELETE SET NULL name the specific
- * column(s) to null, rather than defaulting to all of them. Scoping it to
- * just preferred_table_id makes the correct behaviour the only possible
- * one: deleting the table always nulls exactly the column that pointed at
- * it, never event_id, regardless of trigger firing order or which caller
+ * PostgreSQL 15 added the "column list" form of a composite FK's ON DELETE
+ * SET NULL -- `on delete set null (col, ...)` -- which nulls only the
+ * named column(s) instead of every column in the FK. Confirmed available
+ * on 17.6, both locally and on the hosted project, but this syntax is a
+ * parse error on any server older than 15. Scoping it to just
+ * preferred_table_id makes the correct behaviour the only possible one:
+ * deleting the table always nulls exactly the column that pointed at it,
+ * never event_id, regardless of trigger firing order or which caller
  * remembered to null it first.
  *
  * Drop and re-add in the same ALTER TABLE so there is no window where the
