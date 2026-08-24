@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(20);
+select plan(24);
 
 -- The two new kinds. enum_range is the only way to ask "does this enum
 -- carry this label" without casting, and a cast would fail the whole file
@@ -92,6 +92,58 @@ select ok(
   has_table_privilege('authenticated', 'public.push_tokens', 'INSERT'),
   'authenticated can register a token'
 );
+
+-- The grant and relrowsecurity checks above prove RLS is switched on, not
+-- that push_tokens_own actually scopes rows. A second member exists purely
+-- to be somebody else's profile_id -- the identity a forged insert or a
+-- nosy select would have to reach across.
+insert into auth.users (id, email)
+  values ('bbbbbbbb-0000-0000-0000-000000000002', 'bob@example.com');
+
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub":"aaaaaaaa-0000-0000-0000-000000000001","role":"authenticated"}';
+
+select lives_ok(
+  $$insert into public.push_tokens (profile_id, token, platform)
+    values ('aaaaaaaa-0000-0000-0000-000000000001', 'alice-token-1', 'ios')$$,
+  'a member can register a token for their own profile_id'
+);
+
+-- The `with check` side: a `with check` that stops actually scoping by
+-- profile_id (loosened, or diverged from `using`) would let this insert
+-- through silently, and every one of the 20 assertions above would still
+-- be green.
+select throws_ok(
+  $$insert into public.push_tokens (profile_id, token, platform)
+    values ('bbbbbbbb-0000-0000-0000-000000000002', 'forged-token', 'ios')$$,
+  '42501',
+  null,
+  'a member cannot register a token carrying another member''s profile_id'
+);
+
+set local request.jwt.claims =
+  '{"sub":"bbbbbbbb-0000-0000-0000-000000000002","role":"authenticated"}';
+
+select lives_ok(
+  $$insert into public.push_tokens (profile_id, token, platform)
+    values ('bbbbbbbb-0000-0000-0000-000000000002', 'bob-token-1', 'android')$$,
+  'bob can register his own token too'
+);
+
+-- The `using` side: a blocked select returns zero rows rather than
+-- raising, so the assertion is on the count, not on an error.
+set local request.jwt.claims =
+  '{"sub":"aaaaaaaa-0000-0000-0000-000000000001","role":"authenticated"}';
+
+select is(
+  (select count(*)::int from public.push_tokens
+    where profile_id = 'bbbbbbbb-0000-0000-0000-000000000002'),
+  0,
+  'a member cannot read another member''s token row'
+);
+
+reset role;
 
 select * from finish();
 rollback;
