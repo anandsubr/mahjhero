@@ -899,6 +899,16 @@ export default function EventScreen() {
             Add a table
           </Button>
 
+          <Button
+            variant="secondary"
+            onPress={() =>
+              router.push(`/clubs/${clubId}/broadcast?eventId=${eventId}`)
+            }
+            accessibilityLabel="Message everyone booked"
+          >
+            Message everyone booked
+          </Button>
+
           <Link
             href={`/clubs/${clubId}/events/${eventId}/edit`}
             style={styles.linkRow}

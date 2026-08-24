@@ -459,6 +459,30 @@ test.describe('signed in', () => {
         await expect(page.getByText('Call for a 4th now')).toBeVisible();
         await captureScreen(page, vp, `event-needs-a-fourth-${vp.name}.png`);
       });
+
+      // Anchored on the recipient count, not the heading. The count is
+      // fetched after mount (app/clubs/[id]/broadcast.tsx's useEffect), so a
+      // screenshot taken on first paint would catch "Working out who this
+      // reaches…" and the baseline would be a race. The regex matches both
+      // the singular and plural copy — Riverside's only active member here
+      // is the signed-in host themselves, so `countBroadcastRecipients`
+      // (which excludes the caller) resolves to 0, and "This goes to 0
+      // members, by email." is the real, correctly-loaded state, not a
+      // stand-in for a failure.
+      test(`broadcast compose at ${vp.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        await page.goto(`/clubs/${seeded.clubId}/broadcast`);
+        await expect(page.getByText(/goes to \d+ member/)).toBeVisible();
+        await captureScreen(page, vp, `broadcast-compose-${vp.name}.png`);
+      });
+
+      // 'Doors at seven' is the seeded broadcast's subject (e2e/session.ts).
+      test(`broadcast history at ${vp.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        await page.goto(`/clubs/${seeded.clubId}/broadcasts`);
+        await expect(page.getByText('Doors at seven')).toBeVisible();
+        await captureScreen(page, vp, `broadcast-history-${vp.name}.png`);
+      });
     }
   });
 });

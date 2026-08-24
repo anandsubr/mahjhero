@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(66);
+select plan(68);
 
 /*
  * Guards the privileges themselves, not the policies.
@@ -513,6 +513,49 @@ select ok(
   'authenticated cannot execute materialize_one_series'
 );
 
+-- ---------------------------------------------------------------------------
+-- Notifications & broadcasts ACLs (Task 15).
+--
+-- The three tables this plan added (broadcasts, push_tokens, app_config) and
+-- the five internal functions (claim_notification_batch,
+-- mark_notifications_sent, mark_notifications_failed, queue_event_reminders,
+-- broadcast_recipients) are already covered WITHOUT being named here:
+--
+--   - TRUNCATE-by-authenticated on all three tables, and full-privilege
+--     reachability by anon, are both caught by the schema-wide dynamic scans
+--     above (the `pg_class` / `has_table_privilege` queries) — they iterate
+--     every relation in `public`, not a hardcoded list, so a new `create
+--     table` is covered the moment it exists.
+--   - EXECUTE-by-authenticated on the five internal functions is caught by
+--     Direction 2 of the bidirectional function allowlist below: none of the
+--     five appear in the expected array, so if hosted's bootstrap grant ever
+--     reached one of them, that scan would name it as unexpected.
+--   - send_broadcast and broadcast_recipient_count's positive EXECUTE case
+--     is already covered by Direction 1 of that same allowlist, which Task 3
+--     added them to.
+--
+-- What is NOT covered by any dynamic scan: a specific VERB other than
+-- TRUNCATE on a specific table, and SELECT-by-authenticated specifically
+-- (only SELECT-by-anon is scanned dynamically, via the full-privilege-list
+-- check). Both gaps below are real, so they get named assertions.
+
+-- Broadcasts are written only through send_broadcast, which checks the
+-- caller is an organizer. An insert privilege here would let any member
+-- mail the whole club, bypassing that check entirely.
+select ok(
+  not has_table_privilege('authenticated', 'public.broadcasts', 'INSERT'),
+  'authenticated cannot INSERT broadcasts'
+);
+
+-- app_config holds the drain secret. Nothing but the postgres role that
+-- runs the cron job has any business reading it. The dynamic anon scan
+-- above already proves anon cannot reach it; authenticated needs its own
+-- assertion because that scan only ever checks TRUNCATE for authenticated.
+select ok(
+  not has_table_privilege('authenticated', 'public.app_config', 'SELECT'),
+  'authenticated cannot read app_config'
+);
+
 /*
  * The catch-all above this block enumerates functions reachable by `anon`.
  * This is the mirror for `authenticated`, because the hosted project
@@ -596,7 +639,9 @@ select is(
        'public.place_booking(uuid, uuid)',
        'public.call_for_a_fourth(uuid)',
        'public.event_seating(uuid)',
-       'public.my_upcoming_bookings()'
+       'public.my_upcoming_bookings()',
+       'public.broadcast_recipient_count(uuid, uuid)',
+       'public.send_broadcast(uuid, uuid, text, text)'
      ]) as f
    ) expected
    where not exists (
@@ -655,7 +700,9 @@ select is(
          'public.place_booking(uuid, uuid)',
          'public.call_for_a_fourth(uuid)',
          'public.event_seating(uuid)',
-         'public.my_upcoming_bookings()'
+         'public.my_upcoming_bookings()',
+         'public.broadcast_recipient_count(uuid, uuid)',
+         'public.send_broadcast(uuid, uuid, text, text)'
        ]) as f
        where to_regprocedure(f) = p.oid::regprocedure
      )),

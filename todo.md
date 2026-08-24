@@ -98,6 +98,61 @@ booking, and the line now reads `${seats} ${seats === 1 ? 'seat' : 'seats'}`
 (`app/clubs/[id]/events/[eventId]/index.tsx:594`). Still unreachable through the
 UI — capacity is not editable anywhere — but it no longer lies if it ever is.
 
+### [ ] Turn push on
+
+`push_tokens` and `resolve_notify_channel` exist and every branch of the
+resolver returns `'email'`. Turning push on means: `expo-notifications` in
+the client, token registration on sign-in, one `Sender` implementation
+against Expo's push service, and the resolver's last line becoming
+`return pref::text`. Nothing in the queue, the preferences, the quiet
+hours, the retries or the templates changes.
+
+Needs an EAS dev build before any of it can be verified — the current
+suites are web-only and cannot reach a device delivery leg.
+
+### [ ] Nothing ingests bounces
+
+A hard bounce is invisible to the app: the SMTP relay knows and MahjHero
+does not. A dead address burns five attempts over two and a half hours and
+dead-letters, which is the right shape, but nobody is told and the address
+stays on the account. Worth a webhook once there is enough volume for it
+to matter.
+
+### [ ] One email per notifiable moment, no digesting
+
+A member whose group of four is cancelled by a host gets one email per
+person. At club scale this is tolerable. It is the first thing to
+reconsider if anybody complains about volume.
+
+### [ ] The connection-break escape hatch dead-letters the queue's head, not the poison row
+
+`release_notification_claims` (`20260826110000`) stops sparing a row once
+it triggers three connection-class breaks in a row, so a genuinely poisoned
+address eventually spends its own attempts budget instead of wedging every
+batch behind it forever. But `claim_notification_batch` orders by
+`next_attempt_at, created_at`, and every released row — spared or
+triggering — gets the same flat `now() + 5 minutes` lease. During a real
+relay outage, that means the row tripping the hatch is whichever row
+happens to be oldest-due when the outage starts, not one whose own address
+is at fault. Three breaks 5 minutes apart (09:00, 09:05, 09:10) dead-letters
+that innocent head-of-queue row with a `last_error` describing a relay
+problem it had nothing to do with — roughly one such row per continuous
+75-minute outage. Still a large improvement on the old behaviour (the whole
+batch dead-lettering on every tick), and there is no cheap discriminator:
+during an outage the head row genuinely does throw the same way a poison
+row would, so nothing inside `release_notification_claims` can tell the two
+apart without spending something to find out.
+
+The one known way to actually tell them apart: after a break trips the
+escape hatch for the current head-of-queue row, try the *next* row once
+before giving up on the first — if the relay is actually down, the second
+row breaks too and neither should dead-letter yet; if only the first row is
+poisoned, the second row goes through cleanly and that's the signal to
+treat the first as the real problem. Not built — it adds a second RPC round
+trip and a materially different control flow to `deliverBatch` for a
+failure mode that is already bounded and infrequent. Recorded here as a
+deliberate decision, not a surprise to rediscover later.
+
 ---
 
 ## Configure & verify

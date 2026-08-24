@@ -728,19 +728,26 @@ this is a `postgres`/dashboard-only inspection) and in the Postgres server
 log for whichever environment ran it. Nobody currently polls either one, so
 today a skipped series is discoverable but not alerted on.
 
-Three jobs now run on `pg_cron`:
+Five jobs now run on `pg_cron`:
 
 | Job | Schedule | What it does |
 |---|---|---|
 | `materialize-event-series` | `0 3 * * *` | Keeps ~6 weeks of recurring events materialized |
 | `sweep-promotion-offers` | `*/5 * * * *` | Expires promotion offers past `expires_at`, releases their held seats, and promotes the next eligible group |
 | `announce-need-a-fourth` | `*/15 * * * *` | Writes `notification_outbox` rows for tables at `capacity - 1` inside the 48-hour window |
+| `queue-event-reminders` | `*/15 * * * *` | Writes `notification_outbox` rows at each club's configured reminder offsets |
+| `deliver-notifications` | `* * * * *` | Drains the outbox by POSTing to the `deliver-notifications` Edge Function |
 
-All three are ordinary plpgsql and are tested by **calling them**, not by
-waiting for a schedule. `sweep_promotion_offers()` and
-`announce_need_a_fourth()` both return a count, so a fixture can assert what
-a run did rather than inspecting `cron.job_run_details` — which the hosted
-suite could not read anyway.
+Four of these five are ordinary plpgsql and are tested by **calling them**,
+not by waiting for a schedule. `sweep_promotion_offers()`,
+`announce_need_a_fourth()` and `queue_event_reminders()` each return a
+count, so a fixture can assert what a run did rather than inspecting
+`cron.job_run_details` — which the hosted suite could not read anyway.
+
+The fifth, `deliver-notifications`, is not plpgsql at all — `pg_cron` POSTs
+to an Edge Function through `pg_net` rather than calling a function in the
+database, so "call it and assert what it did" doesn't apply the same way.
+It's covered separately, in "The notification drain" below.
 
 **Waitlist promotion is not on this list, and that is deliberate.** It runs
 inline inside whichever transaction frees a seat. The sweep calls it too,
@@ -757,3 +764,113 @@ bootstrap grant of EXECUTE directly to `authenticated` survived a `revoke
 ... from public` that looked complete against the local stack. Neither
 function takes a caller argument or checks membership, so `authenticated`
 reaching either would be a real hole, not a theoretical one.
+
+### The notification drain
+
+`deliver-notifications` runs every minute and is the only scheduled job
+that leaves the database. `pg_cron` does not call the Edge Function
+directly — it `pg_net`-POSTs to it, reading the URL and the shared secret
+from `public.app_config`, which ships **empty**. An unconfigured
+environment therefore runs the job every minute and does nothing, which is
+what makes `npx supabase db reset` on a laptop safe: no outbound HTTP
+unless somebody seeded that table.
+
+To exercise the whole path locally:
+
+1. `npx supabase start` (Mailpit's SMTP port must be uncommented in
+   `config.toml` as `smtp_port = 54325`; the web inbox is on 54324)
+2. `npx supabase functions serve deliver-notifications --no-verify-jwt --env-file supabase/functions/.env.local`
+3. Seed `app_config` with `functions_url` and `drain_secret`
+4. `curl -X POST .../functions/v1/deliver-notifications -H 'x-drain-secret: ...'`
+5. Read the result at http://127.0.0.1:54324
+
+The function URL for `pg_net` running inside the Supabase Docker network is
+`http://host.docker.internal:54321/functions/v1`, not `127.0.0.1` — the
+database container cannot reach the host loopback by that name. This was
+verified directly: seeding `app_config` and waiting for the minute tick
+shows `deliver-notifications` receiving the POST (the outbox row's
+`attempts` advances) at that URL and not at `127.0.0.1:54321`.
+
+The Edge Function container has the identical problem one layer further
+in. It talks to Mailpit over real SMTP rather than HTTP, and
+`host.docker.internal` inside its container resolves but does not route
+anywhere reachable — connecting to it times out. What does work is the
+Supabase CLI's own Docker network: `supabase functions serve` and the
+`inbucket` (Mailpit) container it starts alongside it share
+`supabase_network_<project>`, where the compose network gives `inbucket`
+as a resolvable alias for the SMTP port 1025 the container listens on
+internally — not the host-mapped `54325`. So `supabase/functions/.env.local`
+sets `SMTP_HOST=inbucket` and `SMTP_PORT=1025`, not the values from step 3
+of the Task 11 brief; `docker inspect <edge runtime container> --format
+'{{json .NetworkSettings.Networks}}'` is how that alias was found rather
+than assumed.
+
+That reachability fix uncovered a real bug, not an infrastructure one:
+every real send to Mailpit failed with `Connection is not secure! Don't
+send authentication over non secure connection!`, from
+[denomailer's `client.ts`](https://deno.land/x/denomailer@1.6.0/client/basic/client.ts).
+The message names authentication, but the check that throws it
+(`!this.config.debug.allowUnsecure && !this.secure`) fires regardless of
+whether credentials are being sent — it is denomailer's blanket refusal to
+finish a handshake that ended up neither on implicit TLS nor upgraded via
+STARTTLS, and Mailpit offers neither. `smtp.ts` never set
+`debug.allowUnsecure`, so this path was unreachable in every test the
+function has, all of which fake the SMTP layer — the real `SMTPClient`
+never ran a real send until this task's end-to-end check, which is what
+caught it.
+
+The first fix tried tied `allowUnsecure` to whether credentials were being
+sent (`allowUnsecure: !this.config.user`), on the theory that a production
+relay always gets `SMTP_USER`. Commit `96c70af` replaced that: credential
+presence is the wrong invariant to gate plaintext on, because nothing
+stops `SMTP_USER` from being empty against a real, non-local relay — a
+typo in `npx supabase secrets set`, an intentionally anonymous relay, a
+future config nobody has written yet — and that gap would have sent
+member content in plaintext to a host the fix was never meant to trust.
+`smtp.ts` gates on **host trust** instead
+(`isLocalDevHost(this.config.host) && !this.config.user`): an unsecured
+connection is only ever permitted to a host on `LOCAL_DEV_SMTP_HOSTS` —
+Mailpit's own hostnames, a fixed allowlist rather than a heuristic — and
+the credential check stays as a second, independent condition on top of
+that, which is what guarantees a password can never cross the socket
+whenever the flag is permitted. A production relay on 465 or 587 is
+already secure (implicit TLS, or the STARTTLS upgrade denomailer
+negotiates for itself before this check ever runs) regardless of the
+flag, so nothing about a real deployment's security posture changes;
+see `smtp.ts`'s own comment on `allowUnsecure` for the full reasoning.
+
+Nothing in the automated suites covers step 5. The claim, the backoff, the
+quiet hours and the templates are all tested; that an SMTP connection
+succeeds is not, and cannot be without a mail server in CI.
+
+`smtp.ts` also reuses one SMTP connection across a whole batch rather than
+opening one per message, which is faster but means a failed send has to
+leave that connection in a state the next `send()` can trust — denomailer
+does not reset its transaction after a failure, so without teardown a
+single rejected address would cascade a false failure through every row
+behind it. The reuse/discard state machine that guards against this is
+pulled out of `smtp.ts` into `pooled-connection.ts` specifically so Vitest
+can exercise it directly (`smtp.ts` itself stays invisible to Vitest, see
+above); `render.test.ts`'s `ConnectionPoisoningFakeSender` additionally
+pins the failure shape the fix prevents from ever reaching `deliverBatch`
+in production. `batch.ts`'s loop also distinguishes an address's own 5xx
+rejection from a connection-shaped failure or a transient 4xx reply — the
+latter two break the batch early rather than burning an attempt on every
+row behind them, refunded via the `release_notification_claims()` RPC
+(migration `20260826110000`), which also bounds how long the same
+poisoned-looking row can keep leading a batch for free.
+
+Deploying it is two commands and is **not** part of `supabase db push` —
+this is the first Edge Function in the repository, so a migration landing
+without the function landing leaves the cron job posting into nothing:
+
+```
+npx supabase functions deploy deliver-notifications
+npx supabase secrets set DRAIN_SECRET=... SMTP_HOST=... SMTP_PORT=... \
+  SMTP_USER=... SMTP_PASS=... SMTP_FROM=... PUBLIC_APP_URL=...
+```
+
+Then seed `app_config` on the hosted project with `functions_url`
+(`https://<project-ref>.supabase.co/functions/v1`) and the same
+`drain_secret`. Function logs are under Edge Functions in the dashboard;
+nothing about a failed send reaches the client.

@@ -10,5 +10,19 @@
     // only alongside `noEmit` (already set by expo/tsconfig.base), which
     // this project already relies on -- Metro/Vite compile, not `tsc`.
     "allowImportingTsExtensions": true
-  }
+  },
+  // Overrides (does not merge with) expo/tsconfig.base's own `exclude`, so
+  // its entries are repeated here verbatim. smtp.ts is no longer excluded:
+  // supabase/functions/deliver-notifications/denomailer.d.ts declares an
+  // ambient module for its Deno-only `https://deno.land/...` specifier, so
+  // tsc can resolve the import and type-check the rest of the file like
+  // everything else in supabase/functions/.
+  "exclude": [
+    "node_modules",
+    "babel.config.js",
+    "metro.config.js",
+    "jest.config.js",
+    "android",
+    "ios"
+  ]
 }
