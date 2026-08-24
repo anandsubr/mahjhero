@@ -3,6 +3,15 @@ import { colors, radius, space, type } from '../lib/theme';
 
 type TextFieldProps = Omit<TextInputProps, 'style'> & {
   label?: string;
+  /**
+   * Turns the field into a multi-line box that many rows tall. Omit it and
+   * nothing changes — every existing call site keeps the 58px pill.
+   *
+   * This exists because the component deliberately omits `style` from its
+   * props, so a caller with a 2000-character message to collect has no
+   * other way to ask for room.
+   */
+  rows?: number;
 };
 
 /**
@@ -12,15 +21,23 @@ type TextFieldProps = Omit<TextInputProps, 'style'> & {
  * treats all inputs as "big" sized, matching this app's larger-target
  * requirement for its older player base.
  */
-export default function TextField({ label, ...inputProps }: TextFieldProps) {
+export default function TextField({ label, rows, ...inputProps }: TextFieldProps) {
   return (
     <View style={styles.field}>
       {label ? <Text style={styles.label}>{label}</Text> : null}
       <TextInput
-        style={styles.input}
+        style={rows ? [styles.input, styles.multiline, { height: rows * 24 + 24 }] : styles.input}
         placeholderTextColor={colors.textMuted}
         cursorColor={colors.accentColor}
         selectionColor={colors.accentColor}
+        multiline={rows ? true : undefined}
+        numberOfLines={rows}
+        // Defaults the accessible name to the visible label so a caller
+        // that only sets `label` (no separate `accessibilityLabel`) still
+        // gets a field `getByLabelText` can find. Placed before the spread
+        // so a caller's own explicit `accessibilityLabel` (e.g. Profile's
+        // "Display name" for a field labelled "Name") still wins.
+        accessibilityLabel={label}
         {...inputProps}
       />
     </View>
@@ -61,5 +78,13 @@ const styles = StyleSheet.create({
     fontFamily: type.bodyRegular,
     fontSize: type.size.bodyLarge,
     color: colors.text,
+  },
+  multiline: {
+    // The pill is centred for one line of text; a paragraph has to start
+    // at the top or the first line floats in the middle of the box.
+    textAlignVertical: 'top',
+    paddingTop: space[3],
+    paddingBottom: space[3],
+    borderRadius: radius.lg,
   },
 });
