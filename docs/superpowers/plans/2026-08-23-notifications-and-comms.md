@@ -714,9 +714,12 @@ as $$
 $$;
 
 /*
- * `union`, not `union all`. A member with two confirmed bookings at one
- * event — which "book with friends" makes possible in principle — must be
- * counted and mailed once.
+ * `union`, not `union all`, as a defensive choice rather than a fix for a
+ * reachable duplicate: the two branches are mutually exclusive per call,
+ * and within the bookings branch `bookings_one_active_per_person_idx`
+ * (20260825000000) already makes a second active booking for one person at
+ * one event impossible. Nothing can be tested here today; `union` costs
+ * nothing and survives that index changing.
  */
 
 create function public.broadcast_recipient_count(
@@ -827,20 +830,12 @@ alter table public.broadcasts enable row level security;
  * sent — including ones sent to a different event they were not part of —
  * is a feature nobody asked for.
  *
- * Written inline rather than through a helper because no boolean
- * `is_club_organizer` exists; `assert_club_organizer` raises, which a
- * policy cannot use.
+ * `is_club_organizer` is the boolean form and is already used inside an
+ * RLS policy in 20260822194000_create_events.sql. `assert_club_organizer`
+ * raises, which a policy cannot use — that one is for the functions.
  */
 create policy broadcasts_select_organizer on public.broadcasts
-  for select using (
-    exists (
-      select 1 from public.club_members cm
-       where cm.club_id    = broadcasts.club_id
-         and cm.profile_id = (select auth.uid())
-         and cm.status     = 'active'
-         and cm.role in ('host', 'co_organizer')
-    )
-  );
+  for select using (public.is_club_organizer(broadcasts.club_id));
 
 revoke all on public.broadcasts from anon, authenticated;
 grant select on public.broadcasts to authenticated;
