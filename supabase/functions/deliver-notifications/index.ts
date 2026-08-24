@@ -4,6 +4,44 @@ import { SmtpSender } from './smtp.ts';
 import type { RenderRow } from './types.ts';
 
 /**
+ * This file is the HTTP handler Deno Deploy runs — environment wiring plus
+ * a `Deno.serve` call, unit-tested by nothing (see batch.ts's module
+ * comment) but still type-checked by `tsc` like every other file under
+ * supabase/functions/. `tsc` has no built-in knowledge of the `Deno`
+ * global, so this stubs the two members actually called below —
+ * `env.get` and `serve` — nothing more.
+ *
+ * Declared here, locally, rather than in a shared ambient .d.ts: a bare
+ * `declare const Deno` at the top level of a *script* file (one with no
+ * import/export of its own) is a genuine ambient global — visible to
+ * every file in the program, not just this one, which is exactly what
+ * used to happen here. That was a real bug, not a hypothetical: with the
+ * old shared deno.d.ts in place, adding `export const leaked =
+ * Deno.env.get('X')` to a file under lib/ passed `tsc --noEmit` clean and
+ * would have crashed at runtime in Hermes or on web, where no `Deno`
+ * global exists.
+ *
+ * Wrapping that same declaration in `export {}` plus `declare global`
+ * does not fix this — `declare global` is explicitly, by design, a way to
+ * add to the *global* scope from inside a module, so it leaks exactly as
+ * far as the bare version did (verified directly: that combination still
+ * let the lib/ file above type-check clean). What actually keeps a
+ * `declare const` out of every other file's scope is not exporting it and
+ * not wrapping it in `declare global` at all: an un-exported ambient
+ * declaration at the top level of a module (this file already is one,
+ * because of the imports above) is local to that module, the same as a
+ * real `const` would be. So the fix is this being here, in the one file
+ * that uses it, instead of in a shared .d.ts every other file in the
+ * program also sees.
+ */
+declare const Deno: {
+  env: {
+    get(name: string): string | undefined;
+  };
+  serve(handler: (request: Request) => Response | Promise<Response>): void;
+};
+
+/**
  * Fifty per invocation, one invocation a minute.
  *
  * Deliberately not "drain until empty": a runaway producer would then turn
@@ -32,8 +70,8 @@ function required(name: string): string {
  * Both operands are hashed with SHA-256 via `crypto.subtle` — the
  * standard Web Crypto API, not a Deno-specific extra: it's a required
  * part of the web platform surface every hosted-JS runtime implements,
- * so it needs no import and no `deno.d.ts` stub, unlike the `Deno`
- * namespace members below. Hashing first buys two things a raw compare
+ * so it needs no import and no ambient stub, unlike the `Deno` global
+ * declared above. Hashing first buys two things a raw compare
  * can't: both digests come out the same fixed length regardless of how
  * long the real secret or the supplied header is, so length itself leaks
  * nothing; and the byte-comparison loop that follows always walks the

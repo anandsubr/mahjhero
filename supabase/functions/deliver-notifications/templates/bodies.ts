@@ -47,8 +47,29 @@ function eventUrl(row: RenderRow, appUrl: string): string {
 const SEAT_FOOTER = (club: string) =>
   `You're getting this because of a seat you hold at ${club}.`;
 
-const MEMBER_FOOTER = (club: string) =>
+/**
+ * `need_a_fourth` is the one member-facing kind with a real, dedicated
+ * off switch — app/notifications.tsx's "Mute need a 4th alerts" toggle —
+ * so this is the one footer allowed to say settings change what reaches
+ * you.
+ */
+const NEED_A_FOURTH_FOOTER = (club: string) =>
   `You're getting this because you're a member of ${club}. You can change what reaches you in your notification settings.`;
+
+/**
+ * `broadcast` used to share `NEED_A_FOURTH_FOOTER` (as `MEMBER_FOOTER`),
+ * which promises the same settings-page control over broadcasts that
+ * `need_a_fourth` actually has. It doesn't exist: app/notifications.tsx
+ * offers exactly three controls — channel, quiet hours, and mute
+ * need-a-4th — and none of them can silence a broadcast. A broadcast mute
+ * is explicitly out of scope for this plan, so the fix here is a footer
+ * that says something true instead of building the setting: quiet hours
+ * (`outbox_quiet_class('broadcast') = 'suppressible'`, in
+ * 20260826040000_notification_predicates.sql) genuinely holds a broadcast
+ * until the window closes, which is the one lever that's real.
+ */
+const BROADCAST_FOOTER = (club: string) =>
+  `You're getting this because you're a member of ${club}. Messages like this from your organizers can't be turned off, but quiet hours in your notification settings can hold them until morning.`;
 
 const REMINDER_FOOTER =
   "You're getting this because you have a seat at this game. Reminders for games you've booked can't be switched off.";
@@ -77,7 +98,8 @@ function unhandledKind(kind: never): never {
 export function bodyFor(row: RenderRow, appUrl: string): Body {
   const url = eventUrl(row, appUrl);
   const seatFooter = SEAT_FOOTER(row.club_name);
-  const memberFooter = MEMBER_FOOTER(row.club_name);
+  const needAFourthFooter = NEED_A_FOURTH_FOOTER(row.club_name);
+  const broadcastFooter = BROADCAST_FOOTER(row.club_name);
 
   switch (row.kind) {
     case 'booked_by_friend':
@@ -183,7 +205,7 @@ export function bodyFor(row: RenderRow, appUrl: string): Body {
           'Take the seat and they have a game.',
         ],
         cta: { label: 'Take the seat', url },
-        footerNote: memberFooter,
+        footerNote: needAFourthFooter,
       };
 
     case 'event_reminder': {
@@ -217,7 +239,7 @@ export function bodyFor(row: RenderRow, appUrl: string): Body {
           .map((part) => part.trim())
           .filter((part) => part.length > 0),
         cta: { label: row.event_id ? 'See the game' : `See ${row.club_name}`, url },
-        footerNote: memberFooter,
+        footerNote: broadcastFooter,
       };
 
     default:

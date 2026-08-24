@@ -262,6 +262,19 @@ describe('FakeSender', () => {
   });
 });
 
+/**
+ * `FakeSender` has nothing to release, so it doesn't implement `close` —
+ * `Sender.close` is optional for exactly that reason (see sender.ts). This
+ * subclass adds one, purely to let a test see that `deliverBatch` calls it
+ * exactly once per batch, regardless of how the loop inside ended.
+ */
+class ClosingFakeSender extends FakeSender {
+  closeCalls = 0;
+  async close(): Promise<void> {
+    this.closeCalls += 1;
+  }
+}
+
 function recordingReport() {
   const sentIds: string[] = [];
   const failures: Array<{ id: string; error: string }> = [];
@@ -335,5 +348,83 @@ describe('deliverBatch', () => {
     expect(result).toEqual({ sent: 0, failed: 0 });
     expect(sentIds).toEqual([]);
     expect(failures).toEqual([]);
+  });
+
+  // The bug this whole classification exists to close: a relay outage used
+  // to burn an attempt off every row in every batch drawn while it lasted,
+  // and five batches (25 minutes into the 5/5/10/20/40/80 backoff
+  // schedule) was enough to dead-letter rows that were never actually bad
+  // addresses. A recognized connection-level failure — see
+  // `looksLikeConnectionFailure` in batch.ts — must cost nothing.
+  it('stops the batch on a recognized connection failure without marking any row failed', async () => {
+    const rows = [row({ id: 'one' }), row({ id: 'two' }), row({ id: 'three' })];
+    const sender = new ClosingFakeSender(() => 'connect ECONNREFUSED 127.0.0.1:25');
+    const { report, sentIds, failures } = recordingReport();
+
+    const result = await deliverBatch(rows, sender, APP, report);
+
+    expect(result).toEqual({ sent: 0, failed: 0 });
+    expect(sentIds).toEqual([]);
+    expect(failures).toEqual([]);
+    // Closed once, even though the loop broke before its last row.
+    expect(sender.closeCalls).toBe(1);
+  });
+
+  // The backstop for a failure neither `looksLikeAddressRejection` nor
+  // `looksLikeConnectionFailure` recognizes: three of them in a row, with
+  // no send succeeding in between, is treated as the relay rather than
+  // three unrelated bad addresses. The first two still cost an attempt —
+  // the loop cannot know sooner than this — but the third, and everything
+  // after it, is spared.
+  it('treats three consecutive unrecognized failures as the relay and spares the third row', async () => {
+    const rows = [
+      row({ id: 'one' }),
+      row({ id: 'two' }),
+      row({ id: 'three' }),
+      row({ id: 'four' }),
+    ];
+    const sender = new ClosingFakeSender(() => 'the mail server said something odd');
+    const { report, sentIds, failures } = recordingReport();
+
+    const result = await deliverBatch(rows, sender, APP, report);
+
+    expect(result).toEqual({ sent: 0, failed: 2 });
+    expect(sentIds).toEqual([]);
+    expect(failures.map((f) => f.id)).toEqual(['one', 'two']);
+    expect(sender.closeCalls).toBe(1);
+  });
+
+  // A render failure happens before any network call, so it can never be
+  // evidence the relay is down — it must not count toward the streak
+  // above, or a handful of malformed rows ahead of a genuine address
+  // rejection would misclassify that rejection as a relay outage.
+  it('does not let a render failure feed the unrecognized-failure streak', async () => {
+    const rows = [
+      row({ id: 'one', kind: 'nonsense' as never }),
+      row({ id: 'two', kind: 'nonsense' as never }),
+      row({ id: 'three', recipient_email: 'bad@example.com' }),
+      row({ id: 'four' }),
+    ];
+    const sender = new ClosingFakeSender((message) =>
+      message.to === 'bad@example.com' ? '550 no such user' : null,
+    );
+    const { report, sentIds, failures } = recordingReport();
+
+    const result = await deliverBatch(rows, sender, APP, report);
+
+    expect(result).toEqual({ sent: 1, failed: 3 });
+    expect(sentIds).toEqual(['four']);
+    expect(failures.map((f) => f.id)).toEqual(['one', 'two', 'three']);
+    expect(sender.closeCalls).toBe(1);
+  });
+
+  it('closes the sender once after a batch that sends everything cleanly', async () => {
+    const rows = [row({ id: 'one' }), row({ id: 'two' })];
+    const sender = new ClosingFakeSender();
+    const { report } = recordingReport();
+
+    await deliverBatch(rows, sender, APP, report);
+
+    expect(sender.closeCalls).toBe(1);
   });
 });

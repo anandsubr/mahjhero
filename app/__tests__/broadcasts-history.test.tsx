@@ -18,6 +18,16 @@ const fetchBroadcasts = vi.hoisted(() => vi.fn());
 
 vi.mock('../../lib/broadcasts', () => ({ fetchBroadcasts }));
 
+const fetchRoster = vi.hoisted(() => vi.fn());
+
+// `canInvite` stays real -- it is pure, and it is the exact host-or-
+// co-organizer test this screen is supposed to reuse rather than
+// reimplementing its own notion of "organizer".
+vi.mock('../../lib/clubs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/clubs')>();
+  return { ...actual, fetchRoster };
+});
+
 describe('broadcast history', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -25,6 +35,9 @@ describe('broadcast history', () => {
       { id: 'b1', club_id: 'c1', event_id: null, subject: 'Doors at seven',
         body: 'Side entrance is locked.', recipient_count: 14,
         created_at: '2026-09-01T14:00:00Z' },
+    ]);
+    fetchRoster.mockResolvedValue([
+      { profile_id: 'me', role: 'host', display_name: 'Me', skill_level: null },
     ]);
   });
 
@@ -48,5 +61,35 @@ describe('broadcast history', () => {
     render(<BroadcastHistory />);
     expect(await screen.findByText(/couldn't load/i)).toBeTruthy();
     expect(screen.queryByText(/haven't sent anything/i)).toBeNull();
+  });
+
+  // Reachable by URL even though nothing links here for a plain member.
+  // RLS filters their read to zero rows rather than erroring, so without
+  // this gate they saw "you haven't sent anything to this club yet" and a
+  // "Write another" button -- both wrong for someone who was never allowed
+  // to send in the first place.
+  describe('when the viewer is not an organizer', () => {
+    beforeEach(() => {
+      fetchRoster.mockResolvedValue([
+        { profile_id: 'me', role: 'member', display_name: 'Me', skill_level: null },
+      ]);
+    });
+
+    it('refuses honestly instead of claiming nothing has been sent', async () => {
+      render(<BroadcastHistory />);
+      expect(
+        await screen.findByText(/Only a club's host or co-organizers can see/),
+      ).toBeTruthy();
+      expect(screen.queryByText(/haven't sent anything/i)).toBeNull();
+      expect(screen.queryByLabelText('Write another message')).toBeNull();
+    });
+
+    it('also refuses when the roster read fails', async () => {
+      fetchRoster.mockResolvedValue(null);
+      render(<BroadcastHistory />);
+      expect(
+        await screen.findByText(/Only a club's host or co-organizers can see/),
+      ).toBeTruthy();
+    });
   });
 });

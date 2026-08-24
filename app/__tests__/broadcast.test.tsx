@@ -3,17 +3,36 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import Broadcast from '../clubs/[id]/broadcast';
 
 const push = vi.hoisted(() => vi.fn());
+const replace = vi.hoisted(() => vi.fn());
 const params = vi.hoisted(() => ({ current: { id: 'c1' } as Record<string, string> }));
 
 vi.mock('expo-router', () => ({
   Redirect: () => null,
-  useRouter: () => ({ push, back: vi.fn() }),
+  useRouter: () => ({ push, replace, back: vi.fn() }),
   useLocalSearchParams: () => params.current,
 }));
 
 vi.mock('../../lib/session', () => ({
   useSession: () => ({ session: { user: { id: 'me' } }, loading: false }),
 }));
+
+// Return type annotated explicitly, same reason as sendBroadcast below:
+// without it TS narrows to this first value's literal type, and the later
+// `mockResolvedValue(null)` (needed for the roster-read-failure test) fails
+// to type-check against that literal.
+const fetchRoster = vi.hoisted(() =>
+  vi.fn(async (): Promise<
+    { profile_id: string; role: string; display_name: string; skill_level: null }[] | null
+  > => [{ profile_id: 'me', role: 'host', display_name: 'Me', skill_level: null }]),
+);
+
+// `canInvite` stays real -- it is pure, and it is the exact host-or-
+// co-organizer test this screen is supposed to reuse rather than
+// reimplementing its own notion of "organizer".
+vi.mock('../../lib/clubs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/clubs')>();
+  return { ...actual, fetchRoster };
+});
 
 // Return type annotated explicitly, same reason as sendBroadcast below:
 // without it TS narrows to the literal `14` of this first value, and the
@@ -53,6 +72,9 @@ describe('broadcast compose screen', () => {
     params.current = { id: 'c1' };
     countBroadcastRecipients.mockResolvedValue(14);
     sendBroadcast.mockResolvedValue({ id: 'b1', error: null });
+    fetchRoster.mockResolvedValue([
+      { profile_id: 'me', role: 'host', display_name: 'Me', skill_level: null },
+    ]);
   });
 
   // The count is the thing that makes the confirmation meaningful. "Send
@@ -89,11 +111,36 @@ describe('broadcast compose screen', () => {
     );
   });
 
-  it('goes to the sent history afterwards', async () => {
+  it('goes to the sent history afterwards, replacing rather than pushing', async () => {
     await compose('Doors at seven', 'The side entrance is locked.');
     fireEvent.click(screen.getByLabelText('Send'));
     fireEvent.click(await screen.findByLabelText('Yes, send it'));
-    await waitFor(() => expect(push).toHaveBeenCalledWith('/clubs/c1/broadcasts'));
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/clubs/c1/broadcasts'));
+    // `push` would leave this screen on the back stack underneath the
+    // history screen -- `replace` is what stops back navigation from
+    // returning to it at all. See the "back to a primed second send" test
+    // below for what happens when that guarantee doesn't hold.
+    expect(push).not.toHaveBeenCalledWith('/clubs/c1/broadcasts');
+  });
+
+  // The regression test for the double-send bug: `push` used to leave this
+  // screen mounted with `confirming` still true and the typed message still
+  // in state, so returning to it via back navigation (which this component
+  // staying mounted simulates) showed a primed "Yes, send it" ready to fire
+  // again. Clearing the form and closing the confirmation on success is
+  // what makes a second tap here impossible rather than merely unlikely.
+  it('clears the confirmation and the typed message after a successful send', async () => {
+    await compose('Doors at seven', 'The side entrance is locked.');
+    fireEvent.click(screen.getByLabelText('Send'));
+    fireEvent.click(await screen.findByLabelText('Yes, send it'));
+    await waitFor(() => expect(replace).toHaveBeenCalled());
+
+    expect(screen.queryByLabelText('Yes, send it')).toBeNull();
+    expect((screen.getByLabelText('Subject') as HTMLInputElement).value).toBe('');
+    expect((screen.getByLabelText('Message') as HTMLTextAreaElement).value).toBe('');
+    // Disabled because the (now-empty) message is no longer valid to send --
+    // the same guard that stops the very first empty-message send.
+    expect(screen.getByLabelText('Send').getAttribute('aria-disabled')).toBe('true');
   });
 
   // An empty message must not be sendable at all — the check constraint
@@ -160,5 +207,38 @@ describe('broadcast compose screen', () => {
     fireEvent.click(await screen.findByLabelText('Keep editing'));
     await waitFor(() => expect(screen.queryByLabelText('Yes, send it')).toBeNull());
     expect(sendBroadcast).not.toHaveBeenCalled();
+  });
+
+  // The route is reachable by URL even though the entry-point button that
+  // links here is already hidden from a plain member. Without this gate,
+  // that member saw "Sending still works" (copy meant for an organizer
+  // whose count RPC failed) and, after typing and confirming, the
+  // database's raw `not an organizer of this club` refusal.
+  describe('when the viewer is not an organizer', () => {
+    beforeEach(() => {
+      fetchRoster.mockResolvedValue([
+        { profile_id: 'me', role: 'member', display_name: 'Me', skill_level: null },
+      ]);
+    });
+
+    it('refuses honestly instead of opening the compose form', async () => {
+      render(<Broadcast />);
+      expect(
+        await screen.findByText(/Only a club's host or co-organizers can message/),
+      ).toBeTruthy();
+      expect(screen.queryByLabelText('Subject')).toBeNull();
+      expect(screen.queryByLabelText('Send')).toBeNull();
+    });
+
+    // Fails closed: a roster read that errors must not be read as "not
+    // found, so let them through" -- same posture the roster-dependent
+    // organizer checks elsewhere in the app take.
+    it('also refuses when the roster read fails', async () => {
+      fetchRoster.mockResolvedValue(null);
+      render(<Broadcast />);
+      expect(
+        await screen.findByText(/Only a club's host or co-organizers can message/),
+      ).toBeTruthy();
+    });
   });
 });

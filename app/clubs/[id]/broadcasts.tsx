@@ -6,11 +6,13 @@ import Card from '../../../components/Card';
 import Screen from '../../../components/Screen';
 import { ChevronLeftIcon } from '../../../components/icons';
 import { fetchBroadcasts, type Broadcast } from '../../../lib/broadcasts';
+import { canInvite, fetchRoster } from '../../../lib/clubs';
 import { useSession } from '../../../lib/session';
 import { colors, space, type } from '../../../lib/theme';
 
 export default function BroadcastHistory() {
   const { session, loading } = useSession();
+  const userId = session?.user.id;
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id?: string }>();
   const clubId = id ?? '';
@@ -20,6 +22,15 @@ export default function BroadcastHistory() {
   // "loaded and failed" look identical otherwise, and the screen would say
   // "you haven't sent anything" to a host whose read was denied.
   const [ready, setReady] = useState(false);
+
+  // Reachable directly by URL same as app/clubs/[id]/broadcast.tsx, and
+  // gated the same way: RLS filters a non-organizer's read to zero rows
+  // rather than erroring, which without this made "you haven't sent
+  // anything to this club yet" -- with a "Write another" button leading
+  // straight back to the send screen -- the answer for any member who
+  // happened to visit this URL, organizer or not.
+  const [isOrganizer, setIsOrganizer] = useState(false);
+  const [organizerReady, setOrganizerReady] = useState(false);
 
   useEffect(() => {
     if (!clubId) return;
@@ -35,6 +46,21 @@ export default function BroadcastHistory() {
     };
   }, [clubId]);
 
+  useEffect(() => {
+    if (!userId || !clubId) return;
+    let cancelled = false;
+    setOrganizerReady(false);
+    fetchRoster(clubId).then((rows) => {
+      if (cancelled) return;
+      const me = (rows ?? []).find((m) => m.profile_id === userId);
+      setIsOrganizer(me ? canInvite(me.role) : false);
+      setOrganizerReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, clubId]);
+
   if (loading) {
     return (
       <Screen center contentStyle={styles.centered}>
@@ -44,6 +70,38 @@ export default function BroadcastHistory() {
   }
 
   if (!session) return <Redirect href="/sign-in" />;
+
+  if (!organizerReady) {
+    return (
+      <Screen center contentStyle={styles.centered}>
+        <ActivityIndicator />
+      </Screen>
+    );
+  }
+
+  if (!isOrganizer) {
+    return (
+      <Screen scroll contentStyle={styles.container}>
+        <Button
+          variant="ghost"
+          big={false}
+          onPress={() => router.push(`/clubs/${clubId}`)}
+          icon={<ChevronLeftIcon color={colors.accentColor} />}
+          accessibilityLabel="Back to the club"
+          style={styles.backButton}
+        >
+          Club
+        </Button>
+        <Text style={styles.heading}>Sent messages</Text>
+        <Card>
+          <Text style={styles.help}>
+            Only a club's host or co-organizers can see what's been sent to
+            it.
+          </Text>
+        </Card>
+      </Screen>
+    );
+  }
 
   return (
     <Screen scroll contentStyle={styles.container}>

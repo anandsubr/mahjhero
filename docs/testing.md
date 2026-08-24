@@ -738,11 +738,16 @@ Five jobs now run on `pg_cron`:
 | `queue-event-reminders` | `*/15 * * * *` | Writes `notification_outbox` rows at each club's configured reminder offsets |
 | `deliver-notifications` | `* * * * *` | Drains the outbox by POSTing to the `deliver-notifications` Edge Function |
 
-All three are ordinary plpgsql and are tested by **calling them**, not by
-waiting for a schedule. `sweep_promotion_offers()` and
-`announce_need_a_fourth()` both return a count, so a fixture can assert what
-a run did rather than inspecting `cron.job_run_details` — which the hosted
-suite could not read anyway.
+Four of these five are ordinary plpgsql and are tested by **calling them**,
+not by waiting for a schedule. `sweep_promotion_offers()`,
+`announce_need_a_fourth()` and `queue_event_reminders()` each return a
+count, so a fixture can assert what a run did rather than inspecting
+`cron.job_run_details` — which the hosted suite could not read anyway.
+
+The fifth, `deliver-notifications`, is not plpgsql at all — `pg_cron` POSTs
+to an Edge Function through `pg_net` rather than calling a function in the
+database, so "call it and assert what it did" doesn't apply the same way.
+It's covered separately, in "The notification drain" below.
 
 **Waitlist promotion is not on this list, and that is deliberate.** It runs
 inline inside whichever transaction frees a seat. The sweep calls it too,
@@ -812,14 +817,27 @@ STARTTLS, and Mailpit offers neither. `smtp.ts` never set
 `debug.allowUnsecure`, so this path was unreachable in every test the
 function has, all of which fake the SMTP layer — the real `SMTPClient`
 never ran a real send until this task's end-to-end check, which is what
-caught it. The fix ties `allowUnsecure` to whether credentials are being
-sent (`allowUnsecure: !this.config.user`): local Mailpit sends no
-credentials, so the plaintext connection it needs is now permitted, while
-a production relay — which always gets `SMTP_USER` — keeps the exact
-refusal denomailer's warning is about. A production relay on 465 or 587
-is already secure (implicit TLS, or the STARTTLS upgrade denomailer
-negotiates for itself before this check ever runs) whether or not the flag
-is set, so nothing about a real deployment's security posture changes.
+caught it.
+
+The first fix tried tied `allowUnsecure` to whether credentials were being
+sent (`allowUnsecure: !this.config.user`), on the theory that a production
+relay always gets `SMTP_USER`. Commit `96c70af` replaced that: credential
+presence is the wrong invariant to gate plaintext on, because nothing
+stops `SMTP_USER` from being empty against a real, non-local relay — a
+typo in `npx supabase secrets set`, an intentionally anonymous relay, a
+future config nobody has written yet — and that gap would have sent
+member content in plaintext to a host the fix was never meant to trust.
+`smtp.ts` gates on **host trust** instead
+(`isLocalDevHost(this.config.host) && !this.config.user`): an unsecured
+connection is only ever permitted to a host on `LOCAL_DEV_SMTP_HOSTS` —
+Mailpit's own hostnames, a fixed allowlist rather than a heuristic — and
+the credential check stays as a second, independent condition on top of
+that, which is what guarantees a password can never cross the socket
+whenever the flag is permitted. A production relay on 465 or 587 is
+already secure (implicit TLS, or the STARTTLS upgrade denomailer
+negotiates for itself before this check ever runs) regardless of the
+flag, so nothing about a real deployment's security posture changes;
+see `smtp.ts`'s own comment on `allowUnsecure` for the full reasoning.
 
 Nothing in the automated suites covers step 5. The claim, the backoff, the
 quiet hours and the templates are all tested; that an SMTP connection

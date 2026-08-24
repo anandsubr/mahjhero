@@ -75,6 +75,23 @@ describe('isValidBroadcast', () => {
     expect(isValidBroadcast('Doors at seven\tsharp', 'Body')).toBe(false);
   });
 
+  // Postgres's `[[:cntrl:]]`, under this database's en_US.UTF-8 collation,
+  // is not just 0x00-0x1F and 0x7F -- it also carries the C1 range,
+  // U+0080-U+009F, which a bad Windows-1252 round-trip can paste into a
+  // subject. Before this widened the pattern, a subject like this one
+  // passed this check and hit the database's constraint anyway, and
+  // because sendBroadcast relays `error.message` verbatim, the host would
+  // have seen a raw `violates check constraint "broadcasts_subject_check1"`
+  // instead of a refusal caught here first.
+  it('rejects a subject carrying a C1 control character (U+0080-U+009F)', () => {
+    // \u0085 (NEL) sits in the middle of the C1 range; \u0080 and \u009f
+    // are its two boundaries. The old pattern's JS source stopped at
+    // \x7f and never reached any of these three.
+    expect(isValidBroadcast('Doors at\u0085seven', 'Body')).toBe(false);
+    expect(isValidBroadcast('Doors at\u0080seven', 'Body')).toBe(false);
+    expect(isValidBroadcast('Doors at\u009fseven', 'Body')).toBe(false);
+  });
+
   // sendBroadcast sends subject.trim(), and trim() strips \t \n \v \f \r —
   // all inside the control-character pattern's range. A subject with only
   // a leading/trailing newline trims away to something the database would

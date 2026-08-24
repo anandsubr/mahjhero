@@ -14,17 +14,31 @@ import {
   isValidBroadcast,
   sendBroadcast,
 } from '../../../lib/broadcasts';
+import { canInvite, fetchRoster } from '../../../lib/clubs';
 import { useSession } from '../../../lib/session';
 import { colors, space, type } from '../../../lib/theme';
 
 export default function Broadcast() {
   const { session, loading } = useSession();
+  const userId = session?.user.id;
   const router = useRouter();
   const { id, eventId } = useLocalSearchParams<{ id?: string; eventId?: string }>();
   const clubId = id ?? '';
   // The route parameter arrives as a string or not at all; the RPC wants
   // null for "the whole roster", and undefined would be sent as missing.
   const targetEvent = eventId ?? null;
+
+  // The entry-point buttons that link here already check `canInvite`, but
+  // the route itself is reachable by URL regardless. Without this, a plain
+  // member landed on a screen that told them "Sending still works" (the
+  // copy meant for an organizer whose recipient-count RPC failed) and then
+  // showed them the database's raw `not an organizer of this club` refusal
+  // after they typed a message and confirmed. Same derivation
+  // app/clubs/[id]/index.tsx and .../events/[eventId]/index.tsx use, and
+  // the same fail-closed posture on a roster-fetch failure: "not an
+  // organizer" rather than opening the page anyway.
+  const [isOrganizer, setIsOrganizer] = useState(false);
+  const [organizerReady, setOrganizerReady] = useState(false);
 
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
@@ -58,6 +72,21 @@ export default function Broadcast() {
     };
   }, [clubId, targetEvent]);
 
+  useEffect(() => {
+    if (!userId || !clubId) return;
+    let cancelled = false;
+    setOrganizerReady(false);
+    fetchRoster(clubId).then((rows) => {
+      if (cancelled) return;
+      const me = (rows ?? []).find((m) => m.profile_id === userId);
+      setIsOrganizer(me ? canInvite(me.role) : false);
+      setOrganizerReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, clubId]);
+
   // Bound to the "Try again" button in the failed-count card below. Flipping
   // `recipientsReady` back to false immediately swaps that card back to the
   // loading copy, which is also what removes the button from the tree -- so
@@ -80,6 +109,43 @@ export default function Broadcast() {
 
   if (!session) return <Redirect href="/sign-in" />;
 
+  if (!organizerReady) {
+    return (
+      <Screen center contentStyle={styles.centered}>
+        <ActivityIndicator />
+      </Screen>
+    );
+  }
+
+  if (!isOrganizer) {
+    // An honest refusal, not a silent bounce back to the club: this screen
+    // is reachable only by URL for a plain member (the entry-point buttons
+    // already hide it), and a Redirect here would read as a broken link
+    // rather than the true reason -- the same "say what actually happened"
+    // posture the rest of this screen and its sibling history screen take
+    // for a failed count or a failed load, rather than papering over it.
+    return (
+      <Screen scroll contentStyle={styles.container}>
+        <Button
+          variant="ghost"
+          big={false}
+          onPress={() => router.push(`/clubs/${clubId}`)}
+          icon={<ChevronLeftIcon color={colors.accentColor} />}
+          accessibilityLabel="Back to the club"
+          style={styles.backButton}
+        >
+          Club
+        </Button>
+        <Text style={styles.heading}>Message members</Text>
+        <Card>
+          <Text style={styles.help}>
+            Only a club's host or co-organizers can message the whole club.
+          </Text>
+        </Card>
+      </Screen>
+    );
+  }
+
   const valid = isValidBroadcast(subject, body);
 
   async function onConfirmedSend() {
@@ -97,7 +163,18 @@ export default function Broadcast() {
         setError(sendError);
         return;
       }
-      router.push(`/clubs/${clubId}/broadcasts`);
+      // `replace`, not `push`, and the form state cleared with it -- the
+      // same pattern app/clubs/new.tsx and app/clubs/[id]/events/new.tsx
+      // use after their own creates. `push` left this screen mounted
+      // underneath the history screen with `confirming` still true and the
+      // typed message still in state, so Android back / iOS swipe-back /
+      // browser back landed the host right back on a primed "Yes, send it"
+      // -- one more tap wrote a second `broadcasts` row, with a fresh id
+      // and therefore fresh dedupe keys, and mailed the whole club again.
+      setConfirming(false);
+      setSubject('');
+      setBody('');
+      router.replace(`/clubs/${clubId}/broadcasts`);
     } finally {
       setSending(false);
     }

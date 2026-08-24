@@ -30,6 +30,45 @@ function isLocalDevHost(host: string): boolean {
 }
 
 /**
+ * denomailer 1.6.0 has no connect or send timeout of its own — confirmed
+ * against its `ClientOptions`/`ConnectionOptions` types, which carry
+ * `pool.timeout` (an idle *pooled* connection's close interval, not a
+ * connect deadline) and nothing else timeout-shaped. Its `Deno.connect` /
+ * `Deno.connectTls` call is unwrapped, so a relay that accepts the TCP
+ * handshake and then never speaks — a black hole, not a refusal — leaves
+ * `client.send()` awaiting forever. The Edge Function's own wall clock is
+ * what used to end that, mid-batch: the row stayed leased, `attempts` had
+ * already been incremented at claim time, and `last_error` never got
+ * written, so it neither sent nor dead-lettered while its attempts
+ * climbed one silent kill at a time.
+ *
+ * 15 seconds is generous for a TLS handshake plus one SMTP transaction
+ * against a working relay and short enough that a hung one gives up long
+ * before an Edge Function invocation's own wall clock does, even in the
+ * worst case of it firing on every message in a batch.
+ */
+const SEND_TIMEOUT_MS = 15_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`smtp: timed out after ${ms}ms waiting on the relay`)),
+      ms,
+    );
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
+/**
  * The only file in this function that imports a URL module, and therefore
  * the only one Vitest cannot see. Keep it that thin.
  *
@@ -40,9 +79,29 @@ function isLocalDevHost(host: string): boolean {
  * secret rather than a dependency.
  */
 export class SmtpSender implements Sender {
+  private client: SMTPClient | null = null;
+
   constructor(private readonly config: SmtpConfig) {}
 
-  async send(message: Message): Promise<void> {
+  /**
+   * Opened on the first `send` a batch makes and reused for every message
+   * after it, instead of one connection per message.
+   *
+   * At 50 messages a minute a relay sees a fresh TCP+TLS handshake every
+   * 1.2 seconds under the old per-message scheme — many relays throttle
+   * connection *attempts* far harder than they throttle messages on an
+   * already-open one, so that pattern reads as abuse before the message
+   * volume itself would. One connection per batch, reused across every
+   * `send` and closed once by `close()` below, is both fewer handshakes
+   * and the shape a real mail client uses.
+   *
+   * Lazy rather than opened in the constructor so a batch that claims zero
+   * rows — most ticks, in a club-scale product — never dials the relay at
+   * all.
+   */
+  private getClient(): SMTPClient {
+    if (this.client) return this.client;
+
     /*
      * denomailer refuses to finish the handshake at all — for every
      * message, regardless of whether credentials are involved — unless the
@@ -97,7 +156,7 @@ export class SmtpSender implements Sender {
       );
     }
 
-    const client = new SMTPClient({
+    this.client = new SMTPClient({
       connection: {
         hostname: this.config.host,
         port: this.config.port,
@@ -112,43 +171,47 @@ export class SmtpSender implements Sender {
       },
       debug: { allowUnsecure },
     });
+    return this.client;
+  }
 
-    try {
-      await client.send({
+  async send(message: Message): Promise<void> {
+    const client = this.getClient();
+    // Bounds both the connect and the SMTP exchange: denomailer awaits its
+    // own lazy connect promise inside `send()` (see `withTimeout`'s
+    // comment), so wrapping this one call covers a hang at either stage.
+    await withTimeout(
+      client.send({
         from: this.config.from,
         to: message.to,
         subject: message.subject,
         content: message.text,
         html: message.html,
-      });
-    } catch (sendError) {
-      // A connection left open survives the invocation in Deno Deploy and
-      // the relay eventually refuses new ones, so a close is still owed
-      // even on failure. But the send already failed for a real reason —
-      // a close error on top of that is noise next to it, so it is logged
-      // rather than allowed to replace the error that actually matters.
-      try {
-        await client.close();
-      } catch (closeError) {
-        console.error('smtp close failed after a failed send', closeError);
-      }
-      throw sendError;
-    }
+      }),
+      SEND_TIMEOUT_MS,
+    );
+  }
 
+  /**
+   * Closes the connection `send` opened, if `send` ever ran. `deliverBatch`
+   * calls this exactly once, in a `finally`, after the last row in a batch
+   * has had its turn — not per message, which would put the per-message
+   * handshake this class exists to avoid right back in.
+   */
+  async close(): Promise<void> {
+    const client = this.client;
+    this.client = null;
+    if (!client) return;
     try {
       // A connection left open survives the invocation in Deno Deploy and
       // the relay eventually refuses new ones.
       await client.close();
     } catch (closeError) {
-      // The send above already succeeded — the relay accepted the message
-      // before dropping the connection, which does happen. Given the
-      // retry model, letting this reject would read as a failed send and
-      // cause a duplicate delivery for mail that already went out, so it
-      // is logged and swallowed instead.
-      console.error(
-        'smtp close failed after a successful send; message was not resent',
-        closeError,
-      );
+      // Every message this connection carried has already been reported
+      // through `report.markSent`/`markFailed` by the time this runs — a
+      // close error changes none of that, so it is logged and swallowed
+      // rather than thrown out of a `finally`, where it would replace
+      // whatever the batch loop was already unwinding.
+      console.error('smtp close failed', closeError);
     }
   }
 }
