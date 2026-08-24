@@ -31,6 +31,12 @@ export default function BroadcastHistory() {
   // happened to visit this URL, organizer or not.
   const [isOrganizer, setIsOrganizer] = useState(false);
   const [organizerReady, setOrganizerReady] = useState(false);
+  // `fetchRoster` resolves null on ANY failure, indistinguishable from
+  // `isOrganizer = false` unless tracked separately -- see the matching
+  // comment in broadcast.tsx. Collapsing the two told a genuine host, on a
+  // bad connection, the affirmatively false "Only a club's host or
+  // co-organizers can see what's been sent to it."
+  const [rosterFailed, setRosterFailed] = useState(false);
 
   useEffect(() => {
     if (!clubId) return;
@@ -47,19 +53,39 @@ export default function BroadcastHistory() {
   }, [clubId]);
 
   useEffect(() => {
-    if (!userId || !clubId) return;
+    // Only reachable via a malformed route -- but without this, the effect
+    // below never runs when either id is missing, and `organizerReady`
+    // stayed false forever: a spinner with no escape, on a screen that
+    // rendered fine before this gate existed. Fail closed instead of
+    // hanging.
+    if (!userId || !clubId) {
+      setIsOrganizer(false);
+      setRosterFailed(false);
+      setOrganizerReady(true);
+      return;
+    }
     let cancelled = false;
     setOrganizerReady(false);
     fetchRoster(clubId).then((rows) => {
       if (cancelled) return;
       const me = (rows ?? []).find((m) => m.profile_id === userId);
       setIsOrganizer(me ? canInvite(me.role) : false);
+      setRosterFailed(rows === null);
       setOrganizerReady(true);
     });
     return () => {
       cancelled = true;
     };
   }, [userId, clubId]);
+
+  async function retryRoster() {
+    setOrganizerReady(false);
+    const rows = await fetchRoster(clubId);
+    const me = (rows ?? []).find((m) => m.profile_id === userId);
+    setIsOrganizer(me ? canInvite(me.role) : false);
+    setRosterFailed(rows === null);
+    setOrganizerReady(true);
+  }
 
   if (loading) {
     return (
@@ -75,6 +101,40 @@ export default function BroadcastHistory() {
     return (
       <Screen center contentStyle={styles.centered}>
         <ActivityIndicator />
+      </Screen>
+    );
+  }
+
+  if (rosterFailed) {
+    // Distinct from "not an organizer": the check itself did not run, so
+    // it must not be spoken as an answer either way. A retry, not a false
+    // claim that the viewer can't see what their club has sent.
+    return (
+      <Screen scroll contentStyle={styles.container}>
+        <Button
+          variant="ghost"
+          big={false}
+          onPress={() => router.push(`/clubs/${clubId}`)}
+          icon={<ChevronLeftIcon color={colors.accentColor} />}
+          accessibilityLabel="Back to the club"
+          style={styles.backButton}
+        >
+          Club
+        </Button>
+        <Text style={styles.heading}>Sent messages</Text>
+        <Card>
+          <Text style={styles.help}>
+            Couldn't check whether you can see what's been sent to this club.
+          </Text>
+          <Button
+            variant="ghost"
+            big={false}
+            onPress={retryRoster}
+            accessibilityLabel="Try checking your role again"
+          >
+            Try again
+          </Button>
+        </Card>
       </Screen>
     );
   }

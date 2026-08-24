@@ -229,16 +229,53 @@ describe('broadcast compose screen', () => {
       expect(screen.queryByLabelText('Subject')).toBeNull();
       expect(screen.queryByLabelText('Send')).toBeNull();
     });
+  });
 
-    // Fails closed: a roster read that errors must not be read as "not
-    // found, so let them through" -- same posture the roster-dependent
-    // organizer checks elsewhere in the app take.
-    it('also refuses when the roster read fails', async () => {
+  // A roster-fetch failure is not the same statement as "you are not an
+  // organizer" -- `fetchRoster` resolves null for ANY failure, including a
+  // network blip against a genuine host. Reading that as "not an
+  // organizer" told a real host, on a bad connection, the affirmatively
+  // false "Only a club's host or co-organizers can message the whole
+  // club." This used to be pinned as the intended behaviour by a test
+  // asserting exactly that text; it is wrong, and this block replaces it.
+  describe('when the roster read fails', () => {
+    beforeEach(() => {
       fetchRoster.mockResolvedValue(null);
+    });
+
+    it('says it could not check, rather than claiming the viewer is not an organizer', async () => {
       render(<Broadcast />);
       expect(
-        await screen.findByText(/Only a club's host or co-organizers can message/),
+        await screen.findByText(/Couldn't check whether you can message/),
       ).toBeTruthy();
+      expect(
+        screen.queryByText(/Only a club's host or co-organizers can message/),
+      ).toBeNull();
+      expect(screen.queryByLabelText('Subject')).toBeNull();
     });
+
+    it('lets the host retry the role check', async () => {
+      render(<Broadcast />);
+      await screen.findByText(/Couldn't check whether you can message/);
+
+      fetchRoster.mockResolvedValue([
+        { profile_id: 'me', role: 'host', display_name: 'Me', skill_level: null },
+      ]);
+      fireEvent.click(screen.getByLabelText('Try checking your role again'));
+
+      expect(await screen.findByLabelText('Subject')).toBeTruthy();
+    });
+  });
+
+  // The empty-clubId case (only reachable via a malformed route) must not
+  // hang the screen on a spinner forever -- the organizer-check effect
+  // used to return before ever setting `organizerReady`, which is exactly
+  // what a missing id made it do.
+  it('does not hang on a spinner when the route is missing its club id', async () => {
+    params.current = { id: '' };
+    render(<Broadcast />);
+    expect(
+      await screen.findByText(/Only a club's host or co-organizers can message/),
+    ).toBeTruthy();
   });
 });

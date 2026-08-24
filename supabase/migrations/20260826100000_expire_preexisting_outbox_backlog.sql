@@ -39,6 +39,19 @@
  * expired by the time this runs keeps whatever terminal state it already
  * reached — `notification_outbox_one_terminal_state` would refuse to set a
  * second one anyway.
+ *
+ * That "every row still pending right now is backlog" premise is only true
+ * the FIRST time this migration is applied to a database that already
+ * carries plan 4's pre-drain rows. It stops being true the moment this
+ * branch has been deployed once and the drain has been running against it:
+ * on a staging box that already has this migration applied and
+ * `app_config` seeded, a second `supabase db push` — or a manual re-run
+ * during a rebase or a migration-history repair — would expire whatever is
+ * legitimately queued and pending *right then*, not a stale backlog at
+ * all. Migrations in this project are not expected to be re-applied to a
+ * database that already has them, and this one is written on that same
+ * assumption; it is called out here because the cost of getting it wrong
+ * on this particular migration is silent, live message loss, not an error.
  */
 update public.notification_outbox
    set expired_at = now(),

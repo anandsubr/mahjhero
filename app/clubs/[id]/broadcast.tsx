@@ -34,11 +34,19 @@ export default function Broadcast() {
   // copy meant for an organizer whose recipient-count RPC failed) and then
   // showed them the database's raw `not an organizer of this club` refusal
   // after they typed a message and confirmed. Same derivation
-  // app/clubs/[id]/index.tsx and .../events/[eventId]/index.tsx use, and
-  // the same fail-closed posture on a roster-fetch failure: "not an
-  // organizer" rather than opening the page anyway.
+  // app/clubs/[id]/index.tsx and .../events/[eventId]/index.tsx use.
   const [isOrganizer, setIsOrganizer] = useState(false);
   const [organizerReady, setOrganizerReady] = useState(false);
+  // `fetchRoster` resolves null on ANY failure -- a network blip looks
+  // identical to "the RPC ran and you are on nobody's roster" unless this
+  // is tracked separately. Collapsing both into `isOrganizer = false` told
+  // a genuine host, on a bad connection, the affirmatively false "Only a
+  // club's host or co-organizers can message the whole club" -- the same
+  // failed-fetch-vs-empty-result bug app/clubs/[id]/index.tsx's
+  // `loadFailed` and the eventId screen's `rosterFailed` both exist to
+  // avoid, applied here to the one check this screen gates its entire body
+  // on rather than to a single section of it.
+  const [rosterFailed, setRosterFailed] = useState(false);
 
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
@@ -73,19 +81,42 @@ export default function Broadcast() {
   }, [clubId, targetEvent]);
 
   useEffect(() => {
-    if (!userId || !clubId) return;
+    // Only reachable via a malformed route -- but the effect below never
+    // runs when either id is missing, and it was that never-running effect
+    // that left `organizerReady` stuck at false forever: a spinner with no
+    // escape, on a screen that rendered fine before this gate existed.
+    // Fail closed the same way a roster-read failure does, rather than
+    // hang.
+    if (!userId || !clubId) {
+      setIsOrganizer(false);
+      setRosterFailed(false);
+      setOrganizerReady(true);
+      return;
+    }
     let cancelled = false;
     setOrganizerReady(false);
     fetchRoster(clubId).then((rows) => {
       if (cancelled) return;
       const me = (rows ?? []).find((m) => m.profile_id === userId);
       setIsOrganizer(me ? canInvite(me.role) : false);
+      setRosterFailed(rows === null);
       setOrganizerReady(true);
     });
     return () => {
       cancelled = true;
     };
   }, [userId, clubId]);
+
+  // Bound to the "Try again" button on the failed-role-check card below,
+  // the same shape as `retryRecipients`.
+  async function retryRoster() {
+    setOrganizerReady(false);
+    const rows = await fetchRoster(clubId);
+    const me = (rows ?? []).find((m) => m.profile_id === userId);
+    setIsOrganizer(me ? canInvite(me.role) : false);
+    setRosterFailed(rows === null);
+    setOrganizerReady(true);
+  }
 
   // Bound to the "Try again" button in the failed-count card below. Flipping
   // `recipientsReady` back to false immediately swaps that card back to the
@@ -113,6 +144,41 @@ export default function Broadcast() {
     return (
       <Screen center contentStyle={styles.centered}>
         <ActivityIndicator />
+      </Screen>
+    );
+  }
+
+  if (rosterFailed) {
+    // Distinct from "not an organizer": this is "the check itself did not
+    // run," which must not be spoken as an answer about the viewer's role
+    // one way or the other. A host on a bad connection gets a retry, not a
+    // false statement that they can't message their own club.
+    return (
+      <Screen scroll contentStyle={styles.container}>
+        <Button
+          variant="ghost"
+          big={false}
+          onPress={() => router.push(`/clubs/${clubId}`)}
+          icon={<ChevronLeftIcon color={colors.accentColor} />}
+          accessibilityLabel="Back to the club"
+          style={styles.backButton}
+        >
+          Club
+        </Button>
+        <Text style={styles.heading}>Message members</Text>
+        <Card>
+          <Text style={styles.help}>
+            Couldn't check whether you can message this club.
+          </Text>
+          <Button
+            variant="ghost"
+            big={false}
+            onPress={retryRoster}
+            accessibilityLabel="Try checking your role again"
+          >
+            Try again
+          </Button>
+        </Card>
       </Screen>
     );
   }

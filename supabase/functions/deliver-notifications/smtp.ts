@@ -176,19 +176,74 @@ export class SmtpSender implements Sender {
 
   async send(message: Message): Promise<void> {
     const client = this.getClient();
-    // Bounds both the connect and the SMTP exchange: denomailer awaits its
-    // own lazy connect promise inside `send()` (see `withTimeout`'s
-    // comment), so wrapping this one call covers a hang at either stage.
-    await withTimeout(
-      client.send({
-        from: this.config.from,
-        to: message.to,
-        subject: message.subject,
-        content: message.text,
-        html: message.html,
-      }),
-      SEND_TIMEOUT_MS,
-    );
+    try {
+      // Bounds both the connect and the SMTP exchange: denomailer awaits
+      // its own lazy connect promise inside `send()` (see `withTimeout`'s
+      // comment), so wrapping this one call covers a hang at either
+      // stage.
+      await withTimeout(
+        client.send({
+          from: this.config.from,
+          to: message.to,
+          subject: message.subject,
+          content: message.text,
+          html: message.html,
+        }),
+        SEND_TIMEOUT_MS,
+      );
+    } catch (cause) {
+      /*
+       * denomailer 1.6.0 (`client/basic/client.ts`, read directly from its
+       * source rather than trusted secondhand) does not reset the SMTP
+       * transaction after a failed send. For any failure before DATA mode
+       * -- a rejected `RCPT TO`, say -- its own `catch` runs `#cleanup()`,
+       * which is `NOOP` followed by reading one `250`, and nothing else:
+       *
+       *   async #cleanup() {
+       *     this.#connection.writeCmd("NOOP");
+       *     while (true) {
+       *       const cmd = await this.#connection.readCmd();
+       *       if (cmd && cmd.code === 250) return;
+       *     }
+       *   }
+       *
+       * NOOP does not clear the reverse-path buffer a `MAIL FROM` opened
+       * (RFC 5321 §4.1.1.9). So reusing this same `client` for the next
+       * `send()` in the batch issues a second `MAIL FROM` on top of the
+       * first, still-open one -- a nested MAIL that a real relay answers
+       * with its own 3-digit reply code (Postfix: "503 5.5.1 Error: nested
+       * MAIL command"; Exim: "503 sender already given"; Gmail: "503 5.5.1
+       * MAIL first"), which is indistinguishable, to
+       * `looksLikeAddressRejection` in batch.ts, from a genuine per-row
+       * rejection -- so one bad address would cascade a false failure
+       * through every row behind it for the rest of the batch.
+       *
+       * There is a second, milder shape of the same underlying problem: a
+       * failure that happens IN data mode makes denomailer close the raw
+       * socket itself (`this.#connection.conn?.close()`, via a
+       * `queueMicrotask`) without this class ever finding out -- `client`
+       * above stays the same object, and `this.client` below still points
+       * at it, so the next `send()` would throw Deno's own "Bad resource
+       * ID" against an already-closed connection instead.
+       *
+       * Both are fixed the same way: never hand the next `send()` call a
+       * connection whose protocol state a failure may have left
+       * inconsistent. Discard it unconditionally, on any failure, so the
+       * next `send()` reopens fresh through `getClient()` below -- the
+       * happy-path reuse above this `try` is untouched, since this only
+       * ever runs after a `send` has already thrown.
+       */
+      this.client = null;
+      try {
+        await client.close();
+      } catch {
+        // Best-effort. denomailer may have already closed this connection
+        // itself (the data-mode case above), so a second close throwing
+        // is expected, not news -- the caller is already about to see the
+        // send failure that actually matters.
+      }
+      throw cause;
+    }
   }
 
   /**

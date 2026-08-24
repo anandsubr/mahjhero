@@ -168,6 +168,20 @@ Deno.serve(async (req: Request): Promise<Response> => {
       });
       if (markError) console.error('mark_notifications_failed failed', markError);
     },
+    // The other half of a break in batch.ts: `claim_notification_batch`
+    // already burned an attempt on every row in this batch the moment it
+    // claimed them, so a break that only stops calling `markFailed` is not
+    // enough on its own to spare a row's budget — see
+    // release_notification_claims (20260826110000) for what this actually
+    // refunds, and its escape hatch for the row that keeps triggering it.
+    release: async (spared, trigger) => {
+      const { error: releaseError } = await supabase.rpc('release_notification_claims', {
+        p_ids: spared,
+        p_triggering_id: trigger.id,
+        p_triggering_error: trigger.error,
+      });
+      if (releaseError) console.error('release_notification_claims failed', releaseError);
+    },
   };
 
   const result = await deliverBatch(rows, sender, required('PUBLIC_APP_URL'), report);

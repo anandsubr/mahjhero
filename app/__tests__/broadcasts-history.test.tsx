@@ -1,13 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import BroadcastHistory from '../clubs/[id]/broadcasts';
 
 const push = vi.hoisted(() => vi.fn());
+const params = vi.hoisted(() => ({ current: { id: 'c1' } as Record<string, string> }));
 
 vi.mock('expo-router', () => ({
   Redirect: () => null,
   useRouter: () => ({ push, back: vi.fn() }),
-  useLocalSearchParams: () => ({ id: 'c1' }),
+  useLocalSearchParams: () => params.current,
 }));
 
 vi.mock('../../lib/session', () => ({
@@ -31,6 +32,7 @@ vi.mock('../../lib/clubs', async (importOriginal) => {
 describe('broadcast history', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    params.current = { id: 'c1' };
     fetchBroadcasts.mockResolvedValue([
       { id: 'b1', club_id: 'c1', event_id: null, subject: 'Doors at seven',
         body: 'Side entrance is locked.', recipient_count: 14,
@@ -84,12 +86,49 @@ describe('broadcast history', () => {
       expect(screen.queryByLabelText('Write another message')).toBeNull();
     });
 
-    it('also refuses when the roster read fails', async () => {
+  });
+
+  // A roster-fetch failure is not the same statement as "you are not an
+  // organizer" -- `fetchRoster` resolves null for ANY failure, including a
+  // network blip against a genuine host, and reading that as "not an
+  // organizer" told a real host the affirmatively false "Only a club's
+  // host or co-organizers can see what's been sent to it." This used to be
+  // pinned as intended behaviour; it is wrong, and this block replaces it.
+  describe('when the roster read fails', () => {
+    beforeEach(() => {
       fetchRoster.mockResolvedValue(null);
+    });
+
+    it('says it could not check, rather than claiming the viewer is not an organizer', async () => {
       render(<BroadcastHistory />);
       expect(
-        await screen.findByText(/Only a club's host or co-organizers can see/),
+        await screen.findByText(/Couldn't check whether you can see/),
       ).toBeTruthy();
+      expect(
+        screen.queryByText(/Only a club's host or co-organizers can see/),
+      ).toBeNull();
     });
+
+    it('lets the host retry the role check', async () => {
+      render(<BroadcastHistory />);
+      await screen.findByText(/Couldn't check whether you can see/);
+
+      fetchRoster.mockResolvedValue([
+        { profile_id: 'me', role: 'host', display_name: 'Me', skill_level: null },
+      ]);
+      fireEvent.click(screen.getByLabelText('Try checking your role again'));
+
+      expect(await screen.findByText('Doors at seven')).toBeTruthy();
+    });
+  });
+
+  // The empty-clubId case (only reachable via a malformed route) must not
+  // hang the screen on a spinner forever.
+  it('does not hang on a spinner when the route is missing its club id', async () => {
+    params.current = { id: '' };
+    render(<BroadcastHistory />);
+    expect(
+      await screen.findByText(/Only a club's host or co-organizers can see/),
+    ).toBeTruthy();
   });
 });
