@@ -187,6 +187,52 @@ describe('renderMessage', () => {
     expect(message.html).toContain('&lt;script&gt;');
   });
 
+  // subject is a raw RFC 5322 header value. A club name with a CR/LF in it
+  // must not be able to inject a second header line (an extra `Bcc:`, say)
+  // by riding along into the subject unchanged.
+  it('keeps a club name with a CR/LF from injecting a header into the subject', () => {
+    const message = renderMessage(
+      row({
+        kind: 'booked_by_friend',
+        club_name: 'Riverside\r\nBcc: eve@evil.example',
+      }),
+      APP,
+    );
+    expect(message.subject).not.toMatch(/[\r\n]/);
+    // eslint-disable-next-line no-control-regex
+    expect(message.subject).not.toMatch(/[\x00-\x1f\x7f]/);
+  });
+
+  // Same claim, for the other free-text field that lands in a subject:
+  // the event title.
+  it('keeps an event title with a CR/LF from injecting a header into the subject', () => {
+    const message = renderMessage(
+      row({
+        kind: 'booking_cancelled_by_host',
+        event_title: 'Tuesday night\r\nBcc: eve@evil.example',
+      }),
+      APP,
+    );
+    expect(message.subject).not.toMatch(/[\r\n]/);
+    // eslint-disable-next-line no-control-regex
+    expect(message.subject).not.toMatch(/[\x00-\x1f\x7f]/);
+  });
+
+  // The recipient address is a header value too, but unlike the subject it
+  // is not sanitized by rewriting: silently stripping the control
+  // characters out of a `to` would hide a header-injection attempt behind
+  // an address that looks clean while still routing (or misrouting) the
+  // send. renderMessage refuses to build the message at all, so the row
+  // fails loudly instead of mailing something to a rewritten address.
+  it('refuses to build a message for a recipient address with a CR/LF', () => {
+    expect(() =>
+      renderMessage(
+        row({ recipient_email: 'bob@example.com\r\nBcc: eve@evil.example' }),
+        APP,
+      ),
+    ).toThrow(/control character/);
+  });
+
   // Reminders for a booked game cannot be switched off, so the footer must
   // not offer a link that implies otherwise.
   it('tells a member which messages they can silence', () => {

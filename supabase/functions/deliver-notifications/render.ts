@@ -18,6 +18,39 @@ function sanitizeSubject(subject: string): string {
 }
 
 /**
+ * `to` becomes a raw RFC 5322 header value too, exactly like `subject` —
+ * but stripping is the wrong move here. A mangled subject is at worst
+ * cosmetic: a collapsed control character reads oddly and nothing more.
+ * A mangled *address* is not cosmetic — silently rewriting
+ * `bob@x.com\r\nBcc:eve@evil.com` into something that no longer contains
+ * the injected header does not make the row safe to send, it just hides
+ * the tampering and, in the more mundane case, produces an address that
+ * bounces or reaches nobody, with no record of what the original value
+ * was.
+ *
+ * So this refuses instead of rewrites: a control character in the
+ * recipient makes `renderMessage` throw rather than build a message with
+ * a silently-altered `to`. `recipient_email` comes from `auth.users.email`
+ * today, which this function has no visibility into and no way to trust
+ * blindly — Supabase Auth's own validation is an external guarantee, not
+ * one this repo enforces or tests. Throwing here composes with the batch
+ * loop `deliverBatch` adds in Task 10 (`docs/superpowers/plans/
+ * 2026-08-23-notifications-and-comms.md`, not the stale, differently-
+ * scoped `.superpowers/sdd/task-10-brief.md`): each row's render runs
+ * inside a try/catch, so this throw fails and dead-letters that one row
+ * with the thrown message recorded as the reason, rather than crashing
+ * the batch or sending to a rewritten address.
+ */
+function assertCleanAddress(address: string): string {
+  if (/[\x00-\x1f\x7f]/.test(address)) {
+    throw new Error(
+      `recipient address contains a control character: ${JSON.stringify(address)}`,
+    );
+  }
+  return address;
+}
+
+/**
  * Built from the same Body the HTML is built from, never scraped out of the
  * HTML. Regex-stripping markup is how text parts end up with `&amp;` in
  * them and a stray `</p>` at the end of every paragraph.
@@ -36,7 +69,7 @@ export function renderMessage(row: RenderRow, appUrl: string): Message {
   // scheme, so every link in every template resolves against appUrl.
   const settingsUrl = `${appUrl}/notifications`;
   return {
-    to: row.recipient_email,
+    to: assertCleanAddress(row.recipient_email),
     subject: sanitizeSubject(body.subject),
     html: renderShell(body, row.club_name, settingsUrl),
     text: renderText(body, row.club_name, settingsUrl),
