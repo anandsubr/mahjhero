@@ -56,6 +56,15 @@ import { colors, space, type } from '../../../../../lib/theme';
  * table, plus a waitlist panel once the game is full. A cancelled or
  * already-started game gets no `onTakeSeat` at all (see `canBook` below):
  * no disabled control that errors when pressed, just nothing to press.
+ * A member holding a CONFIRMED seat can also give it up directly, the same
+ * way: tapping their own seat (via `SeatGrid`'s `onLeaveSeat`, gated on the
+ * same `canBook`) opens a panel with one action, "Leave this game", which
+ * calls `cancelBooking` on their own booking id — see `leaveSeat` below.
+ * `cancel_booking` has always accepted the seat's own occupant
+ * (supabase/migrations/20260825030000_booking_cancellation.sql); this
+ * screen simply never called it that way for anyone but the waitlisted
+ * case (`leaveWaitlist`) until now — see
+ * .superpowers/sdd/member-leave-seat.md.
  *
  * Organizers (host or co-organizer — `canInvite`, the same test the SQL
  * functions below enforce) additionally get table management and seating
@@ -507,6 +516,27 @@ export default function EventScreen() {
     await run(() => cancelBooking(bookingId));
   }
 
+  // A member giving up a seat THEY hold — the gap this fix closes. Before
+  // this, a confirmed booking had no UI path to `cancel_booking` at all
+  // except a host removing it: `leaveWaitlist` above only ever reaches a
+  // WAITLISTED booking (`cancelBooking(mine.booking_id)` there is found via
+  // `status === 'waitlisted'`), and there was no button anywhere for a
+  // seated member to walk away on their own. `cancel_booking` itself has
+  // accepted the booking's own `profile_id` since Task 4
+  // (supabase/migrations/20260825030000_booking_cancellation.sql) — only
+  // the UI never called it that way.
+  //
+  // Same shape as `hostRemove` (close the open panel, then cancel and
+  // reload) and deliberately calls the same `cancelBooking` RPC, not a
+  // different one: SeatGrid only ever invokes this with `seat.bookingId`
+  // for a seat where `seat.isYou` is true (see that component's own
+  // docstring), so `bookingId` here is always the caller's own booking,
+  // never anybody else's, regardless of who originally booked it.
+  async function leaveSeat(bookingId: string) {
+    setOpenBookingId(null);
+    await run(() => cancelBooking(bookingId));
+  }
+
   // The seat grid's own toggle: tapping an occupied seat opens that
   // person's panel, tapping it again (or tapping any OTHER occupied seat —
   // see `openBookingId` above) closes/replaces it. A plain toggle rather
@@ -648,11 +678,25 @@ export default function EventScreen() {
                 new Date(event.starts_at),
                 now,
               )}
-              // Seat-tap management, forwarded to SeatGrid via TableCard. All
-              // five are supplied together for an organizer and omitted
-              // together for a member — the seat grid falls back to its
-              // plain read-only render (see SeatGrid's own docstring) rather
-              // than a half-wired tappable seat with nothing to move to.
+              // Seat-tap management, forwarded to SeatGrid via TableCard.
+              // `otherTables`/`onMove`/`onRemove` are the organizer bundle —
+              // all three supplied together for an organizer and omitted
+              // together for a member, so the seat grid falls back to its
+              // plain read-only render for that seat (see SeatGrid's own
+              // docstring) rather than a half-wired tappable seat with
+              // nothing to move to. `onLeaveSeat` is the separate,
+              // single-prop member capability (give up YOUR OWN seat) —
+              // gated on `canBook` alone, the same "game is still live"
+              // condition `onTakeSeat` above already uses, not on
+              // `isOrganizer`: an organizer is also a member and gets this
+              // too, it just never wins the branch for their own seat
+              // (SeatGrid's `organizerManageable || selfManageable` always
+              // picks the organizer panel first — see its docstring).
+              // `openBookingId`/`onToggleManage` are the shared open/close
+              // plumbing BOTH features need, so — unlike the organizer
+              // bundle — they are no longer gated on `isOrganizer`: a
+              // member with nothing else must still be able to open their
+              // own seat's panel.
               otherTables={
                 isOrganizer
                   ? tables
@@ -660,10 +704,11 @@ export default function EventScreen() {
                       .map((t) => ({ id: t.id, label: t.label }))
                   : undefined
               }
-              openBookingId={isOrganizer ? openBookingId : undefined}
-              onToggleManage={isOrganizer ? toggleManageSeat : undefined}
               onMove={isOrganizer ? hostPlace : undefined}
               onRemove={isOrganizer ? hostRemove : undefined}
+              onLeaveSeat={canBook ? leaveSeat : undefined}
+              openBookingId={openBookingId}
+              onToggleManage={toggleManageSeat}
             >
               {isOrganizer ? (
                 <>

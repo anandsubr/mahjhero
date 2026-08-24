@@ -21,14 +21,48 @@ type Props = {
   busy?: boolean;
   needsFourth?: boolean;
   /**
-   * Organizer-only seat management. All five of these are supplied together
-   * by an organizer caller and omitted together by a member one — see the
-   * `manageable` derivation below, which is the ONE gate every occupied
-   * seat's tap behaviour passes through. There is deliberately no separate
-   * `isOrganizer` boolean: a caller that forgot one of these five props
+   * Organizer-only seat management: Move-to-another-table plus Remove. These
+   * three (plus the shared `openBookingId`/`onToggleManage` below) are
+   * supplied together by an organizer caller and omitted together by a
+   * member one — see `organizerManageable` below, which is the ONE gate an
+   * organizer's occupied-seat tap passes through. There is deliberately no
+   * separate `isOrganizer` boolean: a caller that forgot one of these three
    * would otherwise produce a half-wired control (a tappable seat with
    * nothing to move to, say) rather than cleanly falling back to the
-   * read-only member render.
+   * read-only render. `otherTables` in particular only ever makes sense
+   * alongside `onMove` — a Move-to list with no move handler behind it is
+   * exactly the shape this gate exists to prevent.
+   */
+  otherTables?: SeatableTable[];
+  onMove?: (bookingId: string, tableId: string) => void;
+  onRemove?: (bookingId: string) => void;
+  /**
+   * The member's own give-up-this-seat action. Unlike the organizer bundle
+   * above, this is a SINGLE prop guarding a SINGLE action — there is no
+   * second prop it could disagree with, so there is no "half-wired" shape
+   * for it to fall into: either a caller supplies it (that seat's own
+   * occupant may open the panel and leave) or it doesn't (nothing renders).
+   * A boolean flag alongside it would only restate what its own presence
+   * already says, so there isn't one.
+   *
+   * Gated per-seat on `seat.isYou`, not on any role — an organizer's own
+   * seat still goes through `organizerManageable` instead (see below),
+   * since Move/Remove already cover "give up your own seat" for them via
+   * Remove; this prop only ever ends up driving render for a NON-organizer
+   * caller's occupied seat. `onLeaveSeat` and the organizer bundle may both
+   * be supplied on the same call (the event screen does, since the same
+   * person can be an organizer on one game and not another) — precedence
+   * between them is resolved once, per seat, by `organizerManageable ||
+   * selfManageable` below.
+   */
+  onLeaveSeat?: (bookingId: string) => void;
+  /**
+   * Shared open/close plumbing for BOTH the organizer panel and the
+   * member's own give-up panel above — not part of either bundle, because
+   * both features need exactly the same "which one panel is open" toggle
+   * and there is nothing to half-wire about sharing it: a caller missing
+   * either of these gets no panel of any kind (both `organizerManageable`
+   * and `selfManageable` require it), never a half-open one.
    *
    * `openBookingId` is NOT local state in this component. Only one person's
    * panel may be open across the WHOLE screen, and a screen can render many
@@ -38,11 +72,8 @@ type Props = {
    * own "which seat is open" state, two different tables' SeatGrids could
    * each have a panel open at once.
    */
-  otherTables?: SeatableTable[];
   openBookingId?: string | null;
   onToggleManage?: (bookingId: string) => void;
-  onMove?: (bookingId: string, tableId: string) => void;
-  onRemove?: (bookingId: string) => void;
 };
 
 /**
@@ -74,13 +105,41 @@ type Props = {
  * once.
  *
  * A seat is only ever tappable this way when `onToggleManage`/`onMove`/
- * `onRemove`/`otherTables` are all supplied (see `manageable` below) — a
- * plain member gets back exactly the read-only `<View>` this component
- * always rendered for an occupied seat, with no Pressable, no aria-*
- * attributes, and no visible hint. That last part matters as much as the
- * access control itself: a chevron or any other affordance rendered
+ * `onRemove`/`otherTables` are all supplied (see `organizerManageable`
+ * below) — a plain member gets back exactly the read-only `<View>` this
+ * component always rendered for an occupied seat, with no Pressable, no
+ * aria-* attributes, and no visible hint. That last part matters as much as
+ * the access control itself: a chevron or any other affordance rendered
  * unconditionally would tell a member "this is tappable" about a seat that
  * refuses their tap, which is worse than no hint at all.
+ *
+ * ## A member's own seat: giving it up
+ *
+ * A member who holds a confirmed seat has to be able to give it up without
+ * a host's help — `cancel_booking` has always accepted the seat's own
+ * occupant, the database was never the gap, only the UI was (see
+ * .superpowers/sdd/member-leave-seat.md). So a SECOND, narrower kind of
+ * "manageable" exists alongside the organizer one: `selfManageable`, true
+ * only for the one seat where `seat.isYou` and the caller supplied
+ * `onLeaveSeat` (plus the shared `onToggleManage`/`openBookingId` above).
+ * It opens the exact same panel shape as the organizer one — same closed
+ * Pressable, same header, same `aria-expanded` — with a single action,
+ * "Leave this game", instead of Move-to-… plus Remove. Wording deliberately
+ * NOT "Leave the club" (WaitlistPanel's "Leave the waitlist" and this
+ * screen's own "Cancel this game" are both already-established, and
+ * DIFFERENT, pieces of vocabulary this needed to stay clearly apart from):
+ * `cancel_booking` ends this one booking, for this one game, nothing more.
+ *
+ * `organizerManageable || selfManageable` is checked in that order — an
+ * organizer looking at their OWN seat gets the organizer panel (Move +
+ * Remove), never the member one, matching the standing decision that an
+ * organizer's own seat behaves exactly like anybody else's from their seat
+ * (.superpowers/sdd/seat-tap-host-controls.md, Decision 2). `onLeaveSeat`
+ * being supplied on the same call as the organizer bundle is expected, not
+ * a conflict: the event screen passes it whenever this member could leave
+ * (mirroring `onTakeSeat`'s own `canBook` gate) regardless of whether they
+ * also happen to organize; it simply never wins the branch for someone who
+ * does.
  *
  * For the organizer case, the closed and open renders are deliberately
  * different shapes rather than one Pressable that grows:
@@ -138,19 +197,29 @@ export default function SeatGrid({
   busy = false,
   needsFourth = false,
   otherTables,
-  openBookingId,
-  onToggleManage,
   onMove,
   onRemove,
+  onLeaveSeat,
+  openBookingId,
+  onToggleManage,
 }: Props) {
   const empties = seatsRemaining(capacity, seats.length);
   const lastSeatCall = needsFourth && empties === 1;
-  const manageable = Boolean(onToggleManage && onMove && onRemove && otherTables);
+  const organizerManageable = Boolean(
+    onToggleManage && onMove && onRemove && otherTables,
+  );
 
   return (
     <View style={styles.grid}>
       {seats.map((seat) => {
         const displayName = seat.isYou ? 'You' : seat.name;
+        // See the "A member's own seat" section of this component's
+        // docstring for why these two are separate booleans rather than one
+        // shared flag, and why the organizer one wins when both are true.
+        const selfManageable = Boolean(
+          !organizerManageable && seat.isYou && onToggleManage && onLeaveSeat,
+        );
+        const manageable = organizerManageable || selfManageable;
 
         if (!manageable) {
           return (
@@ -229,27 +298,45 @@ export default function SeatGrid({
             </Pressable>
 
             <View style={styles.manageActions}>
-              {otherTables!.map((t) => (
+              {organizerManageable ? (
+                <>
+                  {otherTables!.map((t) => (
+                    <Button
+                      key={t.id}
+                      variant="secondary"
+                      big={false}
+                      disabled={busy}
+                      onPress={() => onMove!(seat.bookingId, t.id)}
+                      accessibilityLabel={`Move ${seat.name} to ${t.label}`}
+                    >
+                      {`Move to ${t.label}`}
+                    </Button>
+                  ))}
+                  <Button
+                    variant="ghost"
+                    big={false}
+                    disabled={busy}
+                    onPress={() => onRemove!(seat.bookingId)}
+                    accessibilityLabel={`Remove ${seat.name} from this game`}
+                  >
+                    Remove from game
+                  </Button>
+                </>
+              ) : (
+                // The member's own single action — see the "A member's own
+                // seat" section of this component's docstring. "Leave this
+                // game" and NOT "Leave the club" or "Cancel this game":
+                // this ends one booking, for this one game, nothing wider.
                 <Button
-                  key={t.id}
-                  variant="secondary"
+                  variant="ghost"
                   big={false}
                   disabled={busy}
-                  onPress={() => onMove!(seat.bookingId, t.id)}
-                  accessibilityLabel={`Move ${seat.name} to ${t.label}`}
+                  onPress={() => onLeaveSeat!(seat.bookingId)}
+                  accessibilityLabel="Leave this game"
                 >
-                  {`Move to ${t.label}`}
+                  Leave this game
                 </Button>
-              ))}
-              <Button
-                variant="ghost"
-                big={false}
-                disabled={busy}
-                onPress={() => onRemove!(seat.bookingId)}
-                accessibilityLabel={`Remove ${seat.name} from this game`}
-              >
-                Remove from game
-              </Button>
+              )}
             </View>
           </View>
         );

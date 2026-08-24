@@ -28,16 +28,21 @@ type Props = {
   /** Organizer controls, injected by the event screen. */
   children?: ReactNode;
   /**
-   * Organizer seat management, forwarded straight through to SeatGrid — see
-   * that component's own docstring for the full contract. All five are
-   * supplied together by an organizer caller (the event screen) and omitted
-   * together for a member, exactly like `onTakeSeat` above.
+   * Seat management, forwarded straight through to SeatGrid — see that
+   * component's own docstring for the full contract. `otherTables`/`onMove`/
+   * `onRemove` are the organizer bundle, supplied together by an organizer
+   * caller (the event screen) and omitted together for a member, exactly
+   * like `onTakeSeat` above. `onLeaveSeat` is the separate, single-prop
+   * member capability (give up YOUR OWN seat) — independent of the
+   * organizer bundle, and may be supplied alongside it. `openBookingId`/
+   * `onToggleManage` are the shared open/close plumbing both features use.
    */
   otherTables?: SeatableTable[];
-  openBookingId?: string | null;
-  onToggleManage?: (bookingId: string) => void;
   onMove?: (bookingId: string, tableId: string) => void;
   onRemove?: (bookingId: string) => void;
+  onLeaveSeat?: (bookingId: string) => void;
+  openBookingId?: string | null;
+  onToggleManage?: (bookingId: string) => void;
 };
 
 /**
@@ -64,10 +69,11 @@ export default function TableCard({
   needsFourth = false,
   children,
   otherTables,
-  openBookingId,
-  onToggleManage,
   onMove,
   onRemove,
+  onLeaveSeat,
+  openBookingId,
+  onToggleManage,
 }: Props) {
   const seated = occupants.filter((o) => o.status === 'confirmed');
   const free = seatsRemaining(table.capacity, seated.length);
@@ -107,10 +113,11 @@ export default function TableCard({
         busy={busy}
         needsFourth={needsFourth}
         otherTables={otherTables}
-        openBookingId={openBookingId}
-        onToggleManage={onToggleManage}
         onMove={onMove}
         onRemove={onRemove}
+        onLeaveSeat={onLeaveSeat}
+        openBookingId={openBookingId}
+        onToggleManage={onToggleManage}
       />
 
       <Text style={styles.free}>{seatsFreeLabel(free)}</Text>

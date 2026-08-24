@@ -224,4 +224,138 @@ describe('SeatGrid: organizer seat management', () => {
     expect(screen.queryByLabelText("Manage Jane P.'s seat")).toBeNull();
     expect(screen.queryByText('Move to Table 2')).toBeNull();
   });
+
+  // An organizer's OWN occupied seat still gets the organizer panel, never
+  // the member self-service one below, even when a caller supplies both
+  // bundles on the same render (exactly what the event screen now does —
+  // `onLeaveSeat` is gated only on `canBook`, not on `!isOrganizer`). See
+  // SeatGrid.tsx's "A member's own seat" docstring section for why
+  // `organizerManageable || selfManageable` checks in that order.
+  it("keeps the organizer's own seat on the organizer panel even when onLeaveSeat is also supplied", () => {
+    const onRemove = vi.fn();
+    const onLeaveSeat = vi.fn();
+    function Harness() {
+      const [openBookingId, setOpenBookingId] = useState<string | null>(null);
+      return (
+        <SeatGrid
+          tableLabel="Table 1"
+          capacity={4}
+          seats={seats}
+          otherTables={otherTables}
+          openBookingId={openBookingId}
+          onToggleManage={(id) =>
+            setOpenBookingId((current) => (current === id ? null : id))
+          }
+          onMove={vi.fn()}
+          onRemove={onRemove}
+          onLeaveSeat={onLeaveSeat}
+        />
+      );
+    }
+    render(<Harness />);
+    // seats[2] is the organizer's own seat (`isYou: true`, name "You").
+    fireEvent.click(screen.getByLabelText("Manage You's seat"));
+    expect(screen.getByLabelText('Move You to Table 2')).toBeTruthy();
+    expect(screen.getByLabelText('Remove You from this game')).toBeTruthy();
+    expect(screen.queryByLabelText('Leave this game')).toBeNull();
+
+    fireEvent.click(screen.getByLabelText('Remove You from this game'));
+    expect(onRemove).toHaveBeenCalledWith('b3');
+    expect(onLeaveSeat).not.toHaveBeenCalled();
+  });
+});
+
+// The other half of the gap this task closes: a member who holds a
+// confirmed seat has to be able to give it up themselves, not only via a
+// host's Remove. `cancel_booking` has accepted the booking's own occupant
+// since Task 4; only the UI never offered it. See
+// .superpowers/sdd/member-leave-seat.md.
+describe('SeatGrid: member self-service (leave own seat)', () => {
+  // Deliberately real names, not the top-level fixture's own-seat entry
+  // (whose `name` field is literally the string "You", an artifact of that
+  // describe block never rendering its own label off `seat.name`). The
+  // accessibility label here is built from `seat.name`, exactly like the
+  // organizer panel's, so a realistic name keeps the assertions readable.
+  const selfSeats = [
+    { bookingId: 'b1', name: 'Jane P.', isYou: false },
+    { bookingId: 'b3', name: 'Ada', isYou: true },
+  ];
+
+  function Harness({
+    onLeaveSeat,
+  }: {
+    onLeaveSeat: (bookingId: string) => void;
+  }) {
+    const [openBookingId, setOpenBookingId] = useState<string | null>(null);
+    return (
+      <SeatGrid
+        tableLabel="Table 1"
+        capacity={4}
+        seats={selfSeats}
+        openBookingId={openBookingId}
+        onToggleManage={(id) =>
+          setOpenBookingId((current) => (current === id ? null : id))
+        }
+        onLeaveSeat={onLeaveSeat}
+      />
+    );
+  }
+
+  it('opens a panel with the give-up action when you tap your own seat', () => {
+    render(<Harness onLeaveSeat={vi.fn()} />);
+    expect(
+      screen.getByLabelText("Manage Ada's seat").getAttribute('aria-expanded'),
+    ).toBe('false');
+
+    fireEvent.click(screen.getByLabelText("Manage Ada's seat"));
+    expect(screen.getByLabelText('Leave this game')).toBeTruthy();
+    expect(
+      screen.getByLabelText("Manage Ada's seat").getAttribute('aria-expanded'),
+    ).toBe('true');
+  });
+
+  // MUTATION-TESTED (member/leave-seat pass): changed the self-panel
+  // Button's onPress from `onLeaveSeat!(seat.bookingId)` to
+  // `onLeaveSeat!(seat.bookingId + '-wrong')`. This test went red
+  // (`toHaveBeenCalledWith('b3')` failed, actual call was
+  // `'b3-wrong'`). Reverted; suite green again.
+  it("calls onLeaveSeat with your own booking id", () => {
+    const onLeaveSeat = vi.fn();
+    render(<Harness onLeaveSeat={onLeaveSeat} />);
+    fireEvent.click(screen.getByLabelText("Manage Ada's seat"));
+    fireEvent.click(screen.getByLabelText('Leave this game'));
+    expect(onLeaveSeat).toHaveBeenCalledWith('b3');
+  });
+
+  it('offers no Move or Remove-someone-else in the self-service panel', () => {
+    render(<Harness onLeaveSeat={vi.fn()} />);
+    fireEvent.click(screen.getByLabelText("Manage Ada's seat"));
+    expect(screen.queryByText(/^Move to /)).toBeNull();
+    expect(screen.queryByLabelText('Remove Ada from this game')).toBeNull();
+  });
+
+  // MUTATION-TESTED (member/leave-seat pass): removed the `seat.isYou`
+  // conjunct from `selfManageable`'s derivation in SeatGrid.tsx (so any
+  // occupied seat became self-manageable once `onLeaveSeat` was supplied,
+  // not just your own). This test went red —
+  // `queryByLabelText("Manage Jane P.'s seat")` found a button where it
+  // should find none. Reverted; suite green again.
+  it("does not let you manage somebody else's seat", () => {
+    render(<Harness onLeaveSeat={vi.fn()} />);
+    expect(screen.getByText('Jane P.')).toBeTruthy();
+    expect(screen.queryByLabelText("Manage Jane P.'s seat")).toBeNull();
+  });
+
+  it('offers no self-service panel at all without onLeaveSeat supplied', () => {
+    render(
+      <SeatGrid
+        tableLabel="Table 1"
+        capacity={4}
+        seats={selfSeats}
+        openBookingId={null}
+        onToggleManage={vi.fn()}
+      />,
+    );
+    expect(screen.queryByLabelText("Manage Ada's seat")).toBeNull();
+  });
 });

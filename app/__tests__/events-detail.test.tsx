@@ -316,6 +316,57 @@ describe('member view: what is shown, and what is not', () => {
     expect(screen.queryByLabelText("Manage Ravi K.'s seat")).toBeNull();
     expect(screen.queryByText('Move to Table 2')).toBeNull();
     expect(screen.queryByLabelText('Remove Ravi K. from this game')).toBeNull();
+    // Nor the member's OWN give-up panel — this seat isn't theirs.
+    expect(screen.queryByLabelText('Leave this game')).toBeNull();
+  });
+
+  // The gap this fix closes: a member holding a CONFIRMED seat previously
+  // had no way to give it up except a host removing them (only a
+  // WAITLISTED booking could "Leave the waitlist"). Tapping their own seat
+  // now opens the same panel shape a host's own seat gets, but with a
+  // single action -- "Leave this game" -- which calls `cancelBooking` on
+  // their own booking id via `place_booking`'s sibling, `cancel_booking`.
+  it("lets a member give up their own confirmed seat", async () => {
+    fetchEventTables.mockResolvedValue([TABLE_1]);
+    fetchEventSeating.mockResolvedValue([
+      {
+        booking_id: 'booking-9',
+        group_id: 'group-9',
+        profile_id: 'test-user',
+        display_name: 'Ada',
+        skill_level: null,
+        event_table_id: 'table-1',
+        status: 'confirmed' as const,
+        booked_by: 'test-user',
+        booked_by_name: 'Ada',
+        group_status: 'confirmed' as const,
+        waitlist_position: null,
+        created_at: '2026-08-20T10:00:00Z',
+      },
+    ]);
+    render(<EventScreen />);
+
+    expect(
+      (await screen.findByLabelText("Manage Ada's seat")).getAttribute(
+        'aria-expanded',
+      ),
+    ).toBe('false');
+
+    fireEvent.click(screen.getByLabelText("Manage Ada's seat"));
+    expect(screen.getByLabelText('Leave this game')).toBeTruthy();
+    // Not the host's controls -- a plain member's own panel offers no way
+    // to move themselves or anyone else, only to leave.
+    expect(screen.queryByText(/^Move to /)).toBeNull();
+    expect(screen.queryByLabelText('Remove Ada from this game')).toBeNull();
+
+    fireEvent.click(screen.getByLabelText('Leave this game'));
+    await vi.waitFor(() =>
+      expect(cancelBooking).toHaveBeenCalledWith('booking-9'),
+    );
+    // Closes the panel and reloads, same as every other booking action on
+    // this screen -- a promoted waitlist entry (handled inside
+    // `cancel_booking` itself) needs this reload to appear.
+    await vi.waitFor(() => expect(fetchEventSeating).toHaveBeenCalledTimes(2));
   });
 
   // Written when this was the core requirement of the task that shipped
