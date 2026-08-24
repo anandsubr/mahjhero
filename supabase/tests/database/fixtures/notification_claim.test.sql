@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(38);
+select plan(39);
 
 insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-000000000001', 'alice@example.com'),
@@ -408,6 +408,12 @@ select is(
   (select count(*)::int from public.claim_notification_batch(50)),
   1,
   'a muted member hears about a seat but not about a fourth'
+);
+select is(
+  (select kind::text from public.notification_outbox
+    where attempts = 1),
+  'promotion_offer',
+  'the one that got through is the seat offer, not the muted fourth'
 );
 update public.profiles set mute_need_a_fourth = false;
 
