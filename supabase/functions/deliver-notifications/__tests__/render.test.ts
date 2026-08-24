@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { FakeSender } from '../sender';
 import { renderMessage } from '../render';
+import { deliverBatch } from '../batch';
+import type { Report } from '../batch';
 import type { OutboxKind, RenderRow } from '../types';
 
 const APP = 'https://app.example.test';
@@ -257,5 +259,76 @@ describe('FakeSender', () => {
       'connection refused',
     );
     expect(sender.sent).toHaveLength(0);
+  });
+});
+
+function recordingReport() {
+  const sentIds: string[] = [];
+  const failures: Array<{ id: string; error: string }> = [];
+  const report: Report = {
+    markSent: async (ids) => {
+      sentIds.push(...ids);
+    },
+    markFailed: async (id, error) => {
+      failures.push({ id, error });
+    },
+  };
+  return { report, sentIds, failures };
+}
+
+describe('deliverBatch', () => {
+  it('sends every row and reports them in one call', async () => {
+    const rows = [row({ id: 'one' }), row({ id: 'two' }), row({ id: 'three' })];
+    const sender = new FakeSender();
+    const { report, sentIds } = recordingReport();
+
+    const result = await deliverBatch(rows, sender, APP, report);
+
+    expect(result).toEqual({ sent: 3, failed: 0 });
+    expect(sender.sent).toHaveLength(3);
+    // One markSent for the whole batch. Fifty round trips to say "that
+    // worked" would cost more than the sending did.
+    expect(sentIds).toEqual(['one', 'two', 'three']);
+  });
+
+  // The reason the loop exists. A relay that rejects one address must not
+  // cost the other forty-nine their delivery window.
+  it('keeps going when one address is rejected', async () => {
+    const rows = [row({ id: 'one' }), row({ id: 'two', recipient_email: 'bad@example.com' }), row({ id: 'three' })];
+    const sender = new FakeSender((message) =>
+      message.to === 'bad@example.com' ? '550 no such user' : null,
+    );
+    const { report, sentIds, failures } = recordingReport();
+
+    const result = await deliverBatch(rows, sender, APP, report);
+
+    expect(result).toEqual({ sent: 2, failed: 1 });
+    expect(sentIds).toEqual(['one', 'three']);
+    expect(failures).toEqual([{ id: 'two', error: '550 no such user' }]);
+  });
+
+  // A row that cannot be rendered at all is a failure like any other, not
+  // an exception that abandons the batch.
+  it('treats a render failure as that row failing', async () => {
+    const rows = [row({ id: 'one', kind: 'nonsense' as never })];
+    const sender = new FakeSender();
+    const { report, sentIds, failures } = recordingReport();
+
+    const result = await deliverBatch(rows, sender, APP, report);
+
+    expect(result).toEqual({ sent: 0, failed: 1 });
+    expect(sentIds).toEqual([]);
+    expect(failures[0].id).toBe('one');
+  });
+
+  it('reports nothing when there is nothing to do', async () => {
+    const sender = new FakeSender();
+    const { report, sentIds, failures } = recordingReport();
+
+    const result = await deliverBatch([], sender, APP, report);
+
+    expect(result).toEqual({ sent: 0, failed: 0 });
+    expect(sentIds).toEqual([]);
+    expect(failures).toEqual([]);
   });
 });
