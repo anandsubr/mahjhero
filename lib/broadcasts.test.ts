@@ -74,6 +74,23 @@ describe('isValidBroadcast', () => {
     ).toBe(false);
     expect(isValidBroadcast('Doors at seven\tsharp', 'Body')).toBe(false);
   });
+
+  // sendBroadcast sends subject.trim(), and trim() strips \t \n \v \f \r —
+  // all inside the control-character pattern's range. A subject with only
+  // a leading/trailing newline trims away to something the database would
+  // accept outright, so the client must accept it too rather than refusing
+  // a host for no reason.
+  it('accepts a subject with a leading or trailing newline', () => {
+    expect(isValidBroadcast('Doors at seven\n', 'Body')).toBe(true);
+    expect(isValidBroadcast('\nDoors at seven', 'Body')).toBe(true);
+  });
+
+  // An interior control character survives trimming, so it must still be
+  // refused — this is the header-injection case the database constraint
+  // (and this client-side mirror of it) exists for.
+  it('rejects a subject carrying an interior newline even though it survives trimming', () => {
+    expect(isValidBroadcast('Doors\nat seven', 'Body')).toBe(false);
+  });
 });
 
 describe('fetchBroadcasts', () => {
@@ -114,6 +131,17 @@ describe('countBroadcastRecipients', () => {
   it('resolves null rather than guessing when it cannot ask', async () => {
     await expect(countBroadcastRecipients('c1', 'e1')).resolves.toBeNull();
   });
+
+  // Distinct from the network-down case above: this is an RPC-level
+  // refusal (data: null, error: {...}), not a thrown/rejected call. The
+  // `if (error) return null` branch is currently masked by the fact that
+  // `data` would be null anyway and the `typeof data === 'number'` guard
+  // also returns null — so without this test, dropping that branch
+  // entirely would not turn any assertion red.
+  it('resolves null on an explicit RPC-level failure', async () => {
+    rpc.mockResolvedValue({ data: null, error: { message: 'denied' } });
+    await expect(countBroadcastRecipients('c1', null)).resolves.toBeNull();
+  });
 });
 
 describe('sendBroadcast', () => {
@@ -122,6 +150,18 @@ describe('sendBroadcast', () => {
     await expect(
       sendBroadcast('c1', null, 'Doors at seven', 'Side entrance is locked.'),
     ).resolves.toEqual({ id: 'b-new', error: null });
+    // Supabase RPC binds parameters by name, so a rename here (e.g.
+    // target_club -> club_id) would sail through this suite's other
+    // assertions and only fail at runtime. These names come from
+    // supabase/migrations/20260826030000_broadcasts.sql's
+    // send_broadcast(target_club uuid, target_event uuid, p_subject text,
+    // p_body text) signature, not from what this module happens to write.
+    expect(rpc).toHaveBeenCalledWith('send_broadcast', {
+      target_club: 'c1',
+      target_event: null,
+      p_subject: 'Doors at seven',
+      p_body: 'Side entrance is locked.',
+    });
   });
 
   // A refusal from assert_club_organizer must reach the member as words,

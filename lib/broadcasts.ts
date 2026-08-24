@@ -46,7 +46,14 @@ export function isValidBroadcast(subject: string, body: string): boolean {
   return (
     s.length > 0 &&
     s.length <= SUBJECT_MAX &&
-    !CONTROL_CHAR_PATTERN.test(subject) &&
+    // Tested against the trimmed value: sendBroadcast sends s.trim(), and
+    // trim() strips \t \n \v \f \r — all inside this pattern's range. A
+    // subject with a leading/trailing newline would fail here against the
+    // raw value while sailing through to the database unchanged, refusing
+    // a host for no reason. A control character in the MIDDLE of the
+    // subject survives trimming and still hits this check, which is the
+    // header-injection case the database constraint exists for.
+    !CONTROL_CHAR_PATTERN.test(s) &&
     b.length > 0 &&
     b.length <= BODY_MAX
   );
