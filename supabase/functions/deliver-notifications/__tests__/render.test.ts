@@ -308,7 +308,10 @@ describe('deliverBatch', () => {
   });
 
   // A row that cannot be rendered at all is a failure like any other, not
-  // an exception that abandons the batch.
+  // an exception that abandons the batch. `bodyFor`'s `default:` throws a
+  // named error for exactly this case — a kind that matches no template —
+  // so this asserts on that specific message reaching `markFailed`, not
+  // just on some throw or other happening to occur.
   it('treats a render failure as that row failing', async () => {
     const rows = [row({ id: 'one', kind: 'nonsense' as never })];
     const sender = new FakeSender();
@@ -318,7 +321,9 @@ describe('deliverBatch', () => {
 
     expect(result).toEqual({ sent: 0, failed: 1 });
     expect(sentIds).toEqual([]);
-    expect(failures[0].id).toBe('one');
+    expect(failures).toEqual([
+      { id: 'one', error: 'bodyFor: unhandled notification kind: nonsense' },
+    ]);
   });
 
   it('reports nothing when there is nothing to do', async () => {

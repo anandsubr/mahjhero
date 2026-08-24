@@ -53,6 +53,27 @@ const MEMBER_FOOTER = (club: string) =>
 const REMINDER_FOOTER =
   "You're getting this because you have a seat at this game. Reminders for games you've booked can't be switched off.";
 
+/**
+ * Reached only when `row.kind` isn't one of the eleven cases below. For a
+ * genuine `RenderRow` that's impossible by type, which is the point: the
+ * parameter type is `never`, so TypeScript narrows `row.kind` to `never`
+ * in the `default:` branch below only when every member of `OutboxKind`
+ * has its own `case`. Delete a case, or add a twelfth kind without one,
+ * and the call site fails to compile instead of silently falling through
+ * — the same guarantee `tsc` gave for free before this function had a
+ * `default:` at all, just recovered explicitly.
+ *
+ * It's reachable at runtime all the same, whenever the value crossing the
+ * boundary from the database (or a test double) isn't actually restricted
+ * to `OutboxKind` — a producer queued something no template handles. That
+ * is a genuine bug, and it should fail with a message a human can act on
+ * rather than a `TypeError` from `render.ts` reading `.subject` off
+ * `undefined`.
+ */
+function unhandledKind(kind: never): never {
+  throw new Error(`bodyFor: unhandled notification kind: ${String(kind)}`);
+}
+
 export function bodyFor(row: RenderRow, appUrl: string): Body {
   const url = eventUrl(row, appUrl);
   const seatFooter = SEAT_FOOTER(row.club_name);
@@ -198,5 +219,8 @@ export function bodyFor(row: RenderRow, appUrl: string): Body {
         cta: { label: row.event_id ? 'See the game' : `See ${row.club_name}`, url },
         footerNote: memberFooter,
       };
+
+    default:
+      return unhandledKind(row.kind);
   }
 }
