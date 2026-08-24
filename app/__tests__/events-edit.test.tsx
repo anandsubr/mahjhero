@@ -5,6 +5,7 @@ import { useState } from 'react';
 const push = vi.fn();
 const replace = vi.fn();
 const back = vi.fn();
+const canGoBack = vi.fn();
 
 const searchParams: Record<string, string> = { id: 'club-1', eventId: 'event-1' };
 
@@ -12,7 +13,7 @@ vi.mock('expo-router', () => ({
   Redirect: ({ href }: { href: string }) => (
     <div data-testid="redirect" data-href={href} />
   ),
-  useRouter: () => ({ push, replace, back }),
+  useRouter: () => ({ push, replace, back, canGoBack }),
   useLocalSearchParams: () => searchParams,
 }));
 
@@ -173,6 +174,9 @@ beforeEach(() => {
   updateEvent.mockResolvedValue({ error: null });
   updateEventSeries.mockResolvedValue({ error: null });
   endEventSeries.mockResolvedValue({ error: null });
+  // Defaults to the common case (reached via a push from the event screen).
+  // Tests for the no-history path override this to false.
+  canGoBack.mockReturnValue(true);
 });
 
 // A guard-ordering regression this branch has hit repeatedly (the club
@@ -188,6 +192,38 @@ describe('guard ordering', () => {
     const redirect = await screen.findByTestId('redirect');
     expect(redirect.getAttribute('data-href')).toBe('/sign-in');
     expect(fetchEvent).not.toHaveBeenCalled();
+  });
+});
+
+/*
+ * Cancel used to always call `router.back()`, which throws
+ * ("The action 'GO_BACK' was not handled by any navigator.") when this
+ * screen is reached with no history to pop -- a direct URL, a page reload
+ * on web, a deep link, or a cold launch straight into the route. It must
+ * fall back to the event being edited in that case, and keep using plain
+ * `back()` (not a duplicate push) when history genuinely exists.
+ */
+describe('Cancel', () => {
+  it('calls back() when there is history to pop', async () => {
+    canGoBack.mockReturnValue(true);
+    render(<EditEventScreen />);
+    await screen.findByDisplayValue('Thursday Mahjong');
+
+    fireEvent.click(screen.getByLabelText('Cancel'));
+
+    expect(back).toHaveBeenCalledTimes(1);
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the event screen when there is no history', async () => {
+    canGoBack.mockReturnValue(false);
+    render(<EditEventScreen />);
+    await screen.findByDisplayValue('Thursday Mahjong');
+
+    fireEvent.click(screen.getByLabelText('Cancel'));
+
+    expect(back).not.toHaveBeenCalled();
+    expect(replace).toHaveBeenCalledWith('/clubs/club-1/events/event-1');
   });
 });
 

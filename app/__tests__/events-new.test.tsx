@@ -4,6 +4,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 const push = vi.fn();
 const replace = vi.fn();
 const back = vi.fn();
+const canGoBack = vi.fn();
 
 const searchParams: Record<string, string> = { id: 'club-1' };
 
@@ -11,7 +12,7 @@ vi.mock('expo-router', () => ({
   Redirect: ({ href }: { href: string }) => (
     <div data-testid="redirect" data-href={href} />
   ),
-  useRouter: () => ({ push, replace, back }),
+  useRouter: () => ({ push, replace, back, canGoBack }),
   useLocalSearchParams: () => searchParams,
 }));
 
@@ -83,6 +84,9 @@ beforeEach(() => {
   fetchClub.mockResolvedValue(CLUB);
   createEvent.mockResolvedValue({ eventId: 'event-1', error: null });
   createEventSeries.mockResolvedValue({ seriesId: 'series-1', error: null });
+  // Defaults to the common case (reached via a push from the club screen).
+  // Tests for the no-history path override this to false.
+  canGoBack.mockReturnValue(true);
 });
 
 function pickVenue() {
@@ -102,6 +106,38 @@ describe('guard ordering', () => {
     const redirect = await screen.findByTestId('redirect');
     expect(redirect.getAttribute('data-href')).toBe('/sign-in');
     expect(fetchClub).not.toHaveBeenCalled();
+  });
+});
+
+/*
+ * Cancel used to always call `router.back()`, which throws
+ * ("The action 'GO_BACK' was not handled by any navigator.") when this
+ * screen is reached with no history to pop -- a direct URL, a page reload
+ * on web, a deep link, or a cold launch straight into the route. It must
+ * fall back to an explicit destination in that case, and keep using plain
+ * `back()` (not a duplicate push) when history genuinely exists.
+ */
+describe('Cancel', () => {
+  it('calls back() when there is history to pop', async () => {
+    canGoBack.mockReturnValue(true);
+    render(<NewEventScreen />);
+    await screen.findByText('Add a game');
+
+    fireEvent.click(screen.getByLabelText('Cancel'));
+
+    expect(back).toHaveBeenCalledTimes(1);
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the club screen when there is no history', async () => {
+    canGoBack.mockReturnValue(false);
+    render(<NewEventScreen />);
+    await screen.findByText('Add a game');
+
+    fireEvent.click(screen.getByLabelText('Cancel'));
+
+    expect(back).not.toHaveBeenCalled();
+    expect(replace).toHaveBeenCalledWith('/clubs/club-1');
   });
 });
 

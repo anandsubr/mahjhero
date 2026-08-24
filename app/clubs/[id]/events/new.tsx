@@ -415,7 +415,19 @@ export default function NewEventScreen() {
       </Button>
       <Button
         variant="ghost"
-        onPress={() => router.back()}
+        onPress={() => {
+          // A direct URL, a page reload on web, a deep link, or a cold
+          // launch straight into this route leaves nothing to pop -- only
+          // `back()` when there is history to unwind. The fallback replaces
+          // rather than pushes: a pushed club screen would leave this
+          // cancelled form one browser-back away, a stale entry the member
+          // could stumble straight back into.
+          if (router.canGoBack()) {
+            router.back();
+          } else {
+            router.replace(`/clubs/${clubId}`);
+          }
+        }}
         accessibilityLabel="Cancel"
       >
         Cancel
