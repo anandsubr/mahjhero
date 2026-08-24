@@ -82,6 +82,50 @@ describe('renderMessage', () => {
     expect(message.text).not.toMatch(/<[a-z/]/i);
   });
 
+  // The two tests above only prove every kind renders *something*. Neither
+  // notices if two kinds' copy got swapped — five kinds have a named test
+  // asserting real content below, but that left six (booking_declined,
+  // waitlist_promoted, promotion_offer, promotion_offer_expired, unseated,
+  // event_cancelled) with no assertion on their actual words at all. This
+  // table covers all eleven with a phrase unique to that kind, so a
+  // copy-paste swap between any two `case` bodies in bodies.ts fails here.
+  const DISTINGUISHING_CONTENT: Array<{
+    kind: OutboxKind;
+    field: 'subject' | 'text';
+    phrase: string;
+  }> = [
+    { kind: 'booked_by_friend', field: 'subject', phrase: 'saved you a seat' },
+    { kind: 'booking_declined', field: 'text', phrase: 'declined the seat you booked for them' },
+    { kind: 'booking_cancelled_by_host', field: 'text', phrase: 'cancelled your seat at' },
+    { kind: 'waitlist_promoted', field: 'text', phrase: 'next on the waitlist' },
+    { kind: 'promotion_offer', field: 'text', phrase: 'held for you for the next two hours' },
+    { kind: 'promotion_offer_expired', field: 'text', phrase: "wasn't taken in time" },
+    { kind: 'unseated', field: 'text', phrase: 'is no longer yours' },
+    { kind: 'event_cancelled', field: 'text', phrase: 'Your seat went with it' },
+    { kind: 'need_a_fourth', field: 'text', phrase: 'is three of four' },
+    { kind: 'event_reminder', field: 'text', phrase: 'cancelling now gives the seat' },
+    { kind: 'broadcast', field: 'text', phrase: 'The side entrance is locked' },
+  ];
+
+  it.each(DISTINGUISHING_CONTENT)(
+    "gives $kind its own copy, not another kind's",
+    ({ kind, field, phrase }) => {
+      const message = renderMessage(
+        row({
+          kind,
+          broadcast_subject: kind === 'broadcast' ? 'Doors open at seven' : null,
+          broadcast_body:
+            kind === 'broadcast' ? 'The side entrance is locked.' : null,
+          // 1440 selects the day-ahead wording, which is where this
+          // kind's distinguishing phrase lives.
+          payload: kind === 'event_reminder' ? { offset_minutes: 1440 } : {},
+        }),
+        APP,
+      );
+      expect(message[field]).toContain(phrase);
+    },
+  );
+
   it('names the person who acted', () => {
     const message = renderMessage(row({ kind: 'booked_by_friend' }), APP);
     expect(message.subject).toContain('Alice');

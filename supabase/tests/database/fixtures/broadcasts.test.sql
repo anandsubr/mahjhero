@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(16);
+select plan(17);
 
 insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-000000000001', 'alice@example.com'),  -- host
@@ -81,6 +81,20 @@ select lives_ok(
       'c1c1c1c1-0000-0000-0000-000000000001', null,
       'Doors open at seven', 'The side entrance is locked this week.')$$,
   'a host can broadcast to the roster'
+);
+
+-- A newline in the subject would become an injected SMTP header (an extra
+-- Bcc:, say) by the time deliver-notifications mails it. The check
+-- constraint on broadcasts.subject has to refuse it before it is ever
+-- stored.
+select throws_ok(
+  $$select public.send_broadcast(
+      'c1c1c1c1-0000-0000-0000-000000000001', null,
+      E'Doors open at seven\nBcc: attacker@evil.example',
+      'The side entrance is locked this week.')$$,
+  '23514',
+  null,
+  'a broadcast subject with a newline is refused'
 );
 
 /*

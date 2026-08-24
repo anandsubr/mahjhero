@@ -29,7 +29,11 @@ export type RenderRow = {
   channel: string;
   club_id: string;
   club_name: string;
-  // Null for a club-wide broadcast, which is the only kind with no event.
+  // Null for a club-wide broadcast, which has no event by nature, and also
+  // for an `event_cancelled` row once the occurrence it pointed at is
+  // gone: 20260825042000_series_shortening_tells_the_booked.sql writes
+  // those rows with event_id already null so the notification survives
+  // the cascade-delete of the dropped occurrence.
   event_id: string | null;
   event_title: string | null;
   event_starts_at: string | null;

@@ -16,7 +16,15 @@ create table public.broadcasts (
   -- two targets differ only in who they resolve to.
   event_id        uuid references public.events(id) on delete cascade,
   author_id       uuid not null references public.profiles(id),
-  subject         text not null check (length(trim(subject)) between 1 and 120),
+  subject         text not null
+                    check (length(trim(subject)) between 1 and 120)
+                    -- The Edge Function drops this straight into an SMTP
+                    -- header when it mails the broadcast. A CR or LF here
+                    -- would let a host inject an arbitrary header — an
+                    -- extra Bcc:, for one. Rejecting control characters at
+                    -- the source is the belt to deliver-notifications'
+                    -- braces (render.ts's sanitizeSubject).
+                    check (subject !~ '[[:cntrl:]]'),
   body            text not null check (length(trim(body)) between 1 and 2000),
   -- Written by the fan-out in the same transaction, so the sent history can
   -- say "went to 14 members" without counting outbox rows at read time.

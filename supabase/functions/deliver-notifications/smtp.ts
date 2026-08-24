@@ -47,10 +47,34 @@ export class SmtpSender implements Sender {
         content: message.text,
         html: message.html,
       });
-    } finally {
+    } catch (sendError) {
+      // A connection left open survives the invocation in Deno Deploy and
+      // the relay eventually refuses new ones, so a close is still owed
+      // even on failure. But the send already failed for a real reason —
+      // a close error on top of that is noise next to it, so it is logged
+      // rather than allowed to replace the error that actually matters.
+      try {
+        await client.close();
+      } catch (closeError) {
+        console.error('smtp close failed after a failed send', closeError);
+      }
+      throw sendError;
+    }
+
+    try {
       // A connection left open survives the invocation in Deno Deploy and
       // the relay eventually refuses new ones.
       await client.close();
+    } catch (closeError) {
+      // The send above already succeeded — the relay accepted the message
+      // before dropping the connection, which does happen. Given the
+      // retry model, letting this reject would read as a failed send and
+      // cause a duplicate delivery for mail that already went out, so it
+      // is logged and swallowed instead.
+      console.error(
+        'smtp close failed after a successful send; message was not resent',
+        closeError,
+      );
     }
   }
 }

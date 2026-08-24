@@ -12,18 +12,17 @@
     "allowImportingTsExtensions": true
   },
   // Overrides (does not merge with) expo/tsconfig.base's own `exclude`, so
-  // its entries are repeated here verbatim. The one addition is smtp.ts:
-  // Deno resolves its `https://deno.land/...` URL import at edge-function
-  // deploy time, and no version of Node/tsc resolution understands a URL
-  // as a module specifier. Everything else in supabase/functions/ is plain
-  // TypeScript and stays covered by tsc like the rest of the project.
+  // its entries are repeated here verbatim. smtp.ts is no longer excluded:
+  // supabase/functions/deliver-notifications/denomailer.d.ts declares an
+  // ambient module for its Deno-only `https://deno.land/...` specifier, so
+  // tsc can resolve the import and type-check the rest of the file like
+  // everything else in supabase/functions/.
   "exclude": [
     "node_modules",
     "babel.config.js",
     "metro.config.js",
     "jest.config.js",
     "android",
-    "ios",
-    "supabase/functions/deliver-notifications/smtp.ts"
+    "ios"
   ]
 }
