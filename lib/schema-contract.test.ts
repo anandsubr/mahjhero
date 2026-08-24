@@ -80,6 +80,7 @@ import {
   updateEventTable,
 } from './events';
 import { BROADCAST_COLUMNS, fetchBroadcasts } from './broadcasts';
+import type { Broadcast } from './broadcasts';
 import {
   archiveVenue,
   createVenue,
@@ -1829,10 +1830,40 @@ describe.runIf(reachable || required)('broadcasts schema contract', () => {
     expect(Number.isNaN(Date.parse(row.created_at))).toBe(false);
   });
 
-  it('selects every column the type declares and no others', () => {
-    const declared = BROADCAST_COLUMNS.split(',').map((c) => c.trim()).sort();
-    expect(declared).toEqual(
-      ['body', 'club_id', 'created_at', 'event_id', 'id', 'recipient_count', 'subject'].sort(),
-    );
+  it('selects every column the type declares and no others', async () => {
+    // Same pattern as EVENT_COLUMNS/SERIES_COLUMNS/EVENT_TABLE_COLUMNS/
+    // VENUE_COLUMNS above: fetch the real row through BROADCAST_COLUMNS and
+    // assert the EXACT key set PostgREST hands back, not two hardcoded
+    // strings compared to each other. Reuses the broadcast beforeAll already
+    // seeded rather than inserting a second one.
+    const { data, error } = await supabase
+      .from('broadcasts')
+      .select(BROADCAST_COLUMNS)
+      .eq('id', broadcastId)
+      .single();
+    expect(error).toBeNull();
+    const row = data as unknown as Record<string, unknown>;
+
+    // Expected keys come from `keyof Broadcast`, not a retyped array literal,
+    // so this is a compile-time contract as well as a runtime one: add a
+    // field to the Broadcast type without adding it here and `tsc --noEmit`
+    // refuses to build (missing property on a `Record<keyof Broadcast,
+    // true>`), and a stray field here that Broadcast doesn't declare fails
+    // the same way (excess property). That closes the gap the plain-string
+    // version left — a field on the type that never made it into
+    // BROADCAST_COLUMNS was invisible to both this suite and the type
+    // checker; now it fails one of the two immediately, and the resulting
+    // key-count mismatch against the live row still catches drift in
+    // BROADCAST_COLUMNS itself.
+    const declaredFields: Record<keyof Broadcast, true> = {
+      id: true,
+      club_id: true,
+      event_id: true,
+      subject: true,
+      body: true,
+      recipient_count: true,
+      created_at: true,
+    };
+    expect(Object.keys(row).sort()).toEqual(Object.keys(declaredFields).sort());
   });
 });
