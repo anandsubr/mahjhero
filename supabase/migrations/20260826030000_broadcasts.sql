@@ -3,8 +3,9 @@
  *
  * A broadcast is a stored record rather than a fire-and-forget fan-out for
  * three reasons: the host's first question after mailing fifty people is
- * whether it went; the broadcast id is a stable dedupe parent, so a
- * fan-out interrupted halfway resumes instead of double-sending; and the
+ * whether it went; the broadcast id anchors a per-recipient dedupe key, so
+ * one insert statement fanning out to many recipients cannot collapse onto
+ * a single outbox row (see the note on send_broadcast's insert); and the
  * body has to survive somewhere for the Edge Function to render, since the
  * outbox payload carries ids and never prose.
  */
@@ -74,9 +75,16 @@ as $$
 $$;
 
 /*
- * `union`, not `union all`. A member with two confirmed bookings at one
- * event — which "book with friends" makes possible in principle — must be
- * counted and mailed once.
+ * `union`, not `union all` — kept as a defensive choice, not because a
+ * duplicate profile_id is reachable today. The two branches are mutually
+ * exclusive per call (`target_event is null` vs `is not null`), so they
+ * never both contribute rows to the same result. And within the bookings
+ * branch alone, `bookings_one_active_per_person_idx` (a unique index on
+ * (event_id, profile_id) where status in ('confirmed', 'waitlisted'),
+ * defined in 20260825000000_create_bookings.sql) already makes it
+ * impossible for one profile to hold two confirmed bookings at the same
+ * event. `union` costs nothing here and outlives a future relaxation of
+ * that index better than `union all` would.
  */
 
 create function public.broadcast_recipient_count(
@@ -158,6 +166,13 @@ begin
    * already placed — so a key of `broadcast:<id>` alone would keep exactly
    * ONE row for the entire fan-out and tell one person. Plan 4's
    * announce_table_fourth has the same note for the same reason.
+   *
+   * `on conflict ... do nothing` is a belt-and-braces guard here, not a
+   * resume mechanism: new_id is generated fresh inside this same
+   * transaction on every call, so no later call can ever collide with an
+   * earlier one's keys. It only protects against this one statement
+   * producing duplicate keys for itself, which broadcast_recipients'
+   * `union` (not `union all`) already prevents.
    */
   insert into public.notification_outbox
     (recipient_id, club_id, event_id, kind, payload, dedupe_key)
@@ -187,19 +202,13 @@ alter table public.broadcasts enable row level security;
  * sent — including ones sent to a different event they were not part of —
  * is a feature nobody asked for.
  *
- * Written inline rather than through a helper because no boolean
- * `is_club_organizer` exists; `assert_club_organizer` raises, which a
- * policy cannot use.
+ * Goes through is_club_organizer rather than assert_club_organizer: the
+ * latter raises on failure, which a policy cannot use — a policy wants
+ * false, not an exception.
  */
 create policy broadcasts_select_organizer on public.broadcasts
   for select using (
-    exists (
-      select 1 from public.club_members cm
-       where cm.club_id    = broadcasts.club_id
-         and cm.profile_id = (select auth.uid())
-         and cm.status     = 'active'
-         and cm.role in ('host', 'co_organizer')
-    )
+    public.is_club_organizer(broadcasts.club_id)
   );
 
 revoke all on public.broadcasts from anon, authenticated;
