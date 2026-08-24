@@ -361,6 +361,26 @@ describe('BOOKING_REFUSALS (self-audit against the migrations)', () => {
     'no such venue':
       'raised by archive_venue/update_venue — lib/venues.ts’s function, not this module’s',
 
+    // Raised by broadcast_recipient_count and send_broadcast
+    // (20260826030000_broadcasts.sql) when the event id passed does not
+    // belong to the club id passed. The compose screen only ever offers
+    // events that belong to the club being messaged, so a caller hitting
+    // this is malicious or buggy, not a member doing something reasonable
+    // — the same shape as 'duplicate player' / 'nothing to decline' above.
+    // Unlike those, though, it is not this module's call to make: neither
+    // function is called from lib/bookings.ts, and the module that DOES
+    // call them — lib/broadcasts.ts (not yet created; Task 12 of
+    // docs/superpowers/plans/2026-08-23-notifications-and-comms.md) — is
+    // designed to relay `error.message` from these two RPCs verbatim
+    // rather than mapping through a refusal table (see that task's
+    // `sendBroadcast`, which returns `error.message` directly and only
+    // falls back to GENERIC_ERROR on a thrown/network failure). So this
+    // message reaching a client is the plan's own intended behaviour, not
+    // a gap — same as Category 2/3 above, this module is not the one
+    // responsible for it either way.
+    'event does not belong to this club':
+      'raised by broadcast_recipient_count/send_broadcast — lib/broadcasts.ts (Task 12, not yet created) is the module responsible, and by design relays error.message rather than mapping through a refusal table',
+
     // series_occurrence_dates is revoked from public/anon/authenticated
     // (20260822197000, restated 20260823000000) and called only from inside
     // create_event_series/materialize_event_series's own plpgsql bodies —
