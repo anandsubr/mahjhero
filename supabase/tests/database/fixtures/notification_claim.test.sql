@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(39);
+select plan(56);
 
 insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-000000000001', 'alice@example.com'),
@@ -575,6 +575,163 @@ select is(
   (select count(*)::int from public.notification_outbox where attempts = 0),
   6,
   'and the rest are left untouched for the next tick'
+);
+
+-- ---------------------------------------------------------------------
+-- Reporting back. The other half of the lease from the claiming section
+-- above: mark_notifications_sent and mark_notifications_failed are what
+-- ever moves a row out of the queue for good.
+-- ---------------------------------------------------------------------
+delete from public.notification_outbox;
+-- Reset state earlier scenarios changed, rather than assume the file's
+-- current order leaves them where this block needs them.
+update public.profiles
+   set quiet_hours_enabled = false, mute_need_a_fourth = false
+ where id = 'bbbbbbbb-0000-0000-0000-000000000002';
+reset role;
+
+-- Three rows, not two: 'a' is sent, 'b' is failed and then dead-lettered,
+-- 'c' stays untouched by both until the truncation check at the end. With
+-- three in play, "does the right row change" has to be checked by identity
+-- and not only by count -- a broken WHERE clause that touched every row
+-- would still make every count-based assertion below pass.
+insert into public.notification_outbox
+  (id, recipient_id, club_id, event_id, kind, payload, dedupe_key) values
+  ('0b0b0b0b-0000-0000-0000-00000000000a',
+   'bbbbbbbb-0000-0000-0000-000000000002',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   'e1e1e1e1-0000-0000-0000-000000000001',
+   'promotion_offer', '{}'::jsonb, 'mark:sent'),
+  ('0b0b0b0b-0000-0000-0000-00000000000b',
+   'bbbbbbbb-0000-0000-0000-000000000002',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   'e1e1e1e1-0000-0000-0000-000000000001',
+   'promotion_offer', '{}'::jsonb, 'mark:failed'),
+  ('0b0b0b0b-0000-0000-0000-00000000000c',
+   'bbbbbbbb-0000-0000-0000-000000000002',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   'e1e1e1e1-0000-0000-0000-000000000001',
+   'promotion_offer', '{}'::jsonb, 'mark:truncate');
+
+-- `perform` is plpgsql only; a pgTAP file is plain SQL, so the claim has
+-- to be an assertion rather than a discarded statement.
+select is(
+  (select count(*)::int from public.claim_notification_batch(50)),
+  3,
+  'all three rows are claimed before their outcomes are reported'
+);
+
+select is(
+  public.mark_notifications_sent(
+    array['0b0b0b0b-0000-0000-0000-00000000000a'::uuid]),
+  1,
+  'a sent message is marked once'
+);
+select ok(
+  (select sent_at is not null from public.notification_outbox
+    where id = '0b0b0b0b-0000-0000-0000-00000000000a'),
+  'and carries the time it went'
+);
+select ok(
+  (select sent_at is null from public.notification_outbox
+    where id = '0b0b0b0b-0000-0000-0000-00000000000b')
+  and (select sent_at is null from public.notification_outbox
+        where id = '0b0b0b0b-0000-0000-0000-00000000000c'),
+  'marking one row sent leaves its two siblings untouched'
+);
+-- Idempotent: the Edge Function may retry the mark after a network blip
+-- without un-sending or double-counting anything.
+select is(
+  public.mark_notifications_sent(
+    array['0b0b0b0b-0000-0000-0000-00000000000a'::uuid]),
+  0,
+  'marking an already-sent message again does nothing'
+);
+
+select lives_ok(
+  $$select public.mark_notifications_failed(
+      '0b0b0b0b-0000-0000-0000-00000000000b', 'connection refused')$$,
+  'a failure is recorded'
+);
+select is(
+  (select last_error from public.notification_outbox
+    where id = '0b0b0b0b-0000-0000-0000-00000000000b'),
+  'connection refused',
+  'with the reason, for whoever reads the table later'
+);
+-- One attempt in, so the first backoff is five minutes -- not the lease's
+-- five minutes by coincidence, but because outbox_backoff(1) says so.
+select ok(
+  (select failed_at is null and next_attempt_at > now()
+     from public.notification_outbox
+    where id = '0b0b0b0b-0000-0000-0000-00000000000b'),
+  'a first failure backs off rather than dying'
+);
+select ok(
+  (select sent_at is not null from public.notification_outbox
+    where id = '0b0b0b0b-0000-0000-0000-00000000000a')
+  and (select last_error is null from public.notification_outbox
+        where id = '0b0b0b0b-0000-0000-0000-00000000000c'),
+  'failing one row does not disturb its siblings'
+);
+
+-- The fifth attempt is the last. Simulated by setting attempts to the
+-- ceiling rather than by claiming five times, which would need the clock
+-- to advance.
+update public.notification_outbox
+   set attempts = public.outbox_max_attempts()
+ where id = '0b0b0b0b-0000-0000-0000-00000000000b';
+select lives_ok(
+  $$select public.mark_notifications_failed(
+      '0b0b0b0b-0000-0000-0000-00000000000b', 'still refused')$$,
+  'the ceiling attempt is recorded'
+);
+select ok(
+  (select failed_at is not null from public.notification_outbox
+    where id = '0b0b0b0b-0000-0000-0000-00000000000b'),
+  'the last attempt dead-letters the row'
+);
+
+-- Terminal states are terminal for BOTH functions, not just the one that
+-- put a row there. The Edge Function retries an RPC call, and a retry
+-- arriving after the row already reached sent_at/failed_at must not move
+-- it again in either direction.
+select is(
+  public.mark_notifications_sent(
+    array['0b0b0b0b-0000-0000-0000-00000000000b'::uuid]),
+  0,
+  'a dead-lettered row cannot be marked sent after the fact'
+);
+select ok(
+  (select sent_at is null and failed_at is not null
+     from public.notification_outbox
+    where id = '0b0b0b0b-0000-0000-0000-00000000000b'),
+  'it stays dead-lettered rather than being resurrected as sent'
+);
+select lives_ok(
+  $$select public.mark_notifications_failed(
+      '0b0b0b0b-0000-0000-0000-00000000000a', 'ignored, already sent')$$,
+  'reporting a failure for an already-sent row does not raise'
+);
+select ok(
+  (select sent_at is not null and last_error is null
+     from public.notification_outbox
+    where id = '0b0b0b0b-0000-0000-0000-00000000000a'),
+  'and leaves the sent row exactly as it was'
+);
+
+-- last_error carries a string from an SMTP library with no bound on what a
+-- server might say, so it is truncated rather than trusted.
+select lives_ok(
+  $$select public.mark_notifications_failed(
+      '0b0b0b0b-0000-0000-0000-00000000000c', repeat('x', 600))$$,
+  'an oversized error string is accepted without raising'
+);
+select is(
+  (select length(last_error) from public.notification_outbox
+    where id = '0b0b0b0b-0000-0000-0000-00000000000c'),
+  500,
+  'and is truncated to 500 characters'
 );
 
 select * from finish();
