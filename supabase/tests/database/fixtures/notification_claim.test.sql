@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(22);
+select plan(38);
 
 insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-000000000001', 'alice@example.com'),
@@ -349,6 +349,226 @@ select is(
      array['0b0b0b0b-0000-0000-0000-000000000005'::uuid])),
   null::text,
   'a waitlist_promoted row does not borrow the cancelling host as its actor'
+);
+
+-- ---------------------------------------------------------------------
+-- Claiming. Each scenario clears the outbox first: these assertions are
+-- about which rows come back, and a leftover row from the previous
+-- scenario makes every count meaningless. The first scenario keeps
+-- rather than deletes the very first row inserted above (ctx:1,
+-- id 0b0b0b0b-...001) instead of deleting everything and reinserting an
+-- equivalent -- render_context's assertions already ran against it, and
+-- the row is otherwise identical to what a clean insert would produce.
+-- ---------------------------------------------------------------------
+delete from public.notification_outbox
+ where id <> '0b0b0b0b-0000-0000-0000-000000000001';
+update public.profiles set quiet_hours_enabled = false;
+
+select is(
+  (select count(*)::int from public.claim_notification_batch(50)),
+  1,
+  'a due row is claimed'
+);
+select is(
+  (select attempts from public.notification_outbox
+    where id = '0b0b0b0b-0000-0000-0000-000000000001'),
+  1,
+  'claiming counts as an attempt, before anything is sent'
+);
+-- The lease. The Edge Function sends after this transaction commits, so
+-- nothing holds a row lock across the send; this is what stops a second
+-- invocation a few seconds later sending the same message again.
+select ok(
+  (select next_attempt_at > now() + interval '4 minutes'
+     from public.notification_outbox
+    where id = '0b0b0b0b-0000-0000-0000-000000000001'),
+  'a claimed row is leased five minutes into the future'
+);
+select is(
+  (select count(*)::int from public.claim_notification_batch(50)),
+  0,
+  'a leased row is not claimed again'
+);
+
+-- Mute. Applies to need_a_fourth and to nothing else.
+delete from public.notification_outbox;
+update public.profiles set mute_need_a_fourth = true
+ where id = 'bbbbbbbb-0000-0000-0000-000000000002';
+insert into public.notification_outbox
+  (recipient_id, club_id, event_id, kind, payload, dedupe_key) values
+  ('bbbbbbbb-0000-0000-0000-000000000002',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   'e1e1e1e1-0000-0000-0000-000000000001',
+   'need_a_fourth', '{}'::jsonb, 'claim:muted'),
+  ('bbbbbbbb-0000-0000-0000-000000000002',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   'e1e1e1e1-0000-0000-0000-000000000001',
+   'promotion_offer', '{}'::jsonb, 'claim:offer');
+select is(
+  (select count(*)::int from public.claim_notification_batch(50)),
+  1,
+  'a muted member hears about a seat but not about a fourth'
+);
+update public.profiles set mute_need_a_fourth = false;
+
+-- Quiet hours. The window is built around now() so the assertion does not
+-- depend on what time the suite runs.
+delete from public.notification_outbox;
+update public.profiles
+   set quiet_hours_enabled = true,
+       quiet_hours_start =
+         ((now() at time zone 'America/New_York') - interval '1 hour')::time,
+       quiet_hours_end =
+         ((now() at time zone 'America/New_York') + interval '1 hour')::time
+ where id = 'bbbbbbbb-0000-0000-0000-000000000002';
+
+insert into public.notification_outbox
+  (recipient_id, club_id, event_id, kind, payload, dedupe_key) values
+  ('bbbbbbbb-0000-0000-0000-000000000002',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   'e1e1e1e1-0000-0000-0000-000000000001',
+   'broadcast', '{}'::jsonb, 'claim:quiet-broadcast'),
+  ('bbbbbbbb-0000-0000-0000-000000000002',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   'e1e1e1e1-0000-0000-0000-000000000001',
+   'promotion_offer', '{}'::jsonb, 'claim:quiet-offer');
+
+select is(
+  (select count(*)::int from public.claim_notification_batch(50)),
+  1,
+  'quiet hours hold a broadcast and let an offer through'
+);
+select is(
+  (select kind::text from public.notification_outbox
+    where attempts = 1),
+  'promotion_offer',
+  'the one that got through is the one with a two-hour fuse'
+);
+-- Held, not failed. The distinction matters: a failed row is retried on a
+-- backoff and eventually dies, a held row simply is not due yet.
+select ok(
+  (select failed_at is null and expired_at is null and attempts = 0
+     from public.notification_outbox
+    where dedupe_key = 'claim:quiet-broadcast'),
+  'a held broadcast is untouched, not failed'
+);
+
+-- The reminder exemption. A game starting inside the quiet window must be
+-- reminded about during it, or a club that plays at 9am gets its two-hour
+-- reminder at 08:00, after it stopped being useful.
+delete from public.notification_outbox;
+update public.events
+   set starts_at = now() + interval '30 minutes',
+       ends_at   = now() + interval '3 hours 30 minutes'
+ where id = 'e1e1e1e1-0000-0000-0000-000000000001';
+insert into public.notification_outbox
+  (recipient_id, club_id, event_id, kind, payload, dedupe_key) values
+  ('bbbbbbbb-0000-0000-0000-000000000002',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   'e1e1e1e1-0000-0000-0000-000000000001',
+   'event_reminder', jsonb_build_object('offset_minutes', 120),
+   'claim:exempt-reminder');
+select is(
+  (select count(*)::int from public.claim_notification_batch(50)),
+  1,
+  'a reminder for a game inside the quiet window is exempt'
+);
+
+-- ... and a reminder for a game well outside it is not. Offset by whole
+-- days plus twelve hours, not whole days alone: in_quiet_window compares
+-- local time-of-day only (quiet hours recur nightly, not on one date), and
+-- a plain `+ interval 'N days'` preserves starts_at's time-of-day exactly
+-- -- landing right back inside the window this fixture built around now(),
+-- no matter how many days out. The extra twelve hours puts the event on
+-- the opposite side of the clock from the window instead.
+delete from public.notification_outbox;
+update public.events
+   set starts_at = now() + interval '3 days 12 hours',
+       ends_at   = now() + interval '3 days 15 hours'
+ where id = 'e1e1e1e1-0000-0000-0000-000000000001';
+insert into public.notification_outbox
+  (recipient_id, club_id, event_id, kind, payload, dedupe_key) values
+  ('bbbbbbbb-0000-0000-0000-000000000002',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   'e1e1e1e1-0000-0000-0000-000000000001',
+   'event_reminder', jsonb_build_object('offset_minutes', 1440),
+   'claim:held-reminder');
+select is(
+  (select count(*)::int from public.claim_notification_batch(50)),
+  0,
+  'a reminder for a game three days out waits for morning'
+);
+update public.profiles set quiet_hours_enabled = false;
+
+-- Staleness. The game has started; nothing about it is worth saying.
+delete from public.notification_outbox;
+update public.events
+   set starts_at = now() - interval '1 hour',
+       ends_at   = now() + interval '2 hours'
+ where id = 'e1e1e1e1-0000-0000-0000-000000000001';
+insert into public.notification_outbox
+  (recipient_id, club_id, event_id, kind, payload, dedupe_key) values
+  ('bbbbbbbb-0000-0000-0000-000000000002',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   'e1e1e1e1-0000-0000-0000-000000000001',
+   'event_reminder', '{}'::jsonb, 'claim:stale');
+select is(
+  (select count(*)::int from public.claim_notification_batch(50)),
+  0,
+  'a message about a game already underway is not sent'
+);
+select ok(
+  (select expired_at is not null from public.notification_outbox
+    where dedupe_key = 'claim:stale'),
+  'it is marked expired rather than left to rot in the queue'
+);
+
+-- Nobody to send to.
+delete from public.notification_outbox;
+update public.events
+   set starts_at = now() + interval '2 days',
+       ends_at   = now() + interval '2 days 3 hours'
+ where id = 'e1e1e1e1-0000-0000-0000-000000000001';
+update auth.users set email = null
+ where id = 'bbbbbbbb-0000-0000-0000-000000000002';
+insert into public.notification_outbox
+  (recipient_id, club_id, event_id, kind, payload, dedupe_key) values
+  ('bbbbbbbb-0000-0000-0000-000000000002',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   'e1e1e1e1-0000-0000-0000-000000000001',
+   'promotion_offer', '{}'::jsonb, 'claim:no-address');
+select is(
+  (select count(*)::int from public.claim_notification_batch(50)),
+  0,
+  'a recipient with no address is not claimed'
+);
+select ok(
+  (select expired_at is not null from public.notification_outbox
+    where dedupe_key = 'claim:no-address'),
+  'and is expired, not retried five times against nothing'
+);
+update auth.users set email = 'bob@example.com'
+ where id = 'bbbbbbbb-0000-0000-0000-000000000002';
+
+-- The limit is honoured, so one enormous backlog cannot become one
+-- enormous function invocation.
+delete from public.notification_outbox;
+insert into public.notification_outbox
+  (recipient_id, club_id, event_id, kind, payload, dedupe_key)
+select 'bbbbbbbb-0000-0000-0000-000000000002',
+       'c1c1c1c1-0000-0000-0000-000000000001',
+       'e1e1e1e1-0000-0000-0000-000000000001',
+       'promotion_offer', '{}'::jsonb, 'claim:bulk:' || i::text
+  from generate_series(1, 10) i;
+select is(
+  (select count(*)::int from public.claim_notification_batch(4)),
+  4,
+  'the batch limit is honoured'
+);
+select is(
+  (select count(*)::int from public.notification_outbox where attempts = 0),
+  6,
+  'and the rest are left untouched for the next tick'
 );
 
 select * from finish();
