@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(14);
+select plan(20);
 
 -- The two new kinds. enum_range is the only way to ask "does this enum
 -- carry this label" without casting, and a cast would fail the whole file
@@ -68,6 +68,30 @@ select throws_ok(
 
 select has_index('public', 'notification_outbox', 'notification_outbox_due',
                  'the due index exists');
+
+select has_table('public', 'push_tokens', 'push_tokens exists');
+select col_is_pk('public', 'push_tokens', 'id', 'push_tokens has a uuid pk');
+
+-- One physical device, one row. Without the unique a reinstall would
+-- accumulate rows and the later push plan would fan out duplicates.
+select col_is_unique('public', 'push_tokens', 'token',
+                     'a token is registered once');
+
+select ok(
+  (select relrowsecurity from pg_class
+    where oid = 'public.push_tokens'::regclass),
+  'push_tokens has RLS enabled'
+);
+
+-- TRUNCATE ignores RLS entirely, so the grant matters more than the policy.
+select ok(
+  not has_table_privilege('authenticated', 'public.push_tokens', 'TRUNCATE'),
+  'authenticated cannot TRUNCATE push_tokens'
+);
+select ok(
+  has_table_privilege('authenticated', 'public.push_tokens', 'INSERT'),
+  'authenticated can register a token'
+);
 
 select * from finish();
 rollback;
