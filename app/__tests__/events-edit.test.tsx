@@ -5,6 +5,7 @@ import { useState } from 'react';
 const push = vi.fn();
 const replace = vi.fn();
 const back = vi.fn();
+const canGoBack = vi.fn();
 
 const searchParams: Record<string, string> = { id: 'club-1', eventId: 'event-1' };
 
@@ -12,7 +13,7 @@ vi.mock('expo-router', () => ({
   Redirect: ({ href }: { href: string }) => (
     <div data-testid="redirect" data-href={href} />
   ),
-  useRouter: () => ({ push, replace, back }),
+  useRouter: () => ({ push, replace, back, canGoBack }),
   useLocalSearchParams: () => searchParams,
 }));
 
@@ -173,6 +174,9 @@ beforeEach(() => {
   updateEvent.mockResolvedValue({ error: null });
   updateEventSeries.mockResolvedValue({ error: null });
   endEventSeries.mockResolvedValue({ error: null });
+  // Defaults to the common case (reached via a push from the event screen).
+  // Tests for the no-history path override this to false.
+  canGoBack.mockReturnValue(true);
 });
 
 // A guard-ordering regression this branch has hit repeatedly (the club
@@ -188,6 +192,38 @@ describe('guard ordering', () => {
     const redirect = await screen.findByTestId('redirect');
     expect(redirect.getAttribute('data-href')).toBe('/sign-in');
     expect(fetchEvent).not.toHaveBeenCalled();
+  });
+});
+
+/*
+ * Cancel used to always call `router.back()`, which throws
+ * ("The action 'GO_BACK' was not handled by any navigator.") when this
+ * screen is reached with no history to pop -- a direct URL, a page reload
+ * on web, a deep link, or a cold launch straight into the route. It must
+ * fall back to the event being edited in that case, and keep using plain
+ * `back()` (not a duplicate push) when history genuinely exists.
+ */
+describe('Cancel', () => {
+  it('calls back() when there is history to pop', async () => {
+    canGoBack.mockReturnValue(true);
+    render(<EditEventScreen />);
+    await screen.findByDisplayValue('Thursday Mahjong');
+
+    fireEvent.click(screen.getByLabelText('Cancel'));
+
+    expect(back).toHaveBeenCalledTimes(1);
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the event screen when there is no history', async () => {
+    canGoBack.mockReturnValue(false);
+    render(<EditEventScreen />);
+    await screen.findByDisplayValue('Thursday Mahjong');
+
+    fireEvent.click(screen.getByLabelText('Cancel'));
+
+    expect(back).not.toHaveBeenCalled();
+    expect(replace).toHaveBeenCalledWith('/clubs/club-1/events/event-1');
   });
 });
 
@@ -264,6 +300,30 @@ describe('a series occurrence', () => {
     await screen.findByText('The whole series');
     expect(screen.getByText('This game')).toBeTruthy();
     expect(screen.getByText('Every Thursday')).toBeTruthy();
+  });
+
+  // This is the control that decides whether a save touches one night or
+  // silently rewrites every future week of a recurring series, so a screen
+  // reader that cannot tell which one is currently chosen is not a cosmetic
+  // gap. Guards against `accessibilityState={{ selected }}` creeping back
+  // in: react-native-web's createDOMProps has no handling for
+  // `accessibilityState` at all (components/Toggle.tsx's docstring has the
+  // full account), so that prop rendered `role="button"` with no state at
+  // all. Both states are pinned against their literal strings, not
+  // `not.toBe('true')`, since a missing attribute would also satisfy that.
+  it('marks the default "This game" scope as selected, and flips aria-selected when "The whole series" is chosen', async () => {
+    render(<EditEventScreen />);
+    await screen.findByText('The whole series');
+
+    const thisGame = screen.getByRole('button', { name: 'This game only' });
+    const wholeSeries = screen.getByRole('button', { name: 'The whole series' });
+    expect(thisGame.getAttribute('aria-selected')).toBe('true');
+    expect(wholeSeries.getAttribute('aria-selected')).toBe('false');
+
+    fireEvent.click(wholeSeries);
+
+    expect(thisGame.getAttribute('aria-selected')).toBe('false');
+    expect(wholeSeries.getAttribute('aria-selected')).toBe('true');
   });
 
   // Fix pass 1's regression test (Task 15's review): an occurrence whose

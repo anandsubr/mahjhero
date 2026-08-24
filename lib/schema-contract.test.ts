@@ -510,13 +510,26 @@ describe.runIf(reachable || required)('events schema contract', () => {
       [
         'id', 'club_id', 'series_id', 'title', 'venue_id', 'notes',
         'starts_at', 'ends_at', 'status', 'occurrence_date', 'overrides',
-        'venues', 'event_tables',
+        'venues', 'event_tables', 'bookings',
       ].sort(),
     );
     expect(row.title).toBe('Tuesday Mahjong');
     expect(row.overrides).toEqual(['title']);
     expect((row.venues as { name: string }).name).toBe('Contract Hall');
     expect((row.event_tables as unknown[]).length).toBe(1);
+    // Task 14: `eventStatusLine` (lib/events.ts) needs capacity and label off
+    // each table, and the live bookings, to compute where a member stands on
+    // this game — added to EVENT_COLUMNS alongside the id-only embed this
+    // suite already pinned.
+    const [table] = row.event_tables as {
+      id: string;
+      capacity: number;
+      label: string;
+    }[];
+    expect(table.capacity).toBe(4);
+    expect(table.label).toBe('Table 1');
+    // No bookings seeded for this event — an empty array, not a missing key.
+    expect(row.bookings).toEqual([]);
   });
 
   it('exposes exactly the columns lib/events.ts names on event_series, including ended_at', async () => {
@@ -1449,3 +1462,280 @@ describe.runIf(reachable || required)('deliberate refusals reach the host as ref
     expect(error).not.toBe(GENERIC_ERROR);
   });
 });
+
+/*
+ * ---------------------------------------------------------------------------
+ * The booking RPCs' JSON shape.
+ * ---------------------------------------------------------------------------
+ *
+ * `commit_booking` returns a jsonb OBJECT and `event_seating` returns a SET
+ * OF ROWS with enum-typed columns — exactly the shape where PostgREST's
+ * serialization and lib/bookings.ts's TypeScript types (`BookingOutcome`,
+ * `SeatOccupant`) can drift silently, the same class of gap
+ * `quiet_hours_start`/`TIME_PATTERN` closed for `time` columns at the top of
+ * this file. A mocked Vitest suite hands the mapper a payload written by
+ * hand and proves only that the mapper reads the shape it was given; this
+ * block calls the real RPCs against the real database and reads back what
+ * PostgREST actually produces.
+ *
+ * The third case exists for one column specifically: `waitlist_position` is
+ * a Postgres `int` (cast down from a `bigint` count precisely so it arrives
+ * this way — see booking_result's and event_seating's own `::int` casts),
+ * but a plain `bigint` column serializes through PostgREST as a STRING, not
+ * a number, because a bigint can exceed what a JS `number` represents
+ * exactly. `typeof data.waitlist_position === 'number'` is what stops that
+ * cast being "simplified" away as redundant — WaitlistPanel's `waitlistLabel`
+ * does arithmetic (`position % 100`) directly on this value, which silently
+ * produces `NaN`-shaped nonsense on a string rather than an error.
+ */
+describe.runIf(reachable || required)(
+  'booking RPCs return the shape lib/bookings.ts claims',
+  () => {
+    let admin: SupabaseClient;
+    let userId: string;
+    let clubId: string;
+    let eventId: string;
+    let tableId: string;
+    let fullEventId: string | null = null;
+    let fillerId: string | null = null;
+
+    beforeAll(async () => {
+      expect(
+        reachable,
+        `Local Supabase stack not reachable at ${local.url}. Run \`npx supabase start\`.`,
+      ).toBe(true);
+      ({ admin, userId } = await signInFreshUser());
+
+      const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+      const { data: club, error: clubError } = await admin
+        .from('clubs')
+        .insert({
+          name: 'Booking Contract Club',
+          slug: `booking-contract-${suffix}`,
+          timezone: 'America/New_York',
+          created_by: userId,
+        })
+        .select('id')
+        .single();
+      expect(clubError, `seeding club failed: ${clubError?.message}`).toBeNull();
+      clubId = club!.id;
+
+      const { error: memberError } = await admin.from('club_members').insert({
+        club_id: clubId,
+        profile_id: userId,
+        role: 'host',
+        status: 'active',
+      });
+      expect(memberError, `seeding membership failed: ${memberError?.message}`).toBeNull();
+
+      const { data: venue, error: venueError } = await admin
+        .from('venues')
+        .insert({
+          name: 'Contract Booking Hall',
+          visibility: 'club',
+          added_by_club_id: clubId,
+          created_by: userId,
+        })
+        .select('id')
+        .single();
+      expect(venueError, `seeding venue failed: ${venueError?.message}`).toBeNull();
+
+      // A two-table game, per the brief — only the first table is used for
+      // seating below, but a caller resolving `preferred` against a game
+      // with just one table would never exercise the join `plan_seating`
+      // does against `event_tables`.
+      const { data: event, error: eventError } = await admin
+        .from('events')
+        .insert({
+          club_id: clubId,
+          title: 'Contract booking game',
+          venue_id: venue!.id,
+          notes: '',
+          starts_at: '2099-09-08T23:00:00Z',
+          ends_at: '2099-09-09T02:00:00Z',
+          created_by: userId,
+        })
+        .select('id')
+        .single();
+      expect(eventError, `seeding event failed: ${eventError?.message}`).toBeNull();
+      eventId = event!.id;
+
+      const { data: tables, error: tableError } = await admin
+        .from('event_tables')
+        .insert([
+          { event_id: eventId, club_id: clubId, label: 'Table 1', position: 1 },
+          { event_id: eventId, club_id: clubId, label: 'Table 2', position: 2 },
+        ])
+        .select('id, label');
+      expect(tableError, `seeding tables failed: ${tableError?.message}`).toBeNull();
+      tableId = tables!.find((t) => t.label === 'Table 1')!.id;
+    });
+
+    afterAll(async () => {
+      await supabase.auth.signOut();
+      if (admin) {
+        if (fullEventId) {
+          await admin.from('bookings').delete().eq('event_id', fullEventId);
+          await admin.from('booking_groups').delete().eq('event_id', fullEventId);
+          await admin.from('event_tables').delete().eq('event_id', fullEventId);
+          await admin.from('events').delete().eq('id', fullEventId);
+        }
+        if (eventId) {
+          await admin.from('bookings').delete().eq('event_id', eventId);
+          await admin.from('booking_groups').delete().eq('event_id', eventId);
+          await admin.from('event_tables').delete().eq('event_id', eventId);
+          await admin.from('events').delete().eq('id', eventId);
+        }
+        if (clubId) {
+          await admin.from('venues').delete().eq('added_by_club_id', clubId);
+          await admin.from('club_members').delete().eq('club_id', clubId);
+          await admin.from('clubs').delete().eq('id', clubId);
+        }
+      }
+      if (admin && fillerId) await admin.auth.admin.deleteUser(fillerId);
+      if (admin && userId) await admin.auth.admin.deleteUser(userId);
+    });
+
+    it('returns the booking outcome in the shape BookingOutcome claims', async () => {
+      const { data, error } = await supabase.rpc('commit_booking', {
+        target_event: eventId,
+        players: [userId],
+        preferred: tableId,
+        allow_split: true,
+      });
+      expect(error, `commit_booking failed: ${error?.message}`).toBeNull();
+      const row = data as Record<string, unknown>;
+
+      // The whole point of this suite: the JSON PostgREST actually
+      // produces, not the plpgsql that produced it.
+      expect(Object.keys(row).sort()).toEqual(
+        ['group_id', 'offer', 'outcome', 'placements', 'split', 'waitlist_position'].sort(),
+      );
+      expect(row.outcome).toBe('seated');
+      expect(Array.isArray(row.placements)).toBe(true);
+      expect((row.placements as unknown[])[0]).toMatchObject({
+        profile_id: userId,
+        event_table_id: tableId,
+      });
+    });
+
+    it('returns event_seating rows with the column names SeatOccupant claims', async () => {
+      const { data, error } = await supabase.rpc('event_seating', {
+        target_event: eventId,
+      });
+      expect(error, `event_seating failed: ${error?.message}`).toBeNull();
+      const rows = data as Record<string, unknown>[];
+
+      // The previous test already seated the caller here, so this is never
+      // an empty set — `rows[0]` below is a real row, not `undefined`.
+      expect(rows.length).toBeGreaterThan(0);
+      expect(Object.keys(rows[0]!).sort()).toEqual(
+        [
+          'booked_by', 'booked_by_name', 'booking_id', 'created_at',
+          'display_name', 'event_table_id', 'group_id', 'group_status',
+          'profile_id', 'skill_level', 'status', 'waitlist_position',
+        ].sort(),
+      );
+      // Enums arrive as strings. A typo in the TS union would type-check
+      // fine and compare false at runtime forever.
+      expect(['confirmed', 'waitlisted']).toContain(rows[0]!.status);
+    });
+
+    it('returns a waitlist_position that is a number, not a string', async () => {
+      // A second, ALREADY-FULL game (capacity 1, filled by a throwaway
+      // profile via service_role — assert_players_bookable never runs
+      // against it, so it does not need to be a club member) so the
+      // caller's own commit_booking call below is provably 'waitlisted'
+      // rather than 'seated' by the first test above.
+      const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+      const { data: fullVenue, error: fullVenueError } = await admin
+        .from('venues')
+        .insert({
+          name: 'Contract Full Hall',
+          visibility: 'club',
+          added_by_club_id: clubId,
+          created_by: userId,
+        })
+        .select('id')
+        .single();
+      expect(fullVenueError, `seeding full venue failed: ${fullVenueError?.message}`).toBeNull();
+
+      const { data: fullEvent, error: fullEventError } = await admin
+        .from('events')
+        .insert({
+          club_id: clubId,
+          title: 'Contract full game',
+          venue_id: fullVenue!.id,
+          notes: '',
+          starts_at: '2099-09-15T23:00:00Z',
+          ends_at: '2099-09-16T02:00:00Z',
+          created_by: userId,
+        })
+        .select('id')
+        .single();
+      expect(fullEventError, `seeding full event failed: ${fullEventError?.message}`).toBeNull();
+      fullEventId = fullEvent!.id;
+
+      const { data: fullTable, error: fullTableError } = await admin
+        .from('event_tables')
+        .insert({
+          event_id: fullEventId,
+          club_id: clubId,
+          label: 'Table 1',
+          position: 1,
+          capacity: 1,
+        })
+        .select('id')
+        .single();
+      expect(fullTableError, `seeding full table failed: ${fullTableError?.message}`).toBeNull();
+
+      const { data: filler, error: fillerError } = await admin.auth.admin.createUser({
+        email: `contract-filler-${suffix}@mahjhero.test`,
+        email_confirm: true,
+      });
+      expect(fillerError, `seeding filler profile failed: ${fillerError?.message}`).toBeNull();
+      fillerId = filler!.user!.id;
+
+      const { data: fillerGroup, error: fillerGroupError } = await admin
+        .from('booking_groups')
+        .insert({
+          event_id: fullEventId,
+          club_id: clubId,
+          created_by: fillerId,
+          preferred_table_id: fullTable!.id,
+          status: 'confirmed',
+        })
+        .select('id')
+        .single();
+      expect(fillerGroupError, `seeding filler group failed: ${fillerGroupError?.message}`).toBeNull();
+
+      const { error: fillerBookingError } = await admin.from('bookings').insert({
+        group_id: fillerGroup!.id,
+        event_id: fullEventId,
+        club_id: clubId,
+        event_table_id: fullTable!.id,
+        profile_id: fillerId,
+        booked_by: fillerId,
+        status: 'confirmed',
+      });
+      expect(fillerBookingError, `seeding filler booking failed: ${fillerBookingError?.message}`).toBeNull();
+
+      const { data, error } = await supabase.rpc('commit_booking', {
+        target_event: fullEventId,
+        players: [userId],
+        preferred: null,
+        allow_split: true,
+      });
+      expect(error, `commit_booking failed: ${error?.message}`).toBeNull();
+      const row = data as Record<string, unknown>;
+
+      expect(row.outcome).toBe('waitlisted');
+      // Postgres bigint arrives as a string through PostgREST. This one is
+      // cast to int in SQL precisely so it does not, and this assertion is
+      // what stops that cast being removed as redundant.
+      expect(typeof row.waitlist_position).toBe('number');
+    });
+  },
+);

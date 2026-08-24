@@ -49,6 +49,12 @@ type ButtonProps = {
    * (see app/clubs/[id]/events/new.tsx's duration/table-count/repeat rows).
    * `disabled`/`busy` here are always the ones this component computes
    * itself; a caller cannot use this to lie about either.
+   *
+   * `disabled`/`busy` are NOT read out of this prop, even if a caller sets
+   * them -- see the flat `aria-disabled`/`aria-busy` props on `Pressable`
+   * below, and Toggle.tsx's docstring for why. Any other key (e.g.
+   * `selected`) still reaches the DOM/native tree through this prop
+   * unchanged.
    */
   accessibilityState?: AccessibilityState;
   /** Rendered to the left of the label, e.g. a back-chevron icon. */
@@ -79,7 +85,18 @@ export default function Button({
       disabled={isDisabled}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
-      accessibilityState={{ ...accessibilityState, disabled: isDisabled, busy }}
+      accessibilityState={accessibilityState}
+      // Flat `aria-*` props, not folded into `accessibilityState` above --
+      // react-native-web's createDOMProps has no handling for
+      // `accessibilityState` at all (see Toggle.tsx's docstring for the full
+      // account), so `disabled`/`busy` computed here would never reach the
+      // DOM if passed that way, and every Button-based control in the app
+      // would render with no `aria-disabled`/`aria-busy`. React Native's own
+      // Pressable resolves `disabled: ariaDisabled ?? accessibilityState
+      // ?.disabled` (and the equivalent for `busy`), so this one prop still
+      // reaches the native accessibility tree too.
+      aria-disabled={isDisabled}
+      aria-busy={busy}
       style={({ pressed }) => [
         styles.base,
         variantStyles[variant],

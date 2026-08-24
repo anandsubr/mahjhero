@@ -45,6 +45,7 @@
     "web": "expo start --web",
     "test": "TZ=America/New_York vitest run",
     "test:contract": "TZ=America/New_York REQUIRE_LOCAL_SUPABASE=1 vitest run lib/schema-contract.test.ts",
+    "test:concurrency": "TZ=America/New_York REQUIRE_LOCAL_SUPABASE=1 vitest run lib/booking-concurrency.test.ts",
     "test:visual": "playwright test",
     "test:db": "npx supabase test db --local",
     "test:db:remote": "npx supabase test db --linked supabase/tests/database/portable"

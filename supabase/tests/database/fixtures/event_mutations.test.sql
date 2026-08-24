@@ -574,6 +574,8 @@ select lives_ok(
   'an organizer can create an event with the maximum number of tables'
 );
 
+-- The bookings side of this function — unseat, never destroy — is asserted
+-- in event_disruption.test.sql. This block covers the table row only.
 select lives_ok(
   $$select public.remove_event_table(
       (select t.id from public.event_tables t

@@ -81,7 +81,20 @@ export default function DateField({
           onPress={() => setOpen(true)}
           accessibilityRole="button"
           accessibilityLabel={label}
-          accessibilityState={{ expanded: open }}
+          // Flat `aria-expanded`, not `accessibilityState={{ expanded: open
+          // }}` (which this used to send). See components/Toggle.tsx's
+          // docstring for the general defect: react-native-web's
+          // createDOMProps has no handling for `accessibilityState` at all.
+          // This particular branch is Android-only and never reaches web (
+          // components/DateField.web.tsx is the file the web build ships),
+          // so real native Android's own Pressable -- which resolves
+          // `expanded: ariaExpanded ?? accessibilityState?.expanded` the same
+          // way it resolves `selected`/`checked`/`disabled` -- already read
+          // this state correctly either way. The flat prop is still the
+          // right one to standardize on: it costs nothing here and matches
+          // every other control in the app now that the web-facing ones
+          // require it.
+          aria-expanded={open}
         >
           <Text style={styles.androidButtonText}>
             {hasValue ? date.toLocaleDateString() : 'Pick a date'}

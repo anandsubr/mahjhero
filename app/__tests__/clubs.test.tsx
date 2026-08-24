@@ -101,6 +101,20 @@ describe('clubs list', () => {
     expect(screen.getByText('Thursday evenings')).toBeTruthy();
   });
 
+  // "Your games" (Task 13) stacked a whole section above the club list with
+  // no `scroll` prop on Screen, unlike every other list screen
+  // (app/clubs/[id]/index.tsx, the event screen). A member with a few games
+  // and a few clubs could produce a page taller than the viewport with no
+  // way to reach "Start another club" or "Your profile". Only the populated
+  // main render needs this — the loading/ready spinners and the load-failed
+  // error banner are all short, centered, single-purpose content.
+  it('lets the populated screen scroll', async () => {
+    fetchMyClubs.mockResolvedValueOnce([CLUB]);
+    render(<ClubsScreen />);
+    expect(await screen.findByText('Riverside Mah Jongg')).toBeTruthy();
+    expect(screen.getByTestId('screen-scroll')).toBeTruthy();
+  });
+
   // The one that matters: fetchMyClubs returns null on a failed load and []
   // when the member genuinely has no clubs. Rendering the empty-state copy
   // for both would tell a member whose fetch just failed that their clubs
@@ -143,7 +157,7 @@ describe('roster import', () => {
 });
 
 import ClubDetailScreen from '../clubs/[id]/index';
-import { formatEventWhen } from '../../lib/events';
+import { eventStatusLine, formatEventWhen } from '../../lib/events';
 
 // A guard-ordering regression: the club detail screen used to check
 // `if (loading || !ready) return <spinner>` before `if (!session) return
@@ -207,6 +221,36 @@ describe('club detail screen', () => {
     render(<ClubDetailScreen />);
     expect(await screen.findByText(/40 invitations sent/)).toBeTruthy();
   });
+
+  // The roster used to print a member's level as plain text with no glyph
+  // at all -- one of the three inconsistent ways this app drew the same
+  // idea (TableCard's pips, the old SkillDotsIcon on the profile picker,
+  // and this screen's bare text). It now gets the same three-pip glyph
+  // beside the word, via SkillLevelPips -- but only for a member who has
+  // actually set a level. `skill_level: null` means "not set", not a
+  // fourth level, and must never draw as SkillTierPips's `mixed` dash: a
+  // person can be unset, but never "any level" (that's a table's `mixed`,
+  // a different type entirely -- see SkillLevelPips's own docstring).
+  it('shows the skill pip glyph beside the word for a member with a level, and nothing for one without', async () => {
+    fetchRoster.mockResolvedValue([
+      { profile_id: 'test-user', role: 'host', display_name: 'Ada', skill_level: 'intermediate' },
+      { profile_id: 'user-2', role: 'member', display_name: 'Ben', skill_level: null },
+    ]);
+    render(<ClubDetailScreen />);
+
+    expect(await screen.findByText('Ada')).toBeTruthy();
+    expect(screen.getByText('Ben')).toBeTruthy();
+    expect(screen.getByText('Intermediate')).toBeTruthy();
+
+    // Ada's glyph -- the whole roster only has Ada's level to draw, so a
+    // total of three pips (two filled, one outlined) proves Ben got none.
+    expect(screen.getAllByTestId('pip-filled')).toHaveLength(2);
+    expect(screen.getAllByTestId('pip-outline')).toHaveLength(1);
+
+    // No dash anywhere on the roster, for Ben (not set) or anyone else --
+    // the mutation this guards against is treating "not set" as "mixed".
+    expect(screen.queryByTestId('pip-dash')).toBeNull();
+  });
 });
 
 function escapeForRegExp(value: string): string {
@@ -246,6 +290,17 @@ describe('club detail screen upcoming events', () => {
     occurrence_date: null,
     overrides: [],
     table_count: 3,
+    // Defaults so every test below can render the card without crashing on
+    // eventStatusLine's undefined-array access — a table nobody has booked,
+    // for a member other than the fixed test-user. Tests that care about a
+    // specific status line override these explicitly (see the dedicated
+    // "says where you stand" test and the eventStatusLine block below).
+    event_tables: [{ id: 't1', capacity: 4, label: 'Table 1' }],
+    bookings: [] as {
+      profile_id: string;
+      status: 'confirmed' | 'waitlisted' | 'cancelled' | 'declined';
+      event_table_id: string | null;
+    }[],
   };
 
   beforeEach(() => {
@@ -389,5 +444,159 @@ describe('club detail screen upcoming events', () => {
     expect(screen.getByText('Ada')).toBeTruthy();
     expect(screen.getByText('1 member')).toBeTruthy();
     expect(screen.queryByText(/Could not reach MahjHero/)).toBeNull();
+  });
+
+  // Task 14: one line per card reporting where the viewer stands. Rendered
+  // through the real `eventStatusLine`, not asserted separately from the
+  // card — the point is that the screen actually calls it with the event's
+  // own bookings/tables, not just that the function works in isolation.
+  it('says where you stand on each game, right on the card', async () => {
+    fetchRoster.mockResolvedValue([
+      { profile_id: 'test-user', role: 'member', display_name: 'Ada', skill_level: null },
+    ]);
+    fetchUpcomingEvents.mockResolvedValue([
+      {
+        ...EVENT,
+        event_tables: [{ id: 't1', capacity: 4, label: 'Table 1' }],
+        bookings: [
+          { profile_id: 'test-user', status: 'confirmed', event_table_id: 't1' },
+        ],
+      },
+    ]);
+    render(<ClubDetailScreen />);
+
+    expect(await screen.findByText("You're in · Table 1")).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// eventStatusLine — a pure function, tested without rendering. The branching
+// is the whole of the behaviour (see lib/events.ts's doc comment on it), and
+// a rendering test hides which branch ran, the same reason
+// resolveIndexRedirect (app/index.tsx) is tested separately from app/index.tsx
+// itself.
+//
+// `now` is passed explicitly rather than relying on the default `new
+// Date()`, matching `needsAFourth`'s own tests in lib/bookings.test.ts —
+// leaving it implicit would make the "Needs a 4th" / "48 hours" cases
+// dependent on the instant the suite happens to run.
+// ---------------------------------------------------------------------------
+describe('eventStatusLine', () => {
+  const NOW = new Date('2026-08-24T23:00:00Z');
+  // Within 48 hours of NOW, for the "Needs a 4th" cases.
+  const SOON = '2026-08-25T23:00:00Z';
+  // More than 48 hours out, for the case that must NOT read "Needs a 4th"
+  // just because a table happens to be exactly one seat short.
+  const FAR = '2026-12-01T00:00:00Z';
+
+  // Three of four seats at the one table are taken, and one of them is
+  // "me" — a member already in the game does not need recruiting to it.
+  const eventOneShort = {
+    starts_at: SOON,
+    event_tables: [{ id: 't1', capacity: 4 }],
+    bookings: [
+      { profile_id: 'me', status: 'confirmed' as const, event_table_id: 't1' },
+      { profile_id: 'p2', status: 'confirmed' as const, event_table_id: 't1' },
+      { profile_id: 'p3', status: 'confirmed' as const, event_table_id: 't1' },
+    ],
+    tables_labels: { t1: 'Table 1' },
+  };
+
+  const eventFullWithMeWaiting = {
+    starts_at: FAR,
+    event_tables: [{ id: 't1', capacity: 4 }],
+    bookings: [
+      { profile_id: 'p1', status: 'confirmed' as const, event_table_id: 't1' },
+      { profile_id: 'p2', status: 'confirmed' as const, event_table_id: 't1' },
+      { profile_id: 'p3', status: 'confirmed' as const, event_table_id: 't1' },
+      { profile_id: 'p4', status: 'confirmed' as const, event_table_id: 't1' },
+      { profile_id: 'me', status: 'waitlisted' as const, event_table_id: null },
+    ],
+  };
+
+  // Two tables, neither one seat short: t1 is completely full, t2 has one
+  // booking. 8 total seats, 5 taken, 3 free — a value that discriminates
+  // from every other fixture in this block (no accidental tie).
+  const eventHalfEmpty = {
+    starts_at: FAR,
+    event_tables: [
+      { id: 't1', capacity: 4 },
+      { id: 't2', capacity: 4 },
+    ],
+    bookings: [
+      { profile_id: 'p1', status: 'confirmed' as const, event_table_id: 't1' },
+      { profile_id: 'p2', status: 'confirmed' as const, event_table_id: 't1' },
+      { profile_id: 'p3', status: 'confirmed' as const, event_table_id: 't1' },
+      { profile_id: 'p4', status: 'confirmed' as const, event_table_id: 't1' },
+      { profile_id: 'p5', status: 'confirmed' as const, event_table_id: 't2' },
+    ],
+  };
+
+  const eventFull = {
+    starts_at: FAR,
+    event_tables: [{ id: 't1', capacity: 4 }],
+    bookings: [
+      { profile_id: 'p1', status: 'confirmed' as const, event_table_id: 't1' },
+      { profile_id: 'p2', status: 'confirmed' as const, event_table_id: 't1' },
+      { profile_id: 'p3', status: 'confirmed' as const, event_table_id: 't1' },
+      { profile_id: 'p4', status: 'confirmed' as const, event_table_id: 't1' },
+    ],
+  };
+
+  const eventWithMyUnseatedBooking = {
+    starts_at: FAR,
+    event_tables: [{ id: 't1', capacity: 4 }],
+    bookings: [
+      { profile_id: 'me', status: 'confirmed' as const, event_table_id: null },
+    ],
+  };
+
+  // One table, one seat short, but the game is more than 48 hours out — the
+  // same occupancy as eventOneShort, but this must read the seat count, not
+  // "Needs a 4th". Proves the 48-hour window is actually wired through
+  // (rather than eventStatusLine reimplementing "one short" without it).
+  const eventOneSeatFreeButNotSoon = {
+    starts_at: FAR,
+    event_tables: [{ id: 't1', capacity: 4 }],
+    bookings: [
+      { profile_id: 'p1', status: 'confirmed' as const, event_table_id: 't1' },
+      { profile_id: 'p2', status: 'confirmed' as const, event_table_id: 't1' },
+      { profile_id: 'p3', status: 'confirmed' as const, event_table_id: 't1' },
+    ],
+  };
+
+  it('says nothing about a fourth to somebody already playing', () => {
+    // Your own state wins over the club's — a member already in the game
+    // does not need recruiting to it.
+    expect(eventStatusLine(eventOneShort, 'me', NOW)).toBe("You're in · Table 1");
+  });
+
+  it('calls for a fourth when you are not in the game', () => {
+    expect(eventStatusLine(eventOneShort, 'stranger', NOW)).toBe('Needs a 4th');
+  });
+
+  // The embed carries bookings, not groups, so there is no waitlist
+  // position here — deliberately. The event screen has event_seating and
+  // shows the position there.
+  it('says you are waiting, without a position this row cannot know', () => {
+    expect(eventStatusLine(eventFullWithMeWaiting, 'me', NOW)).toBe('Waiting');
+  });
+
+  it('counts free seats when nothing else applies', () => {
+    expect(eventStatusLine(eventHalfEmpty, 'stranger', NOW)).toBe('3 seats free');
+  });
+
+  it('uses the singular for exactly one free seat', () => {
+    expect(eventStatusLine(eventOneSeatFreeButNotSoon, 'stranger', NOW)).toBe(
+      '1 seat free',
+    );
+  });
+
+  it('says Full rather than "0 seats free"', () => {
+    expect(eventStatusLine(eventFull, 'stranger', NOW)).toBe('Full');
+  });
+
+  it("says \"You're in\" without a table for an any-table seat", () => {
+    expect(eventStatusLine(eventWithMyUnseatedBooking, 'me', NOW)).toBe("You're in");
   });
 });

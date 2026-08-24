@@ -1,6 +1,14 @@
 {
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
-    "strict": true
+    "strict": true,
+    // Lets components/__tests__/DateField.test.tsx import
+    // '../DateField.tsx' by its explicit extension -- the only way to reach
+    // the native file rather than DateField.web.tsx, which
+    // vitest.config.ts's `resolve.extensions` prefers for every
+    // extensionless import (matching what the real web build ships). Valid
+    // only alongside `noEmit` (already set by expo/tsconfig.base), which
+    // this project already relies on -- Metro/Vite compile, not `tsc`.
+    "allowImportingTsExtensions": true
   }
 }

@@ -1,6 +1,6 @@
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import Button from '../../../../components/Button';
 import DateField from '../../../../components/DateField';
 import ErrorBanner from '../../../../components/ErrorBanner';
@@ -18,7 +18,7 @@ import {
 } from '../../../../lib/events';
 import { useSession } from '../../../../lib/session';
 import { dateToDateString } from '../../../../lib/time';
-import { colors, space, type } from '../../../../lib/theme';
+import { colors, radius, shadow, space, type } from '../../../../lib/theme';
 
 type Repeat = 'never' | SeriesFrequency;
 
@@ -30,6 +30,93 @@ const REPEATS: { value: Repeat; label: string }[] = [
 ];
 
 const DURATIONS = [120, 180, 240];
+
+/**
+ * The duration/table-count/repeat rows below are chip-style selectors where
+ * "which one is selected" is the entire point -- exactly the case `Button`
+ * cannot serve: `Button` merges a caller's `accessibilityState` straight into
+ * RN's own `accessibilityState` prop, and react-native-web's `createDOMProps`
+ * has no handling for `accessibilityState` at all (see
+ * components/Toggle.tsx's docstring for the full account), so the `selected`
+ * value these rows used to pass as `accessibilityState={{ selected }}` never
+ * reached the DOM on web. `Button` itself is not touched here -- it still has
+ * no way to forward a caller's `aria-selected` to its underlying `Pressable`
+ * -- so this follows the fix the organizer's own per-table tier chips already
+ * established for the identical shape
+ * (app/clubs/[id]/events/[eventId]/index.tsx's `TierChip`, itself following
+ * `BringSomeoneSheet`'s chips): a bespoke `Pressable` carrying the flat
+ * `aria-selected` prop, styled to match `Button`'s own
+ * primary/secondary/big=false chip pixel-for-pixel so replacing `Button` here
+ * changes no layout or visible text.
+ */
+function Chip({
+  children,
+  selected,
+  onPress,
+  accessibilityLabel,
+}: {
+  children: string;
+  selected: boolean;
+  onPress: () => void;
+  accessibilityLabel: string;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      aria-selected={selected}
+      style={({ pressed }) => [
+        chipStyles.base,
+        selected ? chipStyles.selected : chipStyles.unselected,
+        pressed ? chipStyles.pressed : null,
+      ]}
+    >
+      <Text style={selected ? chipStyles.labelSelected : chipStyles.label}>
+        {children}
+      </Text>
+    </Pressable>
+  );
+}
+
+const chipStyles = StyleSheet.create({
+  // Matches components/Button.tsx's `base` + `regular` (big=false) exactly.
+  base: {
+    borderRadius: radius.pill,
+    minHeight: 46,
+    paddingHorizontal: space[5],
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  // Matches Button's `variantStyles.primary`.
+  selected: {
+    backgroundColor: colors.accentColor,
+    borderColor: 'transparent',
+    ...shadow.sm,
+  },
+  // Matches Button's `variantStyles.secondary`.
+  unselected: {
+    backgroundColor: colors.surface,
+    borderColor: colors.divider,
+  },
+  // Matches Button's `pressed`.
+  pressed: {
+    opacity: 0.85,
+  },
+  // Matches Button's `label` + `variantTextStyles.primary`.
+  labelSelected: {
+    fontFamily: type.heading,
+    fontSize: type.size.body,
+    color: colors.bg,
+  },
+  // Matches Button's `label` + `variantTextStyles.secondary`.
+  label: {
+    fontFamily: type.heading,
+    fontSize: type.size.body,
+    color: colors.text,
+  },
+});
 
 /*
  * This screen converts no timezones.
@@ -239,32 +326,28 @@ export default function NewEventScreen() {
       <Text style={styles.label}>How long?</Text>
       <View style={styles.chips}>
         {DURATIONS.map((minutes) => (
-          <Button
+          <Chip
             key={minutes}
-            variant={duration === minutes ? 'primary' : 'secondary'}
-            big={false}
+            selected={duration === minutes}
             onPress={() => setDuration(minutes)}
             accessibilityLabel={`${minutes / 60} hours`}
-            accessibilityState={{ selected: duration === minutes }}
           >
             {`${minutes / 60} hours`}
-          </Button>
+          </Chip>
         ))}
       </View>
 
       <Text style={styles.label}>How many tables?</Text>
       <View style={styles.chips}>
         {[1, 2, 3, 4, 5, 6].map((n) => (
-          <Button
+          <Chip
             key={n}
-            variant={tableCount === n ? 'primary' : 'secondary'}
-            big={false}
+            selected={tableCount === n}
             onPress={() => setTableCount(n)}
             accessibilityLabel={`${n} ${n === 1 ? 'table' : 'tables'}`}
-            accessibilityState={{ selected: tableCount === n }}
           >
             {String(n)}
-          </Button>
+          </Chip>
         ))}
       </View>
       <Text style={styles.help}>
@@ -276,16 +359,14 @@ export default function NewEventScreen() {
       <Text style={styles.label}>Does it repeat?</Text>
       <View style={styles.chips}>
         {REPEATS.map((option) => (
-          <Button
+          <Chip
             key={option.value}
-            variant={repeat === option.value ? 'primary' : 'secondary'}
-            big={false}
+            selected={repeat === option.value}
             onPress={() => setRepeat(option.value)}
             accessibilityLabel={option.label}
-            accessibilityState={{ selected: repeat === option.value }}
           >
             {option.label}
-          </Button>
+          </Chip>
         ))}
       </View>
 
@@ -334,7 +415,19 @@ export default function NewEventScreen() {
       </Button>
       <Button
         variant="ghost"
-        onPress={() => router.back()}
+        onPress={() => {
+          // A direct URL, a page reload on web, a deep link, or a cold
+          // launch straight into this route leaves nothing to pop -- only
+          // `back()` when there is history to unwind. The fallback replaces
+          // rather than pushes: a pushed club screen would leave this
+          // cancelled form one browser-back away, a stale entry the member
+          // could stumble straight back into.
+          if (router.canGoBack()) {
+            router.back();
+          } else {
+            router.replace(`/clubs/${clubId}`);
+          }
+        }}
         accessibilityLabel="Cancel"
       >
         Cancel
