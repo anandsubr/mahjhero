@@ -155,6 +155,38 @@ deliberate decision, not a surprise to rediscover later.
 
 ---
 
+### [ ] A real home screen
+
+`app/index.tsx` is a 103-line redirect resolver with no UI — it sends a signed-in
+member straight to `/clubs`, which is "Your clubs" plus "Your games" and is doing duty
+as the landing screen by default rather than by design.
+
+Raised while designing check-in (plan 5): the member's check-in control had to live
+somewhere reachable in zero taps, and "Your games" was the only surface that qualified.
+That works, but it is the wrong long-term home. A real home screen wants the next game,
+outstanding promotion offers, waitlist position, and club activity — designing it
+around check-in alone would produce the wrong screen, so plan 5 deliberately did not.
+
+When it is built it reuses `CheckInControl` and `my_upcoming_bookings()`'s check-in
+columns unchanged. See [check-in design](docs/superpowers/specs/2026-08-24-check-in-design.md).
+
+### [ ] Offline-tolerant check-in — the cache, the queue, and the sync loop
+
+The V1 spec commits to this and plan 5 does not ship it; the deferral is recorded in
+both [the V1 spec](docs/superpowers/specs/2026-08-01-mahjhero-v1-design.md) and
+[the roadmap](docs/roadmap.md). Until it lands, a host at a venue with dead wifi cannot
+check anybody in — which is the exact scenario the V1 spec named as the reason to build
+it.
+
+Nothing exists to build on: AsyncStorage is in the app for auth persistence only, and
+there is no cache, queue, or sync anywhere. This plan owns all three.
+
+Two hooks are already in place so this is additive rather than a rewrite of plan 5:
+`check_ins` is uniquely keyed on `(event_id, profile_id)`, so a replayed queue cannot
+duplicate; and `record_attendance` takes a caller-supplied `recorded_at` and applies
+only when it is newer than the stored value, so a write that sat in a phone's queue
+cannot clobber a decision the host has made since.
+
 ## Configure & verify
 
 ### [ ] Google login — configure and check end to end
