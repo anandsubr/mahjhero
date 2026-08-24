@@ -12,6 +12,7 @@ import Button from '../../../components/Button';
 import Card from '../../../components/Card';
 import ErrorBanner from '../../../components/ErrorBanner';
 import Screen from '../../../components/Screen';
+import SkillLevelPips from '../../../components/SkillLevelPips';
 import Tag from '../../../components/Tag';
 import { ChevronLeftIcon } from '../../../components/icons';
 import {
@@ -293,11 +294,23 @@ export default function ClubDetailScreen() {
               <Tag>{member.role === 'host' ? 'Host' : 'Co-organizer'}</Tag>
             ) : null}
           </View>
+          {/*
+            The pip glyph beside the word, not instead of it -- the word is
+            what carries the meaning (SkillLevelPips is aria-hidden, same as
+            SkillTierPips it wraps; see that component's own docstring).
+            Nothing renders at all for a member with no skill_level: null
+            means "not set", which is not a fourth level and must never draw
+            as a dash (that reads as a table's "any level welcome", which no
+            person can be -- see SkillLevelPips's own docstring).
+          */}
           {member.skill_level ? (
-            <Text style={styles.help}>
-              {member.skill_level.charAt(0).toUpperCase() +
-                member.skill_level.slice(1)}
-            </Text>
+            <View style={styles.skillRow}>
+              <SkillLevelPips level={member.skill_level} />
+              <Text style={styles.help}>
+                {member.skill_level.charAt(0).toUpperCase() +
+                  member.skill_level.slice(1)}
+              </Text>
+            </View>
           ) : null}
         </Card>
       ))}
@@ -404,6 +417,11 @@ const styles = StyleSheet.create({
     fontSize: type.size.body,
     color: colors.text,
     flexShrink: 1,
+  },
+  skillRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[2],
   },
   help: {
     fontFamily: type.bodyRegular,

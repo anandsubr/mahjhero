@@ -221,6 +221,36 @@ describe('club detail screen', () => {
     render(<ClubDetailScreen />);
     expect(await screen.findByText(/40 invitations sent/)).toBeTruthy();
   });
+
+  // The roster used to print a member's level as plain text with no glyph
+  // at all -- one of the three inconsistent ways this app drew the same
+  // idea (TableCard's pips, the old SkillDotsIcon on the profile picker,
+  // and this screen's bare text). It now gets the same three-pip glyph
+  // beside the word, via SkillLevelPips -- but only for a member who has
+  // actually set a level. `skill_level: null` means "not set", not a
+  // fourth level, and must never draw as SkillTierPips's `mixed` dash: a
+  // person can be unset, but never "any level" (that's a table's `mixed`,
+  // a different type entirely -- see SkillLevelPips's own docstring).
+  it('shows the skill pip glyph beside the word for a member with a level, and nothing for one without', async () => {
+    fetchRoster.mockResolvedValue([
+      { profile_id: 'test-user', role: 'host', display_name: 'Ada', skill_level: 'intermediate' },
+      { profile_id: 'user-2', role: 'member', display_name: 'Ben', skill_level: null },
+    ]);
+    render(<ClubDetailScreen />);
+
+    expect(await screen.findByText('Ada')).toBeTruthy();
+    expect(screen.getByText('Ben')).toBeTruthy();
+    expect(screen.getByText('Intermediate')).toBeTruthy();
+
+    // Ada's glyph -- the whole roster only has Ada's level to draw, so a
+    // total of three pips (two filled, one outlined) proves Ben got none.
+    expect(screen.getAllByTestId('pip-filled')).toHaveLength(2);
+    expect(screen.getAllByTestId('pip-outline')).toHaveLength(1);
+
+    // No dash anywhere on the roster, for Ben (not set) or anyone else --
+    // the mutation this guards against is treating "not set" as "mixed".
+    expect(screen.queryByTestId('pip-dash')).toBeNull();
+  });
 });
 
 function escapeForRegExp(value: string): string {
