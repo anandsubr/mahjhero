@@ -15,7 +15,13 @@ vi.mock('../../lib/session', () => ({
   useSession: () => ({ session: { user: { id: 'me' } }, loading: false }),
 }));
 
-const countBroadcastRecipients = vi.hoisted(() => vi.fn(async () => 14));
+// Return type annotated explicitly, same reason as sendBroadcast below:
+// without it TS narrows to the literal `14` of this first value, and the
+// later `mockResolvedValue(null)` (needed for the failed-count tests) fails
+// to type-check against that literal.
+const countBroadcastRecipients = vi.hoisted(() =>
+  vi.fn(async (): Promise<number | null> => 14),
+);
 // Return type annotated explicitly: without it, TS narrows the mock's return
 // type to the literal `{ id: string; error: null }` of this first value, and
 // the later `mockResolvedValue({ id: null, error: 'not an organizer' })`
@@ -105,6 +111,47 @@ describe('broadcast compose screen', () => {
     fireEvent.click(screen.getByLabelText('Send'));
     fireEvent.click(await screen.findByLabelText('Yes, send it'));
     expect(await screen.findByText('not an organizer')).toBeTruthy();
+    // The implementation closes the confirmation before setting the error
+    // (setConfirming(false) then setError(...)) -- a stale "Yes, send it"
+    // left standing next to the error would read as the send still being
+    // pending. Pin that it actually closes, not just that the words appear.
+    expect(screen.queryByLabelText('Yes, send it')).toBeNull();
+  });
+
+  // countBroadcastRecipients resolves null on failure the same way it does
+  // while still loading -- recipients alone can't tell them apart. The
+  // screen must not read a permanent failure as "still working it out"
+  // forever: it must say so, offer a retry, and still let the host send.
+  it('says so and offers a retry when the recipient count fails', async () => {
+    countBroadcastRecipients.mockResolvedValue(null);
+    render(<Broadcast />);
+    expect(
+      await screen.findByText(/Could not work out who this reaches/),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Working out who this reaches/)).toBeNull();
+
+    countBroadcastRecipients.mockResolvedValue(7);
+    fireEvent.click(screen.getByLabelText('Try counting recipients again'));
+    expect(await screen.findByText(/7 members/)).toBeTruthy();
+  });
+
+  // A failed count must not block sending -- send_broadcast counts its own
+  // recipients server-side and never reads this number. It must also not
+  // paper over the failure with the old `${recipients ?? 'the'}` phrasing.
+  it('still lets the host send when the recipient count failed', async () => {
+    countBroadcastRecipients.mockResolvedValue(null);
+    await compose('Doors at seven', 'The side entrance is locked.');
+    await screen.findByText(/Could not work out who this reaches/);
+    fireEvent.click(screen.getByLabelText('Send'));
+    expect(
+      await screen.findByText('Send this without a confirmed recipient count?'),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByLabelText('Yes, send it'));
+    await waitFor(() =>
+      expect(sendBroadcast).toHaveBeenCalledWith(
+        'c1', null, 'Doors at seven', 'The side entrance is locked.',
+      ),
+    );
   });
 
   it('lets the member back out of the confirmation', async () => {

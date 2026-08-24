@@ -28,7 +28,17 @@ export default function Broadcast() {
 
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
+  // `recipients` alone can't tell "still working it out" apart from "the
+  // count failed" -- countBroadcastRecipients deliberately resolves null for
+  // both a call that hasn't landed yet and one that errored out (see its
+  // docstring in lib/broadcasts.ts). `recipientsReady` is the companion flag
+  // that splits those two, the same way app/notifications.tsx's `ready` +
+  // nullable `prefs` do, and app/clubs/[id]/venues.tsx's `loadFailed` does
+  // for a second independently-loaded resource. Without it, a permanent
+  // failure left the host staring at "Working out who this reaches…"
+  // forever, with no error and no way to retry.
   const [recipients, setRecipients] = useState<number | null>(null);
+  const [recipientsReady, setRecipientsReady] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,13 +46,29 @@ export default function Broadcast() {
   useEffect(() => {
     if (!clubId) return;
     let cancelled = false;
+    setRecipientsReady(false);
+    setRecipients(null);
     countBroadcastRecipients(clubId, targetEvent).then((count) => {
-      if (!cancelled) setRecipients(count);
+      if (cancelled) return;
+      setRecipients(count);
+      setRecipientsReady(true);
     });
     return () => {
       cancelled = true;
     };
   }, [clubId, targetEvent]);
+
+  // Bound to the "Try again" button in the failed-count card below. Flipping
+  // `recipientsReady` back to false immediately swaps that card back to the
+  // loading copy, which is also what removes the button from the tree -- so
+  // there is no window in which a second tap could start an overlapping
+  // retry while one is already in flight.
+  async function retryRecipients() {
+    setRecipientsReady(false);
+    const count = await countBroadcastRecipients(clubId, targetEvent);
+    setRecipients(count);
+    setRecipientsReady(true);
+  }
 
   if (loading) {
     return (
@@ -95,13 +121,35 @@ export default function Broadcast() {
       </Text>
 
       <Card>
-        <Text style={styles.help}>
-          {recipients === null
-            ? 'Working out who this reaches…'
-            : recipients === 1
+        {!recipientsReady ? (
+          <Text style={styles.help}>Working out who this reaches…</Text>
+        ) : recipients === null ? (
+          // A failed count does not block sending -- send_broadcast counts
+          // its own recipients server-side and never reads this number, so
+          // there is nothing this screen would be protecting by refusing.
+          // What it must not do is pretend to still be loading, which is
+          // the bug this replaces.
+          <>
+            <Text style={styles.help}>
+              Could not work out who this reaches. Sending still works -- it
+              just won't show a count first.
+            </Text>
+            <Button
+              variant="ghost"
+              big={false}
+              onPress={retryRecipients}
+              accessibilityLabel="Try counting recipients again"
+            >
+              Try again
+            </Button>
+          </>
+        ) : (
+          <Text style={styles.help}>
+            {recipients === 1
               ? 'This goes to 1 member, by email.'
               : `This goes to ${recipients} members, by email.`}
-        </Text>
+          </Text>
+        )}
       </Card>
 
       <TextField
@@ -129,7 +177,13 @@ export default function Broadcast() {
           <Text style={styles.confirmText}>
             {recipients === 1
               ? 'Send this to 1 member?'
-              : `Send this to ${recipients ?? 'the'} members?`}
+              : recipients !== null
+                ? `Send this to ${recipients} members?`
+                // recipients is null here whether the count is still
+                // loading (the host confirmed fast) or failed outright --
+                // either way there is no number to name, and this must not
+                // paper over that the way `${recipients ?? 'the'}` used to.
+                : 'Send this without a confirmed recipient count?'}
           </Text>
           <View style={styles.confirmActions}>
             <Button
