@@ -135,11 +135,14 @@ describe('countBroadcastRecipients', () => {
   // Distinct from the network-down case above: this is an RPC-level
   // refusal (data: null, error: {...}), not a thrown/rejected call. The
   // `if (error) return null` branch is currently masked by the fact that
-  // `data` would be null anyway and the `typeof data === 'number'` guard
-  // also returns null — so without this test, dropping that branch
-  // entirely would not turn any assertion red.
+  // `data` is deliberately a NUMBER here, not null. With `data: null` this
+  // test would pass whether or not the `if (error) return null` branch
+  // exists, because the `typeof data === 'number'` guard below it returns
+  // null for a null `data` anyway — the branch would be masked by the very
+  // test meant to pin it. A non-null `data` alongside an error is the only
+  // shape where deleting that branch changes the answer, from null to 5.
   it('resolves null on an explicit RPC-level failure', async () => {
-    rpc.mockResolvedValue({ data: null, error: { message: 'denied' } });
+    rpc.mockResolvedValue({ data: 5, error: { message: 'denied' } });
     await expect(countBroadcastRecipients('c1', null)).resolves.toBeNull();
   });
 });
