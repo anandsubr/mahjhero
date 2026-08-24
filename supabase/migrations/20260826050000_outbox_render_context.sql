@@ -159,19 +159,35 @@ as $$
      * stays null too, which is correct: nobody "cancelled" that occurrence,
      * it was dropped by shortening the series.
      *
-     * bk.booked_by is deliberately NOT added here. It is reachable through
-     * the same join, but for 'unseated' (20260825040000's
+     * Gated to `o.kind = 'event_cancelled'`, not left open to every kind.
+     * bk.cancelled_by is read live, at render time -- not snapshotted when
+     * the outbox row was queued -- and `waitlist_promoted` (20260825010000,
+     * 20260825100000) and `unseated` (20260825040000) both write
+     * {'booking_id': ...} with no actor key, the same payload shape this
+     * fallback targets. A promoted member's booking can be cancelled while
+     * their waitlist_promoted row is still waiting to drain -- the lease,
+     * backoff and quiet-hour holds can leave it queued for a while -- and
+     * an unscoped fallback would then name whoever cancelled the booking
+     * as the person who promoted them. Scoping to the one kind that
+     * actually wants this fact keeps the other kinds' "no actor" correctly
+     * null.
+     *
+     * bk.booked_by is deliberately NOT added here at all. It is reachable
+     * through the same join, but for 'unseated' (20260825040000's
      * remove_event_table) it would name the wrong person: booked_by is
      * whoever originally booked the seat, not the host who removed the
      * table, and that kind's payload carries no actor key precisely
      * because removing a table has no per-recipient actor to name.
-     * Payload keys still win over both: this fallback is checked last.
+     * Payload keys still win over the bk.cancelled_by fallback: it is
+     * checked last.
      */
     left join public.profiles pa
-           on pa.id::text = coalesce(o.payload->>'booked_by',
-                                     o.payload->>'declined_by',
-                                     o.payload->>'cancelled_by',
-                                     bk.cancelled_by::text)
+           on pa.id::text = coalesce(
+                o.payload->>'booked_by',
+                o.payload->>'declined_by',
+                o.payload->>'cancelled_by',
+                case when o.kind = 'event_cancelled'
+                     then bk.cancelled_by::text end)
    where o.id = any(p_ids);
 $$;
 

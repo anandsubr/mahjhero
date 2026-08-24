@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(21);
+select plan(22);
 
 insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-000000000001', 'alice@example.com'),
@@ -143,6 +143,31 @@ insert into public.notification_outbox
    'event_cancelled',
    jsonb_build_object('booking_id', 'b00c1234-0000-0000-0000-000000000001'),
    'ctx:4');
+
+/*
+ * A waitlist_promoted row whose booking has SINCE been cancelled. This is
+ * the race the actor fallback has to stay out of: bookings.cancelled_by is
+ * read live at render time, not snapshotted when the row was queued, and
+ * a promoted member's outbox row can sit for a while (lease, backoff,
+ * quiet-hour holds) before it drains. Reuses the same booking as the row
+ * above -- its cancelled_by is already set to Alice -- specifically to
+ * prove the fallback does NOT reach across kinds: the payload here is
+ * exactly what waitlist_promoted (20260825010000, 20260825100000) and
+ * unseated (20260825040000) both write, {'booking_id', ...} with no actor
+ * key, so an unscoped fallback would misname Alice as the person who
+ * promoted Bob off the waitlist. She didn't -- she cancelled the booking,
+ * unrelated to the promotion this row is about.
+ */
+insert into public.notification_outbox
+  (id, recipient_id, club_id, event_id, kind, payload, dedupe_key) values
+  ('0b0b0b0b-0000-0000-0000-000000000005',
+   'bbbbbbbb-0000-0000-0000-000000000002',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   'e1e1e1e1-0000-0000-0000-000000000001',
+   'waitlist_promoted',
+   jsonb_build_object('booking_id', 'b00c1234-0000-0000-0000-000000000001',
+                      'event_table_id', '7ab1e000-0000-0000-0000-000000000001'),
+   'ctx:5');
 
 -- ---------------------------------------------------------------------
 -- resolve_notify_channel. Every branch is email today; the shape is what
@@ -312,6 +337,18 @@ select is(
      array['0b0b0b0b-0000-0000-0000-000000000004'::uuid])),
   'Alice',
   'the host who cancelled the booking is named via bookings.cancelled_by'
+);
+
+-- The fallback must not reach across kinds: waitlist_promoted's payload is
+-- the same {'booking_id', ...} shape event_cancelled's fallback targets,
+-- and the booking it names has since been cancelled by Alice -- but Alice
+-- did not promote anyone, so actor_name has to stay null here rather than
+-- borrowing bookings.cancelled_by the way event_cancelled does.
+select is(
+  (select actor_name from public.outbox_render_context(
+     array['0b0b0b0b-0000-0000-0000-000000000005'::uuid])),
+  null::text,
+  'a waitlist_promoted row does not borrow the cancelling host as its actor'
 );
 
 select * from finish();
