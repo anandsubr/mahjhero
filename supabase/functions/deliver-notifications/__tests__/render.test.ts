@@ -1,0 +1,171 @@
+import { describe, expect, it } from 'vitest';
+import { FakeSender } from '../sender';
+import { renderMessage } from '../render';
+import type { OutboxKind, RenderRow } from '../types';
+
+const APP = 'https://app.example.test';
+
+function row(overrides: Partial<RenderRow> = {}): RenderRow {
+  return {
+    id: '0b0b0b0b-0000-0000-0000-000000000001',
+    kind: 'booked_by_friend',
+    payload: { booking_id: 'b00c1234-0000-0000-0000-000000000001' },
+    recipient_id: 'bbbbbbbb-0000-0000-0000-000000000002',
+    recipient_name: 'Bob',
+    recipient_email: 'bob@example.com',
+    channel: 'email',
+    club_id: 'c1c1c1c1-0000-0000-0000-000000000001',
+    club_name: 'Riverside',
+    event_id: 'e1e1e1e1-0000-0000-0000-000000000001',
+    event_title: 'Tuesday night',
+    event_starts_at: '2026-09-08T23:00:00Z',
+    club_timezone: 'America/New_York',
+    table_label: 'Table 2',
+    actor_name: 'Alice',
+    broadcast_subject: null,
+    broadcast_body: null,
+    created_at: '2026-09-01T10:00:00Z',
+    ...overrides,
+  };
+}
+
+const ALL_KINDS: OutboxKind[] = [
+  'booked_by_friend',
+  'booking_declined',
+  'booking_cancelled_by_host',
+  'waitlist_promoted',
+  'promotion_offer',
+  'promotion_offer_expired',
+  'unseated',
+  'event_cancelled',
+  'need_a_fourth',
+  'event_reminder',
+  'broadcast',
+];
+
+describe('renderMessage', () => {
+  // Nothing is allowed to render as a blank subject or an empty body. A
+  // kind added later without a template would otherwise ship as an email
+  // with no subject line and nobody would notice until a member did.
+  it.each(ALL_KINDS)('renders %s with a subject and a body', (kind) => {
+    const message = renderMessage(
+      row({
+        kind,
+        broadcast_subject: kind === 'broadcast' ? 'Doors open at seven' : null,
+        broadcast_body:
+          kind === 'broadcast' ? 'The side entrance is locked.' : null,
+        payload: kind === 'event_reminder' ? { offset_minutes: 120 } : {},
+      }),
+      APP,
+    );
+
+    expect(message.to).toBe('bob@example.com');
+    expect(message.subject.trim().length).toBeGreaterThan(0);
+    expect(message.text.trim().length).toBeGreaterThan(0);
+    expect(message.html).toContain('<table');
+  });
+
+  // The plain-text part is generated from the same body data, not scraped
+  // out of the HTML. A stray tag here means somebody stripped markup with
+  // a regex instead.
+  it.each(ALL_KINDS)('gives %s a text part with no markup', (kind) => {
+    const message = renderMessage(
+      row({
+        kind,
+        broadcast_subject: kind === 'broadcast' ? 'Doors open at seven' : null,
+        broadcast_body:
+          kind === 'broadcast' ? 'The side entrance is locked.' : null,
+        payload: kind === 'event_reminder' ? { offset_minutes: 120 } : {},
+      }),
+      APP,
+    );
+    expect(message.text).not.toMatch(/<[a-z/]/i);
+  });
+
+  it('names the person who acted', () => {
+    const message = renderMessage(row({ kind: 'booked_by_friend' }), APP);
+    expect(message.subject).toContain('Alice');
+  });
+
+  // The actor is nullable — a promotion is nobody's doing — so the copy
+  // must not read "undefined booked you a seat".
+  it('says something sensible when nobody acted', () => {
+    const message = renderMessage(
+      row({ kind: 'booking_cancelled_by_host', actor_name: null }),
+      APP,
+    );
+    expect(message.subject).not.toContain('null');
+    expect(message.text).not.toContain('undefined');
+  });
+
+  // The two default offsets want different words. "Tuesday night is
+  // tomorrow" and "Tuesday night starts soon" are not interchangeable.
+  it('words a day-ahead reminder differently from a two-hour one', () => {
+    const dayAhead = renderMessage(
+      row({ kind: 'event_reminder', payload: { offset_minutes: 1440 } }),
+      APP,
+    );
+    const soon = renderMessage(
+      row({ kind: 'event_reminder', payload: { offset_minutes: 120 } }),
+      APP,
+    );
+    expect(dayAhead.subject).not.toBe(soon.subject);
+  });
+
+  it('uses the host their own words for a broadcast', () => {
+    const message = renderMessage(
+      row({
+        kind: 'broadcast',
+        broadcast_subject: 'Doors open at seven',
+        broadcast_body: 'The side entrance is locked this week.',
+      }),
+      APP,
+    );
+    expect(message.subject).toBe('Doors open at seven');
+    expect(message.text).toContain('The side entrance is locked this week.');
+  });
+
+  // Every link has to be absolute https. Email clients do not follow the
+  // mahjhero:// scheme, so a relative or custom-scheme href is a dead link.
+  it('links absolutely, over https', () => {
+    const message = renderMessage(row({ kind: 'event_reminder' }), APP);
+    expect(message.html).toContain(`${APP}/clubs/`);
+    expect(message.html).not.toContain('mahjhero://');
+  });
+
+  // A club is named by its host and goes straight into an HTML document.
+  it('escapes anything a host typed', () => {
+    const message = renderMessage(
+      row({ club_name: 'Bell <script>alert(1)</script> Club' }),
+      APP,
+    );
+    expect(message.html).not.toContain('<script>');
+    expect(message.html).toContain('&lt;script&gt;');
+  });
+
+  // Reminders for a booked game cannot be switched off, so the footer must
+  // not offer a link that implies otherwise.
+  it('tells a member which messages they can silence', () => {
+    const reminder = renderMessage(row({ kind: 'event_reminder' }), APP);
+    const fourth = renderMessage(row({ kind: 'need_a_fourth' }), APP);
+    expect(reminder.text.toLowerCase()).toContain("can't be switched off");
+    expect(fourth.text).toContain(`${APP}/notifications`);
+  });
+});
+
+describe('FakeSender', () => {
+  it('records what it was given', async () => {
+    const sender = new FakeSender();
+    await sender.send(renderMessage(row(), APP));
+    expect(sender.sent).toHaveLength(1);
+    expect(sender.sent[0].to).toBe('bob@example.com');
+  });
+
+  it('rejects when told to, and records nothing', async () => {
+    const sender = new FakeSender(() => 'connection refused');
+    await expect(sender.send(renderMessage(row(), APP))).rejects.toThrow(
+      'connection refused',
+    );
+    expect(sender.sent).toHaveLength(0);
+  });
+});
