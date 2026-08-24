@@ -92,7 +92,30 @@ as $$
          c.name,
          o.event_id,
          e.title,
-         e.starts_at,
+         /*
+          * 20260825042000 (series shortening) writes event_cancelled rows
+          * with event_id = null on purpose -- the dropped occurrence is
+          * deleted in the same transaction, and an outbox row still
+          * pointing at it would cascade-delete right along with it. That
+          * migration carries the occurrence's starts_at in the payload
+          * for exactly this: so the fact survives the row that caused it.
+          * Guarded with pg_input_is_valid rather than a bare ::timestamptz
+          * cast -- most kinds carry no 'starts_at' key at all, and an
+          * unguarded cast raises 22P02 on a missing or malformed value,
+          * killing the whole batch over one oddly-shaped message.
+          *
+          * event_title is deliberately left NULL here, not backfilled the
+          * same way: the event row is gone and that payload never
+          * captured a title, so there is nothing to fall back to. The
+          * template layer already degrades to "A game" / "the game" for
+          * a null title.
+          */
+         coalesce(
+           e.starts_at,
+           case when pg_input_is_valid(o.payload->>'starts_at', 'timestamptz')
+                then (o.payload->>'starts_at')::timestamptz
+                end
+         ),
          c.timezone,
          t.label,
          pa.display_name,
@@ -122,11 +145,33 @@ as $$
      * The actor, whichever key this kind uses to name them. coalesce rather
      * than three joins because exactly one of these is ever present and the
      * templates only ever want "who did this".
+     *
+     * bk.cancelled_by is a fourth, lower-priority source, not a fourth
+     * payload key: cancel_event (20260825040000) sets bookings.cancelled_by
+     * to the host who cancelled but writes only {'booking_id': ...} into
+     * the payload, so event_cancelled rows from that path had no actor at
+     * all -- inconsistent with booking_cancelled_by_host, which duplicates
+     * its actor into the payload on purpose. bk is already joined on
+     * booking_id, so this reaches the same fact without a new join. The
+     * series-shortening event_cancelled rows (20260825042000) carry no
+     * booking_id that still resolves -- the booking row is cascade-deleted
+     * along with the occurrence -- so bk is null there and this fallback
+     * stays null too, which is correct: nobody "cancelled" that occurrence,
+     * it was dropped by shortening the series.
+     *
+     * bk.booked_by is deliberately NOT added here. It is reachable through
+     * the same join, but for 'unseated' (20260825040000's
+     * remove_event_table) it would name the wrong person: booked_by is
+     * whoever originally booked the seat, not the host who removed the
+     * table, and that kind's payload carries no actor key precisely
+     * because removing a table has no per-recipient actor to name.
+     * Payload keys still win over both: this fallback is checked last.
      */
     left join public.profiles pa
            on pa.id::text = coalesce(o.payload->>'booked_by',
                                      o.payload->>'declined_by',
-                                     o.payload->>'cancelled_by')
+                                     o.payload->>'cancelled_by',
+                                     bk.cancelled_by::text)
    where o.id = any(p_ids);
 $$;
 
