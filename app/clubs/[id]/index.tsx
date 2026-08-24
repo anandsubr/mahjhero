@@ -256,6 +256,27 @@ export default function ClubDetailScreen() {
         </Button>
       ) : null}
 
+      {mayInvite ? (
+        <Button
+          variant="secondary"
+          onPress={() => router.push(`/clubs/${id}/broadcast`)}
+          accessibilityLabel="Message members"
+        >
+          Message members
+        </Button>
+      ) : null}
+
+      {mayInvite ? (
+        <Button
+          variant="ghost"
+          big={false}
+          onPress={() => router.push(`/clubs/${id}/broadcasts`)}
+          accessibilityLabel="See sent messages"
+        >
+          Sent messages
+        </Button>
+      ) : null}
+
       {importedCount !== null ? (
         <Card>
           <Text style={styles.confirmation}>
