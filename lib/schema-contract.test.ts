@@ -79,6 +79,7 @@ import {
   updateEventSeries,
   updateEventTable,
 } from './events';
+import { BROADCAST_COLUMNS, fetchBroadcasts } from './broadcasts';
 import {
   archiveVenue,
   createVenue,
@@ -1739,3 +1740,99 @@ describe.runIf(reachable || required)(
     });
   },
 );
+
+describe.runIf(reachable || required)('broadcasts schema contract', () => {
+  let admin: SupabaseClient;
+  let userId: string;
+  let clubId: string;
+  let broadcastId: string;
+
+  beforeAll(async () => {
+    expect(
+      reachable,
+      `Local Supabase stack not reachable at ${local.url}. Run \`npx supabase start\`.`,
+    ).toBe(true);
+    // A signed-in caller: broadcasts_select_organizer only lets a host or
+    // co-organizer read a club's own broadcasts, and `select` on the table
+    // is granted to `authenticated` only, never `anon`.
+    ({ admin, userId } = await signInFreshUser());
+
+    const { data: club, error: clubError } = await admin
+      .from('clubs')
+      .insert({
+        name: 'Contract Club',
+        slug: `contract-club-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        created_by: userId,
+      })
+      .select('id')
+      .single();
+    expect(clubError, `seeding club failed: ${clubError?.message}`).toBeNull();
+    clubId = club!.id;
+
+    // 'host', not 'member' — broadcasts_select_organizer requires
+    // is_club_organizer, which only 'host' and 'co_organizer' satisfy.
+    const { error: memberError } = await admin.from('club_members').insert({
+      club_id: clubId,
+      profile_id: userId,
+      role: 'host',
+      status: 'active',
+    });
+    expect(memberError, `seeding club_members failed: ${memberError?.message}`).toBeNull();
+
+    // Seeded through the service-role client rather than send_broadcast —
+    // this suite is testing what the SELECT side hands back, not the RPC's
+    // own fan-out. event_id null (the whole-roster case) exercises the
+    // branch fetchBroadcasts's type declares as nullable.
+    const { data: broadcast, error: broadcastError } = await admin
+      .from('broadcasts')
+      .insert({
+        club_id: clubId,
+        event_id: null,
+        author_id: userId,
+        subject: 'Doors at seven',
+        body: 'Doors open at 7pm sharp this week, not the usual 7:30.',
+        recipient_count: 3,
+      })
+      .select('id')
+      .single();
+    expect(broadcastError, `seeding broadcast failed: ${broadcastError?.message}`).toBeNull();
+    broadcastId = broadcast!.id;
+  });
+
+  afterAll(async () => {
+    await supabase.auth.signOut();
+    if (admin) {
+      if (broadcastId) await admin.from('broadcasts').delete().eq('id', broadcastId);
+      if (clubId) await admin.from('club_members').delete().eq('club_id', clubId);
+      if (clubId) await admin.from('clubs').delete().eq('id', clubId);
+    }
+    if (admin && userId) await admin.auth.admin.deleteUser(userId);
+  });
+
+  it('answers with the shape lib/broadcasts.ts claims', async () => {
+    const rows = await fetchBroadcasts(clubId);
+    expect(rows).not.toBeNull();
+    expect(rows).toHaveLength(1);
+
+    const [row] = rows!;
+    // Every field the type declares, with the type it declares. This is the
+    // boundary Critical 1 lived in: both suites were green while
+    // `quiet_hours_start` arrived as "21:00:00" and the client expected
+    // "21:00", because neither suite crossed it.
+    expect(typeof row.id).toBe('string');
+    expect(typeof row.club_id).toBe('string');
+    expect(row.event_id).toBeNull();
+    expect(typeof row.subject).toBe('string');
+    expect(typeof row.body).toBe('string');
+    // int4, not a numeric arriving as a string.
+    expect(typeof row.recipient_count).toBe('number');
+    expect(Number.isNaN(Date.parse(row.created_at))).toBe(false);
+  });
+
+  it('selects every column the type declares and no others', () => {
+    const declared = BROADCAST_COLUMNS.split(',').map((c) => c.trim()).sort();
+    expect(declared).toEqual(
+      ['body', 'club_id', 'created_at', 'event_id', 'id', 'recipient_count', 'subject'].sort(),
+    );
+  });
+});

@@ -350,6 +350,9 @@ export async function seedClubWithEvent(profileId: string): Promise<{
   /** A table one short of a fourth, inside the 48-hour call window, for
    * the `event needs a fourth` baseline. */
   needsAFourthEventId: string;
+  /** One broadcast already sent to Riverside, for the `broadcast history`
+   * baseline. */
+  broadcastId: string;
 }> {
   const admin = adminClient('seed fixtures');
 
@@ -414,6 +417,27 @@ export async function seedClubWithEvent(profileId: string): Promise<{
       `seedClubWithEvent: membership insert failed: ${JSON.stringify(memberError)}`,
     );
   }
+
+  // One broadcast already sent, so `broadcast history` has a real row to
+  // screenshot rather than the empty state. event_id null — the
+  // whole-roster case — since nothing about that baseline needs the
+  // event-scoped variant.
+  const broadcast = need<{ id: string }>(
+    'broadcast insert',
+    await admin
+      .from('broadcasts')
+      .insert({
+        club_id: clubId,
+        event_id: null,
+        author_id: profileId,
+        subject: 'Doors at seven',
+        body: 'Doors open at 7pm sharp this week, not the usual 7:30.',
+        recipient_count: 3,
+      })
+      .select('id')
+      .single(),
+  );
+  const broadcastId = broadcast.id;
 
   const venues = need<{ id: string; name: string }[]>(
     'venue insert',
@@ -842,6 +866,7 @@ export async function seedClubWithEvent(profileId: string): Promise<{
     fullEventId,
     offerEventId,
     needsAFourthEventId,
+    broadcastId,
   };
 }
 

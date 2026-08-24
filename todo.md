@@ -98,6 +98,32 @@ booking, and the line now reads `${seats} ${seats === 1 ? 'seat' : 'seats'}`
 (`app/clubs/[id]/events/[eventId]/index.tsx:594`). Still unreachable through the
 UI — capacity is not editable anywhere — but it no longer lies if it ever is.
 
+### [ ] Turn push on
+
+`push_tokens` and `resolve_notify_channel` exist and every branch of the
+resolver returns `'email'`. Turning push on means: `expo-notifications` in
+the client, token registration on sign-in, one `Sender` implementation
+against Expo's push service, and the resolver's last line becoming
+`return pref::text`. Nothing in the queue, the preferences, the quiet
+hours, the retries or the templates changes.
+
+Needs an EAS dev build before any of it can be verified — the current
+suites are web-only and cannot reach a device delivery leg.
+
+### [ ] Nothing ingests bounces
+
+A hard bounce is invisible to the app: the SMTP relay knows and MahjHero
+does not. A dead address burns five attempts over two and a half hours and
+dead-letters, which is the right shape, but nobody is told and the address
+stays on the account. Worth a webhook once there is enough volume for it
+to matter.
+
+### [ ] One email per notifiable moment, no digesting
+
+A member whose group of four is cancelled by a host gets one email per
+person. At club scale this is tolerable. It is the first thing to
+reconsider if anybody complains about volume.
+
 ---
 
 ## Configure & verify
