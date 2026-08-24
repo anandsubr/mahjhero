@@ -4,7 +4,7 @@
 
 **Goal:** Drain `notification_outbox` to email, add event reminders and host broadcasts, so that MahjHero finally tells people the things it has been silently recording since plan 4.
 
-**Architecture:** `pg_cron` pings a Supabase Edge Function once a minute through `pg_net`. The function calls `claim_notification_batch()`, an RPC that expires stale rows, filters by each recipient's quiet hours and mutes, takes a five-minute lease on what remains, and returns rows already joined into render context. The function renders one branded HTML shell plus a plain-text alternative, sends over SMTP, and reports back through `mark_notifications_sent()` / `mark_notifications_failed()`. Two new producers feed the queue: a 15-minute reminder job reading `clubs.reminder_offsets`, and `send_broadcast()` fanning a stored broadcast out to a roster or to one event's booked members.
+**Architecture:** `pg_cron` pings a Supabase Edge Function once a minute through `pg_net`. The function calls `claim_notification_batch()`, an RPC that expires stale rows, filters by each recipient's quiet hours and mutes, takes a five-minute lease on what remains, and returns rows already joined into render context. The function renders one branded HTML shell plus a plain-text alternative, sends over SMTP, one connection reused across the whole batch, and reports back through `mark_notifications_sent()` / `mark_notifications_failed()`. A send that looks like the relay itself — a dropped connection, or a transient 4xx reply — does not burn an attempt on the row it happened to land on: the loop breaks early and `release_notification_claims()` refunds every row the batch claimed but never got to, including the one that triggered the break, up to a per-row escape hatch that stops sparing a row once it has triggered three breaks in a row. Two new producers feed the queue: a 15-minute reminder job reading `clubs.reminder_offsets`, and `send_broadcast()` fanning a stored broadcast out to a roster or to one event's booked members.
 
 **Tech Stack:** Postgres 15 (plpgsql, `pg_cron`, `pg_net`, pgTAP), Supabase Edge Functions (Deno), `denomailer` for SMTP, React Native / Expo Router with `react-native-web`, Vitest, Playwright.
 
@@ -38,6 +38,8 @@
 | `20260826070000_mark_notifications.sql` | `mark_notifications_sent`, `mark_notifications_failed` |
 | `20260826080000_queue_event_reminders.sql` | The reminder producer and its cron job |
 | `20260826090000_schedule_notification_drain.sql` | `app_config`, `pg_net`, the one-minute drain job |
+| `20260826100000_expire_preexisting_outbox_backlog.sql` | Expires the pre-drain backlog that predates this plan, one time only |
+| `20260826110000_release_notification_claims.sql` | `connection_break_count`, `outbox_connection_break_limit()`, `release_notification_claims()` — refunds a batch's claimed-but-unattempted rows on a connection-class break, with a per-row escape hatch |
 
 **Edge Function** (`supabase/functions/deliver-notifications/`)
 

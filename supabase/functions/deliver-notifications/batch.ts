@@ -97,13 +97,20 @@ function looksLikeTransientReply(message: string): boolean {
  *
  * Every alternative is wrapped in `\b...\b`: `dns` and `not connected` are
  * short enough to occur as substrings of something that has nothing to do
- * with a connection failure at all — a denomailer validation error naming
- * an address like `dnsadmin@club.example` contains `dns` with no word
- * boundary on either side of it, so `\bdns\b` correctly does not match it,
- * while it still matches a genuine standalone "DNS resolution failed".
- * Without the boundary, that one address would have `break`d every batch
- * it led forever — see `release_notification_claims`'s escape hatch below
- * for the backstop against a row that manages this some other way.
+ * with a connection failure at all. That only narrows the gap, though, and
+ * on its own is not the fix — `\b` is a boundary between a word character
+ * and a non-word one, and `@`, `<`, `>`, `.` and whitespace are all
+ * non-word characters, so `\bdns\b` still matches "dns" in a real relay
+ * rejection like `450 4.1.1 <dns@club.example>: Recipient address
+ * rejected`, or in an address at `mail.dns.example.com` — punctuation on
+ * both sides is all a word boundary needs. It only stops matching a `dns`
+ * glued directly to other letters with nothing between them, e.g.
+ * `dnsadmin@club.example`. So this boundary check is a narrowing, not a
+ * guarantee: it does not, by itself, keep a row whose address happens to
+ * contain "dns" from tripping this check. What actually bounds the damage
+ * is `release_notification_claims`'s escape hatch below — the same row
+ * doing this three times in a row stops being spared and dead-letters for
+ * real instead of leading every batch behind it forever.
  */
 function looksLikeConnectionFailure(message: string): boolean {
   return /\b(connection refused|connection reset|connection aborted|broken pipe|not connected|network (?:is )?unreachable|host (?:is )?unreachable|timed? ?out|dns|lookup address|name or service not known|connection is not secure|unexpected eof|econnrefused|econnreset|etimedout|enotfound|ehostunreach|enetunreach)\b/i.test(
@@ -257,16 +264,31 @@ export async function deliverBatch(
       }
     }
   } finally {
-    // Always, however the loop ended — every row sent, a row rejected, or
-    // an early break above. A sender that reused one connection across the
-    // batch (see smtp.ts) must not leak it because the loop stopped early.
-    await sender.close?.();
+    // Both of these must run however the loop ended — every row sent, a
+    // row rejected, or an early break above (`report.release` can itself
+    // throw: `supabase.rpc` throws on a hard fetch failure rather than
+    // returning `{ error }` the way it does for an RPC-level failure, and a
+    // break is the path most likely to coincide with exactly that kind of
+    // flaky network). `markSent` used to sit after this `finally` instead
+    // of inside it, which meant a `release` throw mid-batch — 30 rows sent
+    // cleanly, row 31 breaks, `release` throws — unwound straight out of
+    // `deliverBatch` and skipped it entirely, losing the record that the
+    // first 30 rows had already gone out. They would have been mailed a
+    // second time on the next tick. Ordered ahead of `sender.close()`: the
+    // sent rows are exactly as sent whether or not the close that follows
+    // succeeds, so recording them first is strictly safer, and a nested
+    // try/finally keeps a `markSent` failure from also skipping `close`
+    // and leaking a sender that reused one connection across the batch
+    // (see smtp.ts).
+    try {
+      // One call for the whole batch, and skipped entirely when nothing
+      // went — marking an empty array is a wasted round trip on every
+      // quiet minute, which is most of them.
+      if (sentIds.length > 0) await report.markSent(sentIds);
+    } finally {
+      await sender.close?.();
+    }
   }
-
-  // One call for the whole batch, and skipped entirely when nothing went —
-  // marking an empty array is a wasted round trip on every quiet minute,
-  // which is most of them.
-  if (sentIds.length > 0) await report.markSent(sentIds);
 
   return { sent: sentIds.length, failed };
 }

@@ -565,6 +565,37 @@ describe('deliverBatch', () => {
     ]);
   });
 
+  // Round 3's regression guard: `supabase.rpc` throws on a hard fetch
+  // failure rather than returning `{ error }` the way it does for an
+  // RPC-level one, and `report.release` runs right on the break path — the
+  // one most likely to coincide with exactly that kind of flaky network.
+  // `markSent` used to sit after the loop's try/finally rather than inside
+  // it, so a `release` throw here used to unwind straight out of
+  // `deliverBatch` and skip `markSent` entirely — the rows already sent
+  // earlier in the same batch would never be recorded, and would be mailed
+  // a second time on the next tick.
+  it('still marks earlier rows sent, and still closes the sender, when report.release throws', async () => {
+    const rows = [row({ id: 'one' }), row({ id: 'two', recipient_email: 'bad@example.com' })];
+    const sender = new ClosingFakeSender((message) =>
+      message.to === 'bad@example.com' ? 'connect ECONNREFUSED 127.0.0.1:25' : null,
+    );
+    const sentIds: string[] = [];
+    const report: Report = {
+      markSent: async (ids) => {
+        sentIds.push(...ids);
+      },
+      markFailed: async () => {},
+      release: async () => {
+        throw new Error('fetch failed');
+      },
+    };
+
+    await expect(deliverBatch(rows, sender, APP, report)).rejects.toThrow('fetch failed');
+
+    expect(sentIds).toEqual(['one']);
+    expect(sender.closeCalls).toBe(1);
+  });
+
   it('closes the sender once after a batch that sends everything cleanly', async () => {
     const rows = [row({ id: 'one' }), row({ id: 'two' })];
     const sender = new ClosingFakeSender();

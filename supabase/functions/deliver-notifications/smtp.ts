@@ -1,4 +1,5 @@
 import { SMTPClient } from 'https://deno.land/x/denomailer@1.6.0/mod.ts';
+import { PooledConnection } from './pooled-connection.ts';
 import type { Sender } from './sender.ts';
 import type { Message } from './types.ts';
 
@@ -79,7 +80,16 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
  * secret rather than a dependency.
  */
 export class SmtpSender implements Sender {
-  private client: SMTPClient | null = null;
+  /**
+   * Owns the reuse-across-a-batch / discard-on-failure state machine (see
+   * pooled-connection.ts) — this class supplies only how to open a client
+   * and how to tear one down, both denomailer-specific and therefore kept
+   * here rather than in the dependency-free class that composes them.
+   */
+  private readonly connection = new PooledConnection<SMTPClient>(
+    () => this.createClient(),
+    (client) => client.close(),
+  );
 
   constructor(private readonly config: SmtpConfig) {}
 
@@ -97,11 +107,12 @@ export class SmtpSender implements Sender {
    *
    * Lazy rather than opened in the constructor so a batch that claims zero
    * rows — most ticks, in a club-scale product — never dials the relay at
-   * all.
+   * all. The laziness and the reuse-across-a-batch caching both now live in
+   * `connection` (see above); this method only ever builds a brand new
+   * client, called by `connection.get()` the first time and again after any
+   * `connection.discard()`.
    */
-  private getClient(): SMTPClient {
-    if (this.client) return this.client;
-
+  private createClient(): SMTPClient {
     /*
      * denomailer refuses to finish the handshake at all — for every
      * message, regardless of whether credentials are involved — unless the
@@ -156,7 +167,7 @@ export class SmtpSender implements Sender {
       );
     }
 
-    this.client = new SMTPClient({
+    return new SMTPClient({
       connection: {
         hostname: this.config.host,
         port: this.config.port,
@@ -171,11 +182,10 @@ export class SmtpSender implements Sender {
       },
       debug: { allowUnsecure },
     });
-    return this.client;
   }
 
   async send(message: Message): Promise<void> {
-    const client = this.getClient();
+    const client = this.connection.get();
     try {
       // Bounds both the connect and the SMTP exchange: denomailer awaits
       // its own lazy connect promise inside `send()` (see `withTimeout`'s
@@ -222,26 +232,28 @@ export class SmtpSender implements Sender {
        * failure that happens IN data mode makes denomailer close the raw
        * socket itself (`this.#connection.conn?.close()`, via a
        * `queueMicrotask`) without this class ever finding out -- `client`
-       * above stays the same object, and `this.client` below still points
-       * at it, so the next `send()` would throw Deno's own "Bad resource
-       * ID" against an already-closed connection instead.
+       * above stays the same object, and `connection` would still hand it
+       * back on the next `get()` call, so the next `send()` would throw
+       * Deno's own "Bad resource ID" against an already-closed connection
+       * instead.
        *
        * Both are fixed the same way: never hand the next `send()` call a
        * connection whose protocol state a failure may have left
        * inconsistent. Discard it unconditionally, on any failure, so the
-       * next `send()` reopens fresh through `getClient()` below -- the
-       * happy-path reuse above this `try` is untouched, since this only
-       * ever runs after a `send` has already thrown.
+       * next `send()` reopens fresh through `createClient()` above -- the
+       * happy-path reuse in `connection.get()` is untouched, since this
+       * only ever runs after a `send` has already thrown. See
+       * pooled-connection.ts for the discard/reopen state machine itself,
+       * and its own tests for the guard this comment used to be the only
+       * evidence of.
        */
-      this.client = null;
-      try {
-        await client.close();
-      } catch {
-        // Best-effort. denomailer may have already closed this connection
-        // itself (the data-mode case above), so a second close throwing
-        // is expected, not news -- the caller is already about to see the
-        // send failure that actually matters.
-      }
+      await this.connection.discard();
+      // Best-effort close of the discarded client: denomailer may have
+      // already closed this connection itself (the data-mode case above),
+      // so a failure here is expected, not news -- the caller is already
+      // about to see the send failure that actually matters, which is why
+      // `discard` swallows a teardown failure silently rather than logging
+      // one for every ordinary send rejection.
       throw cause;
     }
   }
@@ -253,20 +265,13 @@ export class SmtpSender implements Sender {
    * handshake this class exists to avoid right back in.
    */
   async close(): Promise<void> {
-    const client = this.client;
-    this.client = null;
-    if (!client) return;
-    try {
-      // A connection left open survives the invocation in Deno Deploy and
-      // the relay eventually refuses new ones.
-      await client.close();
-    } catch (closeError) {
+    await this.connection.discard((closeError) => {
       // Every message this connection carried has already been reported
       // through `report.markSent`/`markFailed` by the time this runs — a
       // close error changes none of that, so it is logged and swallowed
       // rather than thrown out of a `finally`, where it would replace
       // whatever the batch loop was already unwinding.
       console.error('smtp close failed', closeError);
-    }
+    });
   }
 }

@@ -843,6 +843,23 @@ Nothing in the automated suites covers step 5. The claim, the backoff, the
 quiet hours and the templates are all tested; that an SMTP connection
 succeeds is not, and cannot be without a mail server in CI.
 
+`smtp.ts` also reuses one SMTP connection across a whole batch rather than
+opening one per message, which is faster but means a failed send has to
+leave that connection in a state the next `send()` can trust — denomailer
+does not reset its transaction after a failure, so without teardown a
+single rejected address would cascade a false failure through every row
+behind it. The reuse/discard state machine that guards against this is
+pulled out of `smtp.ts` into `pooled-connection.ts` specifically so Vitest
+can exercise it directly (`smtp.ts` itself stays invisible to Vitest, see
+above); `render.test.ts`'s `ConnectionPoisoningFakeSender` additionally
+pins the failure shape the fix prevents from ever reaching `deliverBatch`
+in production. `batch.ts`'s loop also distinguishes an address's own 5xx
+rejection from a connection-shaped failure or a transient 4xx reply — the
+latter two break the batch early rather than burning an attempt on every
+row behind them, refunded via the `release_notification_claims()` RPC
+(migration `20260826110000`), which also bounds how long the same
+poisoned-looking row can keep leading a batch for free.
+
 Deploying it is two commands and is **not** part of `supabase db push` —
 this is the first Edge Function in the repository, so a migration landing
 without the function landing leaves the cron job posting into nothing:

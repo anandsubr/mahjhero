@@ -38,13 +38,39 @@ alter table public.notification_outbox
 
 /*
  * The escape hatch findings 3 and 4 both call for: without one, a row that
- * deterministically produces a connection- or 4xx-shaped error every time
- * it is tried — the exact scenario `looksLikeConnectionFailure`'s
- * `dnsadmin@club.example` example describes — gets refunded forever,
- * every tick, and being oldest-due, leads every batch behind it forever
- * too. Small on purpose: three genuine relay hiccups in a row against the
- * SAME row, coincidentally, is already a stretch; a fourth is treated as
- * "this row" rather than "the relay" being the more likely explanation.
+ * keeps triggering a break gets refunded forever, every tick, and being
+ * oldest-due, leads every batch behind it forever too.
+ *
+ * Read literally, "the same row keeps triggering a break" sounds like it
+ * names a poison row — one whose own address deterministically produces a
+ * connection- or 4xx-shaped error, the `dnsadmin@club.example` shape
+ * `looksLikeConnectionFailure` is worried about. That case exists, but it
+ * is not the common one. `claim_notification_batch` orders by
+ * `next_attempt_at, created_at`, and every released row -- spared or
+ * triggering -- gets the same `now() + 5 minutes` lease. So during a real
+ * relay outage, the row that trips this three times in a row is simply
+ * whichever row is oldest-due when the outage starts: it leads every batch
+ * for the outage's duration not because anything is wrong with it, but
+ * because it is first in line and the relay is down for everyone behind
+ * it too. Three breaks at 09:00, 09:05 and 09:10 dead-letters that
+ * innocent row with a `last_error` describing a relay problem it had
+ * nothing to do with, once per roughly 75 minutes of continuous outage.
+ *
+ * That is still a large improvement on the alternative this replaced —
+ * dead-lettering the entire batch on every tick an outage lasts — and
+ * there is no cheap way to tell the two cases apart from inside this
+ * function: during an outage the head-of-queue row genuinely is the one
+ * that throws, the same as a real poison row would. See `todo.md` for the
+ * one known way to tell them apart (trying one more row after a break,
+ * before giving up on the row that triggered it) and why it was not built
+ * here.
+ *
+ * Small on purpose: three genuine relay hiccups in a row against the SAME
+ * row, coincidentally, is already a stretch; a fourth is treated as "this
+ * row" rather than "the relay" being the more likely explanation. That
+ * reasoning is sound for an actual poison row and is what makes the
+ * head-of-queue false positive above only a once-per-75-minutes cost
+ * rather than a constant one.
  */
 create function public.outbox_connection_break_limit()
 returns int
@@ -89,9 +115,20 @@ begin
      and sent_at is null and failed_at is null and expired_at is null
   returning connection_break_count into v_break_count;
 
-  -- Already terminal (sent/failed/expired) by the time this ran, most
-  -- likely an at-least-once retry of this same RPC call arriving after the
-  -- first one already landed. Nothing left to release.
+  -- Already terminal (sent/failed/expired) by the time this ran -- most
+  -- plausibly a duplicate call landing after an earlier one already
+  -- finished it. Nothing left to release.
+  --
+  -- This guard only makes a duplicate call safe once the triggering row
+  -- has gone terminal; it does not make the function idempotent in
+  -- general. A duplicate call that lands while the row is still pending
+  -- runs the `greatest(attempts - 1, 0)` refund again on top of the first
+  -- one -- a row at attempts = 3 ends up refunded to 1, not left at 2 the
+  -- way a truly idempotent retry would leave it. `outbox_connection_break_limit`
+  -- being small (3) keeps the blast radius of a double-refund bounded even
+  -- in that case. Real risk is low: supabase-js does not retry RPC calls on
+  -- its own, so a second call here would need a genuine duplicate delivery
+  -- at the network layer, not merely a client-side retry.
   if v_break_count is null then
     return;
   end if;
@@ -105,10 +142,11 @@ begin
     -- it outright if this was already its last attempt), and the streak
     -- resets so a row that later recovers gets a fresh run of free passes
     -- rather than starting pre-tripped.
+    -- mark_notifications_failed (re-created below, in this same migration)
+    -- already resets connection_break_count to 0 on this same row as part
+    -- of its own update, so there is nothing left for this function to do
+    -- to it.
     perform public.mark_notifications_failed(p_triggering_id, p_triggering_error);
-    update public.notification_outbox
-       set connection_break_count = 0
-     where id = p_triggering_id;
   else
     update public.notification_outbox
        set attempts        = greatest(attempts - 1, 0),
