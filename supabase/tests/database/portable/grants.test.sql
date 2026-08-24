@@ -596,7 +596,9 @@ select is(
        'public.place_booking(uuid, uuid)',
        'public.call_for_a_fourth(uuid)',
        'public.event_seating(uuid)',
-       'public.my_upcoming_bookings()'
+       'public.my_upcoming_bookings()',
+       'public.broadcast_recipient_count(uuid, uuid)',
+       'public.send_broadcast(uuid, uuid, text, text)'
      ]) as f
    ) expected
    where not exists (
@@ -655,7 +657,9 @@ select is(
          'public.place_booking(uuid, uuid)',
          'public.call_for_a_fourth(uuid)',
          'public.event_seating(uuid)',
-         'public.my_upcoming_bookings()'
+         'public.my_upcoming_bookings()',
+         'public.broadcast_recipient_count(uuid, uuid)',
+         'public.send_broadcast(uuid, uuid, text, text)'
        ]) as f
        where to_regprocedure(f) = p.oid::regprocedure
      )),
