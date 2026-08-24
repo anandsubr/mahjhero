@@ -8,6 +8,9 @@ import type { SeatOccupant, SkillTier } from '../lib/bookings';
 import { seatsFreeLabel, seatsRemaining } from '../lib/bookings';
 import { colors, space, type } from '../lib/theme';
 
+/** Only what SeatGrid's "Move to {table}" buttons need — not the full EventTable. */
+type SeatableTable = { id: string; label: string };
+
 const TIER_LABELS: Record<SkillTier, string> = {
   beginner: 'Beginner',
   intermediate: 'Intermediate',
@@ -24,6 +27,17 @@ type Props = {
   needsFourth?: boolean;
   /** Organizer controls, injected by the event screen. */
   children?: ReactNode;
+  /**
+   * Organizer seat management, forwarded straight through to SeatGrid — see
+   * that component's own docstring for the full contract. All five are
+   * supplied together by an organizer caller (the event screen) and omitted
+   * together for a member, exactly like `onTakeSeat` above.
+   */
+  otherTables?: SeatableTable[];
+  openBookingId?: string | null;
+  onToggleManage?: (bookingId: string) => void;
+  onMove?: (bookingId: string, tableId: string) => void;
+  onRemove?: (bookingId: string) => void;
 };
 
 /**
@@ -49,6 +63,11 @@ export default function TableCard({
   busy = false,
   needsFourth = false,
   children,
+  otherTables,
+  openBookingId,
+  onToggleManage,
+  onMove,
+  onRemove,
 }: Props) {
   const seated = occupants.filter((o) => o.status === 'confirmed');
   const free = seatsRemaining(table.capacity, seated.length);
@@ -87,6 +106,11 @@ export default function TableCard({
         onTakeSeat={onTakeSeat}
         busy={busy}
         needsFourth={needsFourth}
+        otherTables={otherTables}
+        openBookingId={openBookingId}
+        onToggleManage={onToggleManage}
+        onMove={onMove}
+        onRemove={onRemove}
       />
 
       <Text style={styles.free}>{seatsFreeLabel(free)}</Text>

@@ -288,6 +288,36 @@ describe('member view: what is shown, and what is not', () => {
     expect(screen.queryByText('Reset to the series')).toBeNull();
   });
 
+  // The seat-tap redesign's other half: a plain member's occupied seat is
+  // not a button at all (no accessibilityRole, no aria-expanded, no click
+  // handler) -- not merely "disabled". A rendered `Pressable` a member's
+  // tap silently no-ops would still be a lie about what the seat is; this
+  // asserts the control itself doesn't exist for them.
+  it('does not let a plain member manage anyone\'s seat', async () => {
+    fetchEventTables.mockResolvedValue([TABLE_1]);
+    fetchEventSeating.mockResolvedValue([
+      {
+        booking_id: 'booking-1',
+        group_id: 'group-1',
+        profile_id: 'p1',
+        display_name: 'Ravi K.',
+        skill_level: null,
+        event_table_id: 'table-1',
+        status: 'confirmed' as const,
+        booked_by: 'p1',
+        booked_by_name: 'Ravi K.',
+        group_status: 'confirmed' as const,
+        waitlist_position: null,
+        created_at: '2026-08-20T10:00:00Z',
+      },
+    ]);
+    render(<EventScreen />);
+    expect(await screen.findByText('Ravi K.')).toBeTruthy();
+    expect(screen.queryByLabelText("Manage Ravi K.'s seat")).toBeNull();
+    expect(screen.queryByText('Move to Table 2')).toBeNull();
+    expect(screen.queryByLabelText('Remove Ravi K. from this game')).toBeNull();
+  });
+
   // Written when this was the core requirement of the task that shipped
   // this screen: no booking affordance and no "coming soon" badge anywhere,
   // for anyone. Task 10 has since added real booking -- an empty seat's
@@ -419,7 +449,7 @@ describe('organizer view', () => {
     ).toBe('false');
   });
 
-  describe('HostSeating: wired into the event screen', () => {
+  describe('seat-tap host controls: wired into the event screen', () => {
     const TABLE_2 = {
       id: 'table-2',
       label: 'Table 2',
@@ -443,6 +473,16 @@ describe('organizer view', () => {
       created_at: '2026-08-20T10:00:00Z',
     };
 
+    const SEATED_AT_TABLE_2 = {
+      ...SEATED,
+      booking_id: 'booking-3',
+      profile_id: 'p3',
+      display_name: 'Priya Nair',
+      event_table_id: 'table-2',
+      booked_by: 'p3',
+      booked_by_name: 'Priya Nair',
+    };
+
     const UNSEATED = {
       ...SEATED,
       booking_id: 'booking-2',
@@ -453,45 +493,126 @@ describe('organizer view', () => {
       booked_by_name: 'Mei L.',
     };
 
+    // Every control on this screen shares one `busy` flag, which a click
+    // sets true for the duration of its own request-plus-reload and which
+    // a disabled `<button>` genuinely blocks at the DOM level in jsdom
+    // (unlike a bare `disabled` style). `fetchEventSeating`'s call count
+    // only proves `load()` has STARTED, not that React has committed
+    // `busy: false` back to the DOM — so each step below waits on the
+    // next control's own `aria-disabled` attribute, the actual precondition
+    // for its click to do anything, rather than racing that commit.
+    async function waitEnabled(label: string) {
+      await vi.waitFor(() =>
+        expect(
+          screen.getByLabelText(label).getAttribute('aria-disabled'),
+        ).not.toBe('true'),
+      );
+      return screen.getByLabelText(label);
+    }
+
     it('lets the host seat an unplaced booking, move a seated player, and remove them from the game', async () => {
       fetchEventTables.mockResolvedValue([TABLE_1, TABLE_2]);
       fetchEventSeating.mockResolvedValue([SEATED, UNSEATED]);
       render(<EventScreen />);
       await screen.findByText('Thursday Mahjong');
 
-      // Every control on this screen shares one `busy` flag, which a click
-      // sets true for the duration of its own request-plus-reload and which
-      // a disabled `<button>` genuinely blocks at the DOM level in jsdom
-      // (unlike a bare `disabled` style). `fetchEventSeating`'s call count
-      // only proves `load()` has STARTED, not that React has committed
-      // `busy: false` back to the DOM — so each step below waits on the
-      // next button's own `aria-disabled` attribute, the actual precondition
-      // for its click to do anything, rather than racing that commit.
-      async function waitEnabled(label: string) {
-        await vi.waitFor(() =>
-          expect(
-            screen.getByLabelText(label).getAttribute('aria-disabled'),
-          ).not.toBe('true'),
-        );
-        return screen.getByLabelText(label);
-      }
-
-      // "Seat Mei L. at Table 1" now comes from WaitlistPanel's "Coming, not
-      // yet seated" section, not from a table's own HostSeating — see the
-      // duplicate-rendering test below for why that moved.
+      // "Seat Mei L. at Table 1" comes from WaitlistPanel's "Coming, not yet
+      // seated" section, unaffected by the seat-tap redesign — Mei has no
+      // seat to tap in the first place.
       fireEvent.click(await waitEnabled('Seat Mei L. at Table 1'));
       await vi.waitFor(() =>
         expect(placeBooking).toHaveBeenCalledWith('booking-2', 'table-1'),
       );
 
+      // Ravi K. DOES have a seat, so moving or removing him now goes
+      // through the seat grid's own tap panel: "Move to …" / "Remove from
+      // game" are not on screen at all until his seat is tapped open. The
+      // mocked `fetchEventSeating` never changes what it resolves to, so
+      // Ravi still renders seated at Table 1 after each reload below —
+      // `hostPlace`/`hostRemove` close whatever panel was open (see
+      // index.tsx), so his seat has to be re-opened before each action.
+      fireEvent.click(await waitEnabled("Manage Ravi K.'s seat"));
       fireEvent.click(await waitEnabled('Move Ravi K. to Table 2'));
       await vi.waitFor(() =>
         expect(placeBooking).toHaveBeenCalledWith('booking-1', 'table-2'),
       );
 
+      fireEvent.click(await waitEnabled("Manage Ravi K.'s seat"));
       fireEvent.click(await waitEnabled('Remove Ravi K. from this game'));
       await vi.waitFor(() =>
         expect(cancelBooking).toHaveBeenCalledWith('booking-1'),
+      );
+    });
+
+    it('reveals Move/Remove only after tapping the seat, and hides them again once tapped shut', async () => {
+      fetchEventTables.mockResolvedValue([TABLE_1, TABLE_2]);
+      fetchEventSeating.mockResolvedValue([SEATED]);
+      render(<EventScreen />);
+      await screen.findByText('Thursday Mahjong');
+
+      expect(screen.queryByText('Move to Table 2')).toBeNull();
+      expect(screen.queryByLabelText('Remove Ravi K. from this game')).toBeNull();
+      expect(
+        screen.getByLabelText("Manage Ravi K.'s seat").getAttribute('aria-expanded'),
+      ).toBe('false');
+
+      fireEvent.click(screen.getByLabelText("Manage Ravi K.'s seat"));
+      expect(screen.getByLabelText('Move Ravi K. to Table 2')).toBeTruthy();
+      expect(screen.getByLabelText('Remove Ravi K. from this game')).toBeTruthy();
+      expect(
+        screen.getByLabelText("Manage Ravi K.'s seat").getAttribute('aria-expanded'),
+      ).toBe('true');
+
+      fireEvent.click(screen.getByLabelText("Manage Ravi K.'s seat"));
+      expect(screen.queryByLabelText('Move Ravi K. to Table 2')).toBeNull();
+      expect(screen.queryByLabelText('Remove Ravi K. from this game')).toBeNull();
+    });
+
+    // The whole-screen version of "only one panel open at a time": Ravi and
+    // Priya sit at DIFFERENT tables, each its own SeatGrid instance, so this
+    // is the one place that exercises `openBookingId` actually being shared
+    // state rather than something each table tracked for itself.
+    it('closes one table\'s open seat panel when another table\'s seat is tapped open', async () => {
+      fetchEventTables.mockResolvedValue([TABLE_1, TABLE_2]);
+      fetchEventSeating.mockResolvedValue([SEATED, SEATED_AT_TABLE_2]);
+      render(<EventScreen />);
+      await screen.findByText('Thursday Mahjong');
+
+      fireEvent.click(screen.getByLabelText("Manage Ravi K.'s seat"));
+      expect(screen.getByLabelText('Move Ravi K. to Table 2')).toBeTruthy();
+
+      fireEvent.click(screen.getByLabelText("Manage Priya Nair's seat"));
+      expect(screen.queryByLabelText('Move Ravi K. to Table 2')).toBeNull();
+      expect(
+        screen.getByLabelText("Manage Ravi K.'s seat").getAttribute('aria-expanded'),
+      ).toBe('false');
+      expect(screen.getByLabelText('Move Priya Nair to Table 1')).toBeTruthy();
+      expect(
+        screen.getByLabelText("Manage Priya Nair's seat").getAttribute('aria-expanded'),
+      ).toBe('true');
+    });
+
+    // An organizer is also a member — the empty-seat "book/move yourself"
+    // behaviour already treats an organizer's own booking like anyone
+    // else's, and this deliberately does the same rather than special-
+    // casing "your own seat" as un-tappable. `youId`/`isYou` only ever
+    // change the DISPLAYED name ("You" vs. the real one); `seat.name` (the
+    // real display name) is what accessibility labels and `onMove`/
+    // `onRemove` always use underneath, organizer or not.
+    it("lets the host manage their own seat, the same as anybody else's", async () => {
+      fetchEventTables.mockResolvedValue([TABLE_1, TABLE_2]);
+      fetchEventSeating.mockResolvedValue([
+        { ...SEATED, booking_id: 'booking-5', profile_id: 'test-user', display_name: 'Ada' },
+      ]);
+      render(<EventScreen />);
+      await screen.findByText('Thursday Mahjong');
+
+      fireEvent.click(await waitEnabled("Manage Ada's seat"));
+      expect(screen.getByLabelText('Move Ada to Table 2')).toBeTruthy();
+
+      fireEvent.click(await waitEnabled('Remove Ada from this game'));
+      await vi.waitFor(() =>
+        expect(cancelBooking).toHaveBeenCalledWith('booking-5'),
       );
     });
 
@@ -523,8 +644,9 @@ describe('organizer view', () => {
       expect(screen.queryByLabelText('Unseat Ravi K.')).toBeNull();
     });
 
-    // canCallForAFourth is computed by the screen, not HostSeating itself —
-    // this is the one place that computation is actually exercised.
+    // canCallForAFourth is computed and rendered directly by the screen (no
+    // separate component anymore — see index.tsx) — this is the one place
+    // that computation is actually exercised.
     // Mirrors need_a_fourth_stage's own occupancy check
     // (20260825050000_need_a_fourth.sql), minus the 48-hour window.
     it('offers "Call for a 4th now" once a table is exactly one player short', async () => {

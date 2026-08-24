@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import SeatGrid from '../SeatGrid';
@@ -116,5 +117,111 @@ describe('SeatGrid', () => {
     );
     const seat = screen.getByLabelText('Take a seat at Table 1');
     expect(seat.getAttribute('aria-disabled')).toBe('true');
+  });
+});
+
+// Formerly HostSeating's job: a per-person list under the grid, one row per
+// occupant with a "Move to {table}" button per OTHER table plus "Remove
+// from game" — visible for EVERY occupant at once. That component is gone
+// (.superpowers/sdd/seat-tap-host-controls.md); the same two actions now
+// live here, revealed one person at a time by tapping their own seat.
+describe('SeatGrid: organizer seat management', () => {
+  const otherTables = [{ id: 't2', label: 'Table 2' }];
+
+  // A small stateful harness, standing in for the event screen: SeatGrid
+  // itself is fully controlled (`openBookingId` is a prop, not local state —
+  // see the component's own docstring for why: exclusivity has to be owned
+  // ABOVE every table, not inside any one of them), so exercising the
+  // toggle-open/toggle-closed/switch-to-another-seat behaviour needs
+  // something playing that role in the test.
+  function Harness({
+    onMove,
+    onRemove,
+  }: {
+    onMove: (bookingId: string, tableId: string) => void;
+    onRemove: (bookingId: string) => void;
+  }) {
+    const [openBookingId, setOpenBookingId] = useState<string | null>(null);
+    return (
+      <SeatGrid
+        tableLabel="Table 1"
+        capacity={4}
+        seats={seats}
+        otherTables={otherTables}
+        openBookingId={openBookingId}
+        onToggleManage={(id) =>
+          setOpenBookingId((current) => (current === id ? null : id))
+        }
+        onMove={onMove}
+        onRemove={onRemove}
+      />
+    );
+  }
+
+  it('reveals a tapped occupant\'s actions, and closes them when a different seat is tapped', () => {
+    render(<Harness onMove={vi.fn()} onRemove={vi.fn()} />);
+
+    expect(screen.queryByLabelText('Move Jane P. to Table 2')).toBeNull();
+    expect(
+      screen.getByLabelText("Manage Jane P.'s seat").getAttribute('aria-expanded'),
+    ).toBe('false');
+
+    fireEvent.click(screen.getByLabelText("Manage Jane P.'s seat"));
+    expect(screen.getByLabelText('Move Jane P. to Table 2')).toBeTruthy();
+    expect(screen.getByLabelText('Remove Jane P. from this game')).toBeTruthy();
+    expect(
+      screen.getByLabelText("Manage Jane P.'s seat").getAttribute('aria-expanded'),
+    ).toBe('true');
+
+    // Tapping Mei L.'s seat, not Jane's again -- Jane's panel must close.
+    fireEvent.click(screen.getByLabelText("Manage Mei L.'s seat"));
+    expect(screen.queryByLabelText('Move Jane P. to Table 2')).toBeNull();
+    expect(
+      screen.getByLabelText("Manage Jane P.'s seat").getAttribute('aria-expanded'),
+    ).toBe('false');
+    expect(screen.getByLabelText('Move Mei L. to Table 2')).toBeTruthy();
+  });
+
+  it('tapping the same seat again closes its own panel', () => {
+    render(<Harness onMove={vi.fn()} onRemove={vi.fn()} />);
+    const manage = () => screen.getByLabelText("Manage Jane P.'s seat");
+
+    fireEvent.click(manage());
+    expect(screen.getByLabelText('Move Jane P. to Table 2')).toBeTruthy();
+
+    fireEvent.click(manage());
+    expect(screen.queryByLabelText('Move Jane P. to Table 2')).toBeNull();
+    expect(manage().getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('calls onMove with the tapped occupant\'s booking id and the chosen table', () => {
+    const onMove = vi.fn();
+    render(<Harness onMove={onMove} onRemove={vi.fn()} />);
+    fireEvent.click(screen.getByLabelText("Manage Jane P.'s seat"));
+    fireEvent.click(screen.getByLabelText('Move Jane P. to Table 2'));
+    expect(onMove).toHaveBeenCalledWith('b1', 't2');
+  });
+
+  it('calls onRemove with the tapped occupant\'s booking id', () => {
+    const onRemove = vi.fn();
+    render(<Harness onMove={vi.fn()} onRemove={onRemove} />);
+    fireEvent.click(screen.getByLabelText("Manage Jane P.'s seat"));
+    fireEvent.click(screen.getByLabelText('Remove Jane P. from this game'));
+    expect(onRemove).toHaveBeenCalledWith('b1');
+  });
+
+  // The member-facing fallback: without all four host props, an occupied
+  // seat is exactly what it always was — a plain, non-interactive `<View>`.
+  // No accessibilityRole, no aria-expanded, no label, nothing to click.
+  //
+  // MUTATION-TESTED: removing the `manageable` gate in SeatGrid.tsx (so an
+  // occupied seat is always a manageable Pressable) turns this red —
+  // `queryByLabelText` finds "Manage Jane P.'s seat" where it should find
+  // nothing. Confirmed by hand while building this component, then reverted.
+  it('offers no seat management when the host props are not supplied', () => {
+    render(<SeatGrid tableLabel="Table 1" capacity={4} seats={seats} />);
+    expect(screen.getByText('Jane P.')).toBeTruthy();
+    expect(screen.queryByLabelText("Manage Jane P.'s seat")).toBeNull();
+    expect(screen.queryByText('Move to Table 2')).toBeNull();
   });
 });

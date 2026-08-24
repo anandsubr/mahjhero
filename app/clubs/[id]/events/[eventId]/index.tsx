@@ -5,7 +5,6 @@ import BringSomeoneSheet from '../../../../../components/BringSomeoneSheet';
 import Button from '../../../../../components/Button';
 import Card from '../../../../../components/Card';
 import ErrorBanner from '../../../../../components/ErrorBanner';
-import HostSeating from '../../../../../components/HostSeating';
 import Screen from '../../../../../components/Screen';
 import Tag from '../../../../../components/Tag';
 import TableCard from '../../../../../components/TableCard';
@@ -61,14 +60,26 @@ import { colors, space, type } from '../../../../../lib/theme';
  * Organizers (host or co-organizer — `canInvite`, the same test the SQL
  * functions below enforce) additionally get table management and seating
  * controls: `TierPicker` and Remove table rendered into `TableCard`'s
- * `children` slot, `HostSeating` for moving a seated player or removing
- * them from the game entirely, and — one level down, in `WaitlistPanel`'s
- * "Coming, not yet seated" section — a "Seat at …" option per table for
- * anyone confirmed but not yet placed. There is deliberately no "Unseat"
- * control: a host who wants somebody off a table moves them elsewhere or
- * removes them from the game, never parks them in limbo on purpose. Also:
- * an edit link (Task 15), a cancel action, and — only on a series occurrence
- * they have personally customised — a "Reset to the series" control.
+ * `children` slot, "Call for a 4th now" (also in `children`, computed by
+ * `canCallForAFourth` below), and — inside `TableCard`'s own `SeatGrid` —
+ * tapping an occupied seat reveals THAT person's actions (move to another
+ * table, or remove them from the game entirely) instead of everyone's at
+ * once. `openBookingId` below is what keeps only one such panel open across
+ * the whole screen, since every table renders its own SeatGrid instance.
+ * This replaces the old `HostSeating` component, which listed every
+ * occupant of a table with a "Move to …" button per OTHER table plus
+ * "Remove from game" attached to each row — the seat grid directly above it
+ * already named everyone, so that list was a second copy of the same
+ * people with buttons attached (see
+ * .superpowers/sdd/seat-tap-host-controls.md). One level down, in
+ * `WaitlistPanel`'s "Coming, not yet seated" section, a host still gets a
+ * "Seat at …" option per table for anyone confirmed but not yet placed — a
+ * seat tap can't reach somebody who has no seat. There is deliberately no
+ * "Unseat" control: a host who wants somebody off a table moves them
+ * elsewhere or removes them from the game, never parks them in limbo on
+ * purpose. Also: an edit link (Task 15), a cancel action, and — only on a
+ * series occurrence they have personally customised — a "Reset to the
+ * series" control.
  */
 export default function EventScreen() {
   const { id: clubId, eventId } = useLocalSearchParams<{
@@ -152,6 +163,13 @@ export default function EventScreen() {
   // member who just tapped a seat and landed on the waitlist should not
   // have to find their own position in a list to learn where they stand.
   const [waitlistNote, setWaitlistNote] = useState<string | null>(null);
+
+  // Which seated booking's seat-tap panel (Move / Remove) is open. Deliberately
+  // NOT owned by TableCard or SeatGrid: this screen renders one SeatGrid
+  // instance per table, and "only one person's panel open at a time" is a
+  // whole-screen rule, not a per-table one — so the one piece of state that
+  // enforces it has to live above every table, the same reason `busy` does.
+  const [openBookingId, setOpenBookingId] = useState<string | null>(null);
 
   const me = session?.user.id ?? '';
 
@@ -332,8 +350,10 @@ export default function EventScreen() {
   // section — not per table card. This used to be handed to every table's
   // own HostSeating too, so a single unplaced member showed up under Table
   // 1 AND Table 2 AND Table 3, reading as "unseated and still at the
-  // table" everywhere a host could place them. HostSeating no longer takes
-  // an `unseated` prop at all.
+  // table" everywhere a host could place them. HostSeating is gone
+  // entirely now (folded into SeatGrid's own seat-tap panel, which can only
+  // ever reach a booking that already has a seat) — this list is still the
+  // one and only place an unplaced booking is ever offered a table.
   const unseatedBookings = seating.filter(
     (o) => o.status === 'confirmed' && o.event_table_id === null,
   );
@@ -461,23 +481,39 @@ export default function EventScreen() {
     await run(() => declinePromotionOffer(offer.id));
   }
 
-  // The host's own seating controls: HostSeating's "Move to …" and
-  // WaitlistPanel's "Seat at …" (for a confirmed-but-unplaced booking) both
-  // call this with a real table id. `placeBooking(id, null)` — an Unseat,
-  // not a removal; the booking stays confirmed, just without a table — is
-  // still what the data layer supports (see placeBooking's own contract),
-  // but there is deliberately no button left that calls it: a host who
-  // wants somebody off a table moves them elsewhere or removes them from
-  // the game via `hostRemove`, which takes somebody out of the game
-  // entirely and is not undoable. Parking a member in limbo on purpose was
-  // never the goal, and the control cost a third of the per-person stack on
-  // an already very tall screen.
+  // The host's own seating controls: SeatGrid's "Move to …" (an occupied
+  // seat's own tap panel) and WaitlistPanel's "Seat at …" (for a
+  // confirmed-but-unplaced booking) both call this with a real table id.
+  // `placeBooking(id, null)` — an Unseat, not a removal; the booking stays
+  // confirmed, just without a table — is still what the data layer supports
+  // (see placeBooking's own contract), but there is deliberately no button
+  // left that calls it: a host who wants somebody off a table moves them
+  // elsewhere or removes them from the game via `hostRemove`, which takes
+  // somebody out of the game entirely and is not undoable. Parking a member
+  // in limbo on purpose was never the goal.
+  //
+  // Both this and `hostRemove` close whatever seat panel is open first —
+  // the action they perform is the reason a panel was open, so leaving it
+  // open through the reload would either point at stale data (a moved
+  // booking's panel would still be sitting on the table it just left) or,
+  // for a remove, at a booking that no longer exists at all.
   async function hostPlace(bookingId: string, tableId: string | null) {
+    setOpenBookingId(null);
     await run(() => placeBooking(bookingId, tableId));
   }
 
   async function hostRemove(bookingId: string) {
+    setOpenBookingId(null);
     await run(() => cancelBooking(bookingId));
+  }
+
+  // The seat grid's own toggle: tapping an occupied seat opens that
+  // person's panel, tapping it again (or tapping any OTHER occupied seat —
+  // see `openBookingId` above) closes/replaces it. A plain toggle rather
+  // than an always-open would leave no way to collapse a panel without
+  // acting on it or opening a different one.
+  function toggleManageSeat(bookingId: string) {
+    setOpenBookingId((current) => (current === bookingId ? null : bookingId));
   }
 
   async function hostCallForAFourth(tableId: string) {
@@ -612,6 +648,22 @@ export default function EventScreen() {
                 new Date(event.starts_at),
                 now,
               )}
+              // Seat-tap management, forwarded to SeatGrid via TableCard. All
+              // five are supplied together for an organizer and omitted
+              // together for a member — the seat grid falls back to its
+              // plain read-only render (see SeatGrid's own docstring) rather
+              // than a half-wired tappable seat with nothing to move to.
+              otherTables={
+                isOrganizer
+                  ? tables
+                      .filter((t) => t.id !== table.id)
+                      .map((t) => ({ id: t.id, label: t.label }))
+                  : undefined
+              }
+              openBookingId={isOrganizer ? openBookingId : undefined}
+              onToggleManage={isOrganizer ? toggleManageSeat : undefined}
+              onMove={isOrganizer ? hostPlace : undefined}
+              onRemove={isOrganizer ? hostRemove : undefined}
             >
               {isOrganizer ? (
                 <>
@@ -652,21 +704,26 @@ export default function EventScreen() {
                     table can never need a fourth. Not delegated to
                     `needsAFourth` itself, since that function also applies
                     the 48-hour window this gate deliberately skips.
+
+                    Inlined here directly rather than through a component —
+                    this used to be HostSeating's one non-per-person control;
+                    now that the per-person list it sat below is gone (moved
+                    into SeatGrid's own seat-tap panel), a single button
+                    doesn't need its own wrapper component.
                   */}
-                  <HostSeating
-                    occupants={confirmedAtTable}
-                    tables={tables}
-                    table={table}
-                    busy={busy}
-                    canCallForAFourth={
-                      table.capacity >= 2 &&
-                      confirmedHere === table.capacity - 1 &&
-                      canBook
-                    }
-                    onPlace={hostPlace}
-                    onRemove={hostRemove}
-                    onCallForAFourth={hostCallForAFourth}
-                  />
+                  {table.capacity >= 2 &&
+                  confirmedHere === table.capacity - 1 &&
+                  canBook ? (
+                    <Button
+                      variant="secondary"
+                      big={false}
+                      disabled={busy}
+                      onPress={() => hostCallForAFourth(table.id)}
+                      accessibilityLabel={`Call for a fourth at ${table.label}`}
+                    >
+                      Call for a 4th now
+                    </Button>
+                  ) : null}
                 </>
               ) : null}
             </TableCard>

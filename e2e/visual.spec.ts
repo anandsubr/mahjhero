@@ -281,15 +281,15 @@ test.describe('signed in', () => {
         // the accessible name "Bring someone to Table 1", not the bare
         // "Bring someone" the screen-level button uses, so without `exact`
         // this would still resolve to one match by luck rather than by the
-        // query actually being specific. `.first()` on Priya's name —
-        // since the signed-in member is this club's organizer, HostSeating
-        // renders her name a SECOND time in its own "Move to …" / "Remove
-        // from game" controls, distinct from her name in the seat grid
-        // itself. Both are real; this only needs to know her name appears
-        // on the page at all. (There used to be a third rendering site,
-        // "Unseat" — removed along with the button itself: a host who wants
-        // somebody off a table moves them or removes them from the game,
-        // never parks them in limbo on purpose.)
+        // query actually being specific. `.first()` on Priya's name — kept
+        // even though the seat-tap redesign means her name now renders only
+        // ONCE on a fresh load (the old HostSeating component used to
+        // render it a second time, in its own always-visible "Move to …" /
+        // "Remove from game" controls; that list is gone, replaced by a
+        // panel that only appears once an organizer taps her specific
+        // seat — see .superpowers/sdd/seat-tap-host-controls.md). `.first()`
+        // is harmless on a single match and keeps this assertion robust if
+        // that ever changes again.
         await expect(page.getByText('You', { exact: true })).toBeVisible();
         await expect(page.getByText('Priya Nair').first()).toBeVisible();
         await expect(
@@ -441,8 +441,8 @@ test.describe('signed in', () => {
 
       // One table, three of its four seats taken by people who are not the
       // signed-in member, inside `needsAFourth`'s 48-hour window — and the
-      // signed-in member is this club's host, so HostSeating's own early
-      // "Call for a 4th now" control renders too, not just the Tag.
+      // signed-in member is this club's host, so the event screen's own
+      // early "Call for a 4th now" control renders too, not just the Tag.
       // "1 seat free", not "3 seats free": `needsAFourth`'s own definition
       // (lib/bookings.ts) is `confirmed === capacity - 1`, which on a
       // 4-seat table always leaves exactly one seat, never three — the
