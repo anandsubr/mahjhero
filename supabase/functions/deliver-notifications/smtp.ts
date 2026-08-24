@@ -37,6 +37,29 @@ export class SmtpSender implements Sender {
           ? { username: this.config.user, password: this.config.pass }
           : undefined,
       },
+      debug: {
+        /*
+         * denomailer refuses to finish the handshake at all — for every
+         * message, not just ones with credentials — unless the connection
+         * ends up secure: implicit TLS on 465, or a STARTTLS upgrade it
+         * negotiates for itself whenever the server offers the extension
+         * (both handled above, before this is even consulted). Mailpit
+         * offers neither, so this branch was unreachable in every test
+         * this function has, all of which fake the SMTP layer — the real
+         * `SMTPClient` above never ran until this task's end-to-end check,
+         * and that check is what caught this: every real send failed with
+         * "Connection is not secure", against Mailpit and only Mailpit.
+         *
+         * Tying the flag to whether credentials are being sent keeps the
+         * one case denomailer's own warning is about — creds crossing an
+         * unencrypted socket — refused exactly as before: production
+         * always sets SMTP_USER, and a production relay on 465/587 is
+         * already secure by the time this is reached, so this only ever
+         * permits a plaintext connection when there is nothing secret on
+         * it to expose.
+         */
+        allowUnsecure: !this.config.user,
+      },
     });
 
     try {

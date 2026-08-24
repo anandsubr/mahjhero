@@ -31,8 +31,12 @@ declare module 'https://deno.land/x/denomailer@1.6.0/mod.ts' {
     html: string;
   };
 
+  export type DebugOptions = {
+    allowUnsecure?: boolean;
+  };
+
   export class SMTPClient {
-    constructor(config: { connection: ConnectionOptions });
+    constructor(config: { connection: ConnectionOptions; debug?: DebugOptions });
     send(config: SendConfig): Promise<void>;
     close(): Promise<void>;
   }
