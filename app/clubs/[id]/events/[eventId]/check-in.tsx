@@ -1,5 +1,5 @@
 import { Redirect, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import Button from '../../../../../components/Button';
 import Card from '../../../../../components/Card';
@@ -61,6 +61,47 @@ function groupRows(rows: AttendanceRow[]) {
 }
 
 /**
+ * Folds a fresh server read into the rows already on screen without
+ * discarding an optimistic write that has not landed yet.
+ *
+ * Why this exists: a refusal refetches (see `setState`/`addWalkIn` below,
+ * where a failed write calls `load()`) because the server is authoritative
+ * once something has gone wrong. But that refetch can resolve WHILE A
+ * DIFFERENT PERSON'S write is still on the wire — the host taps Ann, then
+ * Bob; Ann's write is refused and its refetch comes back before Bob's write
+ * has committed. A plain `setRows(serverRows)` would replace Bob's
+ * optimistic "arrived" with the server's still-stale "not yet", and since
+ * Bob's write goes on to succeed silently (the success path re-renders
+ * nothing, because it thinks nothing changed), Bob sits on screen as
+ * unaccounted — while the server already has him arrived — until somebody
+ * manually reloads.
+ *
+ * `busyMap` is `busy` at the moment the merge runs (not at the moment
+ * `load()` was called): any row still marked busy right now has a write in
+ * flight whose outcome the server read cannot yet reflect, so its LOCAL
+ * value wins over the server's. A row that is busy but entirely absent from
+ * the server response (an optimistic walk-in insert whose write has not
+ * committed yet) is kept outright rather than dropped.
+ */
+function mergeAttendance(
+  serverRows: AttendanceRow[],
+  currentRows: AttendanceRow[],
+  busyMap: Record<string, boolean>,
+): AttendanceRow[] {
+  const currentById = new Map(currentRows.map((r) => [r.profile_id, r]));
+  const merged = serverRows.map((r) =>
+    busyMap[r.profile_id] ? (currentById.get(r.profile_id) ?? r) : r,
+  );
+  const serverIds = new Set(serverRows.map((r) => r.profile_id));
+  for (const r of currentRows) {
+    if (busyMap[r.profile_id] && !serverIds.has(r.profile_id)) {
+      merged.push(r);
+    }
+  }
+  return merged;
+}
+
+/**
  * The organizer's door screen: the list a host works down while people walk
  * in, tapping "Here" or "Not coming" as they go.
  *
@@ -99,13 +140,47 @@ export default function CheckInScreen() {
   // fifteen rows a host is tapping down at the door.
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [pickerOpen, setPickerOpen] = useState(false);
+  // `fetchEventAttendance`/`fetchEvent` return null on failure the same way
+  // they return an empty/absent result on success -- `?? []` used to
+  // collapse those two into the same rendered screen ("0 of 0 here", empty
+  // tables, no error) with nothing telling a host their network actually
+  // dropped. These two flags are what let the render below tell "loaded and
+  // empty" apart from "failed to load" and say something true in each case,
+  // the same distinction tablesFailed/seatingFailed/rosterFailed draw on
+  // index.tsx.
+  const [attendanceFailed, setAttendanceFailed] = useState(false);
+  const [eventFailed, setEventFailed] = useState(false);
+
+  // A monotonically increasing tag on every `load()` call. Guards against
+  // two refetches racing out of order: two refusals in a row each fire
+  // their own `load()`, and without this the one that happens to RESOLVE
+  // last would win even if it was the one that STARTED first, applying
+  // stale data over fresh. Only the most-recently-STARTED call is allowed
+  // to write its result back.
+  const loadSeqRef = useRef(0);
+  // Mirrors `busy` synchronously (state updates are batched/async; this
+  // ref is not) so `load()`'s merge below always sees which rows have a
+  // write in flight AT THE MOMENT ITS RESPONSE ARRIVES, not at the moment
+  // it was called.
+  const busyRef = useRef<Record<string, boolean>>({});
+
+  function setBusyFlag(profileId: string, value: boolean) {
+    busyRef.current = { ...busyRef.current, [profileId]: value };
+    setBusy(busyRef.current);
+  }
 
   async function load() {
+    const seq = ++loadSeqRef.current;
     const [rosterRows, attendanceRows, event] = await Promise.all([
       fetchRoster(clubId),
       fetchEventAttendance(eventId),
       fetchEvent(eventId),
     ]);
+
+    // A newer load() has started since this one did (see loadSeqRef above)
+    // -- discard this response outright rather than let it apply out of
+    // order over data a later call already wrote.
+    if (seq !== loadSeqRef.current) return;
 
     // Fails closed to "not an organizer" on a roster fetch failure, the
     // same rule index.tsx:113 already follows -- the worst case is a host
@@ -117,8 +192,21 @@ export default function CheckInScreen() {
     setIsOrganizer(myRole ? canInvite(myRole.role) : false);
     setRoster(rosterRows ?? []);
 
-    setRows(attendanceRows ?? []);
+    setAttendanceFailed(attendanceRows === null);
+    // On failure, leave `rows` exactly as it is rather than blanking it to
+    // `[]` -- unlike the club/event screens' section-level failures, EVERY
+    // piece of this screen (the summary line, every group) is driven by
+    // this one array, so replacing it with an empty one on a transient
+    // refetch failure would wipe a door list the host is actively working
+    // down, not just show a stale message. `attendanceFailed` above is what
+    // tells the render which is which.
+    if (attendanceRows !== null) {
+      setRows((current) =>
+        mergeAttendance(attendanceRows, current, busyRef.current),
+      );
+    }
 
+    setEventFailed(event === null);
     // The organizer tail: starts_at - 1h to ends_at + 24h
     // (attendance_window_open, 20260827030000). Only an organizer ever
     // reaches this screen, so the tail is unconditional here -- there is no
@@ -175,9 +263,11 @@ export default function CheckInScreen() {
   const summary = attendanceSummary(rows);
   const grouped = groupRows(rows);
   // Anyone already on the door list -- a confirmed booking or an existing
-  // check-in row -- is excluded from the walk-in picker. Adding the same
-  // person twice would hit check_ins' own `unique (event_id, profile_id)`
-  // constraint, an error a host at the door has no way to act on.
+  // check-in row -- is excluded from the walk-in picker. `record_attendance`
+  // would not refuse a double-add (`on conflict (event_id, profile_id) do
+  // update` -- 20260827030000 -- makes it a deliberate idempotent upsert),
+  // so this is UX, not error-avoidance: offering to add someone who is
+  // already on the list is just confusing at the door.
   const alreadyListed = new Set(rows.map((r) => r.profile_id));
   const walkInCandidates = roster.filter((m) => !alreadyListed.has(m.profile_id));
 
@@ -197,7 +287,7 @@ export default function CheckInScreen() {
         r.profile_id === person.profile_id ? { ...r, state: next } : r,
       ),
     );
-    setBusy((b) => ({ ...b, [person.profile_id]: true }));
+    setBusyFlag(person.profile_id, true);
 
     const { error: writeError } =
       next === null
@@ -208,7 +298,7 @@ export default function CheckInScreen() {
             state: next,
           });
 
-    setBusy((b) => ({ ...b, [person.profile_id]: false }));
+    setBusyFlag(person.profile_id, false);
 
     if (writeError) {
       setRows((current) =>
@@ -243,7 +333,7 @@ export default function CheckInScreen() {
       recorded_at: null,
     };
     setRows((current) => [...current, newRow]);
-    setBusy((b) => ({ ...b, [member.profile_id]: true }));
+    setBusyFlag(member.profile_id, true);
 
     const { error: writeError } = await recordAttendance({
       eventId,
@@ -251,7 +341,7 @@ export default function CheckInScreen() {
       state: 'arrived',
     });
 
-    setBusy((b) => ({ ...b, [member.profile_id]: false }));
+    setBusyFlag(member.profile_id, false);
 
     if (writeError) {
       setRows((current) =>
@@ -283,16 +373,51 @@ export default function CheckInScreen() {
 
       {error ? <ErrorBanner message={error} /> : null}
 
-      <Text style={styles.summary}>
-        {summary.here} of {rows.length} here
-      </Text>
-      <Text style={styles.help}>{summary.notComing} not coming</Text>
-      <Text style={styles.help}>{summary.unaccounted} unaccounted</Text>
+      {attendanceFailed && rows.length === 0 ? (
+        // `fetchEventAttendance` returns null on failure the same way it
+        // returns `[]` on a genuinely empty list -- without this branch a
+        // dropped network read rendered as "0 of 0 here" plus empty tables,
+        // telling a host nobody is booked when the truth is the read never
+        // happened. `rows.length === 0` (rather than `attendanceFailed`
+        // alone) is what keeps a stale-but-real list on screen, with its own
+        // note below, if a LATER refetch fails after a good load already
+        // populated it -- losing an in-progress door list to one transient
+        // refetch failure would be worse than the bug this fixes.
+        <Text style={styles.help}>
+          Could not load who is booked for this game.
+        </Text>
+      ) : (
+        <>
+          <Text style={styles.summary}>
+            {/* Denominator is every known row, walk-ins included -- not
+                `summary.booked`. `summary.here` already counts a walk-in's
+                arrival (a walk-in is, definitionally, standing at the door),
+                so a denominator that excluded walk-ins could show a numerator
+                bigger than its own total ("3 of 2 here") the moment a
+                walk-in showed up. Counting everyone the numerator can count
+                is what keeps the fraction meaningful. */}
+            {summary.here} of {rows.length} here
+          </Text>
+          <Text style={styles.help}>{summary.notComing} not coming</Text>
+          <Text style={styles.help}>{summary.unaccounted} unaccounted</Text>
+          {attendanceFailed ? (
+            <Text style={styles.help}>
+              Could not refresh the list. Showing the last known state.
+            </Text>
+          ) : null}
+        </>
+      )}
 
       {!windowOpen ? (
         <Text style={styles.help}>
-          Check-in is closed for this game. You can still see who was
-          recorded.
+          {eventFailed
+            ? // `fetchEvent` returning null means either the read failed or
+              // the event does not exist -- either way, "closed" is not
+              // known to be true, only that the window could not be
+              // confirmed. Saying "closed" here was a false statement about
+              // the EVENT when the actual problem was the fetch.
+              'Could not confirm whether check-in is open for this game. You can still see who was recorded.'
+            : 'Check-in is closed for this game. You can still see who was recorded.'}
         </Text>
       ) : null}
 

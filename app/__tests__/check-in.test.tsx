@@ -124,6 +124,30 @@ it('summarises the room above the tables', async () => {
   expect(screen.getByText(/1 unaccounted/i)).toBeTruthy();
 });
 
+it('does not count a walk-in as unaccounted, and folds walk-ins into the summary denominator', async () => {
+  fetchEventAttendance.mockResolvedValue([
+    row({ profile_id: 'a', display_name: 'Ann', state: 'arrived' }),
+    row({ profile_id: 'b', display_name: 'Bob', state: null }),
+    row({
+      profile_id: 'w',
+      display_name: 'Walker',
+      booking_status: null,
+      state: 'arrived',
+    }),
+  ]);
+  render(<CheckInScreen />);
+
+  // Ann (booked, arrived) + Walker (walk-in, arrived) = 2 "here". The
+  // denominator has to be every known row (3), walk-in included, not just
+  // the two booked rows -- `summary.here` already counts Walker's arrival,
+  // so a denominator of 2 (booked only) would read as "2 of 2 here" even
+  // though Bob, a booked player, is still unaccounted. Bob is the only
+  // unaccounted row; a walk-in never is, regardless of state.
+  expect(await screen.findByText(/2 of 3 here/i)).toBeTruthy();
+  expect(screen.getByText(/0 not coming/i)).toBeTruthy();
+  expect(screen.getByText(/1 unaccounted/i)).toBeTruthy();
+});
+
 it('groups people under their table', async () => {
   fetchEventAttendance.mockResolvedValue([
     row({
@@ -201,6 +225,82 @@ it('restores the previous state when the write fails', async () => {
   );
 });
 
+it('does not clobber a different profile\'s in-flight write with a refusal\'s refetch', async () => {
+  // The exact sequence from the review finding: host taps Ann, then Bob.
+  // Ann's write is refused, which fires a refetch (`load()`). That refetch
+  // resolves BEFORE Bob's write has committed -- reproduced here by holding
+  // Bob's `recordAttendance` open on a promise we resolve by hand, after
+  // the refetch has already landed. The server snapshot the refetch reads
+  // still shows Bob unmarked, since it hasn't seen his write yet.
+  const initialRows = [
+    row({ profile_id: 'a', display_name: 'Ann', state: null }),
+    row({ profile_id: 'b', display_name: 'Bob', state: null }),
+  ];
+  fetchEventAttendance.mockResolvedValue(initialRows);
+  render(<CheckInScreen />);
+
+  const annButton = await screen.findByRole('button', { name: /here: ann/i });
+  const bobButton = await screen.findByRole('button', { name: /here: bob/i });
+
+  let resolveBobWrite!: (v: { error: string | null }) => void;
+  const bobWrite = new Promise<{ error: string | null }>((resolve) => {
+    resolveBobWrite = resolve;
+  });
+  recordAttendance.mockImplementation((input: { profileId: string }) =>
+    input.profileId === 'a' ? Promise.resolve({ error: 'nope' }) : bobWrite,
+  );
+
+  fireEvent.click(annButton);
+  fireEvent.click(bobButton);
+
+  // Ann's write is refused and its refetch lands.
+  await vi.waitFor(() =>
+    expect(fetchEventAttendance).toHaveBeenCalledTimes(2),
+  );
+  await vi.waitFor(() =>
+    expect(annButton.getAttribute('aria-pressed')).toBe('false'),
+  );
+
+  // Bob's write is still in flight when that refetch resolves. His
+  // optimistic "Here" must survive it.
+  expect(bobButton.getAttribute('aria-pressed')).toBe('true');
+
+  // Bob's write now lands successfully -- nothing should regress.
+  resolveBobWrite({ error: null });
+  await vi.waitFor(() =>
+    expect(bobButton.getAttribute('aria-busy')).toBe('false'),
+  );
+  expect(bobButton.getAttribute('aria-pressed')).toBe('true');
+});
+
+it('shows a true message instead of an empty room when the attendance read fails', async () => {
+  fetchEventAttendance.mockResolvedValue(null);
+  render(<CheckInScreen />);
+
+  expect(
+    await screen.findByText(/could not load who is booked for this game/i),
+  ).toBeTruthy();
+  // The old behaviour: `?? []` made a failed read look exactly like a
+  // genuinely empty game.
+  expect(screen.queryByText(/0 of 0 here/i)).toBeNull();
+});
+
+it('does not claim check-in is closed when it was the event read that failed', async () => {
+  fetchEvent.mockResolvedValue(null);
+  fetchEventAttendance.mockResolvedValue([
+    row({ profile_id: 'a', display_name: 'Ann' }),
+  ]);
+  render(<CheckInScreen />);
+
+  await screen.findByText('Ann');
+  expect(
+    await screen.findByText(/could not confirm whether check-in is open/i),
+  ).toBeTruthy();
+  // The old behaviour said "Check-in is closed for this game" -- a false
+  // statement about the EVENT when the actual problem was the fetch.
+  expect(screen.queryByText(/check-in is closed for this game/i)).toBeNull();
+});
+
 it('disables every control once the window has closed', async () => {
   fetchEvent.mockResolvedValue({
     ...EVENT,
@@ -219,7 +319,7 @@ it('disables every control once the window has closed', async () => {
   expect(recordAttendance).not.toHaveBeenCalled();
 });
 
-it('excludes people already on the list from the walk-in picker', async () => {
+it('excludes people already on the list from the walk-in picker, and pins the exact candidate set', async () => {
   fetchRoster.mockResolvedValue([
     HOST,
     { profile_id: 'a', role: 'member' as const, display_name: 'Ann', skill_level: null },
@@ -237,8 +337,19 @@ it('excludes people already on the list from the walk-in picker', async () => {
 
   fireEvent.click(screen.getByLabelText('Add a walk-in'));
   const picker = screen.getByTestId('walkin-picker');
-  expect(within(picker).getByText('Dee')).toBeTruthy();
-  expect(within(picker).queryByText('Ann')).toBeNull();
-  expect(within(picker).queryByText('Bob')).toBeNull();
-  expect(within(picker).queryByText('Cal')).toBeNull();
+
+  // The roster has 5 people (HOST/Ada plus a/b/c/d); Ann, Bob and Cal are
+  // already on the door list (the three confirmed rows above), so they are
+  // excluded. That leaves exactly TWO candidates, not the one a headcount
+  // of "roster minus the door list's members" might assume: Dee, who was
+  // never on the list, AND Ada -- the organizer herself, who is on the
+  // roster and also not yet on the list. The exclusion rule is "already
+  // listed", not "not the organizer", so Ada is offered too. Asserting the
+  // full set (rather than only Ann/Bob/Cal's absence) is what pins that
+  // rule instead of three incidental absences that would also pass if the
+  // picker, say, showed nobody at all.
+  const candidateLabels = within(picker)
+    .getAllByLabelText(/^Add /)
+    .map((el) => el.getAttribute('aria-label'));
+  expect(candidateLabels.sort()).toEqual(['Add Ada', 'Add Dee']);
 });
