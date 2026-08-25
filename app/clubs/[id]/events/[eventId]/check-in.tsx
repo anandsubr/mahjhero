@@ -76,22 +76,32 @@ function groupRows(rows: AttendanceRow[]) {
  * unaccounted — while the server already has him arrived — until somebody
  * manually reloads.
  *
- * `busyMap` is `busy` at the moment the merge runs (not at the moment
- * `load()` was called): any row still marked busy right now has a write in
- * flight whose outcome the server read cannot yet reflect, so its LOCAL
- * value wins over the server's. A row that is busy but entirely absent from
- * the server response (an optimistic walk-in insert whose write has not
- * committed yet) is kept outright rather than dropped.
+ * `busyMap` is a snapshot of the per-profile in-flight write COUNT taken by
+ * the caller right when the server read arrived (see the `busySnapshot`
+ * local in `load()` below) -- any profile with a count above zero has at
+ * least one write whose outcome this server read cannot yet reflect, so its
+ * LOCAL `state` wins over the server's. A row that is busy but entirely
+ * absent from the server response (an optimistic walk-in insert whose write
+ * has not committed yet) is kept outright rather than dropped.
+ *
+ * Only `state` is contested while a write is in flight -- everything else
+ * about the row (table assignment, display name, ...) is free to move
+ * elsewhere and the server's read of it is authoritative. Preserving the
+ * whole local row here would silently undo a co-organizer's table move that
+ * happened to land in the same window as this profile's in-flight
+ * check-in write.
  */
 function mergeAttendance(
   serverRows: AttendanceRow[],
   currentRows: AttendanceRow[],
-  busyMap: Record<string, boolean>,
+  busyMap: Record<string, number>,
 ): AttendanceRow[] {
   const currentById = new Map(currentRows.map((r) => [r.profile_id, r]));
-  const merged = serverRows.map((r) =>
-    busyMap[r.profile_id] ? (currentById.get(r.profile_id) ?? r) : r,
-  );
+  const merged = serverRows.map((r) => {
+    if (!busyMap[r.profile_id]) return r;
+    const local = currentById.get(r.profile_id);
+    return local ? { ...r, state: local.state } : r;
+  });
   const serverIds = new Set(serverRows.map((r) => r.profile_id));
   for (const r of currentRows) {
     if (busyMap[r.profile_id] && !serverIds.has(r.profile_id)) {
@@ -137,8 +147,13 @@ export default function CheckInScreen() {
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Per-profile, not screen-wide: one slow write must not freeze the other
-  // fifteen rows a host is tapping down at the door.
-  const [busy, setBusy] = useState<Record<string, boolean>>({});
+  // fifteen rows a host is tapping down at the door. A COUNT, not a
+  // boolean: a mis-tap corrected before the first write's round trip lands
+  // (routine at a door) puts a SECOND write in flight for the same profile
+  // before the first resolves. A boolean cleared unconditionally by
+  // whichever write finishes first would drop the guard while the other
+  // write was still outstanding -- see `setState` below.
+  const [busy, setBusy] = useState<Record<string, number>>({});
   const [pickerOpen, setPickerOpen] = useState(false);
   // `fetchEventAttendance`/`fetchEvent` return null on failure the same way
   // they return an empty/absent result on success -- `?? []` used to
@@ -159,15 +174,37 @@ export default function CheckInScreen() {
   // to write its result back.
   const loadSeqRef = useRef(0);
   // Mirrors `busy` synchronously (state updates are batched/async; this
-  // ref is not) so `load()`'s merge below always sees which rows have a
-  // write in flight AT THE MOMENT ITS RESPONSE ARRIVES, not at the moment
-  // it was called.
-  const busyRef = useRef<Record<string, boolean>>({});
+  // ref is not) so `load()` can snapshot which rows have a write in flight
+  // AT THE MOMENT ITS RESPONSE ARRIVES, not at the moment it was called --
+  // see `busySnapshot` in `load()` below, which reads this BEFORE calling
+  // `setRows` rather than letting the `setRows` updater dereference it
+  // whenever React happens to flush, which could be later still.
+  const busyRef = useRef<Record<string, number>>({});
 
-  function setBusyFlag(profileId: string, value: boolean) {
-    busyRef.current = { ...busyRef.current, [profileId]: value };
+  function incrBusy(profileId: string) {
+    busyRef.current = {
+      ...busyRef.current,
+      [profileId]: (busyRef.current[profileId] ?? 0) + 1,
+    };
     setBusy(busyRef.current);
   }
+
+  function decrBusy(profileId: string) {
+    const next = Math.max(0, (busyRef.current[profileId] ?? 0) - 1);
+    busyRef.current = { ...busyRef.current, [profileId]: next };
+    setBusy(busyRef.current);
+  }
+
+  // The sequence number of the most recently STARTED write for each
+  // profile. Mirrors `loadSeqRef` above, one profile at a time: a failed
+  // write's rollback must only apply if it is still that profile's LATEST
+  // write. Without this, a double-tap that corrects a mis-tap (write #1
+  // Here, write #2 Not coming, both in flight) would let write #1's
+  // rollback -- built from a `previous` closure captured before write #2
+  // even started -- overwrite write #2's optimistic value with a state
+  // neither the server nor the host chose, the moment write #1 happens to
+  // be the one that fails.
+  const writeSeqRef = useRef<Record<string, number>>({});
 
   async function load() {
     const seq = ++loadSeqRef.current;
@@ -201,8 +238,20 @@ export default function CheckInScreen() {
     // down, not just show a stale message. `attendanceFailed` above is what
     // tells the render which is which.
     if (attendanceRows !== null) {
+      // Captured HERE, synchronously, right as the response arrives --
+      // not read from inside the `setRows` updater below. React's
+      // automatic batching does not necessarily invoke that updater the
+      // instant `setRows` is called; it can run later, once React gets
+      // around to flushing. If a write resolves in that gap, an inline
+      // `busyRef.current` read inside the updater would see the ALREADY
+      // -cleared flag and let this merge apply the stale server row after
+      // all -- the original clobber, in a narrower window. Snapshotting
+      // now, before any other code (including a write's own resolution)
+      // gets a chance to run, is what the doc comment on `mergeAttendance`
+      // above has always claimed.
+      const busySnapshot = busyRef.current;
       setRows((current) =>
-        mergeAttendance(attendanceRows, current, busyRef.current),
+        mergeAttendance(attendanceRows, current, busySnapshot),
       );
     }
 
@@ -211,8 +260,19 @@ export default function CheckInScreen() {
     // (attendance_window_open, 20260827030000). Only an organizer ever
     // reaches this screen, so the tail is unconditional here -- there is no
     // member-window branch to choose between.
-    setOpensAt(event ? addHours(event.starts_at, -1) : null);
-    setClosesAt(event ? addHours(event.ends_at, 24) : null);
+    //
+    // Only written on a SUCCESSFUL event read. A failed refetch (any
+    // refused write anywhere on this screen calls `load()`, see
+    // `setState`/`addWalkIn`) used to overwrite a previously-known window
+    // with `null`, which reads as closed and disables every control --
+    // silently locking the door for a host who was checking people in
+    // seconds earlier, over one flaky read. Same reasoning the merge above
+    // applies to `rows`, applied here to the window: a transient failure
+    // keeps the last known good value rather than blanking it.
+    if (event) {
+      setOpensAt(addHours(event.starts_at, -1));
+      setClosesAt(addHours(event.ends_at, 24));
+    }
 
     setReady(true);
   }
@@ -261,6 +321,11 @@ export default function CheckInScreen() {
 
   const windowOpen = checkInOpen(opensAt, closesAt);
   const summary = attendanceSummary(rows);
+  // Booked players who have arrived, out of every booked player -- see the
+  // note on the summary line below for why this is not `summary.here`.
+  const bookedHere = rows.filter(
+    (r) => r.booking_status !== null && r.state === 'arrived',
+  ).length;
   const grouped = groupRows(rows);
   // Anyone already on the door list -- a confirmed booking or an existing
   // check-in row -- is excluded from the walk-in picker. `record_attendance`
@@ -281,31 +346,38 @@ export default function CheckInScreen() {
    * kind of thing that makes the rest of local state suspect too.
    */
   async function setState(person: AttendanceRow, next: AttendanceState | null) {
+    const profileId = person.profile_id;
     const previous = person.state;
+    // This write's own sequence number for this profile -- see
+    // `writeSeqRef` above.
+    const seq = (writeSeqRef.current[profileId] ?? 0) + 1;
+    writeSeqRef.current[profileId] = seq;
+
     setRows((current) =>
-      current.map((r) =>
-        r.profile_id === person.profile_id ? { ...r, state: next } : r,
-      ),
+      current.map((r) => (r.profile_id === profileId ? { ...r, state: next } : r)),
     );
-    setBusyFlag(person.profile_id, true);
+    incrBusy(profileId);
 
     const { error: writeError } =
       next === null
-        ? await clearAttendance({ eventId, profileId: person.profile_id })
-        : await recordAttendance({
-            eventId,
-            profileId: person.profile_id,
-            state: next,
-          });
+        ? await clearAttendance({ eventId, profileId })
+        : await recordAttendance({ eventId, profileId, state: next });
 
-    setBusyFlag(person.profile_id, false);
+    decrBusy(profileId);
 
     if (writeError) {
-      setRows((current) =>
-        current.map((r) =>
-          r.profile_id === person.profile_id ? { ...r, state: previous } : r,
-        ),
-      );
+      // A newer write for this profile started since this one did -- its
+      // optimistic value is what belongs on screen now, not this call's
+      // stale `previous`. Rolling back here would overwrite a value
+      // neither the server (which has not seen the newer write either) nor
+      // the host (who already moved on) chose.
+      if (writeSeqRef.current[profileId] === seq) {
+        setRows((current) =>
+          current.map((r) =>
+            r.profile_id === profileId ? { ...r, state: previous } : r,
+          ),
+        );
+      }
       setError(writeError);
       void load();
     }
@@ -333,7 +405,7 @@ export default function CheckInScreen() {
       recorded_at: null,
     };
     setRows((current) => [...current, newRow]);
-    setBusyFlag(member.profile_id, true);
+    incrBusy(member.profile_id);
 
     const { error: writeError } = await recordAttendance({
       eventId,
@@ -341,7 +413,7 @@ export default function CheckInScreen() {
       state: 'arrived',
     });
 
-    setBusyFlag(member.profile_id, false);
+    decrBusy(member.profile_id);
 
     if (writeError) {
       setRows((current) =>
@@ -389,14 +461,18 @@ export default function CheckInScreen() {
       ) : (
         <>
           <Text style={styles.summary}>
-            {/* Denominator is every known row, walk-ins included -- not
-                `summary.booked`. `summary.here` already counts a walk-in's
-                arrival (a walk-in is, definitionally, standing at the door),
-                so a denominator that excluded walk-ins could show a numerator
-                bigger than its own total ("3 of 2 here") the moment a
-                walk-in showed up. Counting everyone the numerator can count
-                is what keeps the fraction meaningful. */}
-            {summary.here} of {rows.length} here
+            {/* Denominator is `summary.booked`, not `rows.length`. A
+                denominator of every known row grows every time a walk-in
+                shows up, so "12 of 16 here" never converged on a number the
+                host actually set out to reach -- and its remainder was
+                notComing+unaccounted, not "still to come". `summary.booked`
+                only changes when a booking is made or cancelled, so it stays
+                a stable target through the night. Walk-ins are real
+                arrivals too, so they are still shown -- just as their own
+                count, not folded into a fraction whose denominator they'd
+                keep moving. */}
+            {bookedHere} of {summary.booked} booked here ·{' '}
+            {summary.walkIns} walk-in{summary.walkIns === 1 ? '' : 's'}
           </Text>
           <Text style={styles.help}>{summary.notComing} not coming</Text>
           <Text style={styles.help}>{summary.unaccounted} unaccounted</Text>

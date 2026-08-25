@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
 const searchParams: Record<string, string> = { id: 'club-1', eventId: 'event-1' };
 
@@ -119,12 +119,15 @@ it('summarises the room above the tables', async () => {
     row({ profile_id: 'c', display_name: 'Cal', state: 'no_show' }),
   ]);
   render(<CheckInScreen />);
-  expect(await screen.findByText(/1 of 3 here/i)).toBeTruthy();
+  // All three rows are booked (no walk-ins), so the denominator is 3 and
+  // there are 0 walk-ins to call out separately.
+  expect(await screen.findByText(/1 of 3 booked here/i)).toBeTruthy();
+  expect(screen.getByText(/0 walk-ins/i)).toBeTruthy();
   expect(screen.getByText(/1 not coming/i)).toBeTruthy();
   expect(screen.getByText(/1 unaccounted/i)).toBeTruthy();
 });
 
-it('does not count a walk-in as unaccounted, and folds walk-ins into the summary denominator', async () => {
+it('keeps a stable booked denominator as walk-ins arrive, and counts walk-ins separately', async () => {
   fetchEventAttendance.mockResolvedValue([
     row({ profile_id: 'a', display_name: 'Ann', state: 'arrived' }),
     row({ profile_id: 'b', display_name: 'Bob', state: null }),
@@ -137,13 +140,14 @@ it('does not count a walk-in as unaccounted, and folds walk-ins into the summary
   ]);
   render(<CheckInScreen />);
 
-  // Ann (booked, arrived) + Walker (walk-in, arrived) = 2 "here". The
-  // denominator has to be every known row (3), walk-in included, not just
-  // the two booked rows -- `summary.here` already counts Walker's arrival,
-  // so a denominator of 2 (booked only) would read as "2 of 2 here" even
-  // though Bob, a booked player, is still unaccounted. Bob is the only
-  // unaccounted row; a walk-in never is, regardless of state.
-  expect(await screen.findByText(/2 of 3 here/i)).toBeTruthy();
+  // Only Ann is both booked and arrived, out of 2 booked rows (Ann, Bob) --
+  // Walker is a walk-in, so folding him into either side of the "booked"
+  // fraction would either inflate the numerator past a meaning tied to
+  // bookings, or (the old bug) grow the denominator every time somebody
+  // walked in, so the fraction never converged on the number the host set
+  // out to reach. Walker is surfaced instead as his own count.
+  expect(await screen.findByText(/1 of 2 booked here/i)).toBeTruthy();
+  expect(screen.getByText(/1 walk-in\b/i)).toBeTruthy();
   expect(screen.getByText(/0 not coming/i)).toBeTruthy();
   expect(screen.getByText(/1 unaccounted/i)).toBeTruthy();
 });
@@ -273,6 +277,149 @@ it('does not clobber a different profile\'s in-flight write with a refusal\'s re
   expect(bobButton.getAttribute('aria-pressed')).toBe('true');
 });
 
+it('lets a table move land through an in-flight write, without reverting to the old table', async () => {
+  // A co-organizer moves Bob to a different table while Bob's own
+  // check-in write is in flight. The refusal-triggered refetch (fired by
+  // Ann's write below, same mechanism as the cross-profile test above)
+  // carries Bob's NEW table. Only `state` is contested while Bob's write
+  // is outstanding -- the merge must not also revert his table assignment
+  // back to wherever he was before the move.
+  const initialRows = [
+    row({ profile_id: 'a', display_name: 'Ann', state: null }),
+    row({
+      profile_id: 'b',
+      display_name: 'Bob',
+      state: null,
+      event_table_id: 'table-1',
+      table_label: 'Table 1',
+      table_position: 1,
+    }),
+  ];
+  fetchEventAttendance.mockResolvedValueOnce(initialRows).mockResolvedValueOnce([
+    row({ profile_id: 'a', display_name: 'Ann', state: null }),
+    row({
+      profile_id: 'b',
+      display_name: 'Bob',
+      state: null,
+      event_table_id: 'table-2',
+      table_label: 'Table 2',
+      table_position: 1,
+    }),
+  ]);
+  render(<CheckInScreen />);
+
+  const annButton = await screen.findByRole('button', { name: /here: ann/i });
+  const bobButton = await screen.findByRole('button', { name: /here: bob/i });
+
+  let resolveBobWrite!: (v: { error: string | null }) => void;
+  const bobWrite = new Promise<{ error: string | null }>((resolve) => {
+    resolveBobWrite = resolve;
+  });
+  recordAttendance.mockImplementation((input: { profileId: string }) =>
+    input.profileId === 'a' ? Promise.resolve({ error: 'nope' }) : bobWrite,
+  );
+
+  fireEvent.click(annButton);
+  fireEvent.click(bobButton);
+
+  await vi.waitFor(() =>
+    expect(fetchEventAttendance).toHaveBeenCalledTimes(2),
+  );
+  await vi.waitFor(() =>
+    expect(annButton.getAttribute('aria-pressed')).toBe('false'),
+  );
+
+  // Bob moved to Table 2 -- the merge kept the server's table instead of
+  // reverting it alongside preserving his contested `state`. Bob's row is
+  // a fresh DOM node under its new group, so re-query it there rather than
+  // reuse the (now-detached) reference from before the move.
+  const table2 = await screen.findByTestId('door-table-table-2');
+  expect(screen.queryByTestId('door-table-table-1')).toBeNull();
+  const bobButtonAtTable2 = within(table2).getByRole('button', {
+    name: /here: bob/i,
+  });
+  expect(bobButtonAtTable2.getAttribute('aria-pressed')).toBe('true');
+
+  resolveBobWrite({ error: null });
+  await vi.waitFor(() =>
+    expect(bobButtonAtTable2.getAttribute('aria-busy')).toBe('false'),
+  );
+});
+
+it('keeps the correction from a same-row double-tap, even when the first write fails and refetches', async () => {
+  // Routine at a door: mis-tap "Here", then immediately correct to "Not
+  // coming" -- both taps land in the same event-loop turn, before React
+  // repaints the disabled state from write #1's `busy`, so both writes are
+  // genuinely in flight together (wrapping both `fireEvent.click`s in one
+  // `act` reproduces that: neither click sees the other's pending update).
+  // `busy` used to be a boolean cleared unconditionally by whichever write
+  // finished first: write #1 finishing (success OR failure) dropped the
+  // guard for this profile while write #2's outcome was still unknown, and
+  // if write #1 FAILED, its rollback -- built from a `previous` closure
+  // captured before write #2 even existed -- overwrote write #2's
+  // optimistic value outright, on top of leaving the guard down for
+  // whatever refetch that failure's own `load()` call kicks off.
+  const initialRows = [row({ profile_id: 'a', display_name: 'Ann', state: null })];
+  fetchEventAttendance.mockResolvedValue(initialRows);
+  render(<CheckInScreen />);
+
+  const hereButton = await screen.findByRole('button', { name: /here: ann/i });
+  const notComingButton = await screen.findByRole('button', {
+    name: /not coming: ann/i,
+  });
+
+  let resolveWrite1!: (v: { error: string | null }) => void;
+  let resolveWrite2!: (v: { error: string | null }) => void;
+  const write1 = new Promise<{ error: string | null }>((resolve) => {
+    resolveWrite1 = resolve;
+  });
+  const write2 = new Promise<{ error: string | null }>((resolve) => {
+    resolveWrite2 = resolve;
+  });
+  let calls = 0;
+  recordAttendance.mockImplementation(() => {
+    calls += 1;
+    return calls === 1 ? write1 : write2;
+  });
+
+  // Both taps fire before either write settles or React repaints --
+  // reproducing the door mis-tap-then-correct sequence.
+  act(() => {
+    fireEvent.click(hereButton);
+    fireEvent.click(notComingButton);
+  });
+
+  expect(recordAttendance).toHaveBeenCalledTimes(2);
+  expect(notComingButton.getAttribute('aria-pressed')).toBe('true');
+  expect(hereButton.getAttribute('aria-pressed')).toBe('false');
+
+  // Write #1 (the mis-tap) is refused. Its failure fires its own refetch
+  // (`load()`); the server snapshot it reads still shows Ann's original
+  // `null`, since neither write has committed yet.
+  resolveWrite1({ error: 'nope' });
+  await vi.waitFor(() =>
+    expect(fetchEventAttendance).toHaveBeenCalledTimes(2),
+  );
+
+  // Write #2's optimistic "Not coming" must survive both write #1's stale
+  // rollback and the refetch that landed while write #2 was still on the
+  // wire -- the busy guard for Ann must still be up because write #2 has
+  // not resolved yet.
+  expect(notComingButton.getAttribute('aria-pressed')).toBe('true');
+  expect(hereButton.getAttribute('aria-pressed')).toBe('false');
+  expect(notComingButton.getAttribute('aria-busy')).toBe('true');
+
+  // Write #2 now lands successfully -- nothing should regress, and the
+  // guard should finally clear now that the LAST write for this profile
+  // has resolved.
+  resolveWrite2({ error: null });
+  await vi.waitFor(() =>
+    expect(notComingButton.getAttribute('aria-busy')).toBe('false'),
+  );
+  expect(notComingButton.getAttribute('aria-pressed')).toBe('true');
+  expect(hereButton.getAttribute('aria-pressed')).toBe('false');
+});
+
 it('shows a true message instead of an empty room when the attendance read fails', async () => {
   fetchEventAttendance.mockResolvedValue(null);
   render(<CheckInScreen />);
@@ -299,6 +446,44 @@ it('does not claim check-in is closed when it was the event read that failed', a
   // The old behaviour said "Check-in is closed for this game" -- a false
   // statement about the EVENT when the actual problem was the fetch.
   expect(screen.queryByText(/check-in is closed for this game/i)).toBeNull();
+});
+
+it('keeps a previously-confirmed check-in window open through a later failed event refetch', async () => {
+  // Any refused write anywhere on this screen calls `load()` again (see
+  // `setState`/`addWalkIn`). A previously-known window used to be nulled
+  // out the moment THAT refetch's own event read happened to fail --
+  // silently locking the door for a host who was checking people in
+  // seconds earlier, over one flaky read that had nothing to do with the
+  // write that triggered it.
+  let eventCalls = 0;
+  fetchEvent.mockImplementation(() => {
+    eventCalls += 1;
+    return Promise.resolve(eventCalls === 1 ? EVENT : null);
+  });
+  fetchEventAttendance.mockResolvedValue([
+    row({ profile_id: 'a', display_name: 'Ann', state: null }),
+  ]);
+  recordAttendance.mockResolvedValue({ error: 'nope' });
+  render(<CheckInScreen />);
+
+  const hereButton = await screen.findByRole('button', { name: /here: ann/i });
+  expect(hereButton.getAttribute('aria-disabled')).not.toBe('true');
+
+  // The write fails, which fires `load()` again -- this time the event
+  // read inside that refetch is the one that fails.
+  fireEvent.click(hereButton);
+  await vi.waitFor(() => expect(fetchEvent).toHaveBeenCalledTimes(2));
+  await vi.waitFor(() =>
+    expect(hereButton.getAttribute('aria-pressed')).toBe('false'),
+  );
+
+  // The window that was already confirmed open must stay open -- a
+  // transient failure on a LATER read must not blank a window this screen
+  // already knows.
+  expect(hereButton.getAttribute('aria-disabled')).not.toBe('true');
+  expect(
+    screen.queryByText(/could not confirm whether check-in is open/i),
+  ).toBeNull();
 });
 
 it('disables every control once the window has closed', async () => {
@@ -352,4 +537,75 @@ it('excludes people already on the list from the walk-in picker, and pins the ex
     .getAllByLabelText(/^Add /)
     .map((el) => el.getAttribute('aria-label'));
   expect(candidateLabels.sort()).toEqual(['Add Ada', 'Add Dee']);
+});
+
+it('reads the busy guard at the moment the refetch response arrives, not whenever React flushes the merge', async () => {
+  // A different profile's failure fires the refetch (`load()`); Ann's own
+  // write is what has to survive it. `load()` awaits `Promise.all([...])`,
+  // which structurally settles a few microtask hops later than a bare
+  // `await` on Ann's write -- so resolving the refetch and Ann's write
+  // "together" and giving Ann's write a few extra hops of its own (the
+  // `.then().then().then()` below) reliably lands her write's resolution
+  // in the gap between "`load()`'s `Promise.all` has resolved" and
+  // "React has flushed the resulting `setRows` call" -- the exact window
+  // the doc comment on `busySnapshot` in `load()` describes. Reading
+  // `busyRef.current` from INSIDE the `setRows` updater (the old code)
+  // sees the flag already cleared by then and lets the stale server row
+  // win; capturing it synchronously before `setRows` is called (the fix)
+  // does not.
+  const initialRows = [
+    row({ profile_id: 'a', display_name: 'Ann', state: null }),
+    row({ profile_id: 'b', display_name: 'Bob', state: null }),
+  ];
+  let attendCalls = 0;
+  let resolveRefetch!: (v: AttendanceRow[]) => void;
+  const refetch = new Promise<AttendanceRow[]>((resolve) => {
+    resolveRefetch = resolve;
+  });
+  fetchEventAttendance.mockImplementation(() => {
+    attendCalls += 1;
+    return attendCalls === 1 ? Promise.resolve(initialRows) : refetch;
+  });
+
+  let resolveAnnWriteRaw!: (v: { error: string | null }) => void;
+  const annWriteRaw = new Promise<{ error: string | null }>((resolve) => {
+    resolveAnnWriteRaw = resolve;
+  });
+  // Three extra hops so Ann's write settles a beat after `load()`'s
+  // `Promise.all` does, landing squarely in the gap under test.
+  const annWrite = annWriteRaw.then((v) => v).then((v) => v).then((v) => v);
+  recordAttendance.mockImplementation((input: { profileId: string }) =>
+    input.profileId === 'a' ? annWrite : Promise.resolve({ error: 'nope' }),
+  );
+
+  render(<CheckInScreen />);
+  const annButton = await screen.findByRole('button', { name: /here: ann/i });
+  const bobButton = await screen.findByRole('button', { name: /here: bob/i });
+
+  fireEvent.click(annButton); // Ann's write is now in flight.
+  fireEvent.click(bobButton); // Bob's write fails immediately and fires load().
+
+  await vi.waitFor(() =>
+    expect(fetchEventAttendance).toHaveBeenCalledTimes(2),
+  );
+  expect(annButton.getAttribute('aria-busy')).toBe('true');
+
+  // The refetch's server snapshot (Ann still `null`) and Ann's own write
+  // resolving both land in the same tick -- exactly the race the fix
+  // guards against.
+  act(() => {
+    resolveRefetch([
+      row({ profile_id: 'a', display_name: 'Ann', state: null }),
+      row({ profile_id: 'b', display_name: 'Bob', state: null }),
+    ]);
+    resolveAnnWriteRaw({ error: null });
+  });
+
+  await vi.waitFor(() =>
+    expect(annButton.getAttribute('aria-busy')).toBe('false'),
+  );
+  // Ann's optimistic "Here" must survive: the merge must not have applied
+  // the server's stale `null` just because the busy flag cleared before
+  // React got around to running the merge.
+  expect(annButton.getAttribute('aria-pressed')).toBe('true');
 });
