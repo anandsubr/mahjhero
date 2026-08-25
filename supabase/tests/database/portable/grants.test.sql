@@ -238,14 +238,14 @@ select ok(
 select ok(
   has_function_privilege(
     'authenticated',
-    'public.create_event(uuid, text, uuid, text, date, time, int, int)',
+    'public.create_event(uuid, text, uuid, text, date, time, int, int, boolean)',
     'EXECUTE'),
   'authenticated can still execute create_event'
 );
 select ok(
   has_function_privilege(
     'authenticated',
-    'public.update_event(uuid, text, uuid, text, date, time, int)',
+    'public.update_event(uuid, text, uuid, text, date, time, int, boolean)',
     'EXECUTE'),
   'authenticated can still execute update_event'
 );
@@ -316,14 +316,14 @@ select ok(
 select ok(
   has_function_privilege(
     'authenticated',
-    'public.create_event_series(uuid, text, uuid, text, public.series_frequency, smallint, smallint, time, int, int, date, date)',
+    'public.create_event_series(uuid, text, uuid, text, public.series_frequency, smallint, smallint, time, int, int, date, date, boolean)',
     'EXECUTE'),
   'authenticated can still execute create_event_series'
 );
 select ok(
   has_function_privilege(
     'authenticated',
-    'public.update_event_series(uuid, text, uuid, text, time, int, int, date, boolean, boolean)',
+    'public.update_event_series(uuid, text, uuid, text, time, int, int, date, boolean, boolean, boolean)',
     'EXECUTE'),
   'authenticated can still execute update_event_series'
 );
@@ -478,7 +478,7 @@ select ok(
 -- and "everybody has it" look identical until you assert.
 select ok(
   not has_function_privilege('anon',
-    'public.create_event(uuid, text, uuid, text, date, time, int, int)',
+    'public.create_event(uuid, text, uuid, text, date, time, int, int, boolean)',
     'EXECUTE'),
   'anon cannot execute create_event'
 );
@@ -617,14 +617,14 @@ select is(
        'public.update_venue(uuid, text, text, text, text, text)',
        'public.archive_venue(uuid)',
        'public.search_venues(uuid, text)',
-       'public.create_event(uuid, text, uuid, text, date, time, int, int)',
-       'public.update_event(uuid, text, uuid, text, date, time, int)',
+       'public.create_event(uuid, text, uuid, text, date, time, int, int, boolean)',
+       'public.update_event(uuid, text, uuid, text, date, time, int, boolean)',
        'public.cancel_event(uuid)',
        'public.add_event_table(uuid)',
        'public.update_event_table(uuid, text, public.skill_tier)',
        'public.remove_event_table(uuid)',
-       'public.create_event_series(uuid, text, uuid, text, public.series_frequency, smallint, smallint, time, int, int, date, date)',
-       'public.update_event_series(uuid, text, uuid, text, time, int, int, date, boolean, boolean)',
+       'public.create_event_series(uuid, text, uuid, text, public.series_frequency, smallint, smallint, time, int, int, date, date, boolean)',
+       'public.update_event_series(uuid, text, uuid, text, time, int, int, date, boolean, boolean, boolean)',
        'public.end_event_series(uuid, boolean)',
        'public.reset_event_to_series(uuid)',
        'public.is_booking_group_member(uuid)',
@@ -678,14 +678,14 @@ select is(
          'public.update_venue(uuid, text, text, text, text, text)',
          'public.archive_venue(uuid)',
          'public.search_venues(uuid, text)',
-         'public.create_event(uuid, text, uuid, text, date, time, int, int)',
-         'public.update_event(uuid, text, uuid, text, date, time, int)',
+         'public.create_event(uuid, text, uuid, text, date, time, int, int, boolean)',
+         'public.update_event(uuid, text, uuid, text, date, time, int, boolean)',
          'public.cancel_event(uuid)',
          'public.add_event_table(uuid)',
          'public.update_event_table(uuid, text, public.skill_tier)',
          'public.remove_event_table(uuid)',
-         'public.create_event_series(uuid, text, uuid, text, public.series_frequency, smallint, smallint, time, int, int, date, date)',
-         'public.update_event_series(uuid, text, uuid, text, time, int, int, date, boolean, boolean)',
+         'public.create_event_series(uuid, text, uuid, text, public.series_frequency, smallint, smallint, time, int, int, date, date, boolean)',
+         'public.update_event_series(uuid, text, uuid, text, time, int, int, date, boolean, boolean, boolean)',
          'public.end_event_series(uuid, boolean)',
          'public.reset_event_to_series(uuid)',
          'public.is_booking_group_member(uuid)',

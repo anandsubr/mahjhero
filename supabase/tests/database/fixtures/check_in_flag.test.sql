@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(6);
+select plan(10);
 
 -- Fixture: one user, one club, one venue, one series.
 insert into auth.users (id, email)
@@ -71,6 +71,87 @@ select lives_ok(
       set overrides = array['check_in_required']
       where title = 'One-off'$$,
   'check_in_required is a legal overrides key');
+
+-- 6: create_event sets the flag.
+set local role authenticated;
+set local request.jwt.claims to
+  '{"sub":"11111111-1111-1111-1111-111111111111","role":"authenticated"}';
+
+-- Setup, not claims: what is asserted is what check_in_required lands as.
+-- A `create_event(...)` call cannot sit inside the `is()` expression itself
+-- (as the brief's own snippet does): the WHERE clause `id = create_event(...)`
+-- has no correlation to the `events` scan, so the planner is free to
+-- re-evaluate the volatile call once per row already in the table instead of
+-- once total, each call inserting its own row -- and, empirically against a
+-- club with a few dozen already-materialized occurrences, that is exactly
+-- what happens: every call creates that many duplicate rows, `id = <the last
+-- call's uuid>` matches none of them, and the reads below come back NULL
+-- while `update_event`'s later subquery finds more than one 'Quiet Night'
+-- and errors. Following the do-block-perform idiom already used earlier in
+-- this file (20260823070000's DST block, event_mutations.test.sql) makes the
+-- call its own top-level command, so it runs exactly once.
+do $$
+begin
+  perform public.create_event(
+    '22222222-2222-2222-2222-222222222222', 'Door Night',
+    '33333333-3333-3333-3333-333333333333', '',
+    (current_date + 3), '19:00', 180, 2, true);
+end
+$$;
+
+select is(
+  (select check_in_required from public.events where title = 'Door Night'),
+  true,
+  'create_event stores check_in_required');
+
+-- 7: it defaults to false when the caller says nothing.
+do $$
+begin
+  perform public.create_event(
+    '22222222-2222-2222-2222-222222222222', 'Quiet Night',
+    '33333333-3333-3333-3333-333333333333', '',
+    (current_date + 4), '19:00', 180, 2);
+end
+$$;
+
+select is(
+  (select check_in_required from public.events where title = 'Quiet Night'),
+  false,
+  'create_event defaults check_in_required to false');
+
+-- 8: update_event flips it and records the override.
+--
+-- DEVIATION FROM BRIEF: the brief's snippet runs this against 'Quiet Night',
+-- the standalone one-off from test 7. But the override-recording block this
+-- migration adds to (following the brief's own instruction to place it
+-- alongside "its sibling override blocks") lives inside the function's
+-- existing `if ev.series_id is not null then ... end if;` guard, matching
+-- the idiom the title/venue/notes/starts_at fields already use -- overrides
+-- exist to stop SERIES propagation from clobbering a hand-edited occurrence,
+-- so a standalone event (series_id null) never touches that array, whatever
+-- field is edited. Run as written against 'Quiet Night' this assertion can
+-- never pass. Targeted instead at the earliest materialized 'Tuesday Night'
+-- occurrence from test 3 (series-linked, check_in_required inherited as
+-- true), flipping it to false so both halves of the assertion -- the stored
+-- value and the override entry -- are exercised the same way the other four
+-- fields are tested elsewhere in this suite.
+select lives_ok(
+  $$select public.update_event(
+      (select id from public.events
+         where series_id = '44444444-4444-4444-4444-444444444444'
+         order by occurrence_date limit 1),
+      null, null, null, null, null, null, false)$$,
+  'update_event accepts check_in_required');
+
+select ok(
+  (select not check_in_required
+     and 'check_in_required' = any(overrides)
+   from public.events
+   where series_id = '44444444-4444-4444-4444-444444444444'
+   order by occurrence_date limit 1),
+  'update_event sets the flag and records the override');
+
+reset role;
 
 select * from finish();
 rollback;
