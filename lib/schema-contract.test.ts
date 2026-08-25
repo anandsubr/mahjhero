@@ -512,11 +512,14 @@ describe.runIf(reachable || required)('events schema contract', () => {
       [
         'id', 'club_id', 'series_id', 'title', 'venue_id', 'notes',
         'starts_at', 'ends_at', 'status', 'occurrence_date', 'overrides',
-        'venues', 'event_tables', 'bookings',
+        'check_in_required', 'venues', 'event_tables', 'bookings',
       ].sort(),
     );
     expect(row.title).toBe('Tuesday Mahjong');
     expect(row.overrides).toEqual(['title']);
+    // Not set on insert above, so this pins the column's own default —
+    // Task 12 added check_in_required to EVENT_COLUMNS.
+    expect(row.check_in_required).toBe(false);
     expect((row.venues as { name: string }).name).toBe('Contract Hall');
     expect((row.event_tables as unknown[]).length).toBe(1);
     // Task 14: `eventStatusLine` (lib/events.ts) needs capacity and label off

@@ -1,13 +1,29 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const rpc = vi.fn();
-vi.mock('./supabase', () => ({ supabase: { rpc: (...args: unknown[]) => rpc(...args) } }));
+// The read path `fetchMyCheckIn` uses is
+// `from('check_ins').select('state').eq('event_id', ...).maybeSingle()` —
+// modelled as the real chain, same reasoning as broadcasts.test.ts's
+// `orderAfterEq`, so a test exercises the behaviour rather than a TypeError
+// on a missing method.
+const maybeSingleAfterEq = vi.fn();
+vi.mock('./supabase', () => ({
+  supabase: {
+    rpc: (...args: unknown[]) => rpc(...args),
+    from: vi.fn(() => ({
+      select: vi.fn(() => ({
+        eq: vi.fn(() => ({ maybeSingle: maybeSingleAfterEq })),
+      })),
+    })),
+  },
+}));
 
 import {
   attendanceSummary,
   checkInOpen,
   clearAttendance,
   fetchEventAttendance,
+  fetchMyCheckIn,
   recordAttendance,
 } from './attendance';
 import type { AttendanceRow } from './attendance';
@@ -21,8 +37,10 @@ import { GENERIC_ERROR } from './constants';
 // bookings.test.ts's rpc mock (which only ever resolves), but here a test
 // that configures a rejection would leave an unhandled rejected promise
 // behind. The block body returns undefined, so no teardown is registered.
+// Same reasoning applies to maybeSingleAfterEq below.
 beforeEach(() => {
   rpc.mockReset();
+  maybeSingleAfterEq.mockReset();
 });
 
 function row(over: Partial<AttendanceRow> = {}): AttendanceRow {
@@ -111,6 +129,33 @@ describe('fetchEventAttendance', () => {
   it('returns null when the RPC throws rather than returning an error', async () => {
     rpc.mockRejectedValue(new Error('network down'));
     expect(await fetchEventAttendance('e1')).toBeNull();
+  });
+});
+
+describe('fetchMyCheckIn', () => {
+  it('returns the state on a row', async () => {
+    maybeSingleAfterEq.mockResolvedValue({ data: { state: 'arrived' }, error: null });
+    expect(await fetchMyCheckIn('e1')).toBe('arrived');
+  });
+
+  // Absence of a row means NOT DETERMINED, not a no_show -- see
+  // check_ins's own table comment (supabase/migrations/
+  // 20260827020000_create_check_ins.sql). `maybeSingle` (not `single`) is
+  // what makes "no row" a success with `data: null` rather than a
+  // PGRST116 error.
+  it('returns null when no row exists yet', async () => {
+    maybeSingleAfterEq.mockResolvedValue({ data: null, error: null });
+    expect(await fetchMyCheckIn('e1')).toBeNull();
+  });
+
+  it('returns null rather than throwing when the read fails', async () => {
+    maybeSingleAfterEq.mockResolvedValue({ data: null, error: { message: 'boom' } });
+    expect(await fetchMyCheckIn('e1')).toBeNull();
+  });
+
+  it('returns null when the read throws rather than propagating', async () => {
+    maybeSingleAfterEq.mockRejectedValue(new Error('network down'));
+    expect(await fetchMyCheckIn('e1')).toBeNull();
   });
 });
 

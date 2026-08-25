@@ -96,6 +96,25 @@ vi.mock('../../lib/bookings', async (importOriginal) => {
   };
 });
 
+// Task 12: the event screen's own two additions -- the organizer's door-list
+// link and the member's own CheckInControl. `checkInOpen` and `AttendanceState`
+// stay real (checkInOpen is pure, and is the exact window rule these tests
+// exercise); only the network calls are doubled, same pattern as every other
+// lib/* mock in this file.
+const fetchMyCheckIn = vi.fn();
+const recordAttendance = vi.fn();
+const clearAttendance = vi.fn();
+
+vi.mock('../../lib/attendance', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/attendance')>();
+  return {
+    ...actual,
+    fetchMyCheckIn: (...args: unknown[]) => fetchMyCheckIn(...args),
+    recordAttendance: (...args: unknown[]) => recordAttendance(...args),
+    clearAttendance: (...args: unknown[]) => clearAttendance(...args),
+  };
+});
+
 import EventScreen from '../clubs/[id]/events/[eventId]/index';
 
 const CLUB = {
@@ -130,6 +149,7 @@ const EVENT = {
   occurrence_date: null as string | null,
   overrides: [] as string[],
   table_count: 1,
+  check_in_required: false,
 };
 
 const TABLE_1 = {
@@ -173,6 +193,10 @@ beforeEach(() => {
   placeBooking.mockResolvedValue({ error: null });
   cancelBooking.mockResolvedValue({ error: null });
   callForAFourth.mockResolvedValue({ error: null });
+  fetchMyCheckIn.mockReset();
+  fetchMyCheckIn.mockResolvedValue(null);
+  recordAttendance.mockResolvedValue({ error: null });
+  clearAttendance.mockResolvedValue({ error: null });
 });
 
 // A guard-ordering regression this repo has already hit on the club detail
@@ -824,6 +848,139 @@ describe('organizer view', () => {
     expect(screen.queryByText('Cancel this game')).toBeNull();
     expect(screen.queryByText('Add a table')).toBeNull();
     expect(screen.queryByText('Edit this game')).toBeNull();
+  });
+});
+
+// Task 12: wiring check-in into the event screen -- an organizer's link to
+// the door screen, and a booked member's own CheckInControl. Both gate on
+// `event.check_in_required`; the two roles' windows differ (the organizer's
+// carries a 24-hour tail past `ends_at`, the member's does not -- see
+// lib/attendance.ts's `checkInOpen` and app/clubs/[id]/events/[eventId]/
+// check-in.tsx's own doc comment on the organizer tail), so each gets its
+// own event fixture below rather than sharing one "inside the window" event.
+describe('check-in', () => {
+  const CONFIRMED_BOOKING = {
+    booking_id: 'booking-1',
+    group_id: 'group-1',
+    profile_id: 'test-user',
+    display_name: 'Ada',
+    skill_level: null,
+    event_table_id: 'table-1',
+    status: 'confirmed' as const,
+    booked_by: 'test-user',
+    booked_by_name: 'Ada',
+    group_status: 'confirmed' as const,
+    waitlist_position: null,
+    created_at: '2026-08-20T10:00:00Z',
+  };
+
+  // starts_at 30 minutes ago, ends_at an hour from now -- inside both the
+  // organizer window (starts_at - 1h .. ends_at + 24h) and the member window
+  // (starts_at - 1h .. ends_at, no tail) at the moment each test runs.
+  const INSIDE_WINDOW_EVENT = {
+    ...EVENT,
+    check_in_required: true,
+    starts_at: new Date(Date.now() - 30 * 60_000).toISOString(),
+    ends_at: new Date(Date.now() + 60 * 60_000).toISOString(),
+  };
+
+  // starts_at two days out -- opensAt (starts_at - 1h) is still in the
+  // future, so both windows read closed regardless of the tail each one
+  // carries.
+  const OUTSIDE_WINDOW_EVENT = {
+    ...EVENT,
+    check_in_required: true,
+    starts_at: new Date(Date.now() + 2 * 86_400_000).toISOString(),
+    ends_at: new Date(Date.now() + 2 * 86_400_000 + 3 * 3_600_000).toISOString(),
+  };
+
+  describe('the organizer entry point', () => {
+    beforeEach(() => {
+      fetchRoster.mockResolvedValue(HOST_ROLE);
+    });
+
+    it('offers the door list to an organizer when check-in is required', async () => {
+      fetchEvent.mockResolvedValue({ ...EVENT, check_in_required: true });
+      render(<EventScreen />);
+      await screen.findByText('Thursday Mahjong');
+      expect(screen.getByLabelText('Door list')).toBeTruthy();
+    });
+
+    it('offers no door list when the event did not ask for check-in', async () => {
+      render(<EventScreen />); // base EVENT: check_in_required is false
+      await screen.findByText('Thursday Mahjong');
+      expect(screen.queryByLabelText('Door list')).toBeNull();
+    });
+
+    it('navigates to the door screen', async () => {
+      fetchEvent.mockResolvedValue(INSIDE_WINDOW_EVENT);
+      render(<EventScreen />);
+      fireEvent.click(await screen.findByLabelText('Door list'));
+      expect(push).toHaveBeenCalledWith(
+        '/clubs/club-1/events/event-1/check-in',
+      );
+    });
+
+    // Required behaviour from the task brief, not just the illustrative
+    // sample code: the link is disabled outside the organizer window, with
+    // the reason shown rather than a button that silently does nothing.
+    it('disables the door list outside the organizer window, with the reason shown', async () => {
+      fetchEvent.mockResolvedValue(OUTSIDE_WINDOW_EVENT);
+      render(<EventScreen />);
+      const link = await screen.findByLabelText('Door list');
+      expect(link.getAttribute('aria-disabled')).toBe('true');
+      expect(
+        screen.getByText(
+          'Door list opens 1 hour before the game and stays open until a day after it ends.',
+        ),
+      ).toBeTruthy();
+    });
+  });
+
+  describe("the member's own control", () => {
+    it('offers no door list to a plain member', async () => {
+      fetchEvent.mockResolvedValue({ ...EVENT, check_in_required: true });
+      render(<EventScreen />);
+      await screen.findByText('Thursday Mahjong');
+      expect(screen.queryByLabelText('Door list')).toBeNull();
+    });
+
+    it('lets a booked member check themselves in inside the window', async () => {
+      fetchEvent.mockResolvedValue(INSIDE_WINDOW_EVENT);
+      fetchEventSeating.mockResolvedValue([CONFIRMED_BOOKING]);
+      render(<EventScreen />);
+
+      const here = await screen.findByLabelText('Here: you');
+      fireEvent.click(here);
+      await vi.waitFor(() =>
+        expect(recordAttendance).toHaveBeenCalledWith({
+          eventId: 'event-1',
+          profileId: 'test-user',
+          state: 'arrived',
+        }),
+      );
+    });
+
+    it('hides the member control outside the window', async () => {
+      fetchEvent.mockResolvedValue(OUTSIDE_WINDOW_EVENT);
+      fetchEventSeating.mockResolvedValue([CONFIRMED_BOOKING]);
+      render(<EventScreen />);
+      await screen.findByText('Thursday Mahjong');
+      expect(screen.queryByLabelText('Here: you')).toBeNull();
+    });
+
+    // A waitlisted member has no seat, and `record_attendance` refuses them
+    // -- drawing a control guaranteed to fail is worse than drawing none
+    // (see lib/attendance.ts's own comment on why this gate exists).
+    it('hides the member control for a waitlisted booking', async () => {
+      fetchEvent.mockResolvedValue(INSIDE_WINDOW_EVENT);
+      fetchEventSeating.mockResolvedValue([
+        { ...CONFIRMED_BOOKING, status: 'waitlisted' as const, event_table_id: null },
+      ]);
+      render(<EventScreen />);
+      await screen.findByText('Thursday Mahjong');
+      expect(screen.queryByLabelText('Here: you')).toBeNull();
+    });
   });
 });
 

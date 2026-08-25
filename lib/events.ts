@@ -33,6 +33,14 @@ export type ClubEvent = {
   event_tables: { id: string; capacity: number; label: string }[];
   /** Every booking row for this event, live and dead. Filter before use. */
   bookings: EventBookingRow[];
+  /**
+   * Whether this occurrence asked for check-in — added for Task 12, which
+   * gates the event screen's door-list link and the member's own
+   * `CheckInControl` on it. `lib/bookings.ts`'s `MyBooking` already carried
+   * this (Task 9's `my_upcoming_bookings`); `ClubEvent` did not, because
+   * nothing read it through `fetchEvent`/`EVENT_COLUMNS` until now.
+   */
+  check_in_required: boolean;
 };
 
 export type EventTable = {
@@ -113,7 +121,7 @@ export type RecurrenceRule = {
  */
 export const EVENT_COLUMNS =
   'id, club_id, series_id, title, venue_id, notes, starts_at, ends_at, ' +
-  'status, occurrence_date, overrides, venues(name), ' +
+  'status, occurrence_date, overrides, check_in_required, venues(name), ' +
   'event_tables(id, capacity, label), bookings(profile_id, status, event_table_id)';
 
 export const SERIES_COLUMNS =

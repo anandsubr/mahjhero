@@ -131,6 +131,43 @@ export async function recordAttendance(input: {
   }
 }
 
+/**
+ * The member's own check-in state for one event, read through the
+ * self-only RLS policy (`check_ins_select_own`,
+ * supabase/migrations/20260827020000_create_check_ins.sql) rather than
+ * `event_attendance` — that RPC's `assert_club_organizer` refuses anyone
+ * who isn't running the door, so a plain member reading their own row has
+ * to go through `check_ins` directly. `authenticated` holds select on that
+ * table (nothing else), scoped by the policy to `profile_id = auth.uid()`,
+ * so no client-side profile filter is needed on top of `event_id`.
+ *
+ * `null` covers both "no row" (NOT DETERMINED — nobody has checked this
+ * member in) and a failed read alike, the same convention `fetchOpenOffer`
+ * (lib/bookings.ts) already uses for the event screen: a state that failed
+ * to load is indistinguishable from one that doesn't exist, and either way
+ * the event screen's `CheckInControl` renders the same "not determined"
+ * look.
+ */
+export async function fetchMyCheckIn(
+  eventId: string,
+): Promise<AttendanceState | null> {
+  try {
+    const { data, error } = await supabase
+      .from('check_ins')
+      .select('state')
+      .eq('event_id', eventId)
+      .maybeSingle();
+    if (error) {
+      console.error('fetchMyCheckIn failed', error);
+      return null;
+    }
+    return (data?.state ?? null) as AttendanceState | null;
+  } catch (cause) {
+    console.error('fetchMyCheckIn failed', cause);
+    return null;
+  }
+}
+
 export async function clearAttendance(input: {
   eventId: string;
   profileId: string;

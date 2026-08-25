@@ -4,6 +4,7 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import BringSomeoneSheet from '../../../../../components/BringSomeoneSheet';
 import Button from '../../../../../components/Button';
 import Card from '../../../../../components/Card';
+import CheckInControl from '../../../../../components/CheckInControl';
 import ErrorBanner from '../../../../../components/ErrorBanner';
 import Screen from '../../../../../components/Screen';
 import Tag from '../../../../../components/Tag';
@@ -11,6 +12,13 @@ import TableCard from '../../../../../components/TableCard';
 import TierPicker from '../../../../../components/TierPicker';
 import WaitlistPanel from '../../../../../components/WaitlistPanel';
 import { ChevronLeftIcon } from '../../../../../components/icons';
+import {
+  checkInOpen,
+  clearAttendance,
+  fetchMyCheckIn,
+  recordAttendance,
+  type AttendanceState,
+} from '../../../../../lib/attendance';
 import { canInvite, fetchClub, fetchRoster } from '../../../../../lib/clubs';
 import type { Club, ClubMember } from '../../../../../lib/clubs';
 import {
@@ -46,6 +54,7 @@ import {
   type EventTable,
 } from '../../../../../lib/events';
 import { useSession } from '../../../../../lib/session';
+import { addHours } from '../../../../../lib/time';
 import { colors, space, type } from '../../../../../lib/theme';
 
 /**
@@ -88,7 +97,11 @@ import { colors, space, type } from '../../../../../lib/theme';
  * elsewhere or removes them from the game, never parks them in limbo on
  * purpose. Also: an edit link (Task 15), a cancel action, and — only on a
  * series occurrence they have personally customised — a "Reset to the
- * series" control.
+ * series" control. When an event asks for check-in (Task 12), an organizer
+ * additionally gets a "Door list" link to the door screen (Task 11), and a
+ * member holding a confirmed seat gets their own `CheckInControl` — each
+ * gated on its own window (`checkInOpen`, lib/attendance.ts), the
+ * organizer's carrying a 24-hour tail the member's does not.
  */
 export default function EventScreen() {
   const { id: clubId, eventId } = useLocalSearchParams<{
@@ -180,10 +193,17 @@ export default function EventScreen() {
   // enforces it has to live above every table, the same reason `busy` does.
   const [openBookingId, setOpenBookingId] = useState<string | null>(null);
 
+  // The signed-in member's own check-in state, read through the self-only
+  // `check_ins` RLS policy (`fetchMyCheckIn`, lib/attendance.ts) rather than
+  // `event_attendance` — that RPC refuses anyone but an organizer. `null`
+  // covers both "not determined" and a failed read, same as `offer` below.
+  const [myCheckIn, setMyCheckIn] = useState<AttendanceState | null>(null);
+  const [checkInBusy, setCheckInBusy] = useState(false);
+
   const me = session?.user.id ?? '';
 
   async function load() {
-    const [loadedClub, loadedEvent, loadedTables, rosterRows, seatingRows, openOffer] =
+    const [loadedClub, loadedEvent, loadedTables, rosterRows, seatingRows, openOffer, myCheckInState] =
       await Promise.all([
         fetchClub(clubId),
         fetchEvent(eventId),
@@ -191,6 +211,7 @@ export default function EventScreen() {
         fetchRoster(clubId),
         fetchEventSeating(eventId),
         fetchOpenOffer(eventId),
+        fetchMyCheckIn(eventId),
       ]);
 
     setClub(loadedClub);
@@ -219,6 +240,8 @@ export default function EventScreen() {
           }
         : null,
     );
+
+    setMyCheckIn(myCheckInState);
 
     // A roster fetch failure fails closed to "not an organizer" rather than
     // blanking the screen — the member-facing content above is unaffected,
@@ -351,6 +374,18 @@ export default function EventScreen() {
   );
   const myHoldsSeat = myBooking !== undefined;
 
+  // The two check-in windows Task 12 wires up. The organizer's carries a
+  // 24-hour tail past `ends_at` for a retroactive correction after the fact
+  // (the door screen itself, app/clubs/[id]/events/[eventId]/check-in.tsx,
+  // uses the identical window); the member's own has no tail — once the
+  // game ends, self-check-in is done. Both share the same one-hour lead via
+  // `addHours` (lib/time.ts) rather than re-deriving it inline.
+  const organizerCheckInOpen = checkInOpen(
+    addHours(event.starts_at, -1),
+    addHours(event.ends_at, 24),
+  );
+  const memberCheckInOpen = checkInOpen(addHours(event.starts_at, -1), event.ends_at);
+
   // Confirmed but not placed at any table — "any table" bookings, and
   // whatever `placeBooking(id, null)` produces (the data-layer capability
   // behind the seating rule still stands; there is just no UI button left
@@ -470,6 +505,26 @@ export default function EventScreen() {
 
   function joinWaitlist() {
     void bookSeat(null);
+  }
+
+  // The member's own check-in write: optimistic, with rollback on refusal.
+  // Simpler than the door screen's own version of this (setState in
+  // check-in.tsx) because there is exactly one person's state in flight
+  // here, not a whole list of concurrent writes to reconcile against a
+  // refetch.
+  async function setMyCheckInState(next: AttendanceState | null) {
+    const previous = myCheckIn;
+    setMyCheckIn(next);
+    setCheckInBusy(true);
+    const { error: writeError } =
+      next === null
+        ? await clearAttendance({ eventId, profileId: me })
+        : await recordAttendance({ eventId, profileId: me, state: next });
+    setCheckInBusy(false);
+    if (writeError) {
+      setMyCheckIn(previous); // roll back; the server is authoritative
+      setError(writeError);
+    }
   }
 
   async function leaveWaitlist() {
@@ -864,6 +919,24 @@ export default function EventScreen() {
       {waitlistNote ? <Text style={styles.help}>{waitlistNote}</Text> : null}
 
       {/*
+        The member's own check-in control -- Task 12. Needs a CONFIRMED
+        booking (a waitlisted member has no seat, and `record_attendance`
+        refuses them -- see `setMyCheckInState`'s own doc comment), the
+        event to actually require check-in, and the member window
+        (`memberCheckInOpen`, no organizer tail) to be open. `label="you"`:
+        the person this control is about is the signed-in member
+        themselves, so "Here: you" is what a screen reader announces.
+      */}
+      {event.check_in_required && myBooking?.status === 'confirmed' && memberCheckInOpen ? (
+        <CheckInControl
+          state={myCheckIn}
+          label="you"
+          busy={checkInBusy}
+          onChange={(next) => void setMyCheckInState(next)}
+        />
+      ) : null}
+
+      {/*
         `tables`/`onSeat` are the one place a host can seat someone who is
         confirmed but unplaced — omitted entirely for a plain member (not
         just disabled), since only a host may place anyone. This is also
@@ -908,6 +981,33 @@ export default function EventScreen() {
           >
             Message everyone booked
           </Button>
+
+          {/*
+            The organizer's entry point to the door screen (Task 11) --
+            only when this event actually asked for check-in, and disabled
+            outside the organizer window (with the reason shown) rather
+            than left tappable onto a screen whose own controls would all
+            be disabled anyway.
+          */}
+          {event.check_in_required ? (
+            <>
+              <Button
+                variant="secondary"
+                disabled={!organizerCheckInOpen}
+                onPress={() =>
+                  router.push(`/clubs/${clubId}/events/${eventId}/check-in`)
+                }
+                accessibilityLabel="Door list"
+              >
+                Door list
+              </Button>
+              {!organizerCheckInOpen ? (
+                <Text style={styles.help}>
+                  Door list opens 1 hour before the game and stays open until a day after it ends.
+                </Text>
+              ) : null}
+            </>
+          ) : null}
 
           <Link
             href={`/clubs/${clubId}/events/${eventId}/edit`}
