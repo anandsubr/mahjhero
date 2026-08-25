@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(75);
+select plan(77);
 
 /*
  * Guards the privileges themselves, not the policies.
@@ -468,6 +468,23 @@ select ok(
   'authenticated can still execute event_seating'
 );
 
+-- The door list (Task 7). Same shape as record_attendance/clear_attendance
+-- above: a positive assertion so the catch-all below cannot pass by
+-- revoking everything, and a named anon assertion even though the dynamic
+-- anon catch-all already covers it — this one is `security definer` over
+-- profiles.display_name, so an anon EXECUTE grant here is worth calling out
+-- by name rather than leaving it to a single combined scan.
+select ok(
+  has_function_privilege('authenticated', 'public.event_attendance(uuid)',
+    'EXECUTE'),
+  'authenticated can still execute event_attendance'
+);
+select ok(
+  not has_function_privilege('anon', 'public.event_attendance(uuid)',
+    'EXECUTE'),
+  'anon cannot execute event_attendance'
+);
+
 -- sweep_promotion_offers and announce_need_a_fourth are the two functions
 -- 20260825060000 schedules to run as `postgres`. Neither takes a caller
 -- argument nor checks membership, so authenticated must not reach either —
@@ -696,7 +713,8 @@ select is(
        'public.broadcast_recipient_count(uuid, uuid)',
        'public.send_broadcast(uuid, uuid, text, text)',
        'public.record_attendance(uuid, uuid, public.attendance_state, timestamptz)',
-       'public.clear_attendance(uuid, uuid)'
+       'public.clear_attendance(uuid, uuid)',
+       'public.event_attendance(uuid)'
      ]) as f
    ) expected
    where not exists (
@@ -759,7 +777,8 @@ select is(
          'public.broadcast_recipient_count(uuid, uuid)',
          'public.send_broadcast(uuid, uuid, text, text)',
          'public.record_attendance(uuid, uuid, public.attendance_state, timestamptz)',
-         'public.clear_attendance(uuid, uuid)'
+         'public.clear_attendance(uuid, uuid)',
+         'public.event_attendance(uuid)'
        ]) as f
        where to_regprocedure(f) = p.oid::regprocedure
      )),
