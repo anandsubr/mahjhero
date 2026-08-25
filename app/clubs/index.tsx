@@ -307,6 +307,21 @@ function BookingCard({
     booking.offer_seats !== null &&
     booking.offer_expires_at !== null;
 
+  // `promote_waitlist` caps an offer's `expires_at` at
+  // `least(now() + 2h, ev.starts_at)` (20260825010000_waitlist_promotion.sql),
+  // so any offer still unresponded at kickoff is already expired. But this
+  // row's offer fields come from `my_upcoming_bookings`'s join on
+  // `po.responded_at is null` alone -- no expiry check -- and
+  // `sweep_promotion_offers` only clears a lapsed offer every five minutes.
+  // So `hasOffer` alone stays true for a while (sometimes a long while, if
+  // the sweep is behind) after the offer has actually lapsed. Gating the
+  // buttons on `starts_at > now()` like the branches below would miss this:
+  // `accept_promotion_offer` re-checks `expires_at` under lock regardless of
+  // whether the game has started (20260825100000_..._capacity_guard.sql),
+  // so the offer's OWN expiry -- not the game's start time -- is the
+  // invariant that actually predicts a refusal.
+  const offerLive = hasOffer && new Date(booking.offer_expires_at as string).getTime() > Date.now();
+
   // Task 8 keeps an in-progress game in this list so the member has
   // somewhere to check in -- which also keeps this row's seat-management
   // buttons on screen past kickoff, where `cancel_booking` and
@@ -353,7 +368,7 @@ function BookingCard({
 
       {seatStatus ? <Text style={styles.help}>{seatStatus}</Text> : null}
 
-      {hasOffer ? (
+      {offerLive ? (
         <>
           <Text style={styles.help}>
             {offerCountdown(new Date(booking.offer_expires_at as string), new Date())}
@@ -380,6 +395,16 @@ function BookingCard({
             No thanks
           </Button>
         </>
+      ) : hasOffer ? (
+        // The offer is still sitting in the data (sweep hasn't cleared it
+        // yet) but has already lapsed -- surfacing neither a countdown that
+        // would just say "Expired" nor two buttons that would just raise
+        // "offer expired" (lib/bookings.ts). Same sentence
+        // `promotion_offer_expired`'s notification and that RPC refusal
+        // both already use, so a member who saw either one recognizes this.
+        <Text style={styles.help}>
+          {"That offer has expired — you're still on the waitlist."}
+        </Text>
       ) : bookedByOther ? (
         <>
           <Text style={styles.friendNote}>

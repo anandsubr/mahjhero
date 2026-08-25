@@ -279,7 +279,11 @@ describe('Your games', () => {
         table_label: null,
         offer_id: 'o1',
         offer_seats: 2,
-        offer_expires_at: '2026-08-24T16:15:00Z',
+        // After the beforeEach-frozen "now" of 2026-08-25T10:00:00Z, unlike
+        // the fixture's original 2026-08-24 timestamps -- this test is
+        // about distinct labels on two live offers, and the Task 13
+        // fix-up's offer-expiry gate would otherwise render neither button.
+        offer_expires_at: '2026-08-25T16:15:00Z',
       }),
       booking({
         booking_id: 'b2',
@@ -290,7 +294,7 @@ describe('Your games', () => {
         table_label: null,
         offer_id: 'o2',
         offer_seats: 1,
-        offer_expires_at: '2026-08-24T17:00:00Z',
+        offer_expires_at: '2026-08-25T17:00:00Z',
       }),
     ]);
     render(<ClubsScreen />);
@@ -488,6 +492,89 @@ describe('Check-in', () => {
     expect(screen.queryByText('Leave the waitlist')).toBeNull();
     expect(
       screen.queryByLabelText('Leave the waitlist for Tuesday game'),
+    ).toBeNull();
+  });
+});
+
+// `promote_waitlist` caps an offer's `expires_at` at the event's own
+// `starts_at`, and `sweep_promotion_offers` only clears a lapsed offer
+// every five minutes -- so `my_upcoming_bookings` can keep returning offer
+// fields for a while after the offer itself has expired. The row must gate
+// "Take the seats" / "No thanks" on the OFFER's own expiry, not on
+// `starts_at`, because `accept_promotion_offer` refuses a lapsed offer
+// (`offer expired`) regardless of whether the game has started.
+describe('Promotion offer expiry', () => {
+  it('renders no actionable offer buttons once the offer itself has expired', async () => {
+    fetchMyUpcomingBookings.mockResolvedValue([
+      booking({
+        status: 'waitlisted' as const,
+        event_table_id: null,
+        table_label: null,
+        offer_id: 'o1',
+        offer_seats: 2,
+        offer_expires_at: '2026-08-25T09:00:00Z', // before the frozen "now" of 10:00
+      }),
+    ]);
+    render(<ClubsScreen />);
+    expect(
+      await screen.findByText(
+        "That offer has expired — you're still on the waitlist.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByLabelText('Take the 2 seats')).toBeNull();
+    expect(
+      screen.queryByLabelText('Decline the 2 seats offered for Tuesday game'),
+    ).toBeNull();
+  });
+
+  it('still renders the offer buttons while the offer has not yet expired', async () => {
+    fetchMyUpcomingBookings.mockResolvedValue([
+      booking({
+        status: 'waitlisted' as const,
+        event_table_id: null,
+        table_label: null,
+        offer_id: 'o1',
+        offer_seats: 2,
+        offer_expires_at: '2026-08-25T12:00:00Z', // after the frozen "now" of 10:00
+      }),
+    ]);
+    render(<ClubsScreen />);
+    expect(await screen.findByLabelText('Take the 2 seats')).toBeTruthy();
+    expect(
+      await screen.findByLabelText(
+        'Decline the 2 seats offered for Tuesday game',
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.queryByText(
+        "That offer has expired — you're still on the waitlist.",
+      ),
+    ).toBeNull();
+  });
+
+  // The scenario the finding was actually about: Task 8 keeps an
+  // in-progress game in "Your games" for check-in, and that same game can
+  // carry a now-lapsed offer the sweep hasn't cleared yet. The row should
+  // offer the one write that can still succeed (check-in) and neither of
+  // the two that are now guaranteed refusals.
+  it('shows the check-in control but no offer buttons on an in-progress game with a lapsed offer', async () => {
+    fetchMyUpcomingBookings.mockResolvedValue([
+      booking({
+        starts_at: '2026-08-25T08:00:00Z', // before the frozen "now" of 10:00
+        status: 'confirmed',
+        offer_id: 'o1',
+        offer_seats: 2,
+        offer_expires_at: '2026-08-25T09:00:00Z', // before the frozen "now" of 10:00
+        check_in_required: true,
+        check_in_opens_at: new Date(Date.now() - 60_000).toISOString(),
+        check_in_closes_at: new Date(Date.now() + 3_600_000).toISOString(),
+      }),
+    ]);
+    render(<ClubsScreen />);
+    expect(await screen.findByLabelText('Here: you')).toBeTruthy();
+    expect(screen.queryByLabelText('Take the 2 seats')).toBeNull();
+    expect(
+      screen.queryByLabelText('Decline the 2 seats offered for Tuesday game'),
     ).toBeNull();
   });
 });
