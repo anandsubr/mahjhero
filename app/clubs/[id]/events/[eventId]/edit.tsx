@@ -40,6 +40,7 @@ type OriginalOccurrence = {
   venueId: string;
   notes: string;
   startTime: string;
+  checkInRequired: boolean;
 };
 
 /**
@@ -211,6 +212,7 @@ export default function EditEventScreen() {
   const [eventVenueName, setEventVenueName] = useState('');
   const [eventStartTime, setEventStartTime] = useState('19:00');
   const [eventNotes, setEventNotes] = useState('');
+  const [eventCheckInRequired, setEventCheckInRequired] = useState(false);
   const [original, setOriginal] = useState<OriginalOccurrence | null>(null);
 
   const [seriesTitle, setSeriesTitle] = useState('');
@@ -218,6 +220,7 @@ export default function EditEventScreen() {
   const [seriesVenueName, setSeriesVenueName] = useState('');
   const [seriesStartTime, setSeriesStartTime] = useState('19:00');
   const [seriesNotes, setSeriesNotes] = useState('');
+  const [seriesCheckInRequired, setSeriesCheckInRequired] = useState(false);
   // The series' own "stop repeating on". Kept apart from `runsIndefinitely`
   // (see that state's own note) rather than folded into a single nullable
   // string, because DateField has no way to produce an empty string through
@@ -265,11 +268,13 @@ export default function EditEventScreen() {
         setEventVenueName(loadedEvent.venue_name);
         setEventNotes(loadedEvent.notes);
         setEventStartTime(initialStartTime);
+        setEventCheckInRequired(loadedEvent.check_in_required);
         setOriginal({
           title: loadedEvent.title,
           venueId: loadedEvent.venue_id,
           notes: loadedEvent.notes,
           startTime: initialStartTime,
+          checkInRequired: loadedEvent.check_in_required,
         });
       }
 
@@ -299,6 +304,7 @@ export default function EditEventScreen() {
           // only place in lib/events.ts's domain that reads a `time` column
           // back into a form field.
           setSeriesStartTime(loadedSeries.start_time.slice(0, 5));
+          setSeriesCheckInRequired(loadedSeries.check_in_required);
           setEndsOn(loadedSeries.ends_on ?? '');
           setRunsIndefinitely(loadedSeries.ends_on === null);
         }
@@ -373,6 +379,10 @@ export default function EditEventScreen() {
   const setStartTime = isSeriesScope ? setSeriesStartTime : setEventStartTime;
   const notes = isSeriesScope ? seriesNotes : eventNotes;
   const setNotes = isSeriesScope ? setSeriesNotes : setEventNotes;
+  const checkInRequired = isSeriesScope ? seriesCheckInRequired : eventCheckInRequired;
+  const setCheckInRequired = isSeriesScope
+    ? setSeriesCheckInRequired
+    : setEventCheckInRequired;
 
   // Arrow functions assigned to `const`, not `function` declarations --
   // TypeScript only carries the `!club || !event` narrowing above into a
@@ -401,6 +411,7 @@ export default function EditEventScreen() {
         venueId,
         notes,
         startTime,
+        checkInRequired,
         endsOn: endsOnInput,
         clearEndsOn,
         includeOverridden,
@@ -418,12 +429,16 @@ export default function EditEventScreen() {
       const venueChanged = original ? venueId !== original.venueId : false;
       const notesChanged = original ? notes !== original.notes : false;
       const startTimeChanged = original ? startTime !== original.startTime : false;
+      const checkInChanged = original
+        ? checkInRequired !== original.checkInRequired
+        : false;
 
       const result = await updateEvent(event.id, {
         title: titleChanged ? title.trim() : null,
         venueId: venueChanged ? venueId : null,
         notes: notesChanged ? notes : null,
         startTime: startTimeChanged ? startTime : null,
+        checkInRequired: checkInChanged ? checkInRequired : null,
       });
       setSaving(false);
       if (result.error) {
@@ -514,6 +529,17 @@ export default function EditEventScreen() {
         accessibilityLabel="Notes"
         multiline
       />
+
+      <Text style={styles.label}>Require check-in</Text>
+      <Toggle
+        value={checkInRequired}
+        onValueChange={setCheckInRequired}
+        accessibilityLabel="Require check-in"
+      />
+      <Text style={styles.help}>
+        Turn this on and this game gets a door list, so you can check people
+        in as they arrive. Small games usually don't need it.
+      </Text>
 
       {scope === 'series' && series ? (
         <>

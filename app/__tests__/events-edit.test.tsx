@@ -130,6 +130,7 @@ const ONE_OFF_EVENT = {
   occurrence_date: null as string | null,
   overrides: [] as string[],
   table_count: 1,
+  check_in_required: false,
 };
 
 const SERIES_EVENT = {
@@ -155,6 +156,7 @@ const SERIES = {
   starts_on: '2026-01-01',
   ends_on: '2026-12-31' as string | null,
   ended_at: null as string | null,
+  check_in_required: false,
 };
 
 beforeEach(() => {
@@ -251,6 +253,7 @@ describe('a one-off event', () => {
       venueId: null,
       notes: null,
       startTime: null,
+      checkInRequired: null,
     });
     expect(replace).toHaveBeenCalledWith('/clubs/club-1/events/event-1');
   });
@@ -266,6 +269,7 @@ describe('a one-off event', () => {
       venueId: null,
       notes: null,
       startTime: null,
+      checkInRequired: null,
     });
   });
 
@@ -285,6 +289,38 @@ describe('a one-off event', () => {
       venueId: 'venue-2',
       notes: null,
       startTime: '20:30',
+      checkInRequired: null,
+    });
+  });
+
+  // Task 14: the host's "Require check-in" toggle. `ONE_OFF_EVENT` seeds
+  // false; this loads it true instead, so the switch's initial state proves
+  // it is reading `event.check_in_required`, not just always rendering off
+  // the way `events-new.test.tsx`'s screen legitimately does.
+  it("shows the event's current check-in setting", async () => {
+    fetchEvent.mockResolvedValue({ ...ONE_OFF_EVENT, check_in_required: true });
+    render(<EditEventScreen />);
+    await screen.findByDisplayValue('Thursday Mahjong');
+
+    expect(
+      screen.getByRole('switch', { name: 'Require check-in' }).getAttribute('aria-checked'),
+    ).toBe('true');
+  });
+
+  it('sends the toggled check-in setting to updateEvent, gated the same way as every other field', async () => {
+    render(<EditEventScreen />);
+    await screen.findByDisplayValue('Thursday Mahjong');
+
+    fireEvent.click(screen.getByRole('switch', { name: 'Require check-in' }));
+    fireEvent.click(screen.getByText('Save'));
+
+    await vi.waitFor(() => expect(updateEvent).toHaveBeenCalled());
+    expect(updateEvent).toHaveBeenCalledWith('event-1', {
+      title: null,
+      venueId: null,
+      notes: null,
+      startTime: null,
+      checkInRequired: true,
     });
   });
 });
@@ -379,6 +415,7 @@ describe('a series occurrence', () => {
       venueId: 'venue-1',
       notes: '',
       startTime: '19:00',
+      checkInRequired: false,
       endsOn: undefined,
       clearEndsOn: false,
       includeOverridden: false,
@@ -401,9 +438,35 @@ describe('a series occurrence', () => {
       venueId: 'venue-1',
       notes: '',
       startTime: '19:00',
+      checkInRequired: false,
       endsOn: undefined,
       clearEndsOn: true,
       includeOverridden: false,
+    });
+  });
+
+  // Task 14: the series-scope field is seeded from `series.check_in_required`
+  // (SERIES fixture is false), never from the occurrence — the same rule
+  // Fix pass 1 established for title/venue/notes/start time, and the same
+  // reason "seeds and displays 'The whole series' from the series row" above
+  // exists. Sent unconditionally, like the other series-scope fields — not
+  // diffed the way the "This game" path diffs `checkInRequired` — because
+  // `update_event_series`'s own gate treats an unchanged value as a no-op.
+  it('sends the series check-in setting to updateEventSeries when toggled', async () => {
+    render(<EditEventScreen />);
+    await screen.findByText('The whole series');
+    fireEvent.click(screen.getByText('The whole series'));
+
+    expect(
+      screen.getByRole('switch', { name: 'Require check-in' }).getAttribute('aria-checked'),
+    ).toBe('false');
+
+    fireEvent.click(screen.getByRole('switch', { name: 'Require check-in' }));
+    fireEvent.click(screen.getByText('Save'));
+
+    await vi.waitFor(() => expect(updateEventSeries).toHaveBeenCalled());
+    expect(updateEventSeries.mock.calls[0][1]).toMatchObject({
+      checkInRequired: true,
     });
   });
 

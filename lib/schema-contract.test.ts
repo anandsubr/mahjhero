@@ -556,11 +556,16 @@ describe.runIf(reachable || required)('events schema contract', () => {
       [
         'id', 'club_id', 'title', 'venue_id', 'notes', 'frequency',
         'weekday', 'nth_week', 'start_time', 'duration_minutes',
-        'table_count', 'starts_on', 'ends_on', 'ended_at', 'venues',
+        'table_count', 'starts_on', 'ends_on', 'ended_at',
+        'check_in_required', 'venues',
       ].sort(),
     );
     expect(row.ends_on).toBe('2027-12-31');
     expect(row.ended_at).toBe('2027-06-01T00:00:00+00:00');
+    // Not set on insert — pins the column's own default (Task 14 added
+    // check_in_required to SERIES_COLUMNS; EVENT_COLUMNS already had it from
+    // Task 12, asserted above).
+    expect(row.check_in_required).toBe(false);
     // `venues(name)`, added alongside Fix pass 1 on Task 15's review so the
     // edit screen's "The whole series" heading can show the series' own
     // venue rather than the occurrence's — the seed row reuses the same
@@ -757,6 +762,7 @@ describe.runIf(reachable || required)(
             startTime: '19:00',
             durationMinutes: 180,
             tableCount: 2,
+            checkInRequired: false,
           }),
       },
       {
@@ -795,6 +801,7 @@ describe.runIf(reachable || required)(
             tableCount: 1,
             startsOn: '2027-01-01',
             endsOn: null,
+            checkInRequired: false,
           }),
       },
       {
@@ -1003,6 +1010,7 @@ describe.runIf(reachable || required)(
         startTime: input.startTime,
         durationMinutes: input.durationMinutes,
         tableCount: 1,
+        checkInRequired: false,
       });
       expect(error, `createEvent reported: ${error}`).toBeNull();
       expect(eventId).not.toBeNull();
@@ -1155,6 +1163,7 @@ describe.runIf(reachable || required)(
         startTime: '19:00',
         durationMinutes: 180,
         tableCount: 1,
+        checkInRequired: false,
       });
       expect(error).toBeNull();
       createdEventIds.push(eventId!);
@@ -1187,6 +1196,7 @@ describe.runIf(reachable || required)(
         startTime: '19:00',
         durationMinutes: 180,
         tableCount: 1,
+        checkInRequired: false,
       });
       expect(error).toBeNull();
       createdEventIds.push(eventId!);
@@ -1218,6 +1228,7 @@ describe.runIf(reachable || required)(
         startTime: '19:00',
         durationMinutes: 180,
         tableCount: 1,
+        checkInRequired: false,
       });
       expect(error).toBeNull();
       createdEventIds.push(eventId!);
@@ -1336,6 +1347,7 @@ describe.runIf(reachable || required)('deliberate refusals reach the host as ref
       startTime: '19:00',
       durationMinutes: 180,
       tableCount: 1,
+      checkInRequired: false,
     });
     expect(createError, `seeding event failed: ${createError}`).toBeNull();
     eventId = created!;
@@ -1385,6 +1397,7 @@ describe.runIf(reachable || required)('deliberate refusals reach the host as ref
       startTime: '19:00',
       durationMinutes: 180,
       tableCount: 1,
+      checkInRequired: false,
     });
     expect(created).toBeNull();
     expect(error).toBe('That start time has already passed. Pick a later one.');
@@ -1441,6 +1454,7 @@ describe.runIf(reachable || required)('deliberate refusals reach the host as ref
       tableCount: 1,
       startsOn: '2020-01-01',
       endsOn: '2020-02-01',
+      checkInRequired: false,
     });
     expect(created).toBeNull();
     expect(error).toBe('No games would be created before that end date.');

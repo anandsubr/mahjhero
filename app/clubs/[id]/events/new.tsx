@@ -7,6 +7,7 @@ import ErrorBanner from '../../../../components/ErrorBanner';
 import Screen from '../../../../components/Screen';
 import TextField from '../../../../components/TextField';
 import TimeField from '../../../../components/TimeField';
+import Toggle from '../../../../components/Toggle';
 import VenuePicker from '../../../../components/VenuePicker';
 import { fetchClub, type Club } from '../../../../lib/clubs';
 import {
@@ -167,6 +168,10 @@ export default function NewEventScreen() {
   const [tableCount, setTableCount] = useState(1);
   const [repeat, setRepeat] = useState<Repeat>('never');
   const [endsOn, setEndsOn] = useState('');
+  // Off by default -- a club running two tables of eight does not need a
+  // door list, and defaulting this on would teach hosts to ignore it. See
+  // the help text below the toggle for the host-facing version of this.
+  const [checkInRequired, setCheckInRequired] = useState(false);
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -261,6 +266,7 @@ export default function NewEventScreen() {
         startTime,
         durationMinutes: duration,
         tableCount,
+        checkInRequired,
       });
       setSaving(false);
       if (result.error) {
@@ -284,6 +290,7 @@ export default function NewEventScreen() {
       tableCount,
       startsOn: date,
       endsOn: endsOn.length > 0 ? endsOn : null,
+      checkInRequired,
     });
     setSaving(false);
     if (result.error) {
@@ -354,6 +361,17 @@ export default function NewEventScreen() {
         Every table seats four, so {tableCount}{' '}
         {tableCount === 1 ? 'table is' : 'tables are'} room for{' '}
         {tableCount * 4} players.
+      </Text>
+
+      <Text style={styles.label}>Require check-in</Text>
+      <Toggle
+        value={checkInRequired}
+        onValueChange={setCheckInRequired}
+        accessibilityLabel="Require check-in"
+      />
+      <Text style={styles.help}>
+        Turn this on and this game gets a door list, so you can check people
+        in as they arrive. Small games usually don't need it.
       </Text>
 
       <Text style={styles.label}>Does it repeat?</Text>
