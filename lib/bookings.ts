@@ -2,6 +2,7 @@ import { GENERIC_ERROR } from './constants';
 import { supabase } from './supabase';
 import type { SkillTier } from './events';
 import type { SkillLevel } from './profile';
+import type { AttendanceState } from './attendance';
 
 export type BookingStatus = 'confirmed' | 'waitlisted' | 'cancelled' | 'declined';
 export type BookingGroupStatus = 'confirmed' | 'waitlisted' | 'cancelled';
@@ -65,6 +66,11 @@ export type MyBooking = {
   offer_seats: number | null;
   offer_expires_at: string | null;
   waitlist_position: number | null;
+  check_in_required: boolean;
+  check_in_state: AttendanceState | null;
+  /** Null when the event never asked for check-in. */
+  check_in_opens_at: string | null;
+  check_in_closes_at: string | null;
 };
 
 export type BookingOutcome = {
