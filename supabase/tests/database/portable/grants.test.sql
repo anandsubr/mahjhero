@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(69);
+select plan(75);
 
 /*
  * Guards the privileges themselves, not the policies.
@@ -399,6 +399,54 @@ select ok(
   'authenticated cannot TRUNCATE check_ins'
 );
 
+-- ---------------------------------------------------------------------------
+-- Attendance mutation ACLs (Task 4).
+--
+-- record_attendance and clear_attendance are the check_ins table's only
+-- writers, and both must be reachable by authenticated and closed to anon.
+-- assert_attendance_writable and attendance_window_open are the internal
+-- ladder both share; they are granted to nobody, the same treatment
+-- 20260825061000 gave the rest of plan 4's internal helpers, so they get
+-- named negative assertions here rather than a place in the allowlist below.
+-- ---------------------------------------------------------------------------
+
+select ok(
+  has_function_privilege(
+    'authenticated',
+    'public.record_attendance(uuid, uuid, public.attendance_state, timestamptz)',
+    'EXECUTE'),
+  'authenticated can still execute record_attendance'
+);
+select ok(
+  has_function_privilege(
+    'authenticated', 'public.clear_attendance(uuid, uuid)', 'EXECUTE'),
+  'authenticated can still execute clear_attendance'
+);
+select ok(
+  not has_function_privilege(
+    'anon',
+    'public.record_attendance(uuid, uuid, public.attendance_state, timestamptz)',
+    'EXECUTE'),
+  'anon cannot execute record_attendance'
+);
+select ok(
+  not has_function_privilege(
+    'anon', 'public.clear_attendance(uuid, uuid)', 'EXECUTE'),
+  'anon cannot execute clear_attendance'
+);
+select ok(
+  not has_function_privilege(
+    'authenticated', 'public.assert_attendance_writable(uuid)', 'EXECUTE'),
+  'authenticated cannot execute assert_attendance_writable'
+);
+select ok(
+  not has_function_privilege(
+    'authenticated',
+    'public.attendance_window_open(timestamptz, timestamptz, boolean)',
+    'EXECUTE'),
+  'authenticated cannot execute attendance_window_open'
+);
+
 -- The outbox is plan 6's queue and nobody else's. RLS is on with no policy,
 -- so even a mistaken grant would return nothing — but a grant that exists
 -- is a grant somebody will eventually write a policy for.
@@ -646,7 +694,9 @@ select is(
        'public.event_seating(uuid)',
        'public.my_upcoming_bookings()',
        'public.broadcast_recipient_count(uuid, uuid)',
-       'public.send_broadcast(uuid, uuid, text, text)'
+       'public.send_broadcast(uuid, uuid, text, text)',
+       'public.record_attendance(uuid, uuid, public.attendance_state, timestamptz)',
+       'public.clear_attendance(uuid, uuid)'
      ]) as f
    ) expected
    where not exists (
@@ -707,7 +757,9 @@ select is(
          'public.event_seating(uuid)',
          'public.my_upcoming_bookings()',
          'public.broadcast_recipient_count(uuid, uuid)',
-         'public.send_broadcast(uuid, uuid, text, text)'
+         'public.send_broadcast(uuid, uuid, text, text)',
+         'public.record_attendance(uuid, uuid, public.attendance_state, timestamptz)',
+         'public.clear_attendance(uuid, uuid)'
        ]) as f
        where to_regprocedure(f) = p.oid::regprocedure
      )),
