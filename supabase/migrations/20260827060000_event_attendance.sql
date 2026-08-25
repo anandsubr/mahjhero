@@ -89,8 +89,14 @@ begin
       on ci.event_id = target_event and ci.profile_id = p.pid
    -- Table order first, then name, so the screen's grouping is stable
    -- across refetches. Nulls last puts the "any table" group after the
-   -- real tables, which is where the design puts it too.
-   order by t.position nulls last, pr.display_name;
+   -- real tables, which is where the design puts it too. profile_id is
+   -- a third key, not noise: display_name has no uniqueness constraint
+   -- (two blank names both default to ''), so without a final
+   -- tiebreaker two people at the same table can tie on both position
+   -- and name, and Postgres does not promise a stable order for ties
+   -- across separate executions -- the door screen could then reorder
+   -- them between refetches while the host is tapping down the list.
+   order by t.position nulls last, pr.display_name, p.pid;
 end;
 $$;
 
