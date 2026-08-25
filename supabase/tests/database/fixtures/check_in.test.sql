@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(19);
+select plan(26);
 
 -- ------------------------------------------------------------------
 -- Fixture. check_ins grants authenticated only SELECT, so every direct
@@ -171,13 +171,25 @@ select lives_ok(
       '10000000-0000-0000-0000-000000000004', 'arrived')$$,
   'an organizer records a walk-in with no booking');
 
+reset role;
+select is(
+  (select state::text from public.check_ins
+    where event_id = '40000000-0000-0000-0000-000000000001'
+      and profile_id = '10000000-0000-0000-0000-000000000004'),
+  'arrived',
+  'the walk-in''s row was actually written, not just accepted without error');
+
+set local role authenticated;
+set local request.jwt.claims to
+  '{"sub":"10000000-0000-0000-0000-000000000001","role":"authenticated"}';
+
 -- But not somebody outside the club.
 select throws_ok(
   $$select public.record_attendance(
       '40000000-0000-0000-0000-000000000001',
       '10000000-0000-0000-0000-000000000005', 'arrived')$$,
   '23514',
-  null,
+  'that person is not a member of this club',
   'a non-member cannot be recorded as a walk-in');
 
 -- clear returns them to "not determined".
@@ -208,6 +220,18 @@ select lives_ok(
       '10000000-0000-0000-0000-000000000003', 'arrived')$$,
   'a booked member checks themselves in');
 
+reset role;
+select is(
+  (select state::text from public.check_ins
+    where event_id = '40000000-0000-0000-0000-000000000001'
+      and profile_id = '10000000-0000-0000-0000-000000000003'),
+  'arrived',
+  'Bob''s self check-in was actually written, not just accepted without error');
+
+set local role authenticated;
+set local request.jwt.claims to
+  '{"sub":"10000000-0000-0000-0000-000000000003","role":"authenticated"}';
+
 select throws_ok(
   $$select public.record_attendance(
       '40000000-0000-0000-0000-000000000001',
@@ -215,6 +239,16 @@ select throws_ok(
   '42501',
   null,
   'a member cannot record somebody else');
+
+-- clear_attendance runs the same role split as record_attendance: a member
+-- may only ever clear their own row.
+select throws_ok(
+  $$select public.clear_attendance(
+      '40000000-0000-0000-0000-000000000001',
+      '10000000-0000-0000-0000-000000000002')$$,
+  '42501',
+  null,
+  'a member cannot clear somebody else''s check-in');
 
 -- A roster member with no confirmed booking has no self check-in right.
 set local request.jwt.claims to
@@ -225,12 +259,53 @@ select throws_ok(
       '40000000-0000-0000-0000-000000000001',
       '10000000-0000-0000-0000-000000000004', 'arrived')$$,
   '23514',
-  null,
+  'you do not have a seat at this game',
   'a member without a confirmed booking cannot self check in');
+
+-- ------------------------------------------------------------------
+-- The critical bug: an unvalidated occurred_at lets a member permanently
+-- veto every future organizer correction by claiming 'infinity'. The
+-- review's worked example is two live calls -- member claims infinity,
+-- organizer corrects moments later -- but Postgres freezes now() for the
+-- entire length of this file's transaction, so an organizer call issued
+-- "moments later" in this same script sees an IDENTICAL now() to the
+-- member's already-clamped claim and can never satisfy the upsert's
+-- strict `>` newest-wins comparison. That tie is there with or without the
+-- fix, so asserting on the resulting `state` cannot tell fixed from
+-- unfixed inside one transaction (confirmed: it was tried and failed
+-- red under the correct, fixed code too).
+--
+-- What the fix actually changes, and what DOES differ observably here, is
+-- what gets written to recorded_at. Unclamped, an infinity claim is
+-- stored as literal infinity: a ceiling no future write, in this
+-- transaction or any other, separated by a second or a decade, can ever
+-- exceed. Clamped, it is bounded to the instant of the call -- which is
+-- exactly what makes it beatable by a real later write outside this
+-- transaction. Mutation-checked: delete `least(..., now())` from
+-- record_attendance's insert and this assertion goes red, because
+-- recorded_at is then stored as literal infinity.
+-- ------------------------------------------------------------------
+set local request.jwt.claims to
+  '{"sub":"10000000-0000-0000-0000-000000000003","role":"authenticated"}';
+
+select lives_ok(
+  $$select public.record_attendance(
+      '40000000-0000-0000-0000-000000000001',
+      '10000000-0000-0000-0000-000000000003', 'arrived',
+      'infinity'::timestamptz)$$,
+  'a member''s claimed occurred_at of infinity is accepted, not rejected');
+
+reset role;
+select ok(
+  (select recorded_at < 'infinity'::timestamptz from public.check_ins
+    where event_id = '40000000-0000-0000-0000-000000000001'
+      and profile_id = '10000000-0000-0000-0000-000000000003'),
+  'the clamp bounds a claimed occurred_at of infinity to the present, so no future organizer correction can be permanently vetoed');
 
 -- ------------------------------------------------------------------
 -- The flag, and the windows.
 -- ------------------------------------------------------------------
+set local role authenticated;
 set local request.jwt.claims to
   '{"sub":"10000000-0000-0000-0000-000000000001","role":"authenticated"}';
 
@@ -239,7 +314,7 @@ select throws_ok(
       '40000000-0000-0000-0000-000000000002',
       '10000000-0000-0000-0000-000000000002', 'arrived')$$,
   '23514',
-  null,
+  'check-in is not enabled for this event',
   'an event that did not ask for check-in refuses every write');
 
 reset role;
@@ -258,7 +333,7 @@ select throws_ok(
       '40000000-0000-0000-0000-000000000001',
       '10000000-0000-0000-0000-000000000003', 'arrived')$$,
   '23514',
-  null,
+  'check-in is not open for this event',
   'an organizer cannot write before the window opens');
 
 -- Now put it two days in the past: the organizer tail has closed.
@@ -277,7 +352,7 @@ select throws_ok(
       '40000000-0000-0000-0000-000000000001',
       '10000000-0000-0000-0000-000000000003', 'arrived')$$,
   '23514',
-  null,
+  'check-in is not open for this event',
   'the organizer tail closes 24 hours after the game ends');
 
 -- The asymmetry itself: a member's window closes at ends_at, while an
@@ -302,8 +377,42 @@ select throws_ok(
       '40000000-0000-0000-0000-000000000001',
       '10000000-0000-0000-0000-000000000003', 'arrived')$$,
   '23514',
-  null,
+  'check-in is not open for this event',
   'a member''s window closes at ends_at, well inside the organizer''s 24-hour tail');
+
+-- clear_attendance runs the same window guard: outside the member's own
+-- window but still inside the organizer's 24-hour tail, a member clearing
+-- their own row is refused too, not silently allowed through.
+select throws_ok(
+  $$select public.clear_attendance(
+      '40000000-0000-0000-0000-000000000001',
+      '10000000-0000-0000-0000-000000000003')$$,
+  '23514',
+  'check-in is not open for this event',
+  'a member cannot clear their own row once their window has closed, even though the organizer''s tail is still open');
+
+-- ------------------------------------------------------------------
+-- The status guard has never been exercised: no assertion above ever sets
+-- events.status, so deleting the `ev.status <> 'published'` rung would
+-- leave every assertion above green. Cancel the event and confirm even the
+-- organizer is refused.
+-- ------------------------------------------------------------------
+reset role;
+update public.events
+   set status = 'cancelled'
+ where id = '40000000-0000-0000-0000-000000000001';
+
+set local role authenticated;
+set local request.jwt.claims to
+  '{"sub":"10000000-0000-0000-0000-000000000001","role":"authenticated"}';
+
+select throws_ok(
+  $$select public.record_attendance(
+      '40000000-0000-0000-0000-000000000001',
+      '10000000-0000-0000-0000-000000000002', 'arrived')$$,
+  '23514',
+  'event not open for check-in',
+  'a cancelled event refuses every check-in write, even for the organizer');
 
 select * from finish();
 rollback;

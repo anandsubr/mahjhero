@@ -85,7 +85,8 @@ create function public.attendance_window_open(
 )
 returns boolean
 language sql
-immutable
+stable
+set search_path = public
 as $$
   select now() >= p_starts_at - interval '1 hour'
      and now() <= case when p_organizer
@@ -159,12 +160,25 @@ begin
    * decision that has since been superseded, and reporting that as a
    * failure would be a lie. Online, occurred_at is always now() and this
    * never fires.
+   *
+   * `least(coalesce(occurred_at, now()), now())` clamps the stored value to
+   * the present, never to the past. The clamp is one-sided on purpose. A
+   * future occurred_at is never legitimate — nobody can report what will
+   * happen next — and without the clamp a caller can mint a recorded_at
+   * that no later write will ever beat (e.g. 'infinity'), permanently
+   * freezing this row against every future organizer correction while the
+   * function still returns success. A past occurred_at is different: it is
+   * the entire reason the parameter exists, since a later offline plan
+   * queues a write on a phone and replays it with the timestamp of the
+   * moment the host actually tapped, which is legitimately behind now().
+   * Rejecting that would break the feature the parameter is for, so only
+   * the future side is clamped.
    */
   insert into public.check_ins
     (event_id, club_id, profile_id, state, recorded_by, recorded_at)
   values
     (target_event, ev.club_id, target_profile, new_state, caller,
-     coalesce(occurred_at, now()))
+     least(coalesce(occurred_at, now()), now()))
   on conflict (event_id, profile_id) do update
     set state       = excluded.state,
         recorded_by = excluded.recorded_by,
