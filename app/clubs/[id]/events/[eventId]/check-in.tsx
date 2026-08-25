@@ -523,22 +523,42 @@ export default function CheckInScreen() {
         </Text>
       ) : (
         <>
-          <Text style={styles.summary}>
-            {/* Denominator is `summary.booked`, not `rows.length`. A
-                denominator of every known row grows every time a walk-in
-                shows up, so "12 of 16 here" never converged on a number the
-                host actually set out to reach -- and its remainder was
-                notComing+unaccounted, not "still to come". `summary.booked`
-                only changes when a booking is made or cancelled, so it stays
-                a stable target through the night. Walk-ins are real
-                arrivals too, so they are still shown -- just as their own
-                count, not folded into a fraction whose denominator they'd
-                keep moving. */}
-            {bookedHere} of {summary.booked} booked here ·{' '}
-            {summary.walkIns} walk-in{summary.walkIns === 1 ? '' : 's'}
-          </Text>
-          <Text style={styles.help}>{summary.notComing} not coming</Text>
-          <Text style={styles.help}>{summary.unaccounted} unaccounted</Text>
+          {/* Grouped in one tightly-spaced block (rather than left at the
+              screen's normal space[4] rhythm) so the two secondary counts
+              read as part of THIS summary rather than as leftover help
+              text floating underneath it -- see the two Text styles below
+              for why their color changed too. */}
+          <View style={styles.summaryGroup}>
+            <Text style={styles.summary}>
+              {/* Denominator is `summary.booked`, not `rows.length`. A
+                  denominator of every known row grows every time a walk-in
+                  shows up, so "12 of 16 here" never converged on a number the
+                  host actually set out to reach -- and its remainder was
+                  notComing+unaccounted, not "still to come". `summary.booked`
+                  only changes when a booking is made or cancelled, so it stays
+                  a stable target through the night. Walk-ins are real
+                  arrivals too, so they are still shown -- just as their own
+                  count, not folded into a fraction whose denominator they'd
+                  keep moving. */}
+              {bookedHere} of {summary.booked} booked here ·{' '}
+              {summary.walkIns} walk-in{summary.walkIns === 1 ? '' : 's'}
+            </Text>
+            {/* `summaryDetail`, not `help`: these two counts are what a
+                host standing at a badly-lit door acts on -- collapse a
+                table, go find a substitute -- so they need to actually be
+                legible, not just present. `colors.textMuted` on
+                `colors.bg` measures ~3.6:1, under the 4.5:1 AA floor for
+                body text; `colors.textLabel` measures ~5.6:1 and is what
+                the rest of this screen's genuine help/status text (below)
+                keeps using `colors.textMuted` for -- that text is
+                dispensable in a way these two counts are not. */}
+            <Text style={styles.summaryDetail}>
+              {summary.notComing} not coming
+            </Text>
+            <Text style={styles.summaryDetail}>
+              {summary.unaccounted} unaccounted
+            </Text>
+          </View>
           {attendanceFailed ? (
             <Text style={styles.help}>
               Could not refresh the list. Showing the last known state.
@@ -632,10 +652,21 @@ const styles = StyleSheet.create({
     fontSize: type.size.h2,
     color: colors.text,
   },
+  summaryGroup: { gap: space[1] },
   summary: {
     fontFamily: type.bodyBold,
     fontSize: type.size.bodyLarge,
     color: colors.text,
+  },
+  // The two decision-driving counts under the summary line. Same size as
+  // `help` (16pt is this app's one sanctioned exception below the 18pt
+  // body minimum), but `colors.textLabel` in place of `colors.textMuted`
+  // -- see the comment where this style is used for the contrast numbers.
+  summaryDetail: {
+    fontFamily: type.bodyRegular,
+    fontSize: type.size.helper,
+    color: colors.textLabel,
+    lineHeight: 22,
   },
   help: {
     fontFamily: type.bodyRegular,
