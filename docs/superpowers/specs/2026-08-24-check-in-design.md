@@ -289,8 +289,12 @@ Organizer-only. Top to bottom:
 
 - **A summary line**: "12 of 16 here · 1 not coming · 3 unaccounted · 2 walk-ins".
   The one number the host wants at a glance, above the detail.
-- **A `TableCard` per table**, rendered exactly as the event screen renders them, each
-  row carrying a three-way control: here / not coming / clear.
+- **A card per table**, each row carrying a three-way control: here / not coming /
+  clear. *(Built as a plain `Card` plus a heading rather than reusing `TableCard`,
+  as this section originally specified. `TableCard` renders seat-management
+  affordances — take a seat, move, remove — that are all refused once a game has
+  started, so reusing it would have put dead controls on the one screen used at
+  exactly that moment.)*
 - **An "any table" group** for confirmed bookings never placed at a table.
 - **A walk-ins group**, and an add-walk-in picker over the club roster, excluding
   anyone already on the list — a confirmed booking or an existing `check_ins` row —

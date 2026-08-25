@@ -187,6 +187,23 @@ duplicate; and `record_attendance` takes a caller-supplied `recorded_at` and app
 only when it is newer than the stored value, so a write that sat in a phone's queue
 cannot clobber a decision the host has made since.
 
+### [ ] The pgTAP suite fails if the contract or visual suites ran first
+
+`npm run test:db` passes 931/931 immediately after `npx supabase db reset --local`,
+and fails 3 assertions in `waitlist_promotion.test.sql` (tests 4, 24, 26) if
+`npm run test:contract` or `npm run test:visual` ran against the same local stack
+first. Both of those seed rows that are never cleaned up, and those three assertions
+count globally rather than scoping to their own fixture.
+
+Found while verifying plan 5 — the failure looks alarming and is purely ordering.
+Two candidate fixes: scope the counting assertions to their own club/event, or have
+the contract and visual suites clean up after themselves. The first is probably
+right; a test that counts every row in a table is asserting something it does not
+control.
+
+Worth doing before anyone wires up CI, because in CI this shows up as a flaky
+failure whose cause is invisible from the log.
+
 ## Configure & verify
 
 ### [ ] Google login — configure and check end to end
