@@ -99,9 +99,16 @@ import { colors, space, type } from '../../../../../lib/theme';
  * series occurrence they have personally customised — a "Reset to the
  * series" control. When an event asks for check-in (Task 12), an organizer
  * additionally gets a "Door list" link to the door screen (Task 11), and a
- * member holding a confirmed seat gets their own `CheckInControl` — each
- * gated on its own window (`checkInOpen`, lib/attendance.ts), the
- * organizer's carrying a 24-hour tail the member's does not.
+ * member holding a confirmed seat gets their own `CheckInControl`, gated on
+ * `memberCheckInOpen` (`checkInOpen`, lib/attendance.ts) below. The "Door
+ * list" link is deliberately NOT window-gated: it is a read, not a write,
+ * and event_attendance's reads are not window-bound — an organizer must be
+ * able to open last Tuesday's game and still see who turned up. Only the
+ * door screen's own controls (its "Here" / "Not coming" taps) are gated on
+ * the organizer's window, with its 24-hour tail for a retroactive
+ * correction; that screen disables itself once the window closes. Do not
+ * add a `disabled={!organizerCheckInOpen}` (or similar) to this link — that
+ * would silently make past games' attendance unreadable again.
  */
 export default function EventScreen() {
   const { id: clubId, eventId } = useLocalSearchParams<{

@@ -234,8 +234,8 @@ export default function CheckInScreen() {
 
   // Bumps and returns profileId's write sequence. Shared by `setState` and
   // `addWalkIn` -- both start a write the merge in `load()` needs to be
-  // able to see, even though only `setState` also needs the returned
-  // number back (to guard its own rollback -- see writeSeqRef's comment).
+  // able to see, and both also need the returned number back, to guard
+  // their own rollback (see writeSeqRef's comment).
   function nextWriteSeq(profileId: string) {
     const seq = (writeSeqRef.current[profileId] ?? 0) + 1;
     writeSeqRef.current[profileId] = seq;
@@ -520,13 +520,21 @@ export default function CheckInScreen() {
     }
   }
 
+  // `display_name` carries no non-empty constraint (lib/clubs.ts /
+  // event_attendance) and defaults to `''` -- an unnamed member used to
+  // render a blank row wherever this screen shows one directly, announcing
+  // nothing about who the row is for. Originally inlined in `renderPerson`
+  // alone; extracted once the walk-in picker below needed the identical
+  // guard a second time in this file, so the fallback has exactly one
+  // spelling instead of growing a second one. (CheckInControl guards this
+  // too, but with its own generic fallback for its own generic `label`
+  // prop -- see its own comment -- so it is left as is.)
+  function safeDisplayName(name: string): string {
+    return name.trim() ? name : 'Unnamed member';
+  }
+
   function renderPerson(r: AttendanceRow) {
-    // `display_name` carries no non-empty constraint (lib/clubs.ts /
-    // event_attendance) and defaults to `''` -- an unnamed member used to
-    // render a blank row here (the same gap CheckInControl guards on its
-    // own `label` prop below), announcing nothing about who this row is
-    // for.
-    const displayName = r.display_name.trim() ? r.display_name : 'Unnamed member';
+    const displayName = safeDisplayName(r.display_name);
     return (
       <View key={r.profile_id} style={styles.personRow}>
         <Text style={styles.name}>{displayName}</Text>
@@ -664,17 +672,20 @@ export default function CheckInScreen() {
                 Everyone on the roster is already on this list.
               </Text>
             ) : (
-              walkInCandidates.map((m) => (
-                <Pressable
-                  key={m.profile_id}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Add ${m.display_name}`}
-                  onPress={() => void addWalkIn(m)}
-                  style={styles.candidateRow}
-                >
-                  <Text style={styles.name}>{m.display_name}</Text>
-                </Pressable>
-              ))
+              walkInCandidates.map((m) => {
+                const name = safeDisplayName(m.display_name);
+                return (
+                  <Pressable
+                    key={m.profile_id}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Add ${name}`}
+                    onPress={() => void addWalkIn(m)}
+                    style={styles.candidateRow}
+                  >
+                    <Text style={styles.name}>{name}</Text>
+                  </Pressable>
+                );
+              })
             )}
             <Button
               variant="ghost"

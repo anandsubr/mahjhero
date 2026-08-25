@@ -541,6 +541,30 @@ it('renders something for a nameless person instead of a blank row', async () =>
   ).toBeTruthy();
 });
 
+// Final-review fix (three trailing minors, item 3): the same gap as above,
+// a third time -- `display_name` carries no non-empty constraint, so a
+// nameless roster member offered in the walk-in picker used to render a
+// blank tappable row announcing "Add " to a screen reader and showing
+// nothing sighted. The picker builds its own row (a `Pressable` plus a
+// bare `Text`) rather than going through `renderPerson`/`CheckInControl`,
+// so it needed the same guard a third time; it now goes through the
+// `safeDisplayName` helper `renderPerson` itself was extracted to share.
+it('renders something for a nameless roster member in the walk-in picker instead of a blank row', async () => {
+  fetchRoster.mockResolvedValue([
+    HOST,
+    { profile_id: 'x', role: 'member' as const, display_name: '', skill_level: null },
+  ]);
+  fetchEventAttendance.mockResolvedValue([]);
+  render(<CheckInScreen />);
+  await screen.findByLabelText('Add a walk-in');
+
+  fireEvent.click(screen.getByLabelText('Add a walk-in'));
+  const picker = screen.getByTestId('walkin-picker');
+
+  expect(within(picker).getByText('Unnamed member')).toBeTruthy();
+  expect(within(picker).getByLabelText('Add Unnamed member')).toBeTruthy();
+});
+
 // Final-review fix (Important 2): the window used to be derived from
 // starts_at/ends_at ALONE, ignoring check_in_required entirely. Opening
 // this screen for an event with check_in_required = false, inside the time
