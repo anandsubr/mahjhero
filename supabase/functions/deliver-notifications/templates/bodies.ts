@@ -242,6 +242,23 @@ export function bodyFor(row: RenderRow, appUrl: string): Body {
         footerNote: broadcastFooter,
       };
 
+    case 'attendance_declined':
+      return {
+        subject: `${actor(row, 'Someone')} can't make ${row.event_title ?? 'the game'}`,
+        headline: 'Someone is not coming',
+        paragraphs: [
+          `${actor(row, 'A member')} says they can't make ${game(row)}.`,
+          // Deliberately does NOT say the seat is free. It is not: every
+          // booking mutation in this app refuses once a game has started,
+          // so nothing has been released and nobody has been promoted.
+          // Telling a host otherwise would send them looking for a
+          // substitute the app gives them no way to seat.
+          'Their seat is still theirs — nothing has been released.',
+        ],
+        cta: { label: 'Open the door list', url },
+        footerNote: seatFooter,
+      };
+
     default:
       return unhandledKind(row.kind);
   }

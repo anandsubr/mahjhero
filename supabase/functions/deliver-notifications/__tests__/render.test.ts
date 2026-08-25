@@ -44,6 +44,7 @@ const ALL_KINDS: OutboxKind[] = [
   'need_a_fourth',
   'event_reminder',
   'broadcast',
+  'attendance_declined',
 ];
 
 describe('renderMessage', () => {
@@ -108,6 +109,7 @@ describe('renderMessage', () => {
     { kind: 'need_a_fourth', field: 'text', phrase: 'is three of four' },
     { kind: 'event_reminder', field: 'text', phrase: 'cancelling now gives the seat' },
     { kind: 'broadcast', field: 'text', phrase: 'The side entrance is locked' },
+    { kind: 'attendance_declined', field: 'text', phrase: 'nothing has been released' },
   ];
 
   it.each(DISTINGUISHING_CONTENT)(
@@ -132,6 +134,30 @@ describe('renderMessage', () => {
   it('names the person who acted', () => {
     const message = renderMessage(row({ kind: 'booked_by_friend' }), APP);
     expect(message.subject).toContain('Alice');
+  });
+
+  // declined_by resolves to actor_name by the time it reaches this
+  // function (20260826050000_outbox_render_context.sql), so this is
+  // exercised the same way as any other actor-named kind. The critical
+  // claim is the negative one below: this must never say or imply the
+  // seat is free. Every booking mutation in this app refuses once a game
+  // has started, so nothing has been released and nobody promoted —
+  // saying otherwise would send a host looking for a substitute the app
+  // gives them no way to seat.
+  it('names the member and the game for attendance_declined, without implying the seat is free', () => {
+    const message = renderMessage(
+      row({
+        kind: 'attendance_declined',
+        actor_name: 'Jane Chen',
+        event_title: 'Tuesday Night',
+      }),
+      APP,
+    );
+    expect(message.subject).toContain('Jane Chen');
+    expect(message.text).toContain('Tuesday Night');
+    expect(message.text.toLowerCase()).not.toContain('seat is back in the pool');
+    expect(message.text.toLowerCase()).not.toContain('seat is free');
+    expect(message.text.toLowerCase()).not.toContain('seat came free');
   });
 
   // The actor is nullable — a promotion is nobody's doing — so the copy
