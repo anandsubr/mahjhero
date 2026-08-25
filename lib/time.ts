@@ -100,3 +100,17 @@ export function dateToDateString(date: Date): string {
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
+
+/**
+ * An ISO instant offset by a number of hours (fractional and negative both
+ * fine — the door screen's own window uses -1 for the early-arrival lead
+ * and +24 for the organizer's retroactive-correction tail). Operates on the
+ * underlying instant (`Date.getTime()`), not on wall-clock fields, so this
+ * is a pure UTC-epoch shift unaffected by DST or the runtime's local
+ * timezone — the same reasoning `event.starts_at` comparisons elsewhere in
+ * this app already rely on (see events/[eventId]/index.tsx's own comment on
+ * `canReset`).
+ */
+export function addHours(iso: string, hours: number): string {
+  return new Date(Date.parse(iso) + hours * 60 * 60 * 1000).toISOString();
+}

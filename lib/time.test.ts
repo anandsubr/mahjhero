@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  addHours,
   dateStringToDate,
   dateToDateString,
   dateToTimeString,
@@ -105,6 +106,32 @@ describe('round trip', () => {
       expect(dateToTimeString(timeStringToDate(value))).toBe(value);
     });
   }
+});
+
+describe('addHours', () => {
+  it('adds a positive offset', () => {
+    expect(addHours('2026-08-25T19:00:00.000Z', 1)).toBe(
+      '2026-08-25T20:00:00.000Z',
+    );
+  });
+
+  it('subtracts with a negative offset', () => {
+    expect(addHours('2026-08-25T19:00:00.000Z', -1)).toBe(
+      '2026-08-25T18:00:00.000Z',
+    );
+  });
+
+  it('carries a large offset across a day boundary', () => {
+    expect(addHours('2026-08-25T19:00:00.000Z', 24)).toBe(
+      '2026-08-26T19:00:00.000Z',
+    );
+  });
+
+  it('is a no-op at zero', () => {
+    expect(addHours('2026-08-25T19:00:00.000Z', 0)).toBe(
+      '2026-08-25T19:00:00.000Z',
+    );
+  });
 });
 
 describe('dateStringToDate / dateToDateString', () => {
