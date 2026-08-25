@@ -271,6 +271,81 @@ and the seat grid is the densest thing this app draws.
 Everything here writes to the dev project's data — harmless, but it is shared
 state if anyone else is looking at it.
 
+### [x] Check-in — the by-hand pass before plan 6's PR merges
+
+Task 15's automated suites (contract + visual) cross the DB-client boundary and
+baseline the door screen, but neither can see a real device tap, a real dropped
+socket, or a real inbox — so this ran against the **local** stack
+(`npx supabase start`), with a host and member account minted the same way
+`e2e/session.ts` mints one, a web build served locally, and the browser driven
+directly rather than through Playwright.
+
+- **[x] Check-in off shows no trace.** A game with `check_in_required: false`
+  renders no "Door list" button, no member control, on the event screen for
+  either role. *One nuance:* the `/check-in` route itself is not gated on the
+  flag — navigating to it directly still resolves, showing a permanently
+  "Check-in is closed for this game" door (because `opensAt`/`closesAt` are
+  never set) rather than a 404/redirect. Nobody is linked there, so this is a
+  reachability footnote, not a leak — but worth knowing if a future task adds
+  a route guard.
+- **[x] Per-occurrence toggle scoping survives a series edit.** Turned check-in
+  ON for one occurrence of a weekly series via the real edit screen ("This
+  game" scope) — confirmed by database read (`check_in_required=t`,
+  `overrides={check_in_required}`), and the door list link appeared on that
+  occurrence's own event screen. Then edited the WHOLE series (a notes change,
+  "The whole series" scope) and confirmed by a second database read that the
+  toggled occurrence stayed `t` and the untouched occurrence and the series
+  itself stayed `f`. `supabase/tests/database/fixtures/check_in_flag.test.sql`
+  already pins this at the SQL layer (22 assertions); this closes the gap
+  pgTAP cannot reach — the UI round trip that builds and sends the RPC calls.
+- **[x] The door screen at 375px: sixteen names, four tables, no horizontal
+  scroll.** Seeded 16 confirmed bookings (host + 15 members) across 4 tables
+  on one check-in-required game and loaded `/check-in` at a 375px viewport.
+  `document.documentElement.scrollWidth` measured exactly 375 — no overflow.
+  All 16 names and both controls per row are visible descending the page; long
+  names wrap to a second line rather than clipping or forcing a scrollbar.
+- **[x] Tapping "Here" sixteen times feels instant.** Dispatched 16 real click
+  events against the door screen's "Here" buttons back to back; every handler
+  returned in under 1.3ms (the optimistic `setRows` update, not the network
+  round trip), and all 16 `record_attendance` calls landed with `204`. No
+  spinner blocks a subsequent tap — confirms the per-profile `busy` guard
+  (check-in.tsx) actually decouples one person's write from the next.
+- **[x] Killing the network mid-tap fails honestly, not silently.** Patched
+  `window.fetch` to reject only `rpc/record_attendance` calls, then tapped
+  "Not coming" for an unset row. Result: the row reverted to unset (not
+  falsely marked either way), the summary counts stayed truthful, and the
+  banner read *"Could not reach MahjHero. Check your connection and try
+  again."* A database check confirmed no row was written — the failure never
+  reached the server. Restored `fetch` and confirmed the same tap then
+  succeeded normally. This is the exact gap the offline follow-up (queue +
+  replay) exists to close — today a dropped connection loses the tap and
+  says so, which is the honest failure mode the check above asked for.
+- **[x] A decline reaches the host's email within a drain cycle.** As the
+  member, declined a friend-booked seat. Confirmed a `notification_outbox` row
+  landed immediately (`kind='booking_declined'`, `recipient_id` = the host).
+  Ran the real `deliver-notifications` edge function against the local
+  stack's Mailpit instance — first attempt hit a connection-class SMTP error
+  (misconfigured host on my part, not the app) and correctly backed off
+  (`connection_break_count` incremented, `next_attempt_at` pushed ~4 minutes
+  out — the fix from "stop a poisoned SMTP connection… from dead-lettering the
+  drain queue" working as designed); the retry succeeded and Mailpit shows the
+  real message: subject *"Mel Member can't make Friend booked game"*,
+  addressed to the host, `sent_at` stamped in the outbox row.
+- **[x] The 24-hour tail.** Seeded a check-in-required game that started 8h ago
+  and ended 5h ago. As the **host**: the door screen's controls are enabled
+  (`aria-disabled` absent) and the event screen still offers "Door list" and
+  "Edit this game" — the organizer window (`starts_at-1h .. ends_at+24h`) is
+  still open. As the **member** on the same event: `CheckInControl` does not
+  render at all (not merely disabled) — `memberCheckInOpen` (no organizer
+  tail) reads closed, and `event.tsx`'s own conditional
+  (`event.check_in_required && myBooking?.status === 'confirmed' &&
+  memberCheckInOpen`) omits the control entirely, which is a stronger form of
+  read-only than a greyed-out button.
+
+No concerns for the reviewer beyond the one nuance noted above (the
+unguarded `/check-in` route on a check-in-off event). Full detail, including
+every command's output, lives in `.superpowers/sdd/task-15-report.md`.
+
 ---
 
 ## Nice to have
