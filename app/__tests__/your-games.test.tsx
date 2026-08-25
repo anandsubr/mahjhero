@@ -21,6 +21,22 @@ vi.mock('../../lib/bookings', async () => {
   };
 });
 
+// checkInOpen is left as the real implementation (imported via
+// importOriginal) — the same convention events-detail.test.tsx uses — so
+// the window-open/closed tests below exercise the real one-hour-lead-free
+// comparison, not a stub of it. Only the two writes are doubled.
+const recordAttendance = vi.fn();
+const clearAttendance = vi.fn();
+
+vi.mock('../../lib/attendance', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/attendance')>();
+  return {
+    ...actual,
+    recordAttendance: (...a: unknown[]) => recordAttendance(...a),
+    clearAttendance: (...a: unknown[]) => clearAttendance(...a),
+  };
+});
+
 // Copied from app/__tests__/clubs.test.tsx's clubs/session/router mocks.
 // The session user id is deliberately 'me' (not clubs.test.tsx's
 // 'test-user') so the booking fixtures below can use the literal 'me' for
@@ -51,8 +67,9 @@ vi.mock('../../lib/clubs', async (importOriginal) => {
 });
 
 import ClubsScreen from '../clubs/index';
+import type { MyBooking } from '../../lib/bookings';
 
-const base = {
+const base: MyBooking = {
   booking_id: 'b1',
   group_id: 'g1',
   event_id: 'e1',
@@ -64,14 +81,29 @@ const base = {
   venue_name: "St Mary's Hall",
   event_table_id: 't1',
   table_label: 'Table 2',
-  status: 'confirmed' as const,
+  status: 'confirmed',
   booked_by: 'me',
   booked_by_name: 'You',
   offer_id: null,
   offer_seats: null,
   offer_expires_at: null,
   waitlist_position: null,
+  // The four check-in fields (Task 8/9) default to "this event never asked
+  // for check-in" — most of the tests below have nothing to do with
+  // check-in and should not have to know these fields exist.
+  check_in_required: false,
+  check_in_state: null,
+  check_in_opens_at: null,
+  check_in_closes_at: null,
 };
+
+// A `booking()` helper, not four fields repeated per test: every fixture
+// in this file goes through this rather than spreading `base` inline, so
+// adding a field here (as the check-in fields just were) does not require
+// touching every existing test.
+function booking(overrides: Partial<MyBooking> = {}): MyBooking {
+  return { ...base, ...overrides };
+}
 
 beforeEach(() => {
   fetchMyUpcomingBookings.mockReset();
@@ -79,9 +111,24 @@ beforeEach(() => {
   acceptPromotionOffer.mockReset();
   declinePromotionOffer.mockReset();
   cancelBooking.mockReset();
+  recordAttendance.mockReset();
+  clearAttendance.mockReset();
   fetchMyClubs.mockReset();
   fetchMyUpcomingBookings.mockResolvedValue([]);
   fetchMyClubs.mockResolvedValue([]);
+  recordAttendance.mockResolvedValue({ error: null });
+  clearAttendance.mockResolvedValue({ error: null });
+  // Every fixture's `starts_at` is a fixed calendar timestamp
+  // ('2026-08-25T22:30:00Z') chosen so `formatEventWhen` produces stable,
+  // assertable strings. The new "hide seat-management once started" gate
+  // (Step 3) compares that fixed timestamp against `Date.now()` — left
+  // un-pinned, this whole file would start failing the moment the real
+  // clock crosses 2026-08-25T22:30:00Z, and would do so forever after.
+  // Freezing "now" well before that instant makes every existing row's
+  // "not started yet" assertions time-independent; tests that care about a
+  // different instant (the live-offer countdown, the new gate tests below)
+  // call `vi.setSystemTime` again themselves, which overrides this.
+  vi.setSystemTime(new Date('2026-08-25T10:00:00Z'));
 });
 
 afterEach(() => {
@@ -96,7 +143,7 @@ describe('Your games', () => {
   });
 
   it('lists a seat with when, where and which table', async () => {
-    fetchMyUpcomingBookings.mockResolvedValue([base]);
+    fetchMyUpcomingBookings.mockResolvedValue([booking()]);
     render(<ClubsScreen />);
     expect(await screen.findByText('Tuesday game')).toBeTruthy();
     expect(screen.getByText('Table 2')).toBeTruthy();
@@ -105,7 +152,7 @@ describe('Your games', () => {
 
   it('says who booked a seat for you, and offers a way out', async () => {
     fetchMyUpcomingBookings.mockResolvedValue([
-      { ...base, booked_by: 'p2', booked_by_name: 'Jane P.' },
+      booking({ booked_by: 'p2', booked_by_name: 'Jane P.' }),
     ]);
     declineBooking.mockResolvedValue({ error: null });
     render(<ClubsScreen />);
@@ -115,7 +162,7 @@ describe('Your games', () => {
   });
 
   it('offers no decline on a seat you booked yourself', async () => {
-    fetchMyUpcomingBookings.mockResolvedValue([base]);
+    fetchMyUpcomingBookings.mockResolvedValue([booking()]);
     render(<ClubsScreen />);
     await screen.findByText('Tuesday game');
     expect(screen.queryByText(/booked this for you/)).toBeNull();
@@ -123,15 +170,14 @@ describe('Your games', () => {
 
   it('shows a live offer with its countdown', async () => {
     fetchMyUpcomingBookings.mockResolvedValue([
-      {
-        ...base,
+      booking({
         status: 'waitlisted' as const,
         event_table_id: null,
         table_label: null,
         offer_id: 'o1',
         offer_seats: 2,
         offer_expires_at: '2026-08-24T16:15:00Z',
-      },
+      }),
     ]);
     acceptPromotionOffer.mockResolvedValue({ error: null });
     vi.setSystemTime(new Date('2026-08-24T15:45:00Z'));
@@ -143,13 +189,12 @@ describe('Your games', () => {
 
   it('says where a waitlisted member stands', async () => {
     fetchMyUpcomingBookings.mockResolvedValue([
-      {
-        ...base,
+      booking({
         status: 'waitlisted' as const,
         event_table_id: null,
         table_label: null,
         waitlist_position: 3,
-      },
+      }),
     ]);
     render(<ClubsScreen />);
     // waitlistLabel(3) — the exact wording the event screen already uses
@@ -162,13 +207,12 @@ describe('Your games', () => {
 
   it('falls back to a generic waiting message when no position is known', async () => {
     fetchMyUpcomingBookings.mockResolvedValue([
-      {
-        ...base,
+      booking({
         status: 'waitlisted' as const,
         event_table_id: null,
         table_label: null,
         waitlist_position: null,
-      },
+      }),
     ]);
     render(<ClubsScreen />);
     expect(await screen.findByText('Waiting for a seat')).toBeTruthy();
@@ -182,12 +226,11 @@ describe('Your games', () => {
   // right id, and does not leak onto a row it should not appear on.
   it('lets a waitlisted member leave the waitlist, and does not offer that on a seated row', async () => {
     fetchMyUpcomingBookings.mockResolvedValue([
-      {
-        ...base,
+      booking({
         status: 'waitlisted' as const,
         event_table_id: null,
         table_label: null,
-      },
+      }),
     ]);
     cancelBooking.mockResolvedValue({ error: null });
     render(<ClubsScreen />);
@@ -202,7 +245,7 @@ describe('Your games', () => {
   });
 
   it('does not offer to leave the waitlist on a confirmed, seated row', async () => {
-    fetchMyUpcomingBookings.mockResolvedValue([base]);
+    fetchMyUpcomingBookings.mockResolvedValue([booking()]);
     render(<ClubsScreen />);
     await screen.findByText('Tuesday game');
     expect(screen.queryByText('Leave the waitlist')).toBeNull();
@@ -227,8 +270,7 @@ describe('Your games', () => {
   // event.
   it('gives each of two simultaneous offers its own, distinct decline label', async () => {
     fetchMyUpcomingBookings.mockResolvedValue([
-      {
-        ...base,
+      booking({
         booking_id: 'b1',
         event_id: 'e1',
         event_title: 'Tuesday game',
@@ -238,9 +280,8 @@ describe('Your games', () => {
         offer_id: 'o1',
         offer_seats: 2,
         offer_expires_at: '2026-08-24T16:15:00Z',
-      },
-      {
-        ...base,
+      }),
+      booking({
         booking_id: 'b2',
         event_id: 'e2',
         event_title: 'Thursday game',
@@ -250,7 +291,7 @@ describe('Your games', () => {
         offer_id: 'o2',
         offer_seats: 1,
         offer_expires_at: '2026-08-24T17:00:00Z',
-      },
+      }),
     ]);
     render(<ClubsScreen />);
 
@@ -270,7 +311,7 @@ describe('Your games', () => {
   // swaps the real refusal sentence for GENERIC_ERROR.
   it('renders the data layer refusal verbatim, not a generic message', async () => {
     fetchMyUpcomingBookings.mockResolvedValue([
-      { ...base, booked_by: 'p2', booked_by_name: 'Jane P.' },
+      booking({ booked_by: 'p2', booked_by_name: 'Jane P.' }),
     ]);
     declineBooking.mockResolvedValue({
       error: 'That is not your seat to change.',
@@ -290,25 +331,163 @@ describe('Your games', () => {
   // different club timezones: the rendered local times must differ.
   it('formats each row in its own club timezone, not a shared one', async () => {
     fetchMyUpcomingBookings.mockResolvedValue([
-      {
-        ...base,
+      booking({
         booking_id: 'b1',
         event_title: 'Tuesday game',
         club_name: 'Riverside',
         club_timezone: 'America/New_York',
         starts_at: '2026-08-25T22:30:00Z',
-      },
-      {
-        ...base,
+      }),
+      booking({
         booking_id: 'b2',
         event_title: 'Friday game',
         club_name: 'Oakfield',
         club_timezone: 'Asia/Tokyo',
         starts_at: '2026-08-25T22:30:00Z',
-      },
+      }),
     ]);
     render(<ClubsScreen />);
     expect(await screen.findByText('Tue 25 Aug, 6:30 pm')).toBeTruthy();
     expect(await screen.findByText('Wed 26 Aug, 7:30 am')).toBeTruthy();
+  });
+});
+
+describe('Check-in', () => {
+  it('shows the check-in control on a game whose window is open', async () => {
+    fetchMyUpcomingBookings.mockResolvedValue([
+      booking({
+        status: 'confirmed',
+        check_in_required: true,
+        check_in_opens_at: new Date(Date.now() - 60_000).toISOString(),
+        check_in_closes_at: new Date(Date.now() + 3_600_000).toISOString(),
+        check_in_state: null,
+      }),
+    ]);
+    render(<ClubsScreen />);
+    expect(
+      await screen.findByRole('button', { name: /here/i }),
+    ).toBeTruthy();
+  });
+
+  it('shows no control when the event did not ask for check-in', async () => {
+    fetchMyUpcomingBookings.mockResolvedValue([
+      booking({
+        check_in_required: false,
+        check_in_opens_at: null,
+        check_in_closes_at: null,
+      }),
+    ]);
+    render(<ClubsScreen />);
+    await screen.findByText('Tuesday game');
+    expect(screen.queryByRole('button', { name: /here/i })).toBeNull();
+  });
+
+  it('shows no control before the window opens', async () => {
+    fetchMyUpcomingBookings.mockResolvedValue([
+      booking({
+        check_in_required: true,
+        check_in_opens_at: new Date(Date.now() + 3_600_000).toISOString(),
+        check_in_closes_at: new Date(Date.now() + 7_200_000).toISOString(),
+      }),
+    ]);
+    render(<ClubsScreen />);
+    await screen.findByText('Tuesday game');
+    expect(screen.queryByRole('button', { name: /here/i })).toBeNull();
+  });
+
+  // my_upcoming_bookings returns waitlisted rows too, and record_attendance
+  // refuses a waitlisted member with 23514 -- drawing a control guaranteed
+  // to fail is worse than drawing none. See lib/attendance.ts's own
+  // docstring on `checkInOpen` and the event screen's identical guard.
+  it('shows no control on a waitlisted row', async () => {
+    fetchMyUpcomingBookings.mockResolvedValue([
+      booking({
+        status: 'waitlisted',
+        event_table_id: null,
+        table_label: null,
+        check_in_required: true,
+        check_in_opens_at: new Date(Date.now() - 60_000).toISOString(),
+        check_in_closes_at: new Date(Date.now() + 3_600_000).toISOString(),
+      }),
+    ]);
+    render(<ClubsScreen />);
+    await screen.findByText('Tuesday game');
+    expect(screen.queryByRole('button', { name: /here/i })).toBeNull();
+  });
+
+  it('reflects a state the member already recorded', async () => {
+    fetchMyUpcomingBookings.mockResolvedValue([
+      booking({
+        check_in_required: true,
+        check_in_opens_at: new Date(Date.now() - 60_000).toISOString(),
+        check_in_closes_at: new Date(Date.now() + 3_600_000).toISOString(),
+        check_in_state: 'arrived',
+      }),
+    ]);
+    render(<ClubsScreen />);
+    const here = await screen.findByLabelText('Here: you');
+    expect(here.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('records against the right event', async () => {
+    fetchMyUpcomingBookings.mockResolvedValue([
+      booking({
+        check_in_required: true,
+        check_in_opens_at: new Date(Date.now() - 60_000).toISOString(),
+        check_in_closes_at: new Date(Date.now() + 3_600_000).toISOString(),
+      }),
+    ]);
+    render(<ClubsScreen />);
+    fireEvent.click(await screen.findByLabelText('Here: you'));
+    await waitFor(() =>
+      expect(recordAttendance).toHaveBeenCalledWith({
+        eventId: 'e1',
+        profileId: 'me',
+        state: 'arrived',
+      }),
+    );
+  });
+
+  // Task 8 kept an in-progress game in this list so the member has
+  // somewhere to check in -- which also keeps "Decline" on screen past
+  // kickoff, where cancel_booking/decline_booking both now refuse with
+  // "event already started". A button whose only possible outcome is an
+  // error should not be offered.
+  it('hides Decline on an in-progress booking someone else made, but keeps the check-in control', async () => {
+    fetchMyUpcomingBookings.mockResolvedValue([
+      booking({
+        starts_at: '2026-08-25T08:00:00Z', // before the frozen "now" of 10:00
+        booked_by: 'p2',
+        booked_by_name: 'Jane P.',
+        check_in_required: true,
+        check_in_opens_at: new Date(Date.now() - 60_000).toISOString(),
+        check_in_closes_at: new Date(Date.now() + 3_600_000).toISOString(),
+      }),
+    ]);
+    render(<ClubsScreen />);
+    // The friend note is information, not an action -- it stays. Only the
+    // dead-end Decline button is gated on `starts_at > now()`.
+    expect(await screen.findByText('Jane P. booked this for you')).toBeTruthy();
+    expect(
+      screen.queryByLabelText('Decline the seat Jane P. booked'),
+    ).toBeNull();
+    expect(await screen.findByLabelText('Here: you')).toBeTruthy();
+  });
+
+  it('hides "Leave the waitlist" on an in-progress, still-waitlisted booking', async () => {
+    fetchMyUpcomingBookings.mockResolvedValue([
+      booking({
+        starts_at: '2026-08-25T08:00:00Z', // before the frozen "now" of 10:00
+        status: 'waitlisted',
+        event_table_id: null,
+        table_label: null,
+      }),
+    ]);
+    render(<ClubsScreen />);
+    await screen.findByText('Tuesday game');
+    expect(screen.queryByText('Leave the waitlist')).toBeNull();
+    expect(
+      screen.queryByLabelText('Leave the waitlist for Tuesday game'),
+    ).toBeNull();
   });
 });
