@@ -76,13 +76,21 @@ function groupRows(rows: AttendanceRow[]) {
  * unaccounted — while the server already has him arrived — until somebody
  * manually reloads.
  *
- * `busyMap` is a snapshot of the per-profile in-flight write COUNT taken by
- * the caller right when the server read arrived (see the `busySnapshot`
- * local in `load()` below) -- any profile with a count above zero has at
- * least one write whose outcome this server read cannot yet reflect, so its
- * LOCAL `state` wins over the server's. A row that is busy but entirely
- * absent from the server response (an optimistic walk-in insert whose write
- * has not committed yet) is kept outright rather than dropped.
+ * `contested` answers a different question than "is this profile busy right
+ * now" -- it answers "was a write for this profile in flight at ANY POINT
+ * since this read was issued" (see `load()`, which builds this map from
+ * `writeSeqAtLoadEntry` and `busyAtLoadEntry`). The two are not the same
+ * question: a write that starts AFTER the read begins and both starts and
+ * finishes before the read's responses arrive clears `busy` well before this
+ * merge ever runs, so "busy right now" sees nothing outstanding and lets the
+ * read's stale snapshot win -- the exact clobber this function exists to
+ * prevent, just arriving from the other direction. `load()`'s doc comment
+ * carries the concrete before/after timeline.
+ *
+ * A profile marked `contested` has its LOCAL `state` win over the server's.
+ * A row that is contested but entirely absent from the server response (an
+ * optimistic walk-in insert whose write has not been reflected yet) is kept
+ * outright rather than dropped.
  *
  * Only `state` is contested while a write is in flight -- everything else
  * about the row (table assignment, display name, ...) is free to move
@@ -94,17 +102,17 @@ function groupRows(rows: AttendanceRow[]) {
 function mergeAttendance(
   serverRows: AttendanceRow[],
   currentRows: AttendanceRow[],
-  busyMap: Record<string, number>,
+  contested: Record<string, boolean>,
 ): AttendanceRow[] {
   const currentById = new Map(currentRows.map((r) => [r.profile_id, r]));
   const merged = serverRows.map((r) => {
-    if (!busyMap[r.profile_id]) return r;
+    if (!contested[r.profile_id]) return r;
     const local = currentById.get(r.profile_id);
     return local ? { ...r, state: local.state } : r;
   });
   const serverIds = new Set(serverRows.map((r) => r.profile_id));
   for (const r of currentRows) {
-    if (busyMap[r.profile_id] && !serverIds.has(r.profile_id)) {
+    if (contested[r.profile_id] && !serverIds.has(r.profile_id)) {
       merged.push(r);
     }
   }
@@ -174,11 +182,14 @@ export default function CheckInScreen() {
   // to write its result back.
   const loadSeqRef = useRef(0);
   // Mirrors `busy` synchronously (state updates are batched/async; this
-  // ref is not) so `load()` can snapshot which rows have a write in flight
-  // AT THE MOMENT ITS RESPONSE ARRIVES, not at the moment it was called --
-  // see `busySnapshot` in `load()` below, which reads this BEFORE calling
-  // `setRows` rather than letting the `setRows` updater dereference it
-  // whenever React happens to flush, which could be later still.
+  // ref is not). `load()` reads this at its own ENTRY, before the network
+  // round trip even starts (see `busyAtLoadEntry` below), to answer "was a
+  // write for this profile already in flight when this read was issued" --
+  // one half of the "in flight at any point since" question `load()`'s
+  // merge has to answer. incrBusy/decrBusy always replace this object
+  // wholesale rather than mutating it in place, which is what makes holding
+  // onto a reference captured at load() entry a safe, frozen snapshot even
+  // though busy-ness for other profiles keeps changing underneath it.
   const busyRef = useRef<Record<string, number>>({});
 
   function incrBusy(profileId: string) {
@@ -196,18 +207,46 @@ export default function CheckInScreen() {
   }
 
   // The sequence number of the most recently STARTED write for each
-  // profile. Mirrors `loadSeqRef` above, one profile at a time: a failed
-  // write's rollback must only apply if it is still that profile's LATEST
-  // write. Without this, a double-tap that corrects a mis-tap (write #1
-  // Here, write #2 Not coming, both in flight) would let write #1's
-  // rollback -- built from a `previous` closure captured before write #2
-  // even started -- overwrite write #2's optimistic value with a state
-  // neither the server nor the host chose, the moment write #1 happens to
-  // be the one that fails.
+  // profile. Mirrors `loadSeqRef` above, one profile at a time, and serves
+  // two purposes:
+  //
+  // 1. A failed write's rollback must only apply if it is still that
+  //    profile's LATEST write. Without this, a double-tap that corrects a
+  //    mis-tap (write #1 Here, write #2 Not coming, both in flight) would
+  //    let write #1's rollback -- built from a `previous` closure captured
+  //    before write #2 even started -- overwrite write #2's optimistic
+  //    value with a state neither the server nor the host chose, the
+  //    moment write #1 happens to be the one that fails.
+  // 2. `load()` snapshots this map at its own ENTRY (`writeSeqAtLoadEntry`
+  //    below) and compares it against this ref's LIVE value once its
+  //    responses arrive: any profile whose sequence has moved on in
+  //    between had a write START after this read was issued, so this read
+  //    cannot possibly reflect that write's outcome -- regardless of
+  //    whether the write has since resolved and cleared `busy`. This is
+  //    mutated IN PLACE (`writeSeqRef.current[id] = seq`, not a wholesale
+  //    replace like `busyRef`), so `load()` must take a shallow copy, not
+  //    hold a bare reference, when it snapshots this at entry.
   const writeSeqRef = useRef<Record<string, number>>({});
+
+  // Bumps and returns profileId's write sequence. Shared by `setState` and
+  // `addWalkIn` -- both start a write the merge in `load()` needs to be
+  // able to see, even though only `setState` also needs the returned
+  // number back (to guard its own rollback -- see writeSeqRef's comment).
+  function nextWriteSeq(profileId: string) {
+    const seq = (writeSeqRef.current[profileId] ?? 0) + 1;
+    writeSeqRef.current[profileId] = seq;
+    return seq;
+  }
 
   async function load() {
     const seq = ++loadSeqRef.current;
+    // Snapshotted BEFORE the network round trip starts -- see the doc
+    // comments on `busyRef`/`writeSeqRef` above and on `mergeAttendance`
+    // for why "in flight right now" is the wrong question for the merge
+    // below to ask, and why these two together answer the right one ("in
+    // flight at ANY POINT since this read was issued").
+    const writeSeqAtLoadEntry = { ...writeSeqRef.current };
+    const busyAtLoadEntry = busyRef.current;
     const [rosterRows, attendanceRows, event] = await Promise.all([
       fetchRoster(clubId),
       fetchEventAttendance(eventId),
@@ -238,20 +277,34 @@ export default function CheckInScreen() {
     // down, not just show a stale message. `attendanceFailed` above is what
     // tells the render which is which.
     if (attendanceRows !== null) {
-      // Captured HERE, synchronously, right as the response arrives --
+      // Computed HERE, synchronously, right as the response arrives --
       // not read from inside the `setRows` updater below. React's
       // automatic batching does not necessarily invoke that updater the
       // instant `setRows` is called; it can run later, once React gets
-      // around to flushing. If a write resolves in that gap, an inline
-      // `busyRef.current` read inside the updater would see the ALREADY
-      // -cleared flag and let this merge apply the stale server row after
-      // all -- the original clobber, in a narrower window. Snapshotting
-      // now, before any other code (including a write's own resolution)
-      // gets a chance to run, is what the doc comment on `mergeAttendance`
-      // above has always claimed.
-      const busySnapshot = busyRef.current;
+      // around to flushing, and a write can resolve in that gap. A profile
+      // is CONTESTED (its local `state` wins the merge) if EITHER it was
+      // already busy when this read was issued (`busyAtLoadEntry`) OR its
+      // write sequence has moved past what it was at that same moment
+      // (`writeSeqAtLoadEntry` vs. `writeSeqRef.current`, read live, right
+      // now) -- see the doc comments on `writeSeqRef` and on
+      // `mergeAttendance` for why the second half is required: a write
+      // that starts after this read begins and both starts and finishes
+      // before this read's responses arrive clears `busy` before this
+      // point ever runs, so the first half alone would miss it and let
+      // this merge apply the stale server row after all -- the original
+      // clobber, arriving from the other direction.
+      const contested: Record<string, boolean> = {};
+      for (const profileId of new Set([
+        ...Object.keys(writeSeqAtLoadEntry),
+        ...Object.keys(busyAtLoadEntry),
+        ...Object.keys(writeSeqRef.current),
+      ])) {
+        contested[profileId] =
+          !!busyAtLoadEntry[profileId] ||
+          writeSeqRef.current[profileId] !== writeSeqAtLoadEntry[profileId];
+      }
       setRows((current) =>
-        mergeAttendance(attendanceRows, current, busySnapshot),
+        mergeAttendance(attendanceRows, current, contested),
       );
     }
 
@@ -321,8 +374,10 @@ export default function CheckInScreen() {
 
   const windowOpen = checkInOpen(opensAt, closesAt);
   const summary = attendanceSummary(rows);
-  // Booked players who have arrived, out of every booked player -- see the
-  // note on the summary line below for why this is not `summary.here`.
+  // Booked players who have arrived, out of every booked player.
+  // `attendanceSummary` has no combined arrival count to reuse here --
+  // it deliberately never counted walk-ins and booked players together
+  // (see its own doc comment) -- so this filters `rows` directly instead.
   const bookedHere = rows.filter(
     (r) => r.booking_status !== null && r.state === 'arrived',
   ).length;
@@ -350,8 +405,7 @@ export default function CheckInScreen() {
     const previous = person.state;
     // This write's own sequence number for this profile -- see
     // `writeSeqRef` above.
-    const seq = (writeSeqRef.current[profileId] ?? 0) + 1;
-    writeSeqRef.current[profileId] = seq;
+    const seq = nextWriteSeq(profileId);
 
     setRows((current) =>
       current.map((r) => (r.profile_id === profileId ? { ...r, state: next } : r)),
@@ -406,6 +460,15 @@ export default function CheckInScreen() {
     };
     setRows((current) => [...current, newRow]);
     incrBusy(member.profile_id);
+    // Bumps the same sequence `setState` does -- `load()`'s merge (see its
+    // doc comment) needs this to tell a walk-in write that started after a
+    // refetch began apart from one that started before it, the same way it
+    // needs it for an existing row's `state`. Without this, a walk-in whose
+    // write starts after `load()` begins and resolves before `load()`'s
+    // responses arrive would read as "not busy" by the time the merge runs
+    // AND be absent from the server snapshot that merge is folding in --
+    // vanishing from the door list outright, not just reverting a state.
+    nextWriteSeq(member.profile_id);
 
     const { error: writeError } = await recordAttendance({
       eventId,

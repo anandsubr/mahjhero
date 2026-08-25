@@ -76,7 +76,6 @@ describe('attendanceSummary', () => {
       row({ profile_id: 'd', state: 'arrived', booking_status: null }),
     ]);
     expect(s).toEqual({
-      here: 2,
       notComing: 1,
       unaccounted: 1,
       walkIns: 1,

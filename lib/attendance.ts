@@ -58,9 +58,17 @@ export function checkInOpen(
   return t >= Date.parse(opensAt) && t <= Date.parse(closesAt);
 }
 
-/** The door screen's header line. */
+/**
+ * The door screen's header line. No `here` count: the door screen's
+ * "N of M booked here" figure is deliberately BOOKED players only
+ * (`bookedHere` in check-in.tsx, filtered straight off `rows` there), never
+ * arrivals across booked and walk-in players combined — folding a walk-in's
+ * arrival into this count would give it a number with no consumer, since
+ * the walk-in total already has its own separate count (`walkIns` below).
+ * Do not re-add a combined arrival count here without giving it a reader;
+ * the previous one sat unused after the summary line was reformulated.
+ */
 export function attendanceSummary(rows: AttendanceRow[]) {
-  let here = 0;
   let notComing = 0;
   let unaccounted = 0;
   let walkIns = 0;
@@ -69,15 +77,14 @@ export function attendanceSummary(rows: AttendanceRow[]) {
   for (const r of rows) {
     if (r.booking_status === null) walkIns += 1;
     else booked += 1;
-    if (r.state === 'arrived') here += 1;
-    else if (r.state === 'no_show') notComing += 1;
+    if (r.state === 'no_show') notComing += 1;
     // Only a booked player can be unaccounted for. A walk-in with no state
     // is not a person the host is waiting on — they are already standing
     // there.
-    else if (r.booking_status !== null) unaccounted += 1;
+    else if (r.state !== 'arrived' && r.booking_status !== null) unaccounted += 1;
   }
 
-  return { here, notComing, unaccounted, walkIns, booked };
+  return { notComing, unaccounted, walkIns, booked };
 }
 
 export async function fetchEventAttendance(

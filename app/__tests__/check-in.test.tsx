@@ -347,18 +347,37 @@ it('lets a table move land through an in-flight write, without reverting to the 
 });
 
 it('keeps the correction from a same-row double-tap, even when the first write fails and refetches', async () => {
-  // Routine at a door: mis-tap "Here", then immediately correct to "Not
-  // coming" -- both taps land in the same event-loop turn, before React
-  // repaints the disabled state from write #1's `busy`, so both writes are
-  // genuinely in flight together (wrapping both `fireEvent.click`s in one
-  // `act` reproduces that: neither click sees the other's pending update).
-  // `busy` used to be a boolean cleared unconditionally by whichever write
-  // finished first: write #1 finishing (success OR failure) dropped the
-  // guard for this profile while write #2's outcome was still unknown, and
-  // if write #1 FAILED, its rollback -- built from a `previous` closure
-  // captured before write #2 even existed -- overwrote write #2's
-  // optimistic value outright, on top of leaving the guard down for
-  // whatever refetch that failure's own `load()` call kicks off.
+  // Honest framing, since this scenario is NOT reachable through a real
+  // double-tap: `CheckInControl` sets `isDisabled = disabled || busy`, and
+  // once write #1's `incrBusy` commits, the control is disabled and a real
+  // second tap's `press()` returns early without ever calling `onChange` --
+  // the "disables every control" test below pins exactly that. Two genuine
+  // browser clicks are two separate dispatched events, and React flushes
+  // state between separate events even under automatic batching, so by the
+  // time a real second tap's handler ran, write #1's `busy` update would
+  // already be committed and the tap would be silently swallowed, not
+  // "handled." Only wrapping BOTH `fireEvent.click`s in one manual `act()`
+  // forces them to share a single pre-update render, which is not something
+  // a real click stream can do.
+  //
+  // The refcount/`writeSeqRef` guard this test exercises is therefore
+  // defence-in-depth for a path the current UI cannot reach, kept
+  // deliberately rather than by oversight: `writeSeqRef` is the same
+  // mechanism `load()`'s merge (check-in.tsx) reuses to answer "did a write
+  // for this profile start after this read began" for the read-window race
+  // fixed above, so it earns its keep independently of this test. And
+  // dropping the rollback guard itself would be a silent regression the
+  // very moment any future code path (a bulk action, a programmatic
+  // dispatch, an accessibility tool invoking `onChange` directly) manages
+  // to put two writes for the same profile in flight without an
+  // intervening render -- nothing else in this suite would catch that.
+  // What follows used to prove: `busy` was a boolean cleared unconditionally
+  // by whichever write finished first, so write #1 finishing (success OR
+  // failure) dropped the guard for this profile while write #2's outcome
+  // was still unknown, and if write #1 FAILED, its rollback -- built from a
+  // `previous` closure captured before write #2 even existed -- overwrote
+  // write #2's optimistic value outright, on top of leaving the guard down
+  // for whatever refetch that failure's own `load()` call kicks off.
   const initialRows = [row({ profile_id: 'a', display_name: 'Ann', state: null })];
   fetchEventAttendance.mockResolvedValue(initialRows);
   render(<CheckInScreen />);
@@ -608,4 +627,179 @@ it('reads the busy guard at the moment the refetch response arrives, not wheneve
   // the server's stale `null` just because the busy flag cleared before
   // React got around to running the merge.
   expect(annButton.getAttribute('aria-pressed')).toBe('true');
+});
+
+it('keeps a write that both starts AND finishes inside the read window, not just one still in flight when it lands', async () => {
+  // The other ordering of the same race, and per the review the MORE
+  // likely one: the test above has Bob's write already in flight when
+  // load()'s entry snapshot is taken, so `busyAtLoadEntry` alone catches
+  // it. Here Bob's write starts AFTER load() has already begun -- it does
+  // not exist yet when the snapshot is taken -- and it both starts and
+  // resolves before load()'s Promise.all settles, so `busy` for Bob is
+  // back to false well before the merge runs. Only the write-sequence
+  // half of `contested` (Bob's `writeSeqRef` entry compared against what
+  // `load()` recorded at its own entry) can still catch this one.
+  const initialRows = [
+    row({ profile_id: 'a', display_name: 'Ann', state: null }),
+    row({ profile_id: 'b', display_name: 'Bob', state: null }),
+  ];
+  let attendCalls = 0;
+  let resolveRefetch!: (v: AttendanceRow[]) => void;
+  const refetch = new Promise<AttendanceRow[]>((resolve) => {
+    resolveRefetch = resolve;
+  });
+  fetchEventAttendance.mockImplementation(() => {
+    attendCalls += 1;
+    return attendCalls === 1 ? Promise.resolve(initialRows) : refetch;
+  });
+
+  let resolveBobWrite!: (v: { error: string | null }) => void;
+  const bobWrite = new Promise<{ error: string | null }>((resolve) => {
+    resolveBobWrite = resolve;
+  });
+  recordAttendance.mockImplementation((input: { profileId: string }) =>
+    input.profileId === 'a' ? Promise.resolve({ error: 'nope' }) : bobWrite,
+  );
+
+  render(<CheckInScreen />);
+  const annButton = await screen.findByRole('button', { name: /here: ann/i });
+  const bobButton = await screen.findByRole('button', { name: /here: bob/i });
+
+  // Ann's write is refused, firing load(). Its entry snapshot is taken
+  // here, before Bob has been touched at all.
+  fireEvent.click(annButton);
+  await vi.waitFor(() =>
+    expect(fetchEventAttendance).toHaveBeenCalledTimes(2),
+  );
+
+  // Only NOW does Bob's write start -- strictly after load()'s entry
+  // snapshot.
+  fireEvent.click(bobButton);
+  expect(bobButton.getAttribute('aria-busy')).toBe('true');
+
+  // Bob's write both starts and finishes before the refetch's responses
+  // arrive.
+  resolveBobWrite({ error: null });
+  await vi.waitFor(() =>
+    expect(bobButton.getAttribute('aria-busy')).toBe('false'),
+  );
+  expect(bobButton.getAttribute('aria-pressed')).toBe('true');
+
+  // The refetch lands last, carrying a server snapshot taken before Bob's
+  // write committed -- still `null` for Bob. Ann's own rollback already
+  // happened (her write settled long before this), so her `aria-pressed`
+  // is `false` from that alone and cannot serve as a signal that THIS
+  // merge has landed -- a bare `vi.waitFor` on it would pass instantly,
+  // before the refetch's `Promise.all` chain has even had a microtask to
+  // run, and the assertions below would then be checking pre-merge state
+  // by accident. Force a real flush instead, long enough for that chain
+  // (and React's resulting commit) to finish regardless of which way it
+  // comes out, then assert the settled result directly.
+  await act(async () => {
+    resolveRefetch(initialRows);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  });
+
+  expect(annButton.getAttribute('aria-pressed')).toBe('false');
+  // Bob's choice must survive: his write sequence moved on since load()
+  // started, even though nothing about him was "busy" by the time the
+  // merge actually ran. Cross-checked against the summary line too: if
+  // the merge had wrongly let the stale server row win, Bob would count
+  // as unaccounted (2) instead of arrived, alongside Ann.
+  expect(bobButton.getAttribute('aria-pressed')).toBe('true');
+  expect(screen.getByText(/1 unaccounted/i)).toBeTruthy();
+  expect(screen.queryByText(/2 unaccounted/i)).toBeNull();
+});
+
+it('does not let a walk-in vanish when its write starts after the refetch begins and finishes before it lands', async () => {
+  // The aggravated variant of the same race: `addWalkIn` optimistically
+  // INSERTS a row that has no server counterpart at all yet. If that
+  // insert's write starts after load()'s entry snapshot and both starts
+  // and finishes before load()'s responses arrive, the row is (a) not
+  // "busy" by the time the merge runs, and (b) genuinely absent from the
+  // server snapshot that merge is folding in -- `!serverIds.has(...)`
+  // (mergeAttendance, check-in.tsx) does not re-add a row the merge does
+  // not know to treat as contested. Without the write-sequence half of
+  // `contested`, the person disappears from the door list outright,
+  // rather than merely reverting a state.
+  fetchRoster.mockResolvedValue([
+    HOST,
+    {
+      profile_id: 'w',
+      role: 'member' as const,
+      display_name: 'Walker',
+      skill_level: null,
+    },
+  ]);
+  const initialRows = [
+    row({ profile_id: 'a', display_name: 'Ann', state: null }),
+  ];
+  let attendCalls = 0;
+  let resolveRefetch!: (v: AttendanceRow[]) => void;
+  const refetch = new Promise<AttendanceRow[]>((resolve) => {
+    resolveRefetch = resolve;
+  });
+  fetchEventAttendance.mockImplementation(() => {
+    attendCalls += 1;
+    return attendCalls === 1 ? Promise.resolve(initialRows) : refetch;
+  });
+
+  let resolveWalkInWrite!: (v: { error: string | null }) => void;
+  const walkInWrite = new Promise<{ error: string | null }>((resolve) => {
+    resolveWalkInWrite = resolve;
+  });
+  recordAttendance.mockImplementation((input: { profileId: string }) =>
+    input.profileId === 'a' ? Promise.resolve({ error: 'nope' }) : walkInWrite,
+  );
+
+  render(<CheckInScreen />);
+  const annButton = await screen.findByRole('button', { name: /here: ann/i });
+
+  // Ann's write is refused, firing load(). Its entry snapshot is taken
+  // before Walker is added at all.
+  fireEvent.click(annButton);
+  await vi.waitFor(() =>
+    expect(fetchEventAttendance).toHaveBeenCalledTimes(2),
+  );
+
+  fireEvent.click(screen.getByLabelText('Add a walk-in'));
+  fireEvent.click(screen.getByLabelText('Add Walker'));
+  expect(await screen.findByText('Walker')).toBeTruthy();
+
+  // Walker's write both starts and finishes before the refetch's
+  // responses arrive.
+  resolveWalkInWrite({ error: null });
+  await vi.waitFor(() =>
+    expect(
+      screen
+        .getByRole('button', { name: /here: walker/i })
+        .getAttribute('aria-busy'),
+    ).toBe('false'),
+  );
+
+  // The refetch lands last, carrying a server snapshot taken before
+  // Walker's insert committed -- Walker is entirely absent from it. Ann's
+  // own rollback already happened by this point (her write settled long
+  // before this), so waiting on her `aria-pressed` would pass before this
+  // refetch's chain has even run a microtask -- see the sibling test
+  // above for the same trap. Force a real flush instead, long enough for
+  // the chain and its commit to finish either way, then assert the
+  // settled result.
+  await act(async () => {
+    resolveRefetch(initialRows);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  });
+
+  expect(annButton.getAttribute('aria-pressed')).toBe('false');
+  // Walker must still be on the door list, marked arrived -- not
+  // silently dropped by a merge that only knew to look at the server's
+  // rows. Cross-checked against the summary line too: if the merge had
+  // dropped Walker's row outright, the walk-in count would read 0.
+  expect(screen.getByText('Walker')).toBeTruthy();
+  expect(
+    screen
+      .getByRole('button', { name: /here: walker/i })
+      .getAttribute('aria-pressed'),
+  ).toBe('true');
+  expect(screen.getByText(/1 walk-in\b/i)).toBeTruthy();
 });
