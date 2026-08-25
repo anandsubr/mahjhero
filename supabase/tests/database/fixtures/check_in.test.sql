@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(26);
+select plan(27);
 
 -- ------------------------------------------------------------------
 -- Fixture. check_ins grants authenticated only SELECT, so every direct
@@ -296,11 +296,44 @@ select lives_ok(
   'a member''s claimed occurred_at of infinity is accepted, not rejected');
 
 reset role;
-select ok(
-  (select recorded_at < 'infinity'::timestamptz from public.check_ins
+select is(
+  (select recorded_at from public.check_ins
     where event_id = '40000000-0000-0000-0000-000000000001'
       and profile_id = '10000000-0000-0000-0000-000000000003'),
-  'the clamp bounds a claimed occurred_at of infinity to the present, so no future organizer correction can be permanently vetoed');
+  now(),
+  'the clamp bounds a claimed occurred_at of infinity to exactly the present -- not merely to some future date -- so no future organizer correction can be permanently vetoed');
+
+-- ------------------------------------------------------------------
+-- The clamp must be one-sided: only a future occurred_at is pulled back to
+-- now(); a past occurred_at is stored exactly as given, because a deferred
+-- offline plan replays writes stamped at the moment the host actually
+-- tapped. This needs a FRESH insert -- no upsert conflict, so no staleness
+-- rung involved -- to pin, unlike the assertion above. The walk-in member
+-- (profile 4) currently has no check_ins row for this event: their earlier
+-- walk-in was cleared, and their later self check-in attempt threw before
+-- writing anything. Mutation-checked: a two-sided clamp such as
+-- greatest(least(occurred_at, now()), now()) leaves every other assertion
+-- in this file green, so without this one the property the offline design
+-- depends on is unguarded.
+-- ------------------------------------------------------------------
+set local role authenticated;
+set local request.jwt.claims to
+  '{"sub":"10000000-0000-0000-0000-000000000001","role":"authenticated"}';
+
+do $$ begin
+  perform public.record_attendance(
+    '40000000-0000-0000-0000-000000000001',
+    '10000000-0000-0000-0000-000000000004', 'arrived',
+    now() - interval '10 minutes');
+end $$;
+
+reset role;
+select is(
+  (select recorded_at from public.check_ins
+    where event_id = '40000000-0000-0000-0000-000000000001'
+      and profile_id = '10000000-0000-0000-0000-000000000004'),
+  now() - interval '10 minutes',
+  'a past occurred_at is stored exactly as given, not clamped forward to the present');
 
 -- ------------------------------------------------------------------
 -- The flag, and the windows.
