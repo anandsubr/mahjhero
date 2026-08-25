@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(7);
+select plan(10);
 
 -- ------------------------------------------------------------------
 -- Fixture. Identical to check_in.test.sql: same uuids, same in-progress
@@ -145,6 +145,50 @@ select is(
     where kind = 'attendance_declined'),
   1,
   'a host marking a no-show notifies nobody');
+
+-- ------------------------------------------------------------------
+-- Final-review fix (Also fix item 2): a STALE write must not notify.
+-- Profile 2's row currently says 'no_show', recorded_by the host a moment
+-- ago (`recorded_at` frozen at this transaction's now()). Profile 2 now
+-- self-reports 'no_show' too, but with an occurred_at BEHIND that stored
+-- recorded_at -- the exact shape a deferred offline replay produces: a
+-- write queued on a phone, replayed late, superseded by a decision already
+-- on record. The upsert's own `where excluded.recorded_at >
+-- check_ins.recorded_at` makes this a silent no-op (record_attendance
+-- still returns success, per this plan's error-handling section). Before
+-- the fix, the notification insert sat OUTSIDE that guard: a no-op write
+-- still told the organizers "profile 2 can't make it" even though the
+-- stored row was never touched. The dedupe key is keyed on
+-- (event, declining profile, recipient) and profile 2 has never
+-- self-declined before this point in the file, so a stray notification
+-- here cannot be explained away by the earlier dedupe assertion above --
+-- this is a genuinely new key.
+-- ------------------------------------------------------------------
+set local role authenticated;
+set local request.jwt.claims to
+  '{"sub":"10000000-0000-0000-0000-000000000002","role":"authenticated"}';
+
+select lives_ok(
+  $$select public.record_attendance(
+      '40000000-0000-0000-0000-000000000001',
+      '10000000-0000-0000-0000-000000000002', 'no_show',
+      now() - interval '10 minutes')$$,
+  'a stale self-reported no_show is accepted without error (silent no-op)');
+
+reset role;
+select is(
+  (select recorded_by from public.check_ins
+    where event_id = '40000000-0000-0000-0000-000000000001'
+      and profile_id = '10000000-0000-0000-0000-000000000002'),
+  '10000000-0000-0000-0000-000000000001'::uuid,
+  'the stale write did not actually apply -- recorded_by is still the host''s');
+
+select is(
+  (select count(*)::int from public.notification_outbox
+    where kind = 'attendance_declined'
+      and payload->>'declined_by' = '10000000-0000-0000-0000-000000000002'),
+  0,
+  'a stale no-op write does not queue a notification the stored row does not back up');
 
 -- The expiry rule: an attendance_declined row is queued at or after
 -- starts_at by definition, so the event-bound default (expire at

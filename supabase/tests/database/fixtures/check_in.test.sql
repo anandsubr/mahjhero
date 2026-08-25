@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(27);
+select plan(32);
 
 -- ------------------------------------------------------------------
 -- Fixture. check_ins grants authenticated only SELECT, so every direct
@@ -261,6 +261,65 @@ select throws_ok(
   '23514',
   'you do not have a seat at this game',
   'a member without a confirmed booking cannot self check in');
+
+-- Final-review fix (Also fix item 1): clear_attendance runs the SAME
+-- confirmed-booking rung record_attendance does for a member's own write.
+-- Without it, a member the organizer had recorded as a walk-in (profile 4
+-- was recorded 'arrived' above, then cleared by the organizer at 'an
+-- organizer clears a row') could clear their own row directly and then have
+-- no way back -- record_attendance's own rung, asserted immediately above,
+-- would refuse to let them recreate it. The organizer re-records the
+-- walk-in here so this assertion has a row to attempt clearing.
+set local role authenticated;
+set local request.jwt.claims to
+  '{"sub":"10000000-0000-0000-0000-000000000001","role":"authenticated"}';
+
+select lives_ok(
+  $$select public.record_attendance(
+      '40000000-0000-0000-0000-000000000001',
+      '10000000-0000-0000-0000-000000000004', 'arrived')$$,
+  'an organizer re-records the walk-in so there is a row to attempt clearing');
+
+set local request.jwt.claims to
+  '{"sub":"10000000-0000-0000-0000-000000000004","role":"authenticated"}';
+
+select throws_ok(
+  $$select public.clear_attendance(
+      '40000000-0000-0000-0000-000000000001',
+      '10000000-0000-0000-0000-000000000004')$$,
+  '23514',
+  'you do not have a seat at this game',
+  'a member without a confirmed booking cannot clear even their own walk-in row');
+
+reset role;
+select is(
+  (select state::text from public.check_ins
+    where event_id = '40000000-0000-0000-0000-000000000001'
+      and profile_id = '10000000-0000-0000-0000-000000000004'),
+  'arrived',
+  'the refused clear left the walk-in''s row exactly as it was');
+
+-- The organizer clears it again -- restoring "profile 4 has no check_ins
+-- row for this event" for the clamp assertions further down this file,
+-- which depend on that exact starting state (see the comment above the
+-- 'a past occurred_at is stored exactly as given' assertion).
+set local role authenticated;
+set local request.jwt.claims to
+  '{"sub":"10000000-0000-0000-0000-000000000001","role":"authenticated"}';
+
+select lives_ok(
+  $$select public.clear_attendance(
+      '40000000-0000-0000-0000-000000000001',
+      '10000000-0000-0000-0000-000000000004')$$,
+  'the organizer clears the walk-in again, restoring profile 4 to "not determined"');
+
+reset role;
+select is(
+  (select count(*)::int from public.check_ins
+    where event_id = '40000000-0000-0000-0000-000000000001'
+      and profile_id = '10000000-0000-0000-0000-000000000004'),
+  0,
+  'profile 4 has no check_ins row again, matching what the assertions further down assume');
 
 -- ------------------------------------------------------------------
 -- The critical bug: an unvalidated occurred_at lets a member permanently

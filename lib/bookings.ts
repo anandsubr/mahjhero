@@ -115,9 +115,15 @@ type RpcError = { code?: string; message?: string; details?: string } | null;
  * `details` carries a profile id for the two refusals that are about a
  * person; the caller substitutes the name it already holds from the roster.
  *
- * Two entries are ordered deliberately: 'not a member of this club' before
- * 'not a member', because the shorter string is a substring of the longer
- * one and `Array.find` returns the first match.
+ * Three entries are ordered deliberately: 'that person is not a member of
+ * this club' before 'not a member of this club' before 'not a member',
+ * because each shorter string is a substring of the ones above it and
+ * `Array.find` returns the first match. The first of the three is
+ * record_attendance's own refusal (20260827030000_attendance_mutations.sql)
+ * for a walk-in target who has left the club since the roster was fetched;
+ * left unordered, it used to fall into 'not a member of this club' and told
+ * the host recording the walk-in that THEY had been removed from their own
+ * club, rather than naming the person being added.
  *
  * Not every message the day-8 migrations raise appears here — some are
  * deliberately left to fall back to GENERIC_ERROR, and some belong to
@@ -151,6 +157,16 @@ const BOOKING_REFUSALS: { contains: string; message: string; codes: string[] }[]
     // booking for.
     contains: 'already booked',
     message: 'You or someone in your group already has a seat at this game.',
+    codes: ['23514'],
+  },
+  {
+    // Order before 'not a member of this club' below — see the note above.
+    // record_attendance's own guard (20260827030000), raised when an
+    // organizer tries to record a walk-in for someone who is no longer on
+    // the club's roster (e.g. a co-organizer removed them mid-shift after
+    // the door screen's roster was fetched).
+    contains: 'that person is not a member of this club',
+    message: 'That person is no longer a member of this club.',
     codes: ['23514'],
   },
   {
@@ -239,12 +255,14 @@ const BOOKING_REFUSALS: { contains: string; message: string; codes: string[] }[]
     message: 'Only the person who booked can answer that offer.',
     codes: ['42501'],
   },
-  // The six below are raised by record_attendance/clear_attendance and
-  // their shared guard assert_attendance_writable
-  // (20260827030000_attendance_mutations.sql, check-in plan Task 4). Neither
-  // function is called from this file — lib/attendance.ts (check-in plan
-  // Task 9) owns that — but they belong in this same vocabulary rather than
-  // a parallel one: attendance refusals are still "a game/seat rule the
+  // The six below, plus 'that person is not a member of this club' up near
+  // the top of this array (ordering forced it there — see the note above),
+  // are raised by record_attendance/clear_attendance and their shared guard
+  // assert_attendance_writable (20260827030000_attendance_mutations.sql,
+  // check-in plan Task 4) — seven attendance-related entries in total.
+  // Neither function is called from this file — lib/attendance.ts (check-in
+  // plan Task 9) owns that — but they belong in this same vocabulary rather
+  // than a parallel one: attendance refusals are still "a game/seat rule the
   // member can do something about", exactly what BOOKING_REFUSALS already
   // exists to translate, and 'no such event' below already proves this
   // table maps messages for functions this file never calls (it also

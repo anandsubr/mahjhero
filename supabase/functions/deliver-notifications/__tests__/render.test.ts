@@ -160,6 +160,20 @@ describe('renderMessage', () => {
     expect(message.text.toLowerCase()).not.toContain('seat came free');
   });
 
+  // Final-review fix (item 5): the cta USED to read "Open the door list"
+  // while its url was always eventUrl (the event screen -- there is no
+  // direct deep link to the door screen from an email, and the event
+  // screen is where the "Door list" button itself lives). Pins the label
+  // to match where the link actually goes, the same "See the game" wording
+  // every other event-linked cta in bodies.ts uses.
+  it('labels the attendance_declined cta to match where it actually goes', () => {
+    const r = row({ kind: 'attendance_declined', actor_name: 'Jane Chen' });
+    const message = renderMessage(r, APP);
+    expect(message.text).toContain('See the game');
+    expect(message.text).not.toContain('Open the door list');
+    expect(message.text).toContain(`${APP}/clubs/${r.club_id}/events/${r.event_id}`);
+  });
+
   // The actor is nullable — a promotion is nobody's doing — so the copy
   // must not read "undefined booked you a seat".
   it('says something sensible when nobody acted', () => {

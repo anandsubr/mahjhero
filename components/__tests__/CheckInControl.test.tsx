@@ -15,6 +15,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import CheckInControl from '../CheckInControl';
+import { colors } from '../../lib/theme';
 
 describe('CheckInControl', () => {
   it('reports arrived when Here is pressed', () => {
@@ -96,5 +97,44 @@ describe('CheckInControl', () => {
     });
     expect(getComputedStyle(here).borderWidth).toBe('4px');
     expect(getComputedStyle(notComing).borderWidth).toBe('2px');
+  });
+
+  // Final-review fix (item 6): width alone (2px vs 4px, same grey) is easy
+  // to miss standing up in a dim hall, and the fill colours sit at
+  // 1.23-1.27:1 against the page background -- see this file's docstring.
+  // Selection now ALSO switches the border to a saturated theme colour
+  // (`colors.accentColor`/`colors.accent2Color`), distinct from the
+  // unselected chip's neutral `colors.divider`. Pulled from `lib/theme.ts`
+  // rather than a literal hex, in both the component and this assertion,
+  // so the two cannot silently drift apart.
+  it('gives the selected choice a border colour distinct from the unselected one', () => {
+    render(<CheckInControl state="arrived" onChange={vi.fn()} label="Ann" />);
+    const here = screen.getByRole('button', { name: /^here.*ann/i });
+    const notComing = screen.getByRole('button', {
+      name: /not coming.*ann/i,
+    });
+    const selectedColor = getComputedStyle(here).borderColor;
+    const unselectedColor = getComputedStyle(notComing).borderColor;
+    expect(selectedColor).not.toBe(unselectedColor);
+    // The unselected chip keeps the same neutral divider colour every
+    // other bordered surface in the app uses.
+    expect(unselectedColor).toBe(colors.divider);
+  });
+
+  it('falls back to a sensible label when the person has no display name', () => {
+    render(<CheckInControl state={null} onChange={vi.fn()} label="" />);
+    expect(
+      screen.getByRole('button', { name: /^here: this person$/i }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: /^not coming: this person$/i }),
+    ).toBeTruthy();
+  });
+
+  it('falls back to a sensible label when the display name is whitespace-only', () => {
+    render(<CheckInControl state={null} onChange={vi.fn()} label="   " />);
+    expect(
+      screen.getByRole('button', { name: /^here: this person$/i }),
+    ).toBeTruthy();
   });
 });

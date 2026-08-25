@@ -152,7 +152,7 @@ select ok(
   'update_event sets the flag and records the override');
 
 -- ---------------------------------------------------------------------
--- 9-13: create_event_series and update_event_series, neither of which had
+-- 11-22: create_event_series and update_event_series, neither of which had
 -- any coverage before -- only their sibling one-off functions (tests 6-10
 -- above) were asserted. `starts_on` is deliberately (current_date + 1),
 -- never current_date: materialize_one_series floors its window at

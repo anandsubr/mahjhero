@@ -152,6 +152,10 @@ export default function CheckInScreen() {
   // default; it never opens a window that doesn't exist.
   const [opensAt, setOpensAt] = useState<string | null>(null);
   const [closesAt, setClosesAt] = useState<string | null>(null);
+  // Null until the first successful event read -- see the render below,
+  // which needs to tell "never asked for check-in" apart from "window
+  // closed" to say something true about why the screen is inert.
+  const [checkInRequired, setCheckInRequired] = useState<boolean | null>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Per-profile, not screen-wide: one slow write must not freeze the other
@@ -314,6 +318,17 @@ export default function CheckInScreen() {
     // reaches this screen, so the tail is unconditional here -- there is no
     // member-window branch to choose between.
     //
+    // Mirrors my_upcoming_bookings' own `case when e.check_in_required then
+    // ... end` (20260827070000_my_upcoming_bookings_check_in.sql:79-81):
+    // when the event never asked for check-in, the window is null, exactly
+    // as if this were an event with no dates at all. Without this check,
+    // this screen derived a window from starts_at/ends_at alone --
+    // `check_in_required = false` inside the time window still rendered a
+    // fully "live"-looking door list (every control and "Add a walk-in"
+    // enabled), and every tap raised "This game does not use check-in.".
+    // The database has always refused these writes; this is what makes the
+    // screen say so up front instead of after every tap.
+    //
     // Only written on a SUCCESSFUL event read. A failed refetch (any
     // refused write anywhere on this screen calls `load()`, see
     // `setState`/`addWalkIn`) used to overwrite a previously-known window
@@ -323,8 +338,14 @@ export default function CheckInScreen() {
     // applies to `rows`, applied here to the window: a transient failure
     // keeps the last known good value rather than blanking it.
     if (event) {
-      setOpensAt(addHours(event.starts_at, -1));
-      setClosesAt(addHours(event.ends_at, 24));
+      setCheckInRequired(event.check_in_required);
+      if (event.check_in_required) {
+        setOpensAt(addHours(event.starts_at, -1));
+        setClosesAt(addHours(event.ends_at, 24));
+      } else {
+        setOpensAt(null);
+        setClosesAt(null);
+      }
     }
 
     setReady(true);
@@ -468,7 +489,9 @@ export default function CheckInScreen() {
     // responses arrive would read as "not busy" by the time the merge runs
     // AND be absent from the server snapshot that merge is folding in --
     // vanishing from the door list outright, not just reverting a state.
-    nextWriteSeq(member.profile_id);
+    // The returned number is also this rollback's own guard below, the
+    // same shape `setState` uses for its `seq`.
+    const seq = nextWriteSeq(member.profile_id);
 
     const { error: writeError } = await recordAttendance({
       eventId,
@@ -479,20 +502,36 @@ export default function CheckInScreen() {
     decrBusy(member.profile_id);
 
     if (writeError) {
-      setRows((current) =>
-        current.filter((r) => r.profile_id !== member.profile_id),
-      );
+      // Same guard `setState`'s rollback uses: a newer write for this
+      // profile (e.g. the host mis-tapped Add, then corrected it with
+      // another write before this one's response arrived) has started
+      // since this call did, and its optimistic value is what belongs on
+      // screen now -- not this call's unconditional removal, which would
+      // delete a row the host's later action put there on purpose. Without
+      // this guard the asymmetry was cosmetic today (the `load()` this
+      // branch already triggers repairs it moments later) but unintended.
+      if (writeSeqRef.current[member.profile_id] === seq) {
+        setRows((current) =>
+          current.filter((r) => r.profile_id !== member.profile_id),
+        );
+      }
       setError(writeError);
       void load();
     }
   }
 
   function renderPerson(r: AttendanceRow) {
+    // `display_name` carries no non-empty constraint (lib/clubs.ts /
+    // event_attendance) and defaults to `''` -- an unnamed member used to
+    // render a blank row here (the same gap CheckInControl guards on its
+    // own `label` prop below), announcing nothing about who this row is
+    // for.
+    const displayName = r.display_name.trim() ? r.display_name : 'Unnamed member';
     return (
       <View key={r.profile_id} style={styles.personRow}>
-        <Text style={styles.name}>{r.display_name}</Text>
+        <Text style={styles.name}>{displayName}</Text>
         <CheckInControl
-          label={r.display_name}
+          label={displayName}
           state={r.state}
           busy={!!busy[r.profile_id]}
           disabled={!windowOpen}
@@ -576,7 +615,14 @@ export default function CheckInScreen() {
               // confirmed. Saying "closed" here was a false statement about
               // the EVENT when the actual problem was the fetch.
               'Could not confirm whether check-in is open for this game. You can still see who was recorded.'
-            : 'Check-in is closed for this game. You can still see who was recorded.'}
+            : checkInRequired === false
+              ? // Distinct from "closed": this game never asked for
+                // check-in at all, so there is no window that could open.
+                // Without this branch the screen said "closed" about a
+                // game that was never live in the first place, which is a
+                // different, false claim.
+                'This game does not use check-in.'
+              : 'Check-in is closed for this game. You can still see who was recorded.'}
         </Text>
       ) : null}
 

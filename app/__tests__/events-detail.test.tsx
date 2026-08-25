@@ -921,19 +921,24 @@ describe('check-in', () => {
       );
     });
 
-    // Required behaviour from the task brief, not just the illustrative
-    // sample code: the link is disabled outside the organizer window, with
-    // the reason shown rather than a button that silently does nothing.
-    it('disables the door list outside the organizer window, with the reason shown', async () => {
+    // Final-review fix (Important 3): event_attendance's reads are
+    // deliberately NOT window-bound -- "an organizer can open the list
+    // months later and still see the record" (event_attendance's own
+    // comment; check-in.tsx:591-602 carries copy for exactly that case).
+    // The Door list link is the only in-app route to that read, so it must
+    // stay enabled outside the organizer window too, gated on
+    // check_in_required alone. The door screen itself still disables its
+    // own controls once the window closes -- that assertion lives in
+    // check-in.test.tsx, not here.
+    it('keeps the door list enabled outside the organizer window -- reads are not window-bound', async () => {
       fetchEvent.mockResolvedValue(OUTSIDE_WINDOW_EVENT);
       render(<EventScreen />);
       const link = await screen.findByLabelText('Door list');
-      expect(link.getAttribute('aria-disabled')).toBe('true');
-      expect(
-        screen.getByText(
-          'Door list opens 1 hour before the game and stays open until a day after it ends.',
-        ),
-      ).toBeTruthy();
+      expect(link.getAttribute('aria-disabled')).not.toBe('true');
+      fireEvent.click(link);
+      expect(push).toHaveBeenCalledWith(
+        '/clubs/club-1/events/event-1/check-in',
+      );
     });
   });
 

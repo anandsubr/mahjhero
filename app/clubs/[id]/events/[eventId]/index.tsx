@@ -374,16 +374,16 @@ export default function EventScreen() {
   );
   const myHoldsSeat = myBooking !== undefined;
 
-  // The two check-in windows Task 12 wires up. The organizer's carries a
-  // 24-hour tail past `ends_at` for a retroactive correction after the fact
-  // (the door screen itself, app/clubs/[id]/events/[eventId]/check-in.tsx,
-  // uses the identical window); the member's own has no tail — once the
-  // game ends, self-check-in is done. Both share the same one-hour lead via
-  // `addHours` (lib/time.ts) rather than re-deriving it inline.
-  const organizerCheckInOpen = checkInOpen(
-    addHours(event.starts_at, -1),
-    addHours(event.ends_at, 24),
-  );
+  // The member's own check-in window: starts_at - 1h to ends_at, no
+  // organizer tail — once the game ends, self-check-in is done. The
+  // organizer's equivalent window (with its 24h tail for a retroactive
+  // correction after the fact) is NOT computed here: the "Door list" link
+  // below is deliberately not window-gated (event_attendance's reads are
+  // not window-bound; only the door screen's own controls are), and no
+  // other UI on this screen depends on the organizer window, so this
+  // screen has no remaining use for it. The door screen itself
+  // (app/clubs/[id]/events/[eventId]/check-in.tsx) still computes and
+  // enforces that window on its own controls.
   const memberCheckInOpen = checkInOpen(addHours(event.starts_at, -1), event.ends_at);
 
   // Confirmed but not placed at any table — "any table" bookings, and
@@ -984,16 +984,21 @@ export default function EventScreen() {
 
           {/*
             The organizer's entry point to the door screen (Task 11) --
-            only when this event actually asked for check-in, and disabled
-            outside the organizer window (with the reason shown) rather
-            than left tappable onto a screen whose own controls would all
-            be disabled anyway.
+            gated on check_in_required ALONE, not on the organizer window.
+            event_attendance's reads are deliberately not window-bound (its
+            own comment: "an organizer can open the list months later and
+            still see the record") and this link is the only in-app route
+            to it -- gating it on the window too made that read path
+            unreachable from the UI: a host wanting to see who turned up at
+            last Tuesday's game found this button greyed out. The door
+            screen already disables its own controls correctly once the
+            window closes (see check-in.tsx), which is the only place that
+            needs to be inert.
           */}
           {event.check_in_required ? (
             <>
               <Button
                 variant="secondary"
-                disabled={!organizerCheckInOpen}
                 onPress={() =>
                   router.push(`/clubs/${clubId}/events/${eventId}/check-in`)
                 }
@@ -1001,11 +1006,6 @@ export default function EventScreen() {
               >
                 Door list
               </Button>
-              {!organizerCheckInOpen ? (
-                <Text style={styles.help}>
-                  Door list opens 1 hour before the game and stays open until a day after it ends.
-                </Text>
-              ) : null}
             </>
           ) : null}
 

@@ -61,6 +61,7 @@ declare
   ev        public.events;
   caller    uuid := auth.uid();
   organizer boolean;
+  applied   int;
 begin
   ev := public.assert_attendance_writable(target_event);
   organizer := public.is_club_organizer(ev.club_id);
@@ -133,6 +134,14 @@ begin
         recorded_at = excluded.recorded_at
     where excluded.recorded_at > check_ins.recorded_at;
 
+  -- `applied` is 0 when the upsert's own `where excluded.recorded_at >
+  -- check_ins.recorded_at` filtered the conflicting row out -- i.e. this
+  -- write was a stale no-op, superseded by a decision already on record.
+  -- On a fresh insert (no conflict) this is 1 unconditionally. Read
+  -- immediately after the INSERT statement, before anything else can reset
+  -- it.
+  get diagnostics applied = row_count;
+
   /*
    * The one notification in this plan.
    *
@@ -145,6 +154,15 @@ begin
    * cannot make their own club's game is reporting the same fact as
    * anybody else, and the other organizers want to hear it.
    *
+   * `applied > 0` gates this against exactly the case the staleness rule
+   * above exists for: a stale write that lands as a no-op must not still
+   * tell the organizers "Jane can't make it" while the stored row says
+   * something else (e.g. 'arrived', recorded by the host after Jane's
+   * queued no_show was stamped). Unreachable online today, since
+   * occurred_at is always now() and no write can ever be stale against
+   * itself -- reachable the moment a deferred offline replay ships, which
+   * is the entire reason occurred_at is a parameter at all.
+   *
    * The dedupe key holds one notice per (event, member, recipient), so a
    * member who declines, undoes, and declines again does not tell the host
    * twice. clear_attendance sends nothing at all: once "Jane can't make it"
@@ -152,7 +170,7 @@ begin
    * can after all is worth less than the confusion it causes. The host sees
    * the live truth on the door screen, which is the surface that matters.
    */
-  if new_state = 'no_show' and caller = target_profile then
+  if new_state = 'no_show' and caller = target_profile and applied > 0 then
     insert into public.notification_outbox
       (recipient_id, club_id, event_id, kind, payload, dedupe_key)
     select m.profile_id, ev.club_id, target_event, 'attendance_declined',

@@ -217,6 +217,23 @@ begin
       using errcode = '23514';
   end if;
 
+  -- Same confirmed-booking rung record_attendance runs for a member's own
+  -- write (the spec's role table requires a confirmed booking for BOTH
+  -- actions, not just recording). Without this, a member an organizer had
+  -- recorded as a walk-in could call clear_attendance directly on their own
+  -- row, delete it, and then have no way back: record_attendance's own
+  -- confirmed-booking rung would refuse to let them recreate it, leaving
+  -- them permanently worse off than before they touched the RPC at all.
+  if not organizer and not exists (
+    select 1 from public.bookings b
+     where b.event_id = target_event
+       and b.profile_id = caller
+       and b.status = 'confirmed')
+  then
+    raise exception 'you do not have a seat at this game'
+      using errcode = '23514';
+  end if;
+
   delete from public.check_ins
    where event_id = target_event and profile_id = target_profile;
 end;

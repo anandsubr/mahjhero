@@ -94,6 +94,7 @@ const EVENT = {
   id: 'event-1',
   starts_at: new Date(NOW - 30 * 60_000).toISOString(),
   ends_at: new Date(NOW + 2 * 60 * 60_000).toISOString(),
+  check_in_required: true,
 };
 
 beforeEach(() => {
@@ -523,6 +524,56 @@ it('disables every control once the window has closed', async () => {
   expect(recordAttendance).not.toHaveBeenCalled();
 });
 
+// Final-review fix (item 3): display_name carries no non-empty constraint
+// and defaults to '' -- an unnamed member used to render a blank row here
+// ("Here: " with nothing after the colon), announcing nothing useful to a
+// screen reader or a sighted host. Both the row's own label and the
+// control passed to it need a fallback.
+it('renders something for a nameless person instead of a blank row', async () => {
+  fetchEventAttendance.mockResolvedValue([
+    row({ profile_id: 'a', display_name: '' }),
+  ]);
+  render(<CheckInScreen />);
+
+  expect(await screen.findByText('Unnamed member')).toBeTruthy();
+  expect(
+    screen.getByRole('button', { name: /^here: unnamed member$/i }),
+  ).toBeTruthy();
+});
+
+// Final-review fix (Important 2): the window used to be derived from
+// starts_at/ends_at ALONE, ignoring check_in_required entirely. Opening
+// this screen for an event with check_in_required = false, inside the time
+// window, rendered a fully "live"-looking door list -- every control and
+// "Add a walk-in" enabled -- and every tap raised "This game does not use
+// check-in.". Mirrors my_upcoming_bookings' own `case when
+// e.check_in_required then ... end`
+// (20260827070000_my_upcoming_bookings_check_in.sql:79-81): the window is
+// null when the event never asked for check-in.
+//
+// Mutation evidence: with the `if (event.check_in_required) { ... } else {
+// setOpensAt(null); setClosesAt(null); }` branch reverted to the old
+// unconditional `setOpensAt(addHours(...)); setClosesAt(addHours(...))`,
+// this test fails -- the "Here: ann" control renders enabled instead of
+// disabled. See .superpowers/sdd/final-review-fixes-report.md.
+it('treats the window as closed for an event that never asked for check-in, even inside starts_at/ends_at', async () => {
+  fetchEvent.mockResolvedValue({ ...EVENT, check_in_required: false });
+  fetchEventAttendance.mockResolvedValue([
+    row({ profile_id: 'a', display_name: 'Ann' }),
+  ]);
+  render(<CheckInScreen />);
+
+  const hereButton = await screen.findByRole('button', { name: /here: ann/i });
+  expect(hereButton.getAttribute('aria-disabled')).toBe('true');
+
+  fireEvent.click(hereButton);
+  expect(recordAttendance).not.toHaveBeenCalled();
+
+  // Says something TRUE about why -- distinct from "closed", since this
+  // game was never live in the first place.
+  expect(screen.getByText('This game does not use check-in.')).toBeTruthy();
+});
+
 it('excludes people already on the list from the walk-in picker, and pins the exact candidate set', async () => {
   fetchRoster.mockResolvedValue([
     HOST,
@@ -567,8 +618,9 @@ it('reads the busy guard at the moment the refetch response arrives, not wheneve
   // `.then().then().then()` below) reliably lands her write's resolution
   // in the gap between "`load()`'s `Promise.all` has resolved" and
   // "React has flushed the resulting `setRows` call" -- the exact window
-  // the doc comment on `busySnapshot` in `load()` describes. Reading
-  // `busyRef.current` from INSIDE the `setRows` updater (the old code)
+  // the doc comment on `writeSeqAtLoadEntry`/`busyAtLoadEntry` in `load()`
+  // describes. Reading `busyRef.current` from INSIDE the `setRows` updater
+  // (the old code)
   // sees the flag already cleared by then and lets the stale server row
   // win; capturing it synchronously before `setRows` is called (the fix)
   // does not.

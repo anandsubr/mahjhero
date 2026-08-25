@@ -45,10 +45,21 @@ type Props = {
  * That tint is close in luminance to `colors.bg` itself, though
  * (accent[300] is only 1.27:1 against bg, accent2[300] only 1.23:1) — too
  * subtle a shift to trust as the *only* signal that a chip is selected, so
- * `choiceOn`/`choiceOff` also widen the border from 2px to 4px. Border
- * width isn't a hue somebody with reduced colour discrimination has to
- * pick out; see components/__tests__/CheckInControl.test.tsx's docstring
- * and the task report for the full measurements.
+ * `choiceOn`/`choiceOff` also widen the border from 2px to 4px AND switch
+ * its colour from the neutral `colors.divider` to the saturated
+ * `colors.accentColor`/`colors.accent2Color` (the same mid-tones the fill
+ * tints are themselves derived from, so the border reads as "more of the
+ * same hue", not a clashing third colour). Width alone was a final-review
+ * finding: on the one screen used standing up in a dim hall, a 2px-vs-4px
+ * difference on an otherwise identical grey line is easy to miss at a
+ * glance, and a fill only 1.23–1.27:1 off the page background does not
+ * help. `colors.accentColor`/`accent2Color` measure 3.03:1 / 3.14:1
+ * against `colors.bg` — over the 3:1 WCAG 1.4.11 floor for non-text UI
+ * boundaries — and are visibly a different hue from the neutral divider
+ * (1.38:1 against bg) an unselected chip carries, so colour and width now
+ * both signal selection rather than width alone; see
+ * components/__tests__/CheckInControl.test.tsx's docstring and the task
+ * report for the full measurements.
  *
  * Used by all three surfaces — the door list, the event screen, and Your
  * games — so a host and a member cannot end up with controls that behave
@@ -62,6 +73,12 @@ export default function CheckInControl({
   label,
 }: Props) {
   const isDisabled = disabled || busy;
+  // `display_name` has no non-empty constraint and defaults to `''`
+  // (lib/clubs.ts / event_attendance) -- an unnamed member's row used to
+  // render "Here: " with a trailing space, silently announcing nothing to
+  // a screen reader. Trimmed, not just falsy-checked: a name that is pure
+  // whitespace is exactly as unhelpful as an empty string.
+  const safeLabel = label.trim() ? label : 'this person';
 
   function press(choice: AttendanceState) {
     if (isDisabled) return;
@@ -72,7 +89,7 @@ export default function CheckInControl({
     <View style={styles.row}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`Here: ${label}`}
+        accessibilityLabel={`Here: ${safeLabel}`}
         aria-pressed={state === 'arrived'}
         disabled={isDisabled}
         aria-disabled={isDisabled}
@@ -89,7 +106,7 @@ export default function CheckInControl({
 
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`Not coming: ${label}`}
+        accessibilityLabel={`Not coming: ${safeLabel}`}
         aria-pressed={state === 'no_show'}
         disabled={isDisabled}
         aria-disabled={isDisabled}
@@ -116,12 +133,21 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: colors.divider,
   },
-  // Pastel tints, not `accentColor`/`accent2Color` — see the contrast
-  // measurements in this file's docstring. `borderWidth` jumps from the
-  // base 2px to 4px so the selected chip stays visually distinct even
-  // where the fill-vs-background luminance shift alone is subtle.
-  choiceOn: { backgroundColor: colors.accent2[300], borderWidth: 4 },
-  choiceOff: { backgroundColor: colors.accent[300], borderWidth: 4 },
+  // Pastel tints for the FILL, not `accentColor`/`accent2Color` — see the
+  // contrast measurements in this file's docstring. `borderWidth` jumps
+  // from the base 2px to 4px AND `borderColor` switches from the neutral
+  // `colors.divider` to the saturated mid-tone, so a selected chip is
+  // never signalled by width alone.
+  choiceOn: {
+    backgroundColor: colors.accent2[300],
+    borderWidth: 4,
+    borderColor: colors.accent2Color,
+  },
+  choiceOff: {
+    backgroundColor: colors.accent[300],
+    borderWidth: 4,
+    borderColor: colors.accentColor,
+  },
   dim: { opacity: 0.4 },
   // `colors.text`, not `colors.bg` — see the contrast measurements in this
   // file's docstring. Both fills use the same label colour, and both clear

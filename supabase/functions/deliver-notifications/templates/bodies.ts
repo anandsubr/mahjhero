@@ -255,7 +255,14 @@ export function bodyFor(row: RenderRow, appUrl: string): Body {
           // substitute the app gives them no way to seat.
           'Their seat is still theirs — nothing has been released.',
         ],
-        cta: { label: 'Open the door list', url },
+        // `url` is `eventUrl` — the event screen, not the door list (there
+        // is no direct deep link to check-in.tsx from an email, and the
+        // event screen is where the "Door list" button itself lives). The
+        // label used to promise "Open the door list" while the link
+        // actually opened the event screen — final-review fix: match the
+        // label to where the link actually goes, the same "See the game"
+        // wording every other event-linked cta in this file uses.
+        cta: { label: 'See the game', url },
         footerNote: seatFooter,
       };
 
