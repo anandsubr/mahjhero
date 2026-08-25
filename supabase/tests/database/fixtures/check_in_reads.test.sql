@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(8);
+select plan(12);
 
 -- ------------------------------------------------------------------
 -- Fixture identical to check_in.test.sql (Task 4), with two additions:
@@ -173,6 +173,47 @@ select throws_ok(
   '42501',
   null,
   'a plain member cannot read the door list');
+
+-- ------------------------------------------------------------------
+-- Your games: the event is still in progress (started an hour ago, ends
+-- in two), so my_upcoming_bookings() must still surface it -- and carry
+-- the check-in flag and window along with it. Bob (profile 3) has a
+-- confirmed booking on this event and has not checked in himself, but the
+-- window fields describe the EVENT, not Bob's own state, so they come
+-- back regardless. These four assertions run before the event's times
+-- are pushed 30 days into the past below, because the event needs to
+-- still be "in progress" for the first assertion to mean anything.
+-- ------------------------------------------------------------------
+reset role;
+set local role authenticated;
+set local request.jwt.claims to
+  '{"sub":"10000000-0000-0000-0000-000000000003","role":"authenticated"}';
+
+select is(
+  (select count(*)::int from public.my_upcoming_bookings()
+    where event_id = '40000000-0000-0000-0000-000000000001'),
+  1,
+  'a game in progress still appears in Your games');
+
+select is(
+  (select check_in_required from public.my_upcoming_bookings()
+    where event_id = '40000000-0000-0000-0000-000000000001'),
+  true,
+  'the check-in flag comes back');
+
+select is(
+  (select check_in_opens_at from public.my_upcoming_bookings()
+    where event_id = '40000000-0000-0000-0000-000000000001'),
+  (select starts_at - interval '1 hour' from public.events
+    where id = '40000000-0000-0000-0000-000000000001'),
+  'the window opens an hour before kickoff, computed in SQL');
+
+select is(
+  (select check_in_closes_at from public.my_upcoming_bookings()
+    where event_id = '40000000-0000-0000-0000-000000000001'),
+  (select ends_at from public.events
+    where id = '40000000-0000-0000-0000-000000000001'),
+  'the member window closes at ends_at, with no organizer tail');
 
 -- Reads are NOT window-bound. Only writes are.
 reset role;
