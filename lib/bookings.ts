@@ -233,6 +233,48 @@ const BOOKING_REFUSALS: { contains: string; message: string; codes: string[] }[]
     message: 'Only the person who booked can answer that offer.',
     codes: ['42501'],
   },
+  // The six below are raised by record_attendance/clear_attendance and
+  // their shared guard assert_attendance_writable
+  // (20260827030000_attendance_mutations.sql, check-in plan Task 4). Neither
+  // function is called from this file — lib/attendance.ts (check-in plan
+  // Task 9) owns that — but they belong in this same vocabulary rather than
+  // a parallel one: attendance refusals are still "a game/seat rule the
+  // member can do something about", exactly what BOOKING_REFUSALS already
+  // exists to translate, and 'no such event' below already proves this
+  // table maps messages for functions this file never calls (it also
+  // covers cancel_event/add_event_table). lib/attendance.ts is expected to
+  // import bookingErrorMessage from here and call it directly rather than
+  // relaying error.message or growing its own copy.
+  {
+    contains: 'event not open for check-in',
+    message: 'This game was cancelled.',
+    codes: ['23514'],
+  },
+  {
+    contains: 'check-in is not enabled for this event',
+    message: 'This game does not use check-in.',
+    codes: ['23514'],
+  },
+  {
+    contains: 'you can only check yourself in',
+    message: 'Only an organizer can check someone else in.',
+    codes: ['42501'],
+  },
+  {
+    contains: 'check-in is not open for this event',
+    message: 'Check-in is not open for this game right now.',
+    codes: ['23514'],
+  },
+  {
+    contains: 'you do not have a seat at this game',
+    message: "You don't have a confirmed seat at this game.",
+    codes: ['23514'],
+  },
+  {
+    contains: 'you can only clear your own check-in',
+    message: 'You can only undo your own check-in.',
+    codes: ['42501'],
+  },
 ];
 
 export function bookingErrorMessage(error: RpcError): string {
