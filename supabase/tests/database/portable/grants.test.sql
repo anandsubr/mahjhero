@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(68);
+select plan(69);
 
 /*
  * Guards the privileges themselves, not the policies.
@@ -392,6 +392,11 @@ select ok(
 select ok(
   not has_table_privilege('authenticated', 'public.notification_outbox', 'TRUNCATE'),
   'authenticated cannot TRUNCATE notification_outbox'
+);
+
+select ok(
+  not has_table_privilege('authenticated', 'public.check_ins', 'TRUNCATE'),
+  'authenticated cannot TRUNCATE check_ins'
 );
 
 -- The outbox is plan 6's queue and nobody else's. RLS is on with no policy,
