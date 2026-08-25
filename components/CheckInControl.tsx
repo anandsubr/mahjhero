@@ -32,9 +32,23 @@ type Props = {
  * relative-luminance formula: `colors.bg` on `colors.accentColor` is
  * 3.03:1 and on `colors.accent2Color` is 3.14:1 — both well under the 4.5:1
  * AA floor for this (non-"large") text size, so both labels use
- * `colors.text` instead (4.60:1 on accentColor, 4.45:1 on accent2Color —
- * see components/__tests__/CheckInControl.test.tsx's docstring and the
- * task report for the residual concern on the accent2Color pairing).
+ * `colors.text` instead. That got accentColor to 4.60:1, but accent2Color
+ * only reached 4.45:1 — 0.05 short of AA. Rather than a dark, saturated
+ * fill with dark text (which was always going to be a tight fit), the
+ * selected fills now use the *300 tint* of each scale (`colors.accent[300]`
+ * / `colors.accent2[300]`) instead of the single mid-tone
+ * accentColor/accent2Color values: `colors.text` measures 10.97:1 on
+ * accent[300] and 11.34:1 on accent2[300] — both miles clear of 4.5:1, and
+ * the pastel tint suits this "Organic" palette better than a saturated
+ * chip with dark text on it anyway.
+ *
+ * That tint is close in luminance to `colors.bg` itself, though
+ * (accent[300] is only 1.27:1 against bg, accent2[300] only 1.23:1) — too
+ * subtle a shift to trust as the *only* signal that a chip is selected, so
+ * `choiceOn`/`choiceOff` also widen the border from 2px to 4px. Border
+ * width isn't a hue somebody with reduced colour discrimination has to
+ * pick out; see components/__tests__/CheckInControl.test.tsx's docstring
+ * and the task report for the full measurements.
  *
  * Used by all three surfaces — the door list, the event screen, and Your
  * games — so a host and a member cannot end up with controls that behave
@@ -102,11 +116,15 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: colors.divider,
   },
-  choiceOn: { backgroundColor: colors.accent2Color },
-  choiceOff: { backgroundColor: colors.accentColor },
+  // Pastel tints, not `accentColor`/`accent2Color` — see the contrast
+  // measurements in this file's docstring. `borderWidth` jumps from the
+  // base 2px to 4px so the selected chip stays visually distinct even
+  // where the fill-vs-background luminance shift alone is subtle.
+  choiceOn: { backgroundColor: colors.accent2[300], borderWidth: 4 },
+  choiceOff: { backgroundColor: colors.accent[300], borderWidth: 4 },
   dim: { opacity: 0.4 },
   // `colors.text`, not `colors.bg` — see the contrast measurements in this
-  // file's docstring. Both fills use the same label colour: it is the one
-  // that clears (or comes closest to clearing) 4.5:1 on both.
+  // file's docstring. Both fills use the same label colour, and both clear
+  // 4.5:1 with a wide margin.
   text: { fontFamily: type.bodyRegular, fontSize: type.size.body, color: colors.text },
 });

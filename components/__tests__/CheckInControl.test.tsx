@@ -80,4 +80,21 @@ describe('CheckInControl', () => {
     fireEvent.click(screen.getByRole('button', { name: /here.*ann/i }));
     expect(onChange).not.toHaveBeenCalled();
   });
+
+  // The selected fill (a pastel tint) sits close in luminance to the
+  // screen background — see this file's docstring and CheckInControl's own
+  // docstring for the measured ratios — so selection also has to show up
+  // as a border-width change, not just a colour shift. This pins that
+  // second, non-colour signal directly, the same way the `aria-pressed`
+  // test above pins the DOM-facing state rather than trusting the React
+  // props.
+  it('gives the selected choice a heavier border than the unselected one', () => {
+    render(<CheckInControl state="arrived" onChange={vi.fn()} label="Ann" />);
+    const here = screen.getByRole('button', { name: /^here.*ann/i });
+    const notComing = screen.getByRole('button', {
+      name: /not coming.*ann/i,
+    });
+    expect(getComputedStyle(here).borderWidth).toBe('4px');
+    expect(getComputedStyle(notComing).borderWidth).toBe('2px');
+  });
 });
