@@ -4,8 +4,15 @@ import TabBar from '../../components/TabBar';
 
 const replace = vi.fn();
 
+// Controllable per test, the same way `replace` above is: TabBar's press
+// handler now compares the current route to each tab's own href, so a test
+// exercising that comparison needs to say what the current route is. Mutate
+// this directly (`pathname = '/clubs/club-1'`) before rendering.
+let pathname = '/dashboard-followups-under-test';
+
 vi.mock('expo-router', () => ({
   useRouter: () => ({ replace, push: vi.fn() }),
+  usePathname: () => pathname,
   Redirect: ({ href }: { href: string }) => <div data-href={href} />,
   Link: ({ children }: { children: React.ReactNode }) => children,
   useLocalSearchParams: () => ({}),
@@ -13,6 +20,10 @@ vi.mock('expo-router', () => ({
 
 beforeEach(() => {
   replace.mockClear();
+  // A route none of the four tabs' hrefs match, so a test that doesn't care
+  // about the "already there" comparison (most of them) can't accidentally
+  // pass because the default happens to coincide with a real tab route.
+  pathname = '/dashboard-followups-under-test';
 });
 
 describe('TabBar', () => {
@@ -48,8 +59,26 @@ describe('TabBar', () => {
   });
 
   it('does not navigate when the active tab is pressed', () => {
+    // On the Club tab's own route, pressing it is still a documented no-op.
+    pathname = '/clubs';
     render(<TabBar active="club" />);
     fireEvent.click(screen.getByRole('button', { name: 'Club' }));
     expect(replace).not.toHaveBeenCalled();
+  });
+
+  // The regression this file exists to catch: the club detail screen
+  // (route /clubs/[id]) renders `active="club"` so the bar still highlights
+  // Club, but /clubs/club-1 is not the Club tab's own route (/clubs). A
+  // press handler that short-circuits on `selected` alone — as this one
+  // used to — never calls `replace` here, stranding the member on a screen
+  // whose highlighted Club button does nothing.
+  it('still navigates a highlighted tab when its route is not the current one', () => {
+    pathname = '/clubs/club-1';
+    render(<TabBar active="club" />);
+    expect(
+      screen.getByRole('button', { name: 'Club' }).getAttribute('aria-selected'),
+    ).toBe('true');
+    fireEvent.click(screen.getByRole('button', { name: 'Club' }));
+    expect(replace).toHaveBeenCalledWith('/clubs');
   });
 });

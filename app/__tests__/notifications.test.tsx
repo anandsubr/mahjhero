@@ -11,6 +11,9 @@ vi.mock('expo-router', () => ({
   Redirect: () => null,
   Link: ({ children }: { children: React.ReactNode }) => children,
   useRouter: () => ({ push, back: vi.fn() }),
+  // TabBar's own Alerts tab route: this screen IS /notifications, so its
+  // highlighted Alerts button stays the documented no-op.
+  usePathname: () => '/notifications',
 }));
 
 vi.mock('../../lib/session', () => ({

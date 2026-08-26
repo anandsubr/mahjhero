@@ -9,6 +9,13 @@ const replace = vi.fn();
 // `app/clubs/[id]/import.tsx` does after a successful import.
 const searchParams: Record<string, string> = { id: 'club-1' };
 
+// TabBar now compares the live route to each tab's own href rather than
+// trusting `active` alone, so it needs `usePathname` mocked too. Defaults to
+// the clubs list's own route; the club detail describe blocks below switch
+// it to `/clubs/club-1`, since that screen renders `active="club"` while
+// living at a different URL.
+let pathname = '/clubs';
+
 vi.mock('expo-router', () => ({
   Redirect: ({ href }: { href: string }) => (
     <div data-testid="redirect" data-href={href} />
@@ -34,6 +41,7 @@ vi.mock('expo-router', () => ({
     <a data-href={href}>{children}</a>
   ),
   useRouter: () => ({ push, replace }),
+  usePathname: () => pathname,
   useLocalSearchParams: () => searchParams,
 }));
 
@@ -219,6 +227,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   for (const key of Object.keys(searchParams)) delete searchParams[key];
   searchParams.id = 'club-1';
+  pathname = '/clubs';
   fetchClub.mockResolvedValue(CLUB);
   fetchRoster.mockResolvedValue([]);
   fetchPendingInvites.mockResolvedValue([]);
@@ -922,6 +931,14 @@ import { eventStatusLine, formatEventWhen } from '../../lib/events';
 // so this matters for anyone opening a stale link or an expired session,
 // not just a hypothetical.
 describe('club detail screen', () => {
+  // This screen's own route is /clubs/[id], not the Club tab's own /clubs —
+  // it renders `active="club"` purely to keep the bar highlighting Club as
+  // a section, not because /clubs/club-1 and /clubs are the same place. See
+  // the 'carries the tab bar' tests below for why that distinction matters.
+  beforeEach(() => {
+    pathname = '/clubs/club-1';
+  });
+
   it('redirects to sign-in instead of spinning forever when signed out', async () => {
     useSessionMock.mockReturnValueOnce({ session: null, loading: false });
     render(<ClubDetailScreen />);
@@ -1011,6 +1028,19 @@ describe('club detail screen', () => {
     render(<ClubDetailScreen />);
     expect(await screen.findByRole('button', { name: 'Club' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Messages' })).toBeTruthy();
+  });
+
+  // The regression the tests above never caught: they only assert the Club
+  // button renders, which it did even while pressing it was a dead end. This
+  // screen renders `active="club"` at route /clubs/club-1, not TabBar's own
+  // /clubs, so a member's most natural way back to the dashboard — tap a
+  // game on the dashboard, then Back, landing here — met a highlighted Club
+  // button that fired neither `push` nor `replace`. It has to actually
+  // navigate, not just be present.
+  it('navigates to the dashboard when Club is pressed', async () => {
+    render(<ClubDetailScreen />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Club' }));
+    expect(replace).toHaveBeenCalledWith('/clubs');
   });
 
   it('carries the tab bar while the club is still loading', () => {

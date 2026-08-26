@@ -6,6 +6,9 @@ vi.mock('expo-router', () => ({
   Redirect: () => null,
   Link: ({ children }: { children: React.ReactNode }) => children,
   useRouter: () => ({ push: vi.fn(), back: vi.fn() }),
+  // TabBar's own Profile tab route: this screen IS /profile, so its
+  // highlighted Profile button stays the documented no-op.
+  usePathname: () => '/profile',
 }));
 
 vi.mock('../../lib/session', () => ({

@@ -47,6 +47,9 @@ vi.mock('expo-router', () => ({
   ),
   Link: ({ children }: { children: React.ReactNode }) => children,
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  // TabBar's own Club tab route: ClubsScreen here IS /clubs, so its
+  // highlighted Club button stays the documented no-op.
+  usePathname: () => '/clubs',
 }));
 
 vi.mock('../../lib/session', () => ({

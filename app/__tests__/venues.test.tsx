@@ -11,6 +11,10 @@ vi.mock('expo-router', () => ({
     <div data-testid="redirect" data-href={href} />
   ),
   useRouter: () => ({ push, replace }),
+  // TabBar reads this to decide whether its own tab's route is the current
+  // one; this screen lives under /clubs/[id]/venues, never at the Club
+  // tab's own /clubs, so its Club button always stays live.
+  usePathname: () => '/clubs/club-1/venues',
   useLocalSearchParams: () => searchParams,
 }));
 

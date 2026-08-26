@@ -1,4 +1,4 @@
-import { useRouter } from 'expo-router';
+import { usePathname, useRouter } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { BellIcon, HomeIcon, MessageIcon, PersonIcon } from './icons';
 import { colors, space, type } from '../lib/theme';
@@ -31,9 +31,26 @@ function icon(key: TabKey, color: string) {
  *
  * `replace`, not `push`: tabs are peers, and pushing would grow a back stack
  * of every tab the member has ever tapped.
+ *
+ * `active` and "already at this tab's route" are different questions, and
+ * conflating them was a bug. `active` drives the highlight for a whole
+ * section: the club detail screen (`/clubs/[id]`) and the venue screen
+ * (`/clubs/[id]/venues`) both pass `active="club"` so the bar still reads
+ * as "you're in Club" while browsing under a specific club. But the press
+ * handler used to treat "highlighted" and "here" as the same fact and
+ * return early whenever the tab was selected — which made the Club button
+ * a dead press on both of those screens, since neither one's actual route
+ * is `/clubs`. That was a real trap on the club detail screen in
+ * particular: its `← Clubs` back link was removed on the premise that the
+ * Club tab reached the same place, leaving that screen with no way back to
+ * the dashboard at all. The handler below asks the right question instead —
+ * compare the current pathname to the tab's own href — so a tab stays inert
+ * only on its own screen, and still navigates from every other screen in
+ * its section.
  */
 export default function TabBar({ active }: { active: TabKey }) {
   const router = useRouter();
+  const pathname = usePathname();
 
   return (
     <View style={styles.bar}>
@@ -50,7 +67,7 @@ export default function TabBar({ active }: { active: TabKey }) {
           <Pressable
             key={tab.key}
             onPress={() => {
-              if (selected) return;
+              if (pathname === tab.href) return;
               router.replace(tab.href);
             }}
             accessibilityRole="button"

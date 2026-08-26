@@ -83,7 +83,7 @@ above a tab bar.
 
 | Screen | kicker | name | meta | back button |
 |---|---|---|---|---|
-| Club detail | `Your club` | `club.name` | `club.rhythm` | removed — the Club tab is the same destination |
+| Club detail | `Your club` | `club.name` | `club.rhythm` | removed — the Club tab reaches the dashboard from here, because `TabBar` navigates whenever the tab's own route is not the current one, not only when some other tab is pressed. That was not true when this button was first removed: `TabBar` returned early for any highlighted tab, so on this screen (`/clubs/[id]`, never the Club tab's own `/clubs`) pressing the highlighted Club button did nothing until that was fixed |
 | Venues | `club.name` | `Venues` | none | kept — no tab reaches a specific club |
 
 ### `useViewerInitials`
