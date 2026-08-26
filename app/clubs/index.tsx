@@ -461,7 +461,9 @@ export default function ClubsScreen() {
             // receives Link's injected handler and accessibility props;
             // Card nests inside purely for its visual styling. See the
             // Task 4 report for the full writeup of this deviation from the
-            // brief's literal composition.
+            // brief's literal composition. See the GameRow Link comment
+            // below for what this same `asChild` merge actually renders on
+            // the web — it isn't repeated here.
             <Link key={club.id} href={`/clubs/${club.id}`} asChild>
               <Pressable accessibilityRole="button" accessibilityLabel={club.name}>
                 <Card>
@@ -534,6 +536,18 @@ function GameRow({
           length for the club cards below — Card neither declares
           accessibility props nor spreads unrecognised ones onto its View, so
           cloning onto it drops the handler Link injects.
+
+          Worth recording once, here, what that `asChild` merge actually
+          produces on the web: it does not wrap this Pressable in an <a> the
+          way the JSX nesting implies. useLinkToPathProps merges `href`,
+          `onPress`, and a raw `role: 'link'` straight onto the child through
+          a Radix Slot, and react-native-web's propsToAriaRole resolves that
+          injected `role` ahead of this element's own `accessibilityRole`.
+          With `href` present, View also switches its host element to <a>.
+          So the web build ends up rendering one `<a href role="link">`, not
+          the `<div role="button">` the `accessibilityRole` below might
+          suggest — that prop is what the native accessibility tree sees,
+          not the DOM the browser actually gets.
         */}
         <Link href={`/clubs/${row.clubId}/events/${row.eventId}`} asChild>
           <Pressable

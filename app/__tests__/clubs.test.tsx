@@ -18,6 +18,18 @@ vi.mock('expo-router', () => ({
   // floor, which made every `Link` in these screens untestable. The club
   // cards below nest a Pressable inside via `asChild`; a div inside an
   // anchor is valid, and the existing role-based queries still find it.
+  //
+  // Its one known infidelity: the real `Link asChild` merges `href`,
+  // `onPress`, and `role="link"` straight onto its child rather than
+  // wrapping it, whereas this mock wraps `children` in a genuine `<a>`. So a
+  // test asserting `data-href` is verifying that `Link` received the href it
+  // was given, not that the production DOM has this nested shape, and
+  // `getByRole('button', …)` matches here — against the Pressable's own
+  // `accessibilityRole` — where the real build would expose `role="link"`
+  // on the merged anchor instead. `Element.closest` includes the element
+  // itself in its match, which is why the `closest('a')` assertions below
+  // still read correctly against this wrapped-anchor shape even though it
+  // isn't the shape the web build actually produces.
   Link: ({ href, children }: { href: string; children: React.ReactNode }) => (
     <a data-href={href}>{children}</a>
   ),
