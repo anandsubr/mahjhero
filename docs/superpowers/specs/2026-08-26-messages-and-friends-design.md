@@ -28,12 +28,16 @@ possible across clubs. It absorbs broadcasts rather than sitting beside them.
 three derived kinds; `messages`, `thread_reads`; posting, reading, unread counts and
 badges; a `Recent | By club` sort; the thread screen with Supabase Realtime; group
 creation, joining and leaving; organizer announcements that also email, replacing
-the two broadcast screens; a backfill so no broadcast history is lost.
+the two broadcast screens; a backfill so no broadcast history is lost; quote-reply
+to one earlier message in the same thread.
 
 **Out.** Blocking or reporting. Message edit, delete, reactions, attachments,
 typing indicators, read receipts. Named per-club groups. Friend-invite by email.
-Push delivery (still dark — see the notifications spec). Search. Pinning. Threading
-within a thread.
+Push delivery (still dark — see the notifications spec). Search. Pinning.
+**Sub-threads** — replies that collapse into a conversation of their own, off the
+main list. That is a different feature from quote-reply and it is out: it changes
+what "the last message" means for the list preview, what counts as unread, and
+whether the thread screen is one list or two. Quote-reply changes none of them.
 
 ---
 
@@ -52,6 +56,8 @@ within a thread.
 7. **Anyone in a group can add; anyone can leave; nobody removes anybody.**
 8. **One two-segment sort control**, `Recent | By club`, with a `People` section
    pinned above the clubs in the second view.
+9. **Quote-reply, not sub-threads.** A reply is an ordinary message carrying a
+   pointer to one earlier message in the *same* thread. The list stays flat.
 
 ---
 
@@ -214,10 +220,42 @@ body            text not null check (length(trim(body)) between 1 and 2000)
 subject         text check (subject !~ '[[:cntrl:]]' and length(subject) <= 120)
 is_announcement boolean not null default false
 broadcast_id    uuid references broadcasts(id) on delete set null
+reply_to_id     uuid
 created_at      timestamptz not null default now()
+
+unique (id, thread_id)
+foreign key (reply_to_id, thread_id) references messages (id, thread_id)
+  on delete set null (reply_to_id)
 
 index (thread_id, created_at desc)
 ```
+
+### Why quoting is a composite foreign key
+
+`reply_to_id uuid references messages(id)` would be the obvious column and it
+would be a **disclosure bug**. A member of two clubs could quote a message from
+one club's thread into the other's, and the quoted text would then render for
+people who cannot read where it came from — `can_read_thread` is asked about the
+row's own `thread_id`, and a quoted stub carries no thread of its own to be asked
+about.
+
+The composite key makes that unstateable rather than merely refused: a reply's
+`reply_to_id` must name a message **in the same thread as the reply**. The
+`unique (id, thread_id)` it references is redundant against the primary key and
+exists solely so the composite key can be declared — the same shape, and the same
+reasoning, as the `(event_id, club_id)` guard on `bookings`, `broadcasts` and
+`message_threads`.
+
+`on delete set null`, not `cascade`: nothing deletes a message in this plan, but
+if anything ever does, the reply is still somebody's words and must not vanish
+with the thing it answered. A reply whose parent is gone renders as an ordinary
+message.
+
+**The `(reply_to_id)` column list is required, not stylistic.** A bare
+`on delete set null` on a composite key nulls *every* referencing column — here
+`thread_id` as well, which is `not null`. Deleting a quoted message would fail
+with a not-null violation rather than clearing the pointer. The column-list form
+(Postgres 15+; this project runs 17) nulls only the pointer.
 
 `subject` is non-null only on announcements. The control-character check mirrors
 `broadcasts.subject` exactly, and for the same reason: the Edge Function drops the
@@ -488,6 +526,16 @@ Back link, title, a muted `kind · subtitle` line, then bubbles: your own
 right-aligned on `accent`, everyone else's left-aligned on `surface` with the
 author's name in `accent2[700]`. Announcements get the accent-2 card treatment, the
 subject in bold above the body, and an `Announcement` tag.
+
+**Quote-reply.** Each bubble carries a Reply affordance. Choosing it puts a
+quoted stub above the composer — the original author's name and its first line,
+truncated — which the sent message then carries at the top of its own bubble.
+Tapping a stub scrolls to the message it quotes. A stub whose parent has gone
+renders as an ordinary message rather than as an empty quote.
+
+The list stays flat: a reply sits in chronological order like anything else. It is
+a pointer, not a branch, so nothing about the list preview, the unread count or the
+realtime subscription changes.
 
 A composer at the bottom. Organizers on a club or game thread also see an "Also
 email everyone" toggle; turning it on reveals the recipient count and turns Send
