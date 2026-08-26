@@ -1,4 +1,4 @@
-import { Link, Redirect, useRouter } from 'expo-router';
+import { Link, Redirect } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import Button from '../components/Button';
@@ -8,7 +8,6 @@ import Screen from '../components/Screen';
 import SkillLevelPicker from '../components/SkillLevelPicker';
 import TabBar from '../components/TabBar';
 import TextField from '../components/TextField';
-import { ChevronLeftIcon } from '../components/icons';
 import { GENERIC_ERROR } from '../lib/constants';
 import { fetchProfile, isCompleteProfile, updateProfile } from '../lib/profile';
 import type { SkillLevel } from '../lib/profile';
@@ -18,7 +17,6 @@ import { colors, space, type } from '../lib/theme';
 
 export default function ProfileScreen() {
   const { session, loading } = useSession();
-  const router = useRouter();
   const [displayName, setDisplayName] = useState('');
   const [skillLevel, setSkillLevel] = useState<SkillLevel | null>(null);
   const [ready, setReady] = useState(false);
@@ -69,13 +67,10 @@ export default function ProfileScreen() {
   }, [userId]);
 
   // Every early return below carries the tab bar, exactly as
-  // app/clubs/index.tsx does in all of its states. The back chevron that
-  // rescues this screen lives in the main render, far below these guards, and
-  // TabBar navigates with `router.replace` off an entry route that is itself
-  // a `<Redirect>` — so the history stack is typically one deep. A member
-  // whose `fetchProfile` failed would otherwise be left staring at
-  // "Something went wrong" with no bar, no back link, and on native no way
-  // out short of relaunching the app.
+  // app/clubs/index.tsx does in all of its states — its Club tab is the way
+  // back out. A member whose `fetchProfile` failed would otherwise be left
+  // staring at "Something went wrong" with no bar and, on native, no way out
+  // short of relaunching the app.
   //
   // The `<Redirect>` below is the deliberate exception: it renders nothing
   // and a signed-out member belongs at sign-in, not in a tab bar.
@@ -158,19 +153,6 @@ export default function ProfileScreen() {
 
   return (
     <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="profile" />}>
-      {/* Profile is no longer the landing screen (app/index.tsx now sends
-          signed-in members to /clubs), so without this back link profile
-          becomes the dead end that notifications used to be. */}
-      <Button
-        variant="ghost"
-        big={false}
-        onPress={() => router.push('/clubs')}
-        icon={<ChevronLeftIcon color={colors.accentColor} />}
-        accessibilityLabel="Back to your clubs"
-        style={styles.backButton}
-      >
-        Clubs
-      </Button>
       <Text style={styles.heading}>Your profile</Text>
       <Text style={styles.subheading}>Two things and you're ready to sit down at a table.</Text>
 
@@ -231,8 +213,8 @@ export default function ProfileScreen() {
       </Card>
 
       <Button
-        variant="ghost"
-        big={false}
+        variant="destructive"
+        block
         onPress={onSignOut}
         disabled={signingOut}
         loading={signingOut}
@@ -252,9 +234,6 @@ const styles = StyleSheet.create({
   },
   centered: {
     alignItems: 'center',
-  },
-  backButton: {
-    alignSelf: 'flex-start',
   },
   heading: {
     fontFamily: type.heading,
@@ -310,7 +289,6 @@ const styles = StyleSheet.create({
     color: colors.accentColor,
   },
   signOut: {
-    alignSelf: 'flex-start',
     marginTop: space[2],
   },
 });
