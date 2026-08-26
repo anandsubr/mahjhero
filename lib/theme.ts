@@ -54,12 +54,21 @@ export const colors = {
   bg: '#f5ead8',
   surface: '#ebddc5',
   text: '#201e1d',
-  // color-mix(in srgb, text 55%, transparent) over --color-bg, flattened to
-  // a concrete hex: 0.55*text + 0.45*bg per channel = 0.55*(32,30,29) +
-  // 0.45*(245,234,216) = (128,122,113). Flattening (rather than rgba) is
-  // safe here because muted text is only ever placed directly on the page
-  // background, never on a card or accent surface.
-  textMuted: '#807a71',
+  // The design's muted tone is `color-mix(in srgb, text 55%, transparent)`,
+  // which flattens over --color-bg to #807a71 — and measures 3.57:1 there,
+  // under AA's 4.5:1 for the 16px helper text this app uses it for. An
+  // earlier comment here called the flattening safe "because muted text is
+  // only ever placed directly on the page background, never on a card": both
+  // halves were wrong. The dashboard does put it on cards (3.17:1), and the
+  // background it named was already failing.
+  //
+  // Darkened to a 65% mix of text over --color-surface: 0.65*(32,30,29) +
+  // 0.35*(235,221,197) = (103,97,88). One value covers both grounds —
+  // 5.15:1 on bg (#f5ead8), 4.58:1 on surface (#ebddc5) — so every screen in
+  // the app clears AA, not only the ones a card was added to. Still plainly
+  // muted against text (#201e1d). lib/theme.test.ts holds both ratios, so
+  // the next move of this palette cannot quietly drop below them.
+  textMuted: '#676158',
   // .field > label { color: color-mix(in srgb, text 70%, transparent) }.
   // Same flattening approach as textMuted: 0.70*text + 0.30*bg per channel
   // = 0.70*(32,30,29) + 0.30*(245,234,216) = (96,91,85).
