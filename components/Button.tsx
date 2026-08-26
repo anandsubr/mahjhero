@@ -11,7 +11,17 @@ import {
 } from 'react-native';
 import { colors, radius, shadow, space, type } from '../lib/theme';
 
-export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'dark';
+export type ButtonVariant =
+  | 'primary'
+  | 'secondary'
+  | 'ghost'
+  | 'dark'
+  // Not in the design system, which draws its one destructive action
+  // (sign out) as a ghost link. A bare link is the wrong weight for the
+  // control that ends the session, and it read as a stray link rather than
+  // a button. Lives here rather than as inline style at the call site so
+  // the next destructive action inherits one treatment.
+  | 'destructive';
 
 type ButtonProps = {
   children: string;
@@ -62,6 +72,20 @@ type ButtonProps = {
   style?: StyleProp<ViewStyle>;
 };
 
+/**
+ * The loading spinner's tint per variant. A lookup rather than the ternary
+ * this replaced (`variant === 'primary' || variant === 'dark' ? bg : accent`),
+ * which silently gave every new variant the accent tint whether or not it
+ * read on that variant's ground.
+ */
+const spinnerColor: Record<ButtonVariant, string> = {
+  primary: colors.bg,
+  dark: colors.bg,
+  secondary: colors.accentColor,
+  ghost: colors.accentColor,
+  destructive: colors.accent[800],
+};
+
 export default function Button({
   children,
   onPress,
@@ -110,7 +134,7 @@ export default function Button({
     >
       {busy ? (
         <ActivityIndicator
-          color={variant === 'primary' || variant === 'dark' ? colors.bg : colors.accentColor}
+          color={spinnerColor[variant]}
           accessibilityLabel={accessibilityLabel}
         />
       ) : (
@@ -205,6 +229,10 @@ const variantStyles = StyleSheet.create({
   dark: {
     backgroundColor: colors.neutral[900],
   },
+  destructive: {
+    // The same pairing Tag's `accent` variant uses, at 8.37:1.
+    backgroundColor: colors.accent[200],
+  },
 });
 
 const variantTextStyles = StyleSheet.create({
@@ -215,4 +243,5 @@ const variantTextStyles = StyleSheet.create({
   // .btn-ghost { color: var(--color-accent) }
   ghost: { color: colors.accentColor },
   dark: { color: colors.bg },
+  destructive: { color: colors.accent[800] },
 });
