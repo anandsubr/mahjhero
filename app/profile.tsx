@@ -68,9 +68,20 @@ export default function ProfileScreen() {
     };
   }, [userId]);
 
+  // Every early return below carries the tab bar, exactly as
+  // app/clubs/index.tsx does in all of its states. The back chevron that
+  // rescues this screen lives in the main render, far below these guards, and
+  // TabBar navigates with `router.replace` off an entry route that is itself
+  // a `<Redirect>` — so the history stack is typically one deep. A member
+  // whose `fetchProfile` failed would otherwise be left staring at
+  // "Something went wrong" with no bar, no back link, and on native no way
+  // out short of relaunching the app.
+  //
+  // The `<Redirect>` below is the deliberate exception: it renders nothing
+  // and a signed-out member belongs at sign-in, not in a tab bar.
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered}>
+      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="profile" />}>
         <ActivityIndicator />
       </Screen>
     );
@@ -80,7 +91,7 @@ export default function ProfileScreen() {
 
   if (!ready) {
     return (
-      <Screen center contentStyle={styles.centered}>
+      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="profile" />}>
         <ActivityIndicator />
       </Screen>
     );
@@ -88,7 +99,7 @@ export default function ProfileScreen() {
 
   if (loadFailed) {
     return (
-      <Screen center contentStyle={styles.centered}>
+      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="profile" />}>
         <Text style={styles.error}>{GENERIC_ERROR}</Text>
       </Screen>
     );

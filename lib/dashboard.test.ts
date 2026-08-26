@@ -292,4 +292,61 @@ describe('needAFourthAlerts', () => {
     });
     expect(alerts).toEqual([]);
   });
+
+  // The two-table cases, which nothing exercised. `needAFourthAlerts` counts
+  // per table (`confirmedOnTable`) while `hasFreeSeat` — the gate
+  // `buildDashboardRows` uses — sums capacity across the whole event, so the
+  // two disagree in shape by design. These pin what "per table" actually
+  // means when an event has more than one.
+  const twoTables = [
+    { id: 'table-1', capacity: 4, label: 'Table 1' },
+    { id: 'table-2', capacity: 4, label: 'Table 2' },
+  ];
+
+  it('alerts only for the short table when a second one still has room', () => {
+    const alerts = needAFourthAlerts({
+      events: [
+        event({
+          event_tables: twoTables,
+          table_count: 2,
+          bookings: [
+            ...threeSeated,
+            { profile_id: 'd', status: 'confirmed', event_table_id: 'table-2' },
+          ],
+        }),
+      ],
+      clubs: CLUBS,
+      userId: 'me',
+      now: NOW,
+    });
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].tableId).toBe('table-1');
+  });
+
+  it('raises one alert per table when both are one seat short', () => {
+    const alerts = needAFourthAlerts({
+      events: [
+        event({
+          event_tables: twoTables,
+          table_count: 2,
+          bookings: [
+            ...threeSeated,
+            { profile_id: 'd', status: 'confirmed', event_table_id: 'table-2' },
+            { profile_id: 'e', status: 'confirmed', event_table_id: 'table-2' },
+            { profile_id: 'f', status: 'confirmed', event_table_id: 'table-2' },
+          ],
+        }),
+      ],
+      clubs: CLUBS,
+      userId: 'me',
+      now: NOW,
+    });
+    expect(alerts).toHaveLength(2);
+    expect(alerts.map((alert) => alert.tableId)).toEqual(['table-1', 'table-2']);
+    // Both alerts describe the same event — the key the screen renders them
+    // under is `eventId:tableId`, so the pair must differ only in the table.
+    expect(new Set(alerts.map((alert) => alert.eventId))).toEqual(
+      new Set(['event-1']),
+    );
+  });
 });

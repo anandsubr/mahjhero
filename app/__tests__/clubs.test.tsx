@@ -37,6 +37,7 @@ const importRoster = vi.fn();
 const fetchUpcomingEvents = vi.fn();
 const fetchMyUpcomingBookings = vi.fn();
 const commitBooking = vi.fn();
+const cancelBooking = vi.fn();
 const fetchProfile = vi.fn();
 
 // One partial mock for the whole file, not one per describe block. Two
@@ -78,6 +79,7 @@ vi.mock('../../lib/bookings', async (importOriginal) => {
     ...actual,
     fetchMyUpcomingBookings: (...args: unknown[]) => fetchMyUpcomingBookings(...args),
     commitBooking: (...args: unknown[]) => commitBooking(...args),
+    cancelBooking: (...args: unknown[]) => cancelBooking(...args),
   };
 });
 
@@ -210,6 +212,7 @@ beforeEach(() => {
   // games, no name set, and a booking write that succeeds.
   fetchMyUpcomingBookings.mockResolvedValue([]);
   commitBooking.mockResolvedValue({ result: null, error: null });
+  cancelBooking.mockResolvedValue({ error: null });
   fetchProfile.mockResolvedValue(null);
 });
 
@@ -516,6 +519,127 @@ describe('dashboard artboard', () => {
     );
   });
 
+  // The same staleness one more time, reached through a row action rather
+  // than a booking write. `runBookingAction` — decline, leave-waitlist,
+  // accept-offer, decline-offer — used to reload only the bookings, while the
+  // alerts and joinable rows are derived from `events`. A member who left a
+  // waitlist was therefore still counted as `waitlisted` by `viewerIsIn`, so
+  // the seat they had just freed produced neither a Join row nor a "Need a
+  // 4th" card until the screen remounted.
+  it('re-reads the events, not just the bookings, after leaving a waitlist', async () => {
+    const soon = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const short = oneShortEvent(soon);
+    const waiting = {
+      ...short,
+      bookings: [
+        ...short.bookings,
+        {
+          profile_id: 'test-user',
+          status: 'waitlisted' as const,
+          event_table_id: null,
+        },
+      ],
+    };
+    fetchMyClubs.mockResolvedValue([CLUB]);
+    fetchUpcomingEvents
+      .mockResolvedValueOnce([waiting])
+      .mockResolvedValue([short]);
+    fetchMyUpcomingBookings
+      .mockResolvedValueOnce([
+        {
+          ...BOOKING,
+          event_id: 'e1',
+          starts_at: soon,
+          event_title: 'Thursday night',
+          status: 'waitlisted' as const,
+          event_table_id: null,
+          table_label: null,
+          waitlist_position: 2,
+        },
+      ])
+      .mockResolvedValue([]);
+    fetchProfile.mockResolvedValue(null);
+
+    render(<ClubsScreen />);
+
+    // While waitlisted there is no card: `viewerIsIn` counts a waitlist spot
+    // as being in the game.
+    expect(await screen.findByText('2nd on the waitlist')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /I'm in/ })).toBeNull();
+
+    fireEvent.click(
+      screen.getByLabelText('Leave the waitlist for Thursday night'),
+    );
+
+    expect(
+      await screen.findByRole('button', { name: /I'm in/ }),
+    ).toBeTruthy();
+    expect(cancelBooking).toHaveBeenCalledWith('booking-1');
+  });
+
+  // The other half of the same call: a standing confirmation describes an
+  // earlier action, and "1st on the waitlist" describes the very waitlist
+  // spot this one gives up. It used to stay on screen afterwards.
+  it('clears the standing notice when the member leaves that waitlist', async () => {
+    const soon = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    fetchMyClubs.mockResolvedValue([CLUB]);
+    fetchUpcomingEvents.mockResolvedValue([
+      {
+        ...EVENT,
+        id: 'open',
+        club_id: CLUB.id,
+        title: 'Open game',
+        starts_at: soon,
+        bookings: [
+          { profile_id: 'a', status: 'confirmed' as const, event_table_id: 'table-1' },
+          { profile_id: 'b', status: 'confirmed' as const, event_table_id: 'table-1' },
+        ],
+      },
+    ]);
+    fetchMyUpcomingBookings
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          ...BOOKING,
+          event_id: 'open',
+          starts_at: soon,
+          event_title: 'Open game',
+          status: 'waitlisted' as const,
+          event_table_id: null,
+          table_label: null,
+          waitlist_position: 1,
+        },
+      ])
+      .mockResolvedValue([]);
+    fetchProfile.mockResolvedValue(null);
+    commitBooking.mockResolvedValue({
+      result: {
+        outcome: 'waitlisted',
+        split: false,
+        group_id: 'g1',
+        waitlist_position: 1,
+        offer: null,
+        placements: [],
+      },
+      error: null,
+    });
+
+    render(<ClubsScreen />);
+    fireEvent.click(await screen.findByRole('button', { name: /Join Open game/ }));
+
+    // Two matches on purpose: the banner the Join raised, and the row's own
+    // seat status. `findAllByText` rather than `findByText` for that reason.
+    expect(
+      (await screen.findAllByText('1st on the waitlist')).length,
+    ).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByLabelText('Leave the waitlist for Open game'));
+
+    await waitFor(() =>
+      expect(screen.queryAllByText('1st on the waitlist')).toHaveLength(0),
+    );
+  });
+
   it('offers Join on an open game and Seated on a held one', async () => {
     fetchMyClubs.mockResolvedValue([CLUB]);
     fetchMyUpcomingBookings.mockResolvedValue([
@@ -541,6 +665,39 @@ describe('dashboard artboard', () => {
     render(<ClubsScreen />);
 
     expect(await screen.findByText('Nothing else coming up.')).toBeTruthy();
+  });
+
+  // The chip row only renders above one club, so a one-club member's
+  // `selected` stays ALL_CLUBS forever. Gating "Host a table" on
+  // `selected !== ALL_CLUBS` therefore hid it from exactly the member most
+  // likely to want it: their empty state was a dashed box and nothing else.
+  // The test above seeds this same state and asserts only the copy, which is
+  // how it passed straight over the gap.
+  it('offers Host a table to a one-club member with nothing coming up', async () => {
+    fetchMyClubs.mockResolvedValue([CLUB]);
+    fetchMyUpcomingBookings.mockResolvedValue([]);
+    fetchUpcomingEvents.mockResolvedValue([]);
+    fetchProfile.mockResolvedValue(null);
+
+    render(<ClubsScreen />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Host a table' }));
+    expect(push).toHaveBeenCalledWith(`/clubs/${CLUB.id}/events/new`);
+  });
+
+  // The other half of the same rule: with several clubs and no chip picked,
+  // there is no single club the button could mean, so none is drawn rather
+  // than one that guesses.
+  it('draws no Host a table button across several clubs with no chip picked', async () => {
+    fetchMyClubs.mockResolvedValue([CLUB, { ...CLUB, id: 'club-2', name: 'Harbour' }]);
+    fetchMyUpcomingBookings.mockResolvedValue([]);
+    fetchUpcomingEvents.mockResolvedValue([]);
+    fetchProfile.mockResolvedValue(null);
+
+    render(<ClubsScreen />);
+
+    expect(await screen.findByText('Nothing else coming up.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Host a table' })).toBeNull();
   });
 });
 

@@ -150,16 +150,27 @@ export default function ClubsScreen() {
   // Same shape as the event screen's own `run` helper: render the data
   // layer's refusal verbatim (never a generic "check your connection"),
   // and only reload once the write actually succeeded.
+  //
+  // `reloadAfterBooking`, not `reloadBookings`: every action routed through
+  // here — decline, leave-waitlist, accept-offer, decline-offer — changes the
+  // seats on the event too, and the alerts and joinable rows are derived from
+  // `events`. Reloading only the bookings left a member who had just left a
+  // waitlist still counted as `waitlisted` by `viewerIsIn`, so the seat they
+  // had freed produced neither a Join row nor a "Need a 4th" card until the
+  // screen remounted. The notice goes with it for the same reason: a standing
+  // "2nd on the waitlist" banner describes a waitlist spot this action may
+  // have just given up.
   async function runBookingAction(action: () => Promise<{ error: string | null }>) {
     setActionBusy(true);
     setActionError(null);
+    setNotice(null);
     const { error } = await action();
     setActionBusy(false);
     if (error) {
       setActionError(error);
       return;
     }
-    await reloadBookings();
+    await reloadAfterBooking();
   }
 
   function handleDecline(booking: MyBooking) {
@@ -339,6 +350,17 @@ export default function ClubsScreen() {
     userId: userId ?? '',
   }).filter((alert) => inScope(alert.clubId, selected));
 
+  // Which club "Host a table" should create the game in — derived from the
+  // clubs themselves, NOT from the chip state. The chip row only renders
+  // above one club, so a one-club member's `selected` stays ALL_CLUBS
+  // forever; gating the button on `selected !== ALL_CLUBS` hid it from
+  // exactly the member most likely to want it, leaving them a dashed
+  // "Nothing else coming up." box with no action at all. With several clubs
+  // and no chip picked the target genuinely is ambiguous, so no button is
+  // drawn rather than one that guesses.
+  const hostClubId =
+    selected !== ALL_CLUBS ? selected : list.length === 1 ? list[0].id : null;
+
   return (
     <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="club" />}>
       <DashboardHeader
@@ -386,11 +408,11 @@ export default function ClubsScreen() {
       ) : rows.length === 0 ? (
         <View style={styles.emptyCard}>
           <Text style={styles.help}>Nothing else coming up.</Text>
-          {selected !== ALL_CLUBS ? (
+          {hostClubId ? (
             <Button
               variant="secondary"
               big={false}
-              onPress={() => router.push(`/clubs/${selected}/events/new`)}
+              onPress={() => router.push(`/clubs/${hostClubId}/events/new`)}
               accessibilityLabel="Host a table"
             >
               Host a table

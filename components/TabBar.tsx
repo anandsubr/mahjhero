@@ -39,7 +39,13 @@ export default function TabBar({ active }: { active: TabKey }) {
     <View style={styles.bar}>
       {TABS.map((tab) => {
         const selected = tab.key === active;
-        const tint = selected ? colors.accentColor : colors.neutral[700];
+        // `accent[700]`, not the artboard's `accentColor`: on this bar's
+        // `surface` background accentColor measures 2.69:1, which made the
+        // SELECTED tab less legible than the unselected one (neutral-700,
+        // 4.92:1) — the one tab a member is looking for. accent[700] reads
+        // 5.09:1 and clears AA. Same failure, and the same fix, as
+        // components/NeedAFourthCard.tsx's own card background.
+        const tint = selected ? colors.accent[700] : colors.neutral[700];
         return (
           <Pressable
             key={tab.key}

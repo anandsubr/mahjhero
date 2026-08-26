@@ -86,7 +86,12 @@ const styles = StyleSheet.create({
     height: 50,
     flexShrink: 0,
     borderRadius: radius.pill,
-    backgroundColor: colors.accent2[500],
+    // `accent2[700]`, not the artboard's `accent2[500]`: cream initials on
+    // accent2-500 measure 2.37:1, and these are 18px bold text (AA needs
+    // 4.5:1) with a PersonIcon fallback that needs 3:1 as a graphic.
+    // accent2-700 brings the same cream to 5.43:1. Same failure, and the same
+    // fix, as components/NeedAFourthCard.tsx's own card background.
+    backgroundColor: colors.accent2[700],
     alignItems: 'center',
     justifyContent: 'center',
   },
