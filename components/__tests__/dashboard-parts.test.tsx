@@ -1,7 +1,9 @@
-import { describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
 import DateTile from '../DateTile';
 import Skeleton from '../Skeleton';
+import ClubChips from '../ClubChips';
+import { ALL_CLUBS } from '../../lib/dashboard';
 
 describe('DateTile', () => {
   it('shows the weekday and date in the club timezone', () => {
@@ -33,5 +35,30 @@ describe('Skeleton', () => {
       </>,
     );
     expect(screen.getAllByTestId('skeleton')).toHaveLength(3);
+  });
+});
+
+const CHIPS = [
+  { id: ALL_CLUBS, label: 'All clubs' },
+  { id: 'club-1', label: 'Riverside Mah Jongg' },
+];
+
+describe('ClubChips', () => {
+  it('marks the selected chip and only that one', () => {
+    render(<ClubChips chips={CHIPS} selected="club-1" onSelect={() => {}} />);
+    expect(
+      screen.getByRole('button', { name: 'Riverside Mah Jongg' }),
+    ).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('button', { name: 'All clubs' })).toHaveAttribute(
+      'aria-selected',
+      'false',
+    );
+  });
+
+  it('reports the chip that was pressed', () => {
+    const onSelect = vi.fn();
+    render(<ClubChips chips={CHIPS} selected={ALL_CLUBS} onSelect={onSelect} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Riverside Mah Jongg' }));
+    expect(onSelect).toHaveBeenCalledWith('club-1');
   });
 });

@@ -60,6 +60,7 @@ export default defineConfig({
     },
   },
   test: {
+    globals: true,
     environment: 'jsdom',
     setupFiles: ['./vitest.setup.ts'],
     // e2e/visual.spec.ts is a Playwright spec (run via `npm run test:visual`,
