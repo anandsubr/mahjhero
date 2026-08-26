@@ -1,5 +1,5 @@
 import { Link, Redirect, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
@@ -88,15 +88,38 @@ export default function ClubsScreen() {
   // app/clubs/[id]/index.tsx's `eventsFailed`.
   const [bookings, setBookings] = useState<MyBooking[] | null>(null);
   const [bookingsFailed, setBookingsFailed] = useState(false);
-  const [actionBusy, setActionBusy] = useState(false);
+  // One flag for every booking write — take, join, decline, accept-offer,
+  // decline-offer, leave-waitlist. These used to be two independent flags
+  // (`takeBusy` and `actionBusy`), so a decline could start while a join was
+  // still in flight and the two reloadAfterBooking calls would race to set
+  // `events` and `bookings`, with the loser's stale read winning.
+  //
+  // `checkInBusy` stays separate on purpose: the check-in control writes
+  // optimistically, for one person, and deliberately does not wait on the
+  // server — gating it on the same flag would make a two-state toggle feel
+  // like a form submission.
+  const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [checkInBusy, setCheckInBusy] = useState(false);
 
   const [events, setEvents] = useState<ClubEvent[]>([]);
   const [selected, setSelected] = useState<string>(ALL_CLUBS);
   const [notice, setNotice] = useState<string | null>(null);
-  const [takeBusy, setTakeBusy] = useState(false);
   const initials = useViewerInitials();
+
+  // Every write below awaits the network and then calls setState. Nothing
+  // checked the screen was still mounted, so navigating away mid-write —
+  // now a single tap, since the rows opened up — set state on an unmounted
+  // component. Set to true on mount rather than relying on the initial
+  // value: under StrictMode the effect runs, cleans up, and runs again, and
+  // a ref initialised once would stay false through the second mount.
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!userId) return;
@@ -146,6 +169,7 @@ export default function ClubsScreen() {
 
   async function reloadBookings() {
     const result = await fetchMyUpcomingBookings();
+    if (!mounted.current) return;
     if (result === null) setBookingsFailed(true);
     else {
       setBookings(result);
@@ -167,11 +191,16 @@ export default function ClubsScreen() {
   // "2nd on the waitlist" banner describes a waitlist spot this action may
   // have just given up.
   async function runBookingAction(action: () => Promise<{ error: string | null }>) {
-    setActionBusy(true);
+    // The buttons are all disabled while `busy`, but a queued tap, a screen
+    // reader activation, or a native double-tap can still arrive between the
+    // state change and the re-render.
+    if (busy) return;
+    setBusy(true);
     setActionError(null);
     setNotice(null);
     const { error } = await action();
-    setActionBusy(false);
+    if (!mounted.current) return;
+    setBusy(false);
     if (error) {
       setActionError(error);
       return;
@@ -228,6 +257,7 @@ export default function ClubsScreen() {
       next === null
         ? await clearAttendance({ eventId: booking.event_id, profileId })
         : await recordAttendance({ eventId: booking.event_id, profileId, state: next });
+    if (!mounted.current) return;
     setCheckInBusy(false);
     if (error) {
       setBookings((prev) =>
@@ -250,6 +280,7 @@ export default function ClubsScreen() {
       reloadBookings(),
       fetchEventsForClubs(clubs ?? []),
     ]);
+    if (!mounted.current) return;
     setEvents(freshEvents);
   }
 
@@ -257,7 +288,8 @@ export default function ClubsScreen() {
   // alert counted as one short, so the member lands with the three people
   // they were shown rather than wherever the server happens to have room.
   async function takeSeat(alert: FourthAlert) {
-    setTakeBusy(true);
+    if (busy) return;
+    setBusy(true);
     setActionError(null);
     // Any standing confirmation describes an earlier action. Leaving it up
     // while this one runs — or after it fails — makes a claim the screen can
@@ -269,7 +301,8 @@ export default function ClubsScreen() {
       preferredTableId: alert.tableId,
       allowSplit: false,
     });
-    setTakeBusy(false);
+    if (!mounted.current) return;
+    setBusy(false);
     if (error) {
       setActionError(error);
       return;
@@ -290,7 +323,8 @@ export default function ClubsScreen() {
   // nothing else on the screen would tell the member the game filled up
   // between the render and the tap.
   async function joinGame(row: DashboardRow) {
-    setTakeBusy(true);
+    if (busy) return;
+    setBusy(true);
     setActionError(null);
     setNotice(null);
     const { result, error } = await commitBooking({
@@ -299,7 +333,8 @@ export default function ClubsScreen() {
       preferredTableId: null,
       allowSplit: false,
     });
-    setTakeBusy(false);
+    if (!mounted.current) return;
+    setBusy(false);
     if (error) {
       setActionError(error);
       return;
@@ -405,7 +440,7 @@ export default function ClubsScreen() {
           key={`${alert.eventId}:${alert.tableId}`}
           clubName={alert.clubName}
           text={alert.text}
-          busy={takeBusy}
+          busy={busy}
           onTake={() => void takeSeat(alert)}
         />
       ))}
@@ -434,8 +469,7 @@ export default function ClubsScreen() {
             key={row.eventId}
             row={row}
             youId={userId}
-            busy={actionBusy}
-            takeBusy={takeBusy}
+            busy={busy}
             checkInBusy={checkInBusy}
             onJoin={joinGame}
             onDecline={handleDecline}
@@ -515,7 +549,6 @@ function GameRow({
   row,
   youId,
   busy,
-  takeBusy,
   checkInBusy,
   onJoin,
   onDecline,
@@ -527,7 +560,6 @@ function GameRow({
   row: DashboardRow;
   youId: string | undefined;
   busy: boolean;
-  takeBusy: boolean;
   checkInBusy: boolean;
   onJoin: (row: DashboardRow) => void;
   onDecline: (booking: MyBooking) => void;
@@ -585,7 +617,7 @@ function GameRow({
           <Button
             variant="secondary"
             big={false}
-            disabled={takeBusy}
+            disabled={busy}
             onPress={() => onJoin(row)}
             accessibilityLabel={`Join ${row.title}`}
             style={styles.gameAction}

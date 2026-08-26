@@ -757,6 +757,62 @@ describe('dashboard artboard', () => {
     expect(await screen.findByText('Nothing else coming up.')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Host a table' })).toBeNull();
   });
+
+  // takeBusy gated take/join and actionBusy gated decline/offer/waitlist,
+  // with nothing between them — so a member could start a decline while a
+  // join was still in flight and have the two reloadAfterBooking calls race
+  // to set `events` and `bookings`.
+  it('locks the other booking actions while one is in flight', async () => {
+    const soon = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    fetchMyClubs.mockResolvedValue([CLUB]);
+    // A waitlisted booking on one game (a Leave the waitlist button) and a
+    // separate open game (a Join button) — one of each family of action.
+    fetchMyUpcomingBookings.mockResolvedValue([
+      {
+        ...BOOKING,
+        event_id: 'held',
+        starts_at: soon,
+        event_title: 'Held game',
+        status: 'waitlisted' as const,
+        event_table_id: null,
+        table_label: null,
+        waitlist_position: 2,
+      },
+    ]);
+    fetchUpcomingEvents.mockResolvedValue([
+      {
+        ...EVENT,
+        id: 'open',
+        club_id: CLUB.id,
+        title: 'Open game',
+        starts_at: soon,
+        bookings: [
+          { profile_id: 'a', status: 'confirmed' as const, event_table_id: 'table-1' },
+        ],
+      },
+    ]);
+    // Never resolves while the assertion runs, so the first write stays in
+    // flight for the whole test.
+    let release: (value: { result: null; error: null }) => void = () => {};
+    commitBooking.mockReturnValueOnce(
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+    );
+
+    render(<ClubsScreen />);
+    fireEvent.click(await screen.findByRole('button', { name: /Join Open game/ }));
+
+    await waitFor(() =>
+      expect(
+        screen
+          .getByLabelText('Leave the waitlist for Held game')
+          .getAttribute('aria-disabled'),
+      ).toBe('true'),
+    );
+
+    release({ result: null, error: null });
+  });
 });
 
 import ImportRosterScreen from '../clubs/[id]/import';
