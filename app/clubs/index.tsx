@@ -525,16 +525,34 @@ function GameRow({
   return (
     <Card>
       <View style={styles.gameRow}>
-        <DateTile startsAt={row.startsAt} timezone={row.timezone} />
-        <View style={styles.gameBody}>
-          <Text style={styles.gameKicker}>{row.clubName}</Text>
-          <Text style={styles.gameTitle}>{row.title}</Text>
-          <Text style={styles.help}>
-            {formatEventWhen(row.startsAt, row.timezone)}
-            {' · '}
-            {row.venueName}
-          </Text>
-        </View>
+        {/*
+          Pressable rather than the Card itself, and the trailing controls
+          left outside it: a row can carry a Join button, a Seated tag, offer
+          accept/decline, leave-waitlist and a check-in control, and a
+          card-wide press target would sit under all of them. Pressable
+          rather than Card for the `asChild` reason this file documents at
+          length for the club cards below — Card neither declares
+          accessibility props nor spreads unrecognised ones onto its View, so
+          cloning onto it drops the handler Link injects.
+        */}
+        <Link href={`/clubs/${row.clubId}/events/${row.eventId}`} asChild>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Open ${row.title}`}
+            style={styles.gameOpen}
+          >
+            <DateTile startsAt={row.startsAt} timezone={row.timezone} />
+            <View style={styles.gameBody}>
+              <Text style={styles.gameKicker}>{row.clubName}</Text>
+              <Text style={styles.gameTitle}>{row.title}</Text>
+              <Text style={styles.help}>
+                {formatEventWhen(row.startsAt, row.timezone)}
+                {' · '}
+                {row.venueName}
+              </Text>
+            </View>
+          </Pressable>
+        </Link>
         {booking === null ? (
           <Button
             variant="secondary"
@@ -789,6 +807,16 @@ const styles = StyleSheet.create({
   gameBody: {
     flex: 1,
     minWidth: 0,
+  },
+  // Takes over `gameRow`'s row layout for the part of the row that is now
+  // one press target, so the tile and the text still sit side by side and
+  // the trailing control still gets whatever width it needs.
+  gameOpen: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[3],
   },
   gameKicker: {
     fontFamily: type.bodySemiBold,

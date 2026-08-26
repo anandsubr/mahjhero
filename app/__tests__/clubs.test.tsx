@@ -13,7 +13,14 @@ vi.mock('expo-router', () => ({
   Redirect: ({ href }: { href: string }) => (
     <div data-testid="redirect" data-href={href} />
   ),
-  Link: ({ children }: { children: React.ReactNode }) => children,
+  // Renders as a real anchor carrying the href, so a test can assert where a
+  // link points. It used to render its children and drop `href` on the
+  // floor, which made every `Link` in these screens untestable. The club
+  // cards below nest a Pressable inside via `asChild`; a div inside an
+  // anchor is valid, and the existing role-based queries still find it.
+  Link: ({ href, children }: { href: string; children: React.ReactNode }) => (
+    <a data-href={href}>{children}</a>
+  ),
   useRouter: () => ({ push, replace }),
   useLocalSearchParams: () => searchParams,
 }));
@@ -273,6 +280,38 @@ describe('dashboard artboard', () => {
     expect(screen.getByText('JW')).toBeTruthy();
   });
 
+  // The rows were inert: the one thing a member wants from a game they can
+  // see is to open it.
+  it('opens the game when a row is tapped', async () => {
+    fetchMyClubs.mockResolvedValueOnce([CLUB]);
+    fetchMyUpcomingBookings.mockResolvedValueOnce([BOOKING]);
+    render(<ClubsScreen />);
+    const row = await screen.findByRole('button', { name: 'Open Sunday social' });
+    expect(row.closest('a')?.getAttribute('data-href')).toBe(
+      '/clubs/club-1/events/event-9',
+    );
+  });
+
+  // The row's own controls must stay outside that press target, or a Join
+  // tap would land on two competing targets at once.
+  it('keeps the Join button outside the row press target', async () => {
+    fetchMyClubs.mockResolvedValueOnce([CLUB]);
+    fetchUpcomingEvents.mockResolvedValueOnce([
+      {
+        ...EVENT,
+        id: 'open',
+        club_id: CLUB.id,
+        title: 'Open game',
+        bookings: [
+          { profile_id: 'a', status: 'confirmed', event_table_id: 'table-1' },
+        ],
+      },
+    ]);
+    render(<ClubsScreen />);
+    const join = await screen.findByRole('button', { name: /Join Open game/ });
+    expect(join.closest('a')).toBeNull();
+  });
+
   it('narrows the games list to the picked club', async () => {
     fetchMyClubs.mockResolvedValue([CLUB, { ...CLUB, id: 'club-2', name: 'Harbour' }]);
     fetchMyUpcomingBookings.mockResolvedValue([
@@ -510,6 +549,10 @@ describe('dashboard artboard', () => {
     });
 
     render(<ClubsScreen />);
+    // The card has to be on screen before the join, or this test would pass
+    // just as well against a screen that never rendered one — which is what
+    // it asserted before.
+    expect(await screen.findByRole('button', { name: /I'm in/ })).toBeTruthy();
     fireEvent.click(
       await screen.findByRole('button', { name: /Join Thursday night/ }),
     );
