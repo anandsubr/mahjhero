@@ -236,6 +236,15 @@ describe('formatEventWhen', () => {
     const la = formatEventWhen('2027-09-08T00:00:00Z', 'America/Los_Angeles');
     expect(ny).not.toEqual(la);
   });
+
+  // Intl.DateTimeFormat.format throws RangeError on an Invalid Date, so a
+  // single malformed starts_at from the server used to take down every
+  // screen that renders a list of games rather than the one row carrying it.
+  it('says so rather than throwing when the date cannot be read', () => {
+    expect(formatEventWhen('not-a-date', 'America/New_York')).toBe(
+      'Date unavailable',
+    );
+  });
 });
 
 describe('eventStartTimeInZone', () => {
@@ -260,6 +269,14 @@ describe('eventStartTimeInZone', () => {
     expect(eventStartTimeInZone('2027-09-08T04:00:00Z', 'America/New_York')).toBe(
       '00:00',
     );
+  });
+
+  // Empty rather than a plausible-looking "00:00": this value fills a
+  // TimeField, and a midnight the member never chose is a wrong answer they
+  // might save over a real one. An empty field is the honest state for a
+  // stored value that cannot be read.
+  it('returns an empty time rather than throwing when the date cannot be read', () => {
+    expect(eventStartTimeInZone('not-a-date', 'America/New_York')).toBe('');
   });
 });
 

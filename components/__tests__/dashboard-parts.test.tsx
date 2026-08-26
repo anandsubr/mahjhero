@@ -18,6 +18,11 @@ describe('DateTile', () => {
     expect(screen.getByText('THU')).toBeTruthy();
     expect(screen.getByText('3')).toBeTruthy();
   });
+
+  it('renders placeholders rather than throwing when the date cannot be read', () => {
+    render(<DateTile startsAt="not-a-date" timezone="America/New_York" />);
+    expect(screen.getAllByText('--')).toHaveLength(2);
+  });
 });
 
 describe('Skeleton', () => {

@@ -21,16 +21,24 @@ export default function DateTile({
   timezone: string;
 }) {
   const when = new Date(startsAt);
-  const day = new Intl.DateTimeFormat('en-GB', {
-    weekday: 'short',
-    timeZone: timezone,
-  })
-    .format(when)
-    .toUpperCase();
-  const date = new Intl.DateTimeFormat('en-GB', {
-    day: 'numeric',
-    timeZone: timezone,
-  }).format(when);
+  // Same RangeError guard as lib/events.ts's formatEventWhen — and this tile
+  // sits inside a row whose meta line calls exactly that function, so the
+  // two degrade together rather than one throwing past the other's fallback.
+  const readable = !Number.isNaN(when.getTime());
+  const day = readable
+    ? new Intl.DateTimeFormat('en-GB', {
+        weekday: 'short',
+        timeZone: timezone,
+      })
+        .format(when)
+        .toUpperCase()
+    : '--';
+  const date = readable
+    ? new Intl.DateTimeFormat('en-GB', {
+        day: 'numeric',
+        timeZone: timezone,
+      }).format(when)
+    : '--';
 
   return (
     <View
