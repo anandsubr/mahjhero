@@ -79,6 +79,23 @@ vi.mock('../../lib/bookings', async () => {
   };
 });
 
+// Task 12 added a `fetchMyCheckIn` call to this screen's own `load()`. Left
+// unmocked, it would hit the real `lib/attendance.ts` -> real supabase
+// client and fail closed over this sandbox's blocked network, slowly —
+// events-detail.test.tsx's own top-of-file comment already records this
+// exact trap for fetchEventSeating/fetchOpenOffer. None of this file's
+// fixtures set `check_in_required`, so `fetchMyCheckIn` resolving null is
+// all any test here needs.
+const fetchMyCheckIn = vi.fn();
+
+vi.mock('../../lib/attendance', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/attendance')>();
+  return {
+    ...actual,
+    fetchMyCheckIn: (...args: unknown[]) => fetchMyCheckIn(...args),
+  };
+});
+
 import EventScreen from '../clubs/[id]/events/[eventId]/index';
 
 const CLUB = {
@@ -152,6 +169,8 @@ beforeEach(() => {
   fetchEventSeating.mockResolvedValue([]);
   fetchOpenOffer.mockReset();
   fetchOpenOffer.mockResolvedValue(null);
+  fetchMyCheckIn.mockReset();
+  fetchMyCheckIn.mockResolvedValue(null);
   acceptPromotionOffer.mockReset();
   acceptPromotionOffer.mockResolvedValue({ error: null });
   declinePromotionOffer.mockReset();

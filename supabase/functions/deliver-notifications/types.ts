@@ -17,7 +17,8 @@ export type OutboxKind =
   | 'event_cancelled'
   | 'need_a_fourth'
   | 'event_reminder'
-  | 'broadcast';
+  | 'broadcast'
+  | 'attendance_declined';
 
 export type RenderRow = {
   id: string;

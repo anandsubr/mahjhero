@@ -323,6 +323,7 @@ describe('createEvent', () => {
     startTime: '19:00',
     durationMinutes: 180,
     tableCount: 2,
+    checkInRequired: false,
   };
 
   /*
@@ -351,6 +352,7 @@ describe('createEvent', () => {
       start_time: '19:00',
       duration_minutes: 180,
       table_count: 2,
+      check_in: false,
     });
   });
 
@@ -373,6 +375,20 @@ describe('createEvent', () => {
       createEvent({ ...validInput, title: null as unknown as string }),
     ).resolves.toEqual({ eventId: null, error: GENERIC_ERROR });
     expect(rpcMock).not.toHaveBeenCalled();
+  });
+
+  // Task 14: the host's "Require check-in" toggle. `check_in` is
+  // `create_event`'s real argument name (supabase/migrations/
+  // 20260827010000) — pinned with expect.objectContaining rather than a full
+  // object so this test does not have to restate every other argument the
+  // test above already pins.
+  it('sends check_in on create', async () => {
+    rpcMock.mockResolvedValueOnce({ data: 'event-1', error: null });
+    await createEvent({ ...validInput, checkInRequired: true });
+    expect(rpcMock).toHaveBeenCalledWith(
+      'create_event',
+      expect.objectContaining({ check_in: true }),
+    );
   });
 });
 
@@ -406,6 +422,7 @@ describe('updateEvent', () => {
       new_date: '2027-11-07',
       new_start_time: '19:00',
       new_duration_minutes: 240,
+      new_check_in_required: null,
     });
   });
 
@@ -421,7 +438,20 @@ describe('updateEvent', () => {
       new_date: null,
       new_start_time: null,
       new_duration_minutes: null,
+      new_check_in_required: null,
     });
+  });
+
+  // Task 14. `new_check_in_required` is `update_event`'s real argument name
+  // (supabase/migrations/20260827010000) — distinct from `create_event`'s
+  // `check_in`, so this is pinned separately rather than assumed to match.
+  it('sends new_check_in_required on update', async () => {
+    rpcMock.mockResolvedValueOnce({ data: true, error: null });
+    await updateEvent('event-1', { checkInRequired: false });
+    expect(rpcMock).toHaveBeenCalledWith(
+      'update_event',
+      expect.objectContaining({ new_check_in_required: false }),
+    );
   });
 });
 
@@ -447,6 +477,7 @@ describe('updateEventSeries', () => {
       new_ends_on: null,
       include_overridden: false,
       clear_ends_on: false,
+      new_check_in_required: null,
     });
   });
 
@@ -472,7 +503,20 @@ describe('updateEventSeries', () => {
       new_ends_on: null,
       include_overridden: false,
       clear_ends_on: true,
+      new_check_in_required: null,
     });
+  });
+
+  // Task 14. `new_check_in_required` is `update_event_series`'s real
+  // argument name (supabase/migrations/20260827010000) — same name
+  // `update_event` uses, unlike the two create functions' `check_in`.
+  it('sends new_check_in_required on update series', async () => {
+    rpcMock.mockResolvedValueOnce({ data: true, error: null });
+    await updateEventSeries('series-1', { checkInRequired: true });
+    expect(rpcMock).toHaveBeenCalledWith(
+      'update_event_series',
+      expect.objectContaining({ new_check_in_required: true }),
+    );
   });
 });
 
@@ -494,6 +538,7 @@ describe('createEventSeries', () => {
     tableCount: 1,
     startsOn: '2027-01-01',
     endsOn: null,
+    checkInRequired: false,
   };
 
   it('rejects a blank title with a friendly message, before ever calling the RPC', async () => {
@@ -509,6 +554,18 @@ describe('createEventSeries', () => {
       createEventSeries({ ...validInput, title: null as unknown as string }),
     ).resolves.toEqual({ seriesId: null, error: GENERIC_ERROR });
     expect(rpcMock).not.toHaveBeenCalled();
+  });
+
+  // Task 14. `check_in` is `create_event_series`'s real argument name
+  // (supabase/migrations/20260827010000) — same name `create_event` uses,
+  // unlike the two update functions' `new_check_in_required`.
+  it('sends check_in on create series', async () => {
+    rpcMock.mockResolvedValueOnce({ data: 'series-1', error: null });
+    await createEventSeries({ ...validInput, checkInRequired: true });
+    expect(rpcMock).toHaveBeenCalledWith(
+      'create_event_series',
+      expect.objectContaining({ check_in: true }),
+    );
   });
 });
 
@@ -637,6 +694,7 @@ describe('deliberate refusals are reported as refusals, not as network failures'
       startTime: '19:00',
       durationMinutes: 180,
       tableCount: 1,
+      checkInRequired: false,
     });
     expect(result.error).toBe('That start time has already passed. Pick a later one.');
     expect(result.error).not.toBe(GENERIC_ERROR);
@@ -694,6 +752,7 @@ describe('deliberate refusals are reported as refusals, not as network failures'
       tableCount: 1,
       startsOn: '2020-01-01',
       endsOn: '2020-01-02',
+      checkInRequired: false,
     });
     // Word-for-word the create screen's own preview copy for the same
     // situation.
@@ -715,6 +774,7 @@ describe('deliberate refusals are reported as refusals, not as network failures'
       tableCount: 1,
       startsOn: '2027-06-01',
       endsOn: '2027-01-01',
+      checkInRequired: false,
     });
     expect(result.error).toBe('That end date is before the series starts.');
   });
@@ -747,6 +807,7 @@ describe('deliberate refusals are reported as refusals, not as network failures'
       startTime: '',
       durationMinutes: 180,
       tableCount: 1,
+      checkInRequired: false,
     });
     expect(result.error).toBe('Give the game a date and a start time.');
   });
@@ -765,6 +826,7 @@ describe('deliberate refusals are reported as refusals, not as network failures'
       startTime: '19:00',
       durationMinutes: 180,
       tableCount: 99,
+      checkInRequired: false,
     });
     expect(result.error).toBe('Choose between 1 and 20 tables.');
   });

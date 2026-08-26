@@ -53,6 +53,7 @@ vi.mock('./supabase', () => ({
 }));
 
 import { GENERIC_ERROR } from './constants';
+import { checkInOpen } from './attendance';
 import {
   fetchPreferences,
   fetchProfile,
@@ -512,11 +513,14 @@ describe.runIf(reachable || required)('events schema contract', () => {
       [
         'id', 'club_id', 'series_id', 'title', 'venue_id', 'notes',
         'starts_at', 'ends_at', 'status', 'occurrence_date', 'overrides',
-        'venues', 'event_tables', 'bookings',
+        'check_in_required', 'venues', 'event_tables', 'bookings',
       ].sort(),
     );
     expect(row.title).toBe('Tuesday Mahjong');
     expect(row.overrides).toEqual(['title']);
+    // Not set on insert above, so this pins the column's own default —
+    // Task 12 added check_in_required to EVENT_COLUMNS.
+    expect(row.check_in_required).toBe(false);
     expect((row.venues as { name: string }).name).toBe('Contract Hall');
     expect((row.event_tables as unknown[]).length).toBe(1);
     // Task 14: `eventStatusLine` (lib/events.ts) needs capacity and label off
@@ -553,11 +557,16 @@ describe.runIf(reachable || required)('events schema contract', () => {
       [
         'id', 'club_id', 'title', 'venue_id', 'notes', 'frequency',
         'weekday', 'nth_week', 'start_time', 'duration_minutes',
-        'table_count', 'starts_on', 'ends_on', 'ended_at', 'venues',
+        'table_count', 'starts_on', 'ends_on', 'ended_at',
+        'check_in_required', 'venues',
       ].sort(),
     );
     expect(row.ends_on).toBe('2027-12-31');
     expect(row.ended_at).toBe('2027-06-01T00:00:00+00:00');
+    // Not set on insert — pins the column's own default (Task 14 added
+    // check_in_required to SERIES_COLUMNS; EVENT_COLUMNS already had it from
+    // Task 12, asserted above).
+    expect(row.check_in_required).toBe(false);
     // `venues(name)`, added alongside Fix pass 1 on Task 15's review so the
     // edit screen's "The whole series" heading can show the series' own
     // venue rather than the occurrence's — the seed row reuses the same
@@ -754,6 +763,7 @@ describe.runIf(reachable || required)(
             startTime: '19:00',
             durationMinutes: 180,
             tableCount: 2,
+            checkInRequired: false,
           }),
       },
       {
@@ -792,6 +802,7 @@ describe.runIf(reachable || required)(
             tableCount: 1,
             startsOn: '2027-01-01',
             endsOn: null,
+            checkInRequired: false,
           }),
       },
       {
@@ -1000,6 +1011,7 @@ describe.runIf(reachable || required)(
         startTime: input.startTime,
         durationMinutes: input.durationMinutes,
         tableCount: 1,
+        checkInRequired: false,
       });
       expect(error, `createEvent reported: ${error}`).toBeNull();
       expect(eventId).not.toBeNull();
@@ -1152,6 +1164,7 @@ describe.runIf(reachable || required)(
         startTime: '19:00',
         durationMinutes: 180,
         tableCount: 1,
+        checkInRequired: false,
       });
       expect(error).toBeNull();
       createdEventIds.push(eventId!);
@@ -1184,6 +1197,7 @@ describe.runIf(reachable || required)(
         startTime: '19:00',
         durationMinutes: 180,
         tableCount: 1,
+        checkInRequired: false,
       });
       expect(error).toBeNull();
       createdEventIds.push(eventId!);
@@ -1215,6 +1229,7 @@ describe.runIf(reachable || required)(
         startTime: '19:00',
         durationMinutes: 180,
         tableCount: 1,
+        checkInRequired: false,
       });
       expect(error).toBeNull();
       createdEventIds.push(eventId!);
@@ -1333,6 +1348,7 @@ describe.runIf(reachable || required)('deliberate refusals reach the host as ref
       startTime: '19:00',
       durationMinutes: 180,
       tableCount: 1,
+      checkInRequired: false,
     });
     expect(createError, `seeding event failed: ${createError}`).toBeNull();
     eventId = created!;
@@ -1382,6 +1398,7 @@ describe.runIf(reachable || required)('deliberate refusals reach the host as ref
       startTime: '19:00',
       durationMinutes: 180,
       tableCount: 1,
+      checkInRequired: false,
     });
     expect(created).toBeNull();
     expect(error).toBe('That start time has already passed. Pick a later one.');
@@ -1438,6 +1455,7 @@ describe.runIf(reachable || required)('deliberate refusals reach the host as ref
       tableCount: 1,
       startsOn: '2020-01-01',
       endsOn: '2020-02-01',
+      checkInRequired: false,
     });
     expect(created).toBeNull();
     expect(error).toBe('No games would be created before that end date.');
@@ -1865,5 +1883,211 @@ describe.runIf(reachable || required)('broadcasts schema contract', () => {
       created_at: true,
     };
     expect(Object.keys(row).sort()).toEqual(Object.keys(declaredFields).sort());
+  });
+});
+
+/*
+ * ---------------------------------------------------------------------------
+ * Attendance crosses the boundary too.
+ * ---------------------------------------------------------------------------
+ *
+ * `attendance_state` is a Postgres enum and the check-in window is two
+ * `timestamptz` columns computed in SQL (my_upcoming_bookings,
+ * 20260827070000) — exactly the shape of risk `quiet_hours_start` was at the
+ * top of this file: a mocked Vitest suite hands its mapper a payload the
+ * mapper already agrees with, so it cannot see PostgREST's actual enum
+ * string, nor the client's own `checkInOpen` (lib/attendance.ts) disagreeing
+ * with the server's one-hour-lead arithmetic. This block seeds a real
+ * confirmed booking and a real check_ins row and reads both back through the
+ * real RPCs a signed-in organizer would call.
+ */
+describe.runIf(reachable || required)('attendance schema contract', () => {
+  let admin: SupabaseClient;
+  let userId: string;
+  let clubId: string;
+  let venueId: string;
+  let eventId: string;
+  let tableId: string;
+
+  beforeAll(async () => {
+    expect(
+      reachable,
+      `Local Supabase stack not reachable at ${local.url}. Run \`npx supabase start\`.`,
+    ).toBe(true);
+    // A signed-in caller: event_attendance's assert_club_organizer refuses
+    // anyone who isn't running the door, and this block calls it as this
+    // same session below.
+    ({ admin, userId } = await signInFreshUser());
+
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    const { data: club, error: clubError } = await admin
+      .from('clubs')
+      .insert({
+        name: 'Attendance Contract Club',
+        slug: `attendance-contract-${suffix}`,
+        timezone: 'America/New_York',
+        created_by: userId,
+      })
+      .select('id')
+      .single();
+    expect(clubError, `seeding club failed: ${clubError?.message}`).toBeNull();
+    clubId = club!.id;
+
+    // 'host': event_attendance's assert_club_organizer requires
+    // is_club_organizer, which only 'host' and 'co_organizer' satisfy.
+    const { error: memberError } = await admin.from('club_members').insert({
+      club_id: clubId,
+      profile_id: userId,
+      role: 'host',
+      status: 'active',
+    });
+    expect(memberError, `seeding host failed: ${memberError?.message}`).toBeNull();
+
+    const { data: venue, error: venueError } = await admin
+      .from('venues')
+      .insert({
+        name: 'Attendance Hall',
+        visibility: 'club',
+        added_by_club_id: clubId,
+        created_by: userId,
+      })
+      .select('id')
+      .single();
+    expect(venueError, `seeding venue failed: ${venueError?.message}`).toBeNull();
+    venueId = venue!.id;
+
+    // starts_at 30 minutes AGO, ends_at 2.5 hours from now — unlike every
+    // other seed in this file, which sits safely in the future because
+    // nothing there depends on the wall clock, THIS fixture has to straddle
+    // it: the check-in window my_upcoming_bookings computes
+    // (starts_at - 1h .. ends_at) must actually be open right now, or the
+    // `checkInOpen` assertion below would be checking parseability only,
+    // not the boundary crossing the brief calls "the point of the whole
+    // test".
+    const now = Date.now();
+    const startsAt = new Date(now - 30 * 60 * 1000).toISOString();
+    const endsAt = new Date(now + 150 * 60 * 1000).toISOString();
+
+    const { data: event, error: eventError } = await admin
+      .from('events')
+      .insert({
+        club_id: clubId,
+        title: 'Attendance contract game',
+        venue_id: venueId,
+        notes: '',
+        starts_at: startsAt,
+        ends_at: endsAt,
+        check_in_required: true,
+        created_by: userId,
+      })
+      .select('id')
+      .single();
+    expect(eventError, `seeding event failed: ${eventError?.message}`).toBeNull();
+    eventId = event!.id;
+
+    const { data: table, error: tableError } = await admin
+      .from('event_tables')
+      .insert({ event_id: eventId, club_id: clubId, label: 'Table 1', position: 1 })
+      .select('id')
+      .single();
+    expect(tableError, `seeding table failed: ${tableError?.message}`).toBeNull();
+    tableId = table!.id;
+
+    const { data: group, error: groupError } = await admin
+      .from('booking_groups')
+      .insert({
+        event_id: eventId,
+        club_id: clubId,
+        created_by: userId,
+        preferred_table_id: tableId,
+        status: 'confirmed',
+      })
+      .select('id')
+      .single();
+    expect(groupError, `seeding booking group failed: ${groupError?.message}`).toBeNull();
+
+    const { error: bookingError } = await admin.from('bookings').insert({
+      group_id: group!.id,
+      event_id: eventId,
+      club_id: clubId,
+      event_table_id: tableId,
+      profile_id: userId,
+      booked_by: userId,
+      status: 'confirmed',
+    });
+    expect(bookingError, `seeding booking failed: ${bookingError?.message}`).toBeNull();
+
+    // The check-in row itself — what event_attendance's second CTE arm
+    // joins in, and what makes row.state something other than null below.
+    // Inserted through the service-role client: check_ins carries no write
+    // policy at all (20260827020000's own comment — "Task 4's definer
+    // functions are the only way a row is ever created"), and this suite
+    // seeds the shape it wants to read, not the write path.
+    const { error: checkInError } = await admin.from('check_ins').insert({
+      event_id: eventId,
+      club_id: clubId,
+      profile_id: userId,
+      state: 'arrived',
+      recorded_by: userId,
+    });
+    expect(checkInError, `seeding check-in failed: ${checkInError?.message}`).toBeNull();
+  });
+
+  afterAll(async () => {
+    await supabase.auth.signOut();
+    if (admin) {
+      if (eventId) {
+        await admin.from('check_ins').delete().eq('event_id', eventId);
+        await admin.from('bookings').delete().eq('event_id', eventId);
+        await admin.from('booking_groups').delete().eq('event_id', eventId);
+        await admin.from('event_tables').delete().eq('event_id', eventId);
+        await admin.from('events').delete().eq('id', eventId);
+      }
+      if (venueId) await admin.from('venues').delete().eq('id', venueId);
+      if (clubId) await admin.from('club_members').delete().eq('club_id', clubId);
+      if (clubId) await admin.from('clubs').delete().eq('id', clubId);
+    }
+    if (admin && userId) await admin.auth.admin.deleteUser(userId);
+  });
+
+  it('serializes attendance_state as the client union', async () => {
+    const { data, error } = await supabase.rpc('event_attendance', {
+      target_event: eventId,
+    });
+    expect(error, `event_attendance failed: ${error?.message}`).toBeNull();
+    const rows = data as Record<string, unknown>[];
+    const row = rows.find((r) => r.profile_id === userId);
+    expect(row, 'event_attendance did not return the seeded booking').toBeDefined();
+
+    // Enums arrive as strings; a typo in AttendanceState (lib/attendance.ts)
+    // would type-check fine and only fail here, at runtime.
+    expect(['arrived', 'no_show', null]).toContain(row!.state);
+    expect(row!.state).toBe('arrived');
+    expect(
+      row!.booking_status === null || row!.booking_status === 'confirmed',
+    ).toBe(true);
+    expect(row!.booking_status).toBe('confirmed');
+  });
+
+  it('serializes the check-in window as parseable timestamps checkInOpen agrees with', async () => {
+    const { data, error } = await supabase.rpc('my_upcoming_bookings');
+    expect(error, `my_upcoming_bookings failed: ${error?.message}`).toBeNull();
+    const rows = data as Record<string, unknown>[];
+    const row = rows.find((r) => r.event_id === eventId);
+    expect(row, 'my_upcoming_bookings did not return the seeded booking').toBeDefined();
+
+    expect(row!.check_in_required).toBe(true);
+    expect(Number.isNaN(Date.parse(row!.check_in_opens_at as string))).toBe(false);
+    expect(Number.isNaN(Date.parse(row!.check_in_closes_at as string))).toBe(false);
+    // The point of the whole test: the client's own predicate, run against
+    // timestamps the server actually produced — not a hand-typed pair that
+    // could quietly drift from what my_upcoming_bookings really returns.
+    expect(
+      checkInOpen(
+        row!.check_in_opens_at as string,
+        row!.check_in_closes_at as string,
+      ),
+    ).toBe(true);
   });
 });

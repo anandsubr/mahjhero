@@ -196,6 +196,19 @@ const FRIEND_GAME = {
 // this file has no wall-clock reads anywhere.
 const WAITLISTED_AT = '2026-08-20T12:00:00Z';
 
+// 15 minutes before FROZEN_NOW, ending 3h45m after — inside the door
+// screen's own window (starts_at - 1h .. ends_at, `checkInOpen` in
+// lib/attendance.ts) at FROZEN_NOW with margin either side, so a slow CI
+// run settling a few seconds late is nowhere near either boundary. Unlike
+// every other game above, this one's window has to actually be OPEN at
+// the page's frozen clock, not merely dated near it — a closed window
+// would still render the door list, just with every control disabled,
+// which is not the baseline this fixture exists to show.
+const CHECK_IN_GAME = {
+  startsAt: '2026-08-22T15:45:00Z',
+  endsAt: '2026-08-22T19:45:00Z',
+};
+
 /**
  * A club member who exists only to occupy a seat or hold a waitlist spot in
  * a booking-state baseline — never signed in, never screenshotted
@@ -353,6 +366,9 @@ export async function seedClubWithEvent(profileId: string): Promise<{
   /** One broadcast already sent to Riverside, for the `broadcast history`
    * baseline. */
   broadcastId: string;
+  /** Check-in required, window open at the frozen clock, one person per
+   * door-screen render group — for the `check-in door` baseline. */
+  checkInEventId: string;
 }> {
   const admin = adminClient('seed fixtures');
 
@@ -858,6 +874,116 @@ export async function seedClubWithEvent(profileId: string): Promise<{
     tableId: friendTableId,
   });
 
+  // -------------------------------------------------------------------
+  // Check-in door screen fixture (Task 15). A one-off event under
+  // Riverside, `check_in_required: true`, with its window open at the
+  // page's frozen clock (CHECK_IN_GAME above) and one person in each of
+  // the door screen's three render groups (groupRows,
+  // app/clubs/[id]/events/[eventId]/check-in.tsx): a table assignment, a
+  // confirmed booking with no table ("Any table" — event_table_id null,
+  // via seatBooking without a tableId), and a walk-in with no booking at
+  // all (a check_ins row and nothing else). Two of the four are
+  // pre-recorded — one arrived, one no_show — so the baseline also shows
+  // CheckInControl's two selected-chip colours, not just its unset state.
+  // Reuses the filler profiles seeded above rather than minting new ones:
+  // a booking's uniqueness is scoped per event (seatBooking's own doc
+  // comment), so the same person can hold a seat here too.
+  const checkInEvent = need<{ id: string }>(
+    'check-in event insert',
+    await admin
+      .from('events')
+      .insert({
+        club_id: clubId,
+        title: 'Door check-in night',
+        venue_id: usualVenue.id,
+        notes: '',
+        starts_at: CHECK_IN_GAME.startsAt,
+        ends_at: CHECK_IN_GAME.endsAt,
+        check_in_required: true,
+        created_by: profileId,
+      })
+      .select('id')
+      .single(),
+  );
+  const checkInEventId = checkInEvent.id;
+
+  const checkInTables = need<{ id: string; label: string }[]>(
+    'check-in tables insert',
+    await admin
+      .from('event_tables')
+      .insert([
+        { event_id: checkInEventId, club_id: clubId, label: 'Table 1', position: 1 },
+        { event_id: checkInEventId, club_id: clubId, label: 'Table 2', position: 2 },
+      ])
+      .select('id, label'),
+  );
+  const checkInTable1Id = checkInTables.find((t) => t.label === 'Table 1')!.id;
+  const checkInTable2Id = checkInTables.find((t) => t.label === 'Table 2')!.id;
+
+  // Table 1: the signed-in host (Wei Chen, arrived) and Priya (not yet
+  // determined). Table 2: Marcus (no_show). Any table: Dana (arrived).
+  await seatBooking(admin, need, {
+    eventId: checkInEventId,
+    clubId,
+    profileId,
+    tableId: checkInTable1Id,
+  });
+  await seatBooking(admin, need, {
+    eventId: checkInEventId,
+    clubId,
+    profileId: priya,
+    tableId: checkInTable1Id,
+  });
+  await seatBooking(admin, need, {
+    eventId: checkInEventId,
+    clubId,
+    profileId: marcus,
+    tableId: checkInTable2Id,
+  });
+  await seatBooking(admin, need, {
+    eventId: checkInEventId,
+    clubId,
+    profileId: dana,
+  });
+
+  const { error: checkInsError } = await admin.from('check_ins').insert([
+    {
+      event_id: checkInEventId,
+      club_id: clubId,
+      profile_id: profileId,
+      state: 'arrived',
+      recorded_by: profileId,
+    },
+    {
+      event_id: checkInEventId,
+      club_id: clubId,
+      profile_id: marcus,
+      state: 'no_show',
+      recorded_by: profileId,
+    },
+    {
+      event_id: checkInEventId,
+      club_id: clubId,
+      profile_id: dana,
+      state: 'arrived',
+      recorded_by: profileId,
+    },
+    // Leo has no booking at all here — that absence is what makes him a
+    // walk-in (groupRows checks `booking_status === null` first).
+    {
+      event_id: checkInEventId,
+      club_id: clubId,
+      profile_id: leo,
+      state: 'arrived',
+      recorded_by: profileId,
+    },
+  ]);
+  if (checkInsError) {
+    throw new Error(
+      `seedClubWithEvent: check-ins insert failed: ${JSON.stringify(checkInsError)}`,
+    );
+  }
+
   return {
     clubId,
     eventId,
@@ -867,6 +993,7 @@ export async function seedClubWithEvent(profileId: string): Promise<{
     offerEventId,
     needsAFourthEventId,
     broadcastId,
+    checkInEventId,
   };
 }
 

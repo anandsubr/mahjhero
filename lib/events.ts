@@ -7,7 +7,12 @@ export type SkillTier = 'beginner' | 'intermediate' | 'advanced' | 'mixed';
 export type SeriesFrequency = 'weekly' | 'biweekly' | 'monthly_nth_weekday';
 
 /** The field keys `events.overrides` may contain. Mirrors the check constraint. */
-export type OverrideKey = 'title' | 'venue_id' | 'notes' | 'starts_at';
+export type OverrideKey =
+  | 'title'
+  | 'venue_id'
+  | 'notes'
+  | 'starts_at'
+  | 'check_in_required';
 
 export type ClubEvent = {
   id: string;
@@ -33,6 +38,14 @@ export type ClubEvent = {
   event_tables: { id: string; capacity: number; label: string }[];
   /** Every booking row for this event, live and dead. Filter before use. */
   bookings: EventBookingRow[];
+  /**
+   * Whether this occurrence asked for check-in — added for Task 12, which
+   * gates the event screen's door-list link and the member's own
+   * `CheckInControl` on it. `lib/bookings.ts`'s `MyBooking` already carried
+   * this (Task 9's `my_upcoming_bookings`); `ClubEvent` did not, because
+   * nothing read it through `fetchEvent`/`EVENT_COLUMNS` until now.
+   */
+  check_in_required: boolean;
 };
 
 export type EventTable = {
@@ -74,6 +87,18 @@ export type EventSeries = {
    * facts, so both are carried here.
    */
   ended_at: string | null;
+  /**
+   * Whether this series' occurrences ask for check-in by default — Task 14,
+   * the host-facing toggle. Lives on `event_series` as well as `events`
+   * (supabase/migrations/20260827000000): a weekly host ticks the box once
+   * on the series and every future occurrence inherits it via
+   * `materialize_one_series`. The edit screen's "The whole series" scope
+   * seeds its own toggle from this column, never from the occurrence being
+   * viewed — the same rule Fix pass 1 already established for title/venue/
+   * notes/start time (see app/clubs/[id]/events/[eventId]/edit.tsx's own
+   * file-level comment for why).
+   */
+  check_in_required: boolean;
 };
 
 export type RecurrenceRule = {
@@ -113,11 +138,11 @@ export type RecurrenceRule = {
  */
 export const EVENT_COLUMNS =
   'id, club_id, series_id, title, venue_id, notes, starts_at, ends_at, ' +
-  'status, occurrence_date, overrides, venues(name), ' +
+  'status, occurrence_date, overrides, check_in_required, venues(name), ' +
   'event_tables(id, capacity, label), bookings(profile_id, status, event_table_id)';
 
 export const SERIES_COLUMNS =
-  'id, club_id, title, venue_id, notes, frequency, weekday, nth_week, start_time, duration_minutes, table_count, starts_on, ends_on, ended_at, venues(name)';
+  'id, club_id, title, venue_id, notes, frequency, weekday, nth_week, start_time, duration_minutes, table_count, starts_on, ends_on, ended_at, check_in_required, venues(name)';
 
 export const EVENT_TABLE_COLUMNS = 'id, label, skill_tier, capacity, position';
 
@@ -730,6 +755,15 @@ export async function createEvent(input: {
   startTime: string;
   durationMinutes: number;
   tableCount: number;
+  /**
+   * Whether this game asks for check-in at the door — Task 14. Maps onto
+   * `create_event`'s `check_in` argument (positional last, defaulted to
+   * `false` server-side — supabase/migrations/20260827010000), required here
+   * rather than optional because both callers (the create screen's one-off
+   * and series paths) always have an explicit answer from the form's own
+   * `Toggle`, which itself defaults to off.
+   */
+  checkInRequired: boolean;
 }): Promise<{ eventId: string | null; error: string | null }> {
   try {
     if (input.title.trim().length === 0) {
@@ -744,6 +778,7 @@ export async function createEvent(input: {
       start_time: input.startTime,
       duration_minutes: input.durationMinutes,
       table_count: input.tableCount,
+      check_in: input.checkInRequired,
     });
 
     if (error || !data) {
@@ -778,6 +813,17 @@ export async function updateEvent(
     /** 'HH:MM' wall-clock, club-local. */
     startTime?: string | null;
     durationMinutes?: number | null;
+    /**
+     * Null/omitted means "leave this alone", matching every other field
+     * here — Task 14. Maps onto `update_event`'s `new_check_in_required`
+     * argument (supabase/migrations/20260827010000) — named differently from
+     * `create_event`'s `check_in`, which follows that function's own
+     * `new_*`-prefixed naming for every optional "leave alone" argument.
+     * supabase-js sends exactly the keys it is given, with no compile-time
+     * check against the RPC's real parameter names — get this one wrong and
+     * PostgREST reports no matching function overload at call time.
+     */
+    checkInRequired?: boolean | null;
   },
 ): Promise<{ error: string | null }> {
   try {
@@ -789,6 +835,7 @@ export async function updateEvent(
       new_date: input.date ?? null,
       new_start_time: input.startTime ?? null,
       new_duration_minutes: input.durationMinutes ?? null,
+      new_check_in_required: input.checkInRequired ?? null,
     });
 
     if (error) {
@@ -942,6 +989,14 @@ export async function createEventSeries(input: {
   tableCount: number;
   startsOn: string;
   endsOn: string | null;
+  /**
+   * Whether every occurrence this series materializes asks for check-in —
+   * Task 14. Maps onto `create_event_series`'s `check_in` argument
+   * (supabase/migrations/20260827010000), required for the same reason
+   * `createEvent`'s is: the create screen's `Toggle` always has an explicit
+   * value (defaulting to off) by the time either save path runs.
+   */
+  checkInRequired: boolean;
 }): Promise<{ seriesId: string | null; error: string | null }> {
   try {
     if (input.title.trim().length === 0) {
@@ -960,6 +1015,7 @@ export async function createEventSeries(input: {
       table_count: input.tableCount,
       starts_on: input.startsOn,
       ends_on: input.endsOn,
+      check_in: input.checkInRequired,
     });
 
     if (error || !data) {
@@ -994,6 +1050,17 @@ export async function updateEventSeries(
      */
     clearEndsOn?: boolean;
     includeOverridden?: boolean;
+    /**
+     * Null/omitted means "leave this alone". Unlike `updateEvent`'s
+     * `checkInRequired`, the edit screen's "whole series" scope sends this
+     * unconditionally (like `title`/`venueId`/`notes`/`startTime` above) —
+     * see this file's `EventSeries.check_in_required` doc for why that is
+     * safe: the form field is seeded from the SERIES row, never the
+     * occurrence, so an untouched toggle round-trips as a no-op through the
+     * RPC's own `eff_check_in := coalesce(new_check_in_required,
+     * se.check_in_required)` gate (supabase/migrations/20260827010000).
+     */
+    checkInRequired?: boolean | null;
   },
 ): Promise<{ error: string | null }> {
   try {
@@ -1008,6 +1075,7 @@ export async function updateEventSeries(
       new_ends_on: input.endsOn ?? null,
       include_overridden: input.includeOverridden ?? false,
       clear_ends_on: input.clearEndsOn ?? false,
+      new_check_in_required: input.checkInRequired ?? null,
     });
 
     if (error) {

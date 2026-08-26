@@ -3,8 +3,15 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
+import CheckInControl from '../../components/CheckInControl';
 import ErrorBanner from '../../components/ErrorBanner';
 import Screen from '../../components/Screen';
+import {
+  checkInOpen,
+  clearAttendance,
+  recordAttendance,
+  type AttendanceState,
+} from '../../lib/attendance';
 import {
   acceptPromotionOffer,
   cancelBooking,
@@ -38,6 +45,7 @@ export default function ClubsScreen() {
   const [bookingsFailed, setBookingsFailed] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [checkInBusy, setCheckInBusy] = useState(false);
 
   useEffect(() => {
     if (!userId) return;
@@ -105,6 +113,46 @@ export default function ClubsScreen() {
     void runBookingAction(() => cancelBooking(booking.booking_id));
   }
 
+  // Optimistic write with rollback on error, matching the event screen's
+  // own `setMyCheckInState` (Task 11) -- one control for one person, so
+  // there is no concurrent-write problem to reconcile against, unlike the
+  // door screen. The write updates `bookings` in place rather than going
+  // through `runBookingAction`/`reloadBookings`: that pair intentionally
+  // waits for the server before showing anything, which is the wrong feel
+  // for a two-state toggle the member expects to respond instantly.
+  function handleCheckIn(booking: MyBooking, next: AttendanceState | null) {
+    if (!userId) return;
+    void setCheckInState(booking, userId, next);
+  }
+
+  async function setCheckInState(
+    booking: MyBooking,
+    profileId: string,
+    next: AttendanceState | null,
+  ) {
+    const previous = booking.check_in_state;
+    setBookings((prev) =>
+      (prev ?? []).map((b) =>
+        b.booking_id === booking.booking_id ? { ...b, check_in_state: next } : b,
+      ),
+    );
+    setCheckInBusy(true);
+    setActionError(null);
+    const { error } =
+      next === null
+        ? await clearAttendance({ eventId: booking.event_id, profileId })
+        : await recordAttendance({ eventId: booking.event_id, profileId, state: next });
+    setCheckInBusy(false);
+    if (error) {
+      setBookings((prev) =>
+        (prev ?? []).map((b) =>
+          b.booking_id === booking.booking_id ? { ...b, check_in_state: previous } : b,
+        ),
+      );
+      setActionError(error);
+    }
+  }
+
   if (loading) {
     return (
       <Screen>
@@ -157,10 +205,12 @@ export default function ClubsScreen() {
                 booking={booking}
                 youId={userId}
                 busy={actionBusy}
+                checkInBusy={checkInBusy}
                 onDecline={handleDecline}
                 onAcceptOffer={handleAcceptOffer}
                 onDeclineOffer={handleDeclineOffer}
                 onLeaveWaitlist={handleLeaveWaitlist}
+                onCheckIn={handleCheckIn}
               />
             ))
           )}
@@ -235,23 +285,62 @@ function BookingCard({
   booking,
   youId,
   busy,
+  checkInBusy,
   onDecline,
   onAcceptOffer,
   onDeclineOffer,
   onLeaveWaitlist,
+  onCheckIn,
 }: {
   booking: MyBooking;
   youId: string | undefined;
   busy: boolean;
+  checkInBusy: boolean;
   onDecline: (booking: MyBooking) => void;
   onAcceptOffer: (booking: MyBooking) => void;
   onDeclineOffer: (booking: MyBooking) => void;
   onLeaveWaitlist: (booking: MyBooking) => void;
+  onCheckIn: (booking: MyBooking, next: AttendanceState | null) => void;
 }) {
   const hasOffer =
     booking.offer_id !== null &&
     booking.offer_seats !== null &&
     booking.offer_expires_at !== null;
+
+  // `promote_waitlist` caps an offer's `expires_at` at
+  // `least(now() + 2h, ev.starts_at)` (20260825010000_waitlist_promotion.sql),
+  // so any offer still unresponded at kickoff is already expired. But this
+  // row's offer fields come from `my_upcoming_bookings`'s join on
+  // `po.responded_at is null` alone -- no expiry check -- and
+  // `sweep_promotion_offers` only clears a lapsed offer every five minutes.
+  // So `hasOffer` alone stays true for a while (sometimes a long while, if
+  // the sweep is behind) after the offer has actually lapsed. Gating the
+  // buttons on `starts_at > now()` like the branches below would miss this:
+  // `accept_promotion_offer` re-checks `expires_at` under lock regardless of
+  // whether the game has started (20260825100000_..._capacity_guard.sql),
+  // so the offer's OWN expiry -- not the game's start time -- is the
+  // invariant that actually predicts a refusal.
+  const offerLive = hasOffer && new Date(booking.offer_expires_at as string).getTime() > Date.now();
+
+  // Task 8 keeps an in-progress game in this list so the member has
+  // somewhere to check in -- which also keeps this row's seat-management
+  // buttons on screen past kickoff, where `cancel_booking` and
+  // `decline_booking` both refuse with "event already started" the moment
+  // `starts_at` passes. The refusal is graceful (mapped to friendly copy
+  // in lib/bookings.ts), but a button whose only possible outcome is an
+  // error should not be offered.
+  const notStarted = new Date(booking.starts_at).getTime() > Date.now();
+
+  // Renders only when the write can actually succeed: a CONFIRMED seat
+  // (a waitlisted member has no seat, and `record_attendance` refuses them
+  // -- drawing a control guaranteed to fail is worse than drawing none),
+  // the event asking for check-in at all, and the server-supplied window
+  // being open. `checkInOpen` owns the one-hour lead; it is not
+  // re-derived here.
+  const showCheckIn =
+    booking.status === 'confirmed' &&
+    booking.check_in_required &&
+    checkInOpen(booking.check_in_opens_at, booking.check_in_closes_at);
 
   // An offer being held supersedes the plain seat-status line below — a
   // member being asked to accept or decline a seat is not, in that
@@ -279,7 +368,7 @@ function BookingCard({
 
       {seatStatus ? <Text style={styles.help}>{seatStatus}</Text> : null}
 
-      {hasOffer ? (
+      {offerLive ? (
         <>
           <Text style={styles.help}>
             {offerCountdown(new Date(booking.offer_expires_at as string), new Date())}
@@ -306,31 +395,54 @@ function BookingCard({
             No thanks
           </Button>
         </>
+      ) : hasOffer ? (
+        // The offer is still sitting in the data (sweep hasn't cleared it
+        // yet) but has already lapsed -- surfacing neither a countdown that
+        // would just say "Expired" nor two buttons that would just raise
+        // "offer expired" (lib/bookings.ts). Same sentence
+        // `promotion_offer_expired`'s notification and that RPC refusal
+        // both already use, so a member who saw either one recognizes this.
+        <Text style={styles.help}>
+          {"That offer has expired — you're still on the waitlist."}
+        </Text>
       ) : bookedByOther ? (
         <>
           <Text style={styles.friendNote}>
             {booking.booked_by_name} booked this for you
           </Text>
+          {notStarted ? (
+            <Button
+              variant="ghost"
+              big={false}
+              disabled={busy}
+              onPress={() => onDecline(booking)}
+              accessibilityLabel={`Decline the seat ${booking.booked_by_name} booked`}
+            >
+              Decline
+            </Button>
+          ) : null}
+        </>
+      ) : booking.status === 'waitlisted' ? (
+        notStarted ? (
           <Button
             variant="ghost"
             big={false}
             disabled={busy}
-            onPress={() => onDecline(booking)}
-            accessibilityLabel={`Decline the seat ${booking.booked_by_name} booked`}
+            onPress={() => onLeaveWaitlist(booking)}
+            accessibilityLabel={`Leave the waitlist for ${booking.event_title}`}
           >
-            Decline
+            Leave the waitlist
           </Button>
-        </>
-      ) : booking.status === 'waitlisted' ? (
-        <Button
-          variant="ghost"
-          big={false}
-          disabled={busy}
-          onPress={() => onLeaveWaitlist(booking)}
-          accessibilityLabel={`Leave the waitlist for ${booking.event_title}`}
-        >
-          Leave the waitlist
-        </Button>
+        ) : null
+      ) : null}
+
+      {showCheckIn ? (
+        <CheckInControl
+          state={booking.check_in_state}
+          label="you"
+          busy={checkInBusy}
+          onChange={(next) => onCheckIn(booking, next)}
+        />
       ) : null}
     </Card>
   );

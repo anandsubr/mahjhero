@@ -483,6 +483,33 @@ test.describe('signed in', () => {
         await expect(page.getByText('Doors at seven')).toBeVisible();
         await captureScreen(page, vp, `broadcast-history-${vp.name}.png`);
       });
+
+      // The organizer's door screen (Task 15). `seeded.checkInEventId`
+      // (e2e/session.ts) puts one person in each of the three render groups
+      // — a table assignment, an "Any table" confirmed booking, and a
+      // walk-in with no booking at all — plus two pre-recorded states (one
+      // arrived, one no_show), so this baseline shows both of
+      // CheckInControl's selected-chip colours, not just its unset default.
+      //
+      // Anchored on names, not the "Check-in" heading — the `venues at …`
+      // test's own comment explains why: this screen's groups render off
+      // three fetches that resolve after mount (`load()`, check-in.tsx), so
+      // waiting on the heading alone could shoot the screen before any group
+      // had actually painted. Wei Chen anchors Table 1, Leo Fitzgerald
+      // anchors the Walk-ins group specifically — that section only renders
+      // once its own array is non-empty, so waiting on the group heading
+      // alone would not prove a walk-in ROW is on screen, only that the
+      // heading is.
+      test(`check-in door at ${vp.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        await page.goto(
+          `/clubs/${seeded.clubId}/events/${seeded.checkInEventId}/check-in`,
+        );
+        await expect(page.getByText('Wei Chen')).toBeVisible();
+        await expect(page.getByText('Leo Fitzgerald')).toBeVisible();
+        await expect(page.getByText(/booked here/)).toBeVisible();
+        await captureScreen(page, vp, `check-in-${vp.name}.png`);
+      });
     }
   });
 });

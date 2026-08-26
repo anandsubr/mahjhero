@@ -22,7 +22,9 @@ Full design in [superpowers/specs/2026-08-01-mahjhero-v1-design.md](superpowers/
 - **Events** — create, recurring series, skill-tiered tables, capacity
 - **Seating** — RSVP-as-booking, seat selection, **book with friends**, waitlist with
   auto-promotion, **"need a 4th"**, cancellations
-- **Check-in** — offline-tolerant
+- **Check-in** — on-arrival check-in, host door list and member self check-in.
+  *Offline tolerance deferred (2026-08-24) to a follow-up plan; V1 check-in ships
+  online-only.*
 - **Comms** — event reminders, host broadcast to all members or event attendees;
   push + email
 

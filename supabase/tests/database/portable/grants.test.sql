@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(68);
+select plan(77);
 
 /*
  * Guards the privileges themselves, not the policies.
@@ -238,14 +238,14 @@ select ok(
 select ok(
   has_function_privilege(
     'authenticated',
-    'public.create_event(uuid, text, uuid, text, date, time, int, int)',
+    'public.create_event(uuid, text, uuid, text, date, time, int, int, boolean)',
     'EXECUTE'),
   'authenticated can still execute create_event'
 );
 select ok(
   has_function_privilege(
     'authenticated',
-    'public.update_event(uuid, text, uuid, text, date, time, int)',
+    'public.update_event(uuid, text, uuid, text, date, time, int, boolean)',
     'EXECUTE'),
   'authenticated can still execute update_event'
 );
@@ -316,14 +316,14 @@ select ok(
 select ok(
   has_function_privilege(
     'authenticated',
-    'public.create_event_series(uuid, text, uuid, text, public.series_frequency, smallint, smallint, time, int, int, date, date)',
+    'public.create_event_series(uuid, text, uuid, text, public.series_frequency, smallint, smallint, time, int, int, date, date, boolean)',
     'EXECUTE'),
   'authenticated can still execute create_event_series'
 );
 select ok(
   has_function_privilege(
     'authenticated',
-    'public.update_event_series(uuid, text, uuid, text, time, int, int, date, boolean, boolean)',
+    'public.update_event_series(uuid, text, uuid, text, time, int, int, date, boolean, boolean, boolean)',
     'EXECUTE'),
   'authenticated can still execute update_event_series'
 );
@@ -394,6 +394,59 @@ select ok(
   'authenticated cannot TRUNCATE notification_outbox'
 );
 
+select ok(
+  not has_table_privilege('authenticated', 'public.check_ins', 'TRUNCATE'),
+  'authenticated cannot TRUNCATE check_ins'
+);
+
+-- ---------------------------------------------------------------------------
+-- Attendance mutation ACLs (Task 4).
+--
+-- record_attendance and clear_attendance are the check_ins table's only
+-- writers, and both must be reachable by authenticated and closed to anon.
+-- assert_attendance_writable and attendance_window_open are the internal
+-- ladder both share; they are granted to nobody, the same treatment
+-- 20260825061000 gave the rest of plan 4's internal helpers, so they get
+-- named negative assertions here rather than a place in the allowlist below.
+-- ---------------------------------------------------------------------------
+
+select ok(
+  has_function_privilege(
+    'authenticated',
+    'public.record_attendance(uuid, uuid, public.attendance_state, timestamptz)',
+    'EXECUTE'),
+  'authenticated can still execute record_attendance'
+);
+select ok(
+  has_function_privilege(
+    'authenticated', 'public.clear_attendance(uuid, uuid)', 'EXECUTE'),
+  'authenticated can still execute clear_attendance'
+);
+select ok(
+  not has_function_privilege(
+    'anon',
+    'public.record_attendance(uuid, uuid, public.attendance_state, timestamptz)',
+    'EXECUTE'),
+  'anon cannot execute record_attendance'
+);
+select ok(
+  not has_function_privilege(
+    'anon', 'public.clear_attendance(uuid, uuid)', 'EXECUTE'),
+  'anon cannot execute clear_attendance'
+);
+select ok(
+  not has_function_privilege(
+    'authenticated', 'public.assert_attendance_writable(uuid)', 'EXECUTE'),
+  'authenticated cannot execute assert_attendance_writable'
+);
+select ok(
+  not has_function_privilege(
+    'authenticated',
+    'public.attendance_window_open(timestamptz, timestamptz, boolean)',
+    'EXECUTE'),
+  'authenticated cannot execute attendance_window_open'
+);
+
 -- The outbox is plan 6's queue and nobody else's. RLS is on with no policy,
 -- so even a mistaken grant would return nothing — but a grant that exists
 -- is a grant somebody will eventually write a policy for.
@@ -413,6 +466,23 @@ select ok(
   has_function_privilege('authenticated', 'public.event_seating(uuid)',
     'EXECUTE'),
   'authenticated can still execute event_seating'
+);
+
+-- The door list (Task 7). Same shape as record_attendance/clear_attendance
+-- above: a positive assertion so the catch-all below cannot pass by
+-- revoking everything, and a named anon assertion even though the dynamic
+-- anon catch-all already covers it — this one is `security definer` over
+-- profiles.display_name, so an anon EXECUTE grant here is worth calling out
+-- by name rather than leaving it to a single combined scan.
+select ok(
+  has_function_privilege('authenticated', 'public.event_attendance(uuid)',
+    'EXECUTE'),
+  'authenticated can still execute event_attendance'
+);
+select ok(
+  not has_function_privilege('anon', 'public.event_attendance(uuid)',
+    'EXECUTE'),
+  'anon cannot execute event_attendance'
 );
 
 -- sweep_promotion_offers and announce_need_a_fourth are the two functions
@@ -478,7 +548,7 @@ select ok(
 -- and "everybody has it" look identical until you assert.
 select ok(
   not has_function_privilege('anon',
-    'public.create_event(uuid, text, uuid, text, date, time, int, int)',
+    'public.create_event(uuid, text, uuid, text, date, time, int, int, boolean)',
     'EXECUTE'),
   'anon cannot execute create_event'
 );
@@ -617,14 +687,14 @@ select is(
        'public.update_venue(uuid, text, text, text, text, text)',
        'public.archive_venue(uuid)',
        'public.search_venues(uuid, text)',
-       'public.create_event(uuid, text, uuid, text, date, time, int, int)',
-       'public.update_event(uuid, text, uuid, text, date, time, int)',
+       'public.create_event(uuid, text, uuid, text, date, time, int, int, boolean)',
+       'public.update_event(uuid, text, uuid, text, date, time, int, boolean)',
        'public.cancel_event(uuid)',
        'public.add_event_table(uuid)',
        'public.update_event_table(uuid, text, public.skill_tier)',
        'public.remove_event_table(uuid)',
-       'public.create_event_series(uuid, text, uuid, text, public.series_frequency, smallint, smallint, time, int, int, date, date)',
-       'public.update_event_series(uuid, text, uuid, text, time, int, int, date, boolean, boolean)',
+       'public.create_event_series(uuid, text, uuid, text, public.series_frequency, smallint, smallint, time, int, int, date, date, boolean)',
+       'public.update_event_series(uuid, text, uuid, text, time, int, int, date, boolean, boolean, boolean)',
        'public.end_event_series(uuid, boolean)',
        'public.reset_event_to_series(uuid)',
        'public.is_booking_group_member(uuid)',
@@ -641,7 +711,10 @@ select is(
        'public.event_seating(uuid)',
        'public.my_upcoming_bookings()',
        'public.broadcast_recipient_count(uuid, uuid)',
-       'public.send_broadcast(uuid, uuid, text, text)'
+       'public.send_broadcast(uuid, uuid, text, text)',
+       'public.record_attendance(uuid, uuid, public.attendance_state, timestamptz)',
+       'public.clear_attendance(uuid, uuid)',
+       'public.event_attendance(uuid)'
      ]) as f
    ) expected
    where not exists (
@@ -678,14 +751,14 @@ select is(
          'public.update_venue(uuid, text, text, text, text, text)',
          'public.archive_venue(uuid)',
          'public.search_venues(uuid, text)',
-         'public.create_event(uuid, text, uuid, text, date, time, int, int)',
-         'public.update_event(uuid, text, uuid, text, date, time, int)',
+         'public.create_event(uuid, text, uuid, text, date, time, int, int, boolean)',
+         'public.update_event(uuid, text, uuid, text, date, time, int, boolean)',
          'public.cancel_event(uuid)',
          'public.add_event_table(uuid)',
          'public.update_event_table(uuid, text, public.skill_tier)',
          'public.remove_event_table(uuid)',
-         'public.create_event_series(uuid, text, uuid, text, public.series_frequency, smallint, smallint, time, int, int, date, date)',
-         'public.update_event_series(uuid, text, uuid, text, time, int, int, date, boolean, boolean)',
+         'public.create_event_series(uuid, text, uuid, text, public.series_frequency, smallint, smallint, time, int, int, date, date, boolean)',
+         'public.update_event_series(uuid, text, uuid, text, time, int, int, date, boolean, boolean, boolean)',
          'public.end_event_series(uuid, boolean)',
          'public.reset_event_to_series(uuid)',
          'public.is_booking_group_member(uuid)',
@@ -702,7 +775,10 @@ select is(
          'public.event_seating(uuid)',
          'public.my_upcoming_bookings()',
          'public.broadcast_recipient_count(uuid, uuid)',
-         'public.send_broadcast(uuid, uuid, text, text)'
+         'public.send_broadcast(uuid, uuid, text, text)',
+         'public.record_attendance(uuid, uuid, public.attendance_state, timestamptz)',
+         'public.clear_attendance(uuid, uuid)',
+         'public.event_attendance(uuid)'
        ]) as f
        where to_regprocedure(f) = p.oid::regprocedure
      )),

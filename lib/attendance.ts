@@ -1,0 +1,189 @@
+import { GENERIC_ERROR } from './constants';
+import { supabase } from './supabase';
+import { bookingErrorMessage } from './bookings';
+import type { BookingStatus } from './bookings';
+import type { SkillLevel } from './profile';
+
+/**
+ * The two states an organizer or member can record. `null` (NOT DETERMINED)
+ * is deliberately excluded from this union — it is a property of a row's
+ * absence, never a value this app writes. Defined here, not in bookings.ts:
+ * bookings.ts's `MyBooking` needs this type too, which would otherwise make
+ * this file and bookings.ts import from each other. TypeScript erases
+ * type-only imports before anything runs, so the cycle that results (this
+ * file importing `BookingStatus` from bookings.ts, bookings.ts importing
+ * `AttendanceState` from here) is safe — there is no runtime cycle, only a
+ * type-level one the compiler resolves statically. Do not duplicate this
+ * union in bookings.ts instead: two structurally identical unions type-check
+ * against each other right up until one of them gains a value.
+ */
+export type AttendanceState = 'arrived' | 'no_show';
+
+/**
+ * One person on the door list, as `event_attendance` returns them.
+ *
+ * `booking_status` null is what identifies a walk-in — somebody an organizer
+ * recorded who holds no confirmed seat. `state` null means NOT DETERMINED:
+ * nobody has said anything about this person yet. It is not a no-show, and
+ * nothing in this app ever converts it into one.
+ */
+export type AttendanceRow = {
+  profile_id: string;
+  display_name: string;
+  skill_level: SkillLevel | null;
+  event_table_id: string | null;
+  table_label: string | null;
+  table_position: number | null;
+  booking_status: BookingStatus | null;
+  state: AttendanceState | null;
+  recorded_by: string | null;
+  recorded_at: string | null;
+};
+
+/**
+ * Whether to DRAW the control. Not whether a write will land — the database
+ * decides that, and it is the only opinion that counts. The two timestamps
+ * come from the server precisely so the one-hour lead is not duplicated
+ * here, where it could drift.
+ *
+ * Both null means the event never asked for check-in.
+ */
+export function checkInOpen(
+  opensAt: string | null,
+  closesAt: string | null,
+  now: Date = new Date(),
+): boolean {
+  if (!opensAt || !closesAt) return false;
+  const t = now.getTime();
+  return t >= Date.parse(opensAt) && t <= Date.parse(closesAt);
+}
+
+/**
+ * The door screen's header line. No `here` count: the door screen's
+ * "N of M booked here" figure is deliberately BOOKED players only
+ * (`bookedHere` in check-in.tsx, filtered straight off `rows` there), never
+ * arrivals across booked and walk-in players combined — folding a walk-in's
+ * arrival into this count would give it a number with no consumer, since
+ * the walk-in total already has its own separate count (`walkIns` below).
+ * Do not re-add a combined arrival count here without giving it a reader;
+ * the previous one sat unused after the summary line was reformulated.
+ */
+export function attendanceSummary(rows: AttendanceRow[]) {
+  let notComing = 0;
+  let unaccounted = 0;
+  let walkIns = 0;
+  let booked = 0;
+
+  for (const r of rows) {
+    if (r.booking_status === null) walkIns += 1;
+    else booked += 1;
+    if (r.state === 'no_show') notComing += 1;
+    // Only a booked player can be unaccounted for. A walk-in with no state
+    // is not a person the host is waiting on — they are already standing
+    // there.
+    else if (r.state !== 'arrived' && r.booking_status !== null) unaccounted += 1;
+  }
+
+  return { notComing, unaccounted, walkIns, booked };
+}
+
+export async function fetchEventAttendance(
+  eventId: string,
+): Promise<AttendanceRow[] | null> {
+  try {
+    const { data, error } = await supabase.rpc('event_attendance', {
+      target_event: eventId,
+    });
+    if (error) {
+      console.error('fetchEventAttendance failed', error);
+      return null;
+    }
+    return (data ?? []) as AttendanceRow[];
+  } catch (cause) {
+    console.error('fetchEventAttendance failed', cause);
+    return null;
+  }
+}
+
+export async function recordAttendance(input: {
+  eventId: string;
+  profileId: string;
+  state: AttendanceState;
+}): Promise<{ error: string | null }> {
+  try {
+    const { error } = await supabase.rpc('record_attendance', {
+      target_event: input.eventId,
+      target_profile: input.profileId,
+      new_state: input.state,
+    });
+    if (error) {
+      console.error('recordAttendance failed', error);
+      // NOT error.message. `bookingErrorMessage` maps the six refusals
+      // 20260827030000 raises onto friendly copy; relaying the raw text
+      // shows a member the words "check-in is not enabled for this event".
+      // lib/bookings.test.ts's guard fails if a message is ever unmapped.
+      return { error: bookingErrorMessage(error) };
+    }
+    return { error: null };
+  } catch (cause) {
+    console.error('recordAttendance failed', cause);
+    return { error: GENERIC_ERROR };
+  }
+}
+
+/**
+ * The member's own check-in state for one event, read through the
+ * self-only RLS policy (`check_ins_select_own`,
+ * supabase/migrations/20260827020000_create_check_ins.sql) rather than
+ * `event_attendance` — that RPC's `assert_club_organizer` refuses anyone
+ * who isn't running the door, so a plain member reading their own row has
+ * to go through `check_ins` directly. `authenticated` holds select on that
+ * table (nothing else), scoped by the policy to `profile_id = auth.uid()`,
+ * so no client-side profile filter is needed on top of `event_id`.
+ *
+ * `null` covers both "no row" (NOT DETERMINED — nobody has checked this
+ * member in) and a failed read alike, the same convention `fetchOpenOffer`
+ * (lib/bookings.ts) already uses for the event screen: a state that failed
+ * to load is indistinguishable from one that doesn't exist, and either way
+ * the event screen's `CheckInControl` renders the same "not determined"
+ * look.
+ */
+export async function fetchMyCheckIn(
+  eventId: string,
+): Promise<AttendanceState | null> {
+  try {
+    const { data, error } = await supabase
+      .from('check_ins')
+      .select('state')
+      .eq('event_id', eventId)
+      .maybeSingle();
+    if (error) {
+      console.error('fetchMyCheckIn failed', error);
+      return null;
+    }
+    return (data?.state ?? null) as AttendanceState | null;
+  } catch (cause) {
+    console.error('fetchMyCheckIn failed', cause);
+    return null;
+  }
+}
+
+export async function clearAttendance(input: {
+  eventId: string;
+  profileId: string;
+}): Promise<{ error: string | null }> {
+  try {
+    const { error } = await supabase.rpc('clear_attendance', {
+      target_event: input.eventId,
+      target_profile: input.profileId,
+    });
+    if (error) {
+      console.error('clearAttendance failed', error);
+      return { error: bookingErrorMessage(error) };
+    }
+    return { error: null };
+  } catch (cause) {
+    console.error('clearAttendance failed', cause);
+    return { error: GENERIC_ERROR };
+  }
+}

@@ -195,6 +195,98 @@ describe('bookingErrorMessage', () => {
   });
 });
 
+/**
+ * Pins the exact client-facing copy for all eight distinct refusals raised
+ * by record_attendance/clear_attendance and their shared guard
+ * assert_attendance_writable (20260827030000_attendance_mutations.sql).
+ *
+ * The self-audit below ('BOOKING_REFUSALS (self-audit against the
+ * migrations)') only proves each message resolves to SOMETHING other than
+ * GENERIC_ERROR — it does not check WHICH sentence. That is exactly how the
+ * ordering bug shipped: 'that person is not a member of this club' resolved
+ * to a real, mapped sentence ('You are no longer a member of this club.')
+ * because it fell through to the pre-existing 'not a member of this club'
+ * entry — the self-audit was satisfied and gave no signal that the
+ * resolved sentence was wrong. Pinning the exact text here is what would
+ * have caught it.
+ *
+ * Mutation evidence: with the new 'that person is not a member of this
+ * club' entry removed from BOOKING_REFUSALS (reverting to the pre-fix
+ * ordering), the first assertion below fails, showing the received value
+ * 'You are no longer a member of this club.' instead of the expected
+ * 'That person is no longer a member of this club.' — see
+ * .superpowers/sdd/final-review-fixes-report.md.
+ */
+describe('attendance refusals (record_attendance/clear_attendance)', () => {
+  it('names the walk-in target, not the caller, when they have left the club', () => {
+    expect(
+      bookingErrorMessage({
+        code: '23514',
+        message: 'that person is not a member of this club',
+      }),
+    ).toBe('That person is no longer a member of this club.');
+  });
+
+  it('reports a cancelled event via assert_attendance_writable', () => {
+    expect(
+      bookingErrorMessage({ code: '23514', message: 'event not open for check-in' }),
+    ).toBe('This game was cancelled.');
+  });
+
+  it('reports check_in_required = false via assert_attendance_writable', () => {
+    expect(
+      bookingErrorMessage({
+        code: '23514',
+        message: 'check-in is not enabled for this event',
+      }),
+    ).toBe('This game does not use check-in.');
+  });
+
+  it('reports a member trying to check someone else in', () => {
+    expect(
+      bookingErrorMessage({ code: '42501', message: 'you can only check yourself in' }),
+    ).toBe('Only an organizer can check someone else in.');
+  });
+
+  it('reports a write outside the attendance window', () => {
+    expect(
+      bookingErrorMessage({
+        code: '23514',
+        message: 'check-in is not open for this event',
+      }),
+    ).toBe('Check-in is not open for this game right now.');
+  });
+
+  it('reports a member self-checking-in without a confirmed seat', () => {
+    expect(
+      bookingErrorMessage({
+        code: '23514',
+        message: 'you do not have a seat at this game',
+      }),
+    ).toBe("You don't have a confirmed seat at this game.");
+  });
+
+  it('reports a member trying to clear someone else’s check-in', () => {
+    expect(
+      bookingErrorMessage({
+        code: '42501',
+        message: 'you can only clear your own check-in',
+      }),
+    ).toBe('You can only undo your own check-in.');
+  });
+
+  it('reports assert_attendance_writable’s tenancy refusal via the shared "no such event" mapping', () => {
+    // assert_attendance_writable folds "no such event" and "an event you
+    // cannot see" into the same 'no such event' raise (see the migration's
+    // own comment). This module already maps that string for
+    // cancel_event/add_event_table; the eighth attendance-related raise
+    // site reuses it rather than needing its own entry.
+    expect(bookingErrorMessage({ code: '42501', message: 'no such event' })).toBe(
+      'This game is no longer listed.',
+    );
+  });
+});
+
 describe('cancelBooking', () => {
   it('reports a started game plainly', async () => {
     rpc.mockResolvedValue({

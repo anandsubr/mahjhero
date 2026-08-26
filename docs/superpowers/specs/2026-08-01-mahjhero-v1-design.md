@@ -271,6 +271,13 @@ queue locally and sync when the network returns, and check-in is idempotent so a
 replayed queue cannot duplicate. This is the one place optimistic local writes are
 accepted — a host at the door watching a spinner will abandon the app.
 
+> **Deferred, 2026-08-24.** Plan 5 ships check-in **online-only**. The cache, the queue,
+> and the sync loop are deferred to a follow-up plan; the risk described above is real
+> and unaddressed until it lands. Plan 5 keeps the idempotency this paragraph asks for
+> — a unique `(event_id, profile_id)` key and a newest-wins upsert on a caller-supplied
+> timestamp — so the follow-up is additive rather than a rewrite. See
+> [2026-08-24-check-in-design.md](2026-08-24-check-in-design.md).
+
 **CSV import.** Validate the whole file before writing anything, then show a preview:
 row count, per-row errors, and which addresses already belong to members. Import only
 on confirmation. Never partially import and never silently skip — a host who imports

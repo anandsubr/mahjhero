@@ -509,6 +509,57 @@ describe('venue is required', () => {
 // repeat rhythm was chosen. Both states are pinned against their literal
 // strings, not `not.toBe('true')`, since a missing attribute would also
 // satisfy that.
+// Task 14: the host's "Require check-in" toggle. Uses the same
+// `getByRole('switch', ...)` query the "Runs indefinitely" and "Also apply
+// this edit" toggles already use elsewhere (app/__tests__/events-edit.test
+// .tsx) -- `aria-checked` is what actually reaches a screen reader on web
+// (components/Toggle.tsx's own docstring), not `accessibilityState`.
+describe('the "Require check-in" toggle', () => {
+  it('defaults check-in to off', async () => {
+    render(<NewEventScreen />);
+    await screen.findByText('Add a game');
+
+    expect(
+      screen.getByRole('switch', { name: 'Require check-in' }).getAttribute('aria-checked'),
+    ).toBe('false');
+  });
+
+  it('passes the toggle through on submit', async () => {
+    render(<NewEventScreen />);
+    await screen.findByText('Add a game');
+
+    fireEvent.click(screen.getByRole('switch', { name: 'Require check-in' }));
+    pickVenue();
+    fireEvent.change(screen.getByLabelText('Game name'), {
+      target: { value: 'Door-list game' },
+    });
+    fireEvent.click(screen.getByText('Save'));
+
+    await vi.waitFor(() => expect(createEvent).toHaveBeenCalled());
+    expect(createEvent.mock.calls[0][0].checkInRequired).toBe(true);
+  });
+
+  // The series path is a second, independent call site in this same screen
+  // (onSave's `repeat !== 'never'` branch) -- worth pinning separately since
+  // the host never sees a second toggle, just the one, feeding two different
+  // RPCs depending on "Does it repeat?".
+  it('passes the toggle through on a series submit too', async () => {
+    render(<NewEventScreen />);
+    await screen.findByText('Add a game');
+
+    fireEvent.click(screen.getByRole('switch', { name: 'Require check-in' }));
+    fireEvent.click(screen.getByText('Every week'));
+    pickVenue();
+    fireEvent.change(screen.getByLabelText('Game name'), {
+      target: { value: 'Weekly door-list game' },
+    });
+    fireEvent.click(screen.getByText('Save'));
+
+    await vi.waitFor(() => expect(createEventSeries).toHaveBeenCalled());
+    expect(createEventSeries.mock.calls[0][0].checkInRequired).toBe(true);
+  });
+});
+
 describe('the duration/table-count/repeat chips reach the DOM with aria-selected', () => {
   it('marks the default chips as selected and their siblings as not', async () => {
     render(<NewEventScreen />);
