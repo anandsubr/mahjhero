@@ -131,6 +131,20 @@ test.describe('signed in', () => {
       await captureScreen(page, vp, `notifications-${vp.name}.png`);
     });
 
+    // The fourth tab destination. Anchored on the body copy, NOT on the
+    // "Messages" heading: the tab bar this screen renders carries a
+    // "Messages" label too, so the heading is two matches and Playwright's
+    // strict mode would make it a hard failure — the same collision the
+    // `clubs at …` test below hit on "Your clubs".
+    test(`messages at ${vp.name}`, async ({ page }) => {
+      await page.setViewportSize({ width: vp.width, height: vp.height });
+      await page.goto('/messages');
+      await expect(
+        page.getByText('Club messages are on the way.'),
+      ).toBeVisible();
+      await captureScreen(page, vp, `messages-${vp.name}.png`);
+    });
+
     // The EMPTY state, and it stays that way: this block's user belongs to no
     // club. The seeding hook lives in the nested describe below precisely so
     // that adding populated baselines could not quietly turn this one into a
@@ -138,7 +152,13 @@ test.describe('signed in', () => {
     test(`clubs at ${vp.name}`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/clubs');
-      await expect(page.getByText('Your clubs')).toBeVisible();
+      // `.first()` — "Your clubs" now renders TWICE on this screen: once as
+      // DashboardHeader's kicker (headerScope's all-clubs scope, lib/dashboard.ts)
+      // and once as the club-list section title. Both are real, and Playwright's
+      // strict mode turns the bare locator into a hard failure rather than a
+      // stale baseline. The unit suite had to switch to `findAllByText` for
+      // exactly this reason; this line only needs to know the screen painted.
+      await expect(page.getByText('Your clubs').first()).toBeVisible();
       // The brief's literal snippet uses `toHaveScreenshot(..., { fullPage:
       // true })`, but `captureScreen`'s own doc comment above explains why
       // that option is a no-op against this app's ScrollView-based layout
@@ -222,7 +242,13 @@ test.describe('signed in', () => {
         // a fixture bug, so this only anchors on the two rows the brief
         // actually asks for.
         await expect(page.getByText('Your games')).toBeVisible();
-        await expect(page.getByText('Tuesday night mahjong')).toBeVisible();
+        // `.first()`, for the same reason as the club name above. Riverside
+        // seeds TWO occurrences of "Tuesday night mahjong" and the member is
+        // booked on only the first; `buildDashboardRows` (lib/dashboard.ts)
+        // now also lists open events the member is not in, so the second
+        // occurrence renders a second time as a joinable Join row. Both are
+        // real; this line only needs to know the booked row is there.
+        await expect(page.getByText('Tuesday night mahjong').first()).toBeVisible();
         await expect(
           page.getByText('Owen Bradley booked this for you'),
         ).toBeVisible();

@@ -9,11 +9,13 @@ import { colors } from '../lib/theme';
 
 /**
  * Decides where a visit to "/" should land, given the three pieces of state
- * that matter. Extracted as a pure function — rather than inlined in the
- * component below — so the branching, especially the async race between a
- * session appearing and the pending-invite storage read finishing, is
- * directly testable without rendering, mocking the router, or racing real
- * timers. See `app/__tests__/index.test.ts`.
+ * that matter: a signed-out visitor gets the welcome screen, a signed-in one
+ * gets their clubs — or a parked club invite, if they have one. Extracted as
+ * a pure function — rather than inlined in the component below — so the
+ * branching, especially the async race between a session appearing and the
+ * pending-invite storage read finishing, is directly testable without
+ * rendering, mocking the router, or racing real timers. See
+ * `app/__tests__/index.test.ts`.
  *
  * Returns `null` while the answer isn't decided yet (auth still loading, or
  * signed in but the storage read hasn't resolved) — the caller shows a
@@ -29,7 +31,7 @@ export function resolveIndexRedirect(
 ): string | null {
   if (loading || (hasSession && pendingInvite === undefined)) return null;
   if (hasSession) return pendingInvite ? `/join/${pendingInvite}` : '/clubs';
-  return '/sign-in';
+  return '/welcome';
 }
 
 export default function Index() {

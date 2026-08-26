@@ -6,6 +6,9 @@ vi.mock('expo-router', () => ({
   Redirect: () => null,
   Link: ({ children }: { children: React.ReactNode }) => children,
   useRouter: () => ({ push: vi.fn(), back: vi.fn() }),
+  // TabBar's own Profile tab route: this screen IS /profile, so its
+  // highlighted Profile button stays the documented no-op.
+  usePathname: () => '/profile',
 }));
 
 vi.mock('../../lib/session', () => ({
@@ -67,5 +70,63 @@ describe('profile screen', () => {
 
     const beginner = screen.getByRole('radio', { name: 'Beginner' });
     expect(beginner.getAttribute('aria-selected')).toBe('false');
+  });
+
+  it('carries the tab bar with Profile marked', async () => {
+    // Arrange exactly as the file's existing "renders the form" test does.
+    fetchProfile.mockResolvedValueOnce({
+      id: 'test-user',
+      display_name: 'Pat',
+      skill_level: 'intermediate',
+      avatar_url: null,
+      timezone: 'America/New_York',
+    });
+    render(<ProfileScreen />);
+    expect(
+      (await screen.findByRole('button', { name: 'Profile' })).getAttribute(
+        'aria-selected',
+      ),
+    ).toBe('true');
+    expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
+  });
+
+  // Profile was reachable only by pushing onto a stack when this link was
+  // added. The tab bar now sits under every tab screen and its Club tab is
+  // the same destination, so the link was a second way to do one thing.
+  it('has no back link now the tab bar carries that job', async () => {
+    fetchProfile.mockResolvedValueOnce({
+      id: 'test-user',
+      display_name: 'Pat',
+      skill_level: 'intermediate',
+      avatar_url: null,
+      timezone: 'America/New_York',
+    });
+    render(<ProfileScreen />);
+    expect(await screen.findByText('Save')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Back to your clubs' })).toBeNull();
+  });
+
+  // Sign out was a left-aligned ghost text button — the design system's own
+  // treatment, and it read as a stray link rather than the control that ends
+  // the session.
+  it('renders sign out as a full-width destructive button', async () => {
+    fetchProfile.mockResolvedValueOnce({
+      id: 'test-user',
+      display_name: 'Pat',
+      skill_level: 'intermediate',
+      avatar_url: null,
+      timezone: 'America/New_York',
+    });
+    render(<ProfileScreen />);
+    const signOut = await screen.findByRole('button', { name: 'Sign out' });
+    // `getComputedStyle`, not `.style`: this repo's react-native-web emits
+    // atomic CSS classes into an injected stylesheet rather than flattening
+    // StyleSheet values onto the node's inline style, so `.style.*` reads
+    // empty for every variant — an assertion that would pass whether or not
+    // the variant were applied. Task 6 established this.
+    expect(getComputedStyle(signOut).backgroundColor).toBe('rgb(255, 225, 208)');
+    // `block` sets `width: '100%'` via StyleSheet, so it atomizes the same
+    // way — assert the resolved value, not merely that something is set.
+    expect(getComputedStyle(signOut).width).toBe('100%');
   });
 });

@@ -76,3 +76,39 @@ describe('Button', () => {
     expect(button.getAttribute('aria-busy')).toBe('true');
   });
 });
+
+describe('Button: the destructive variant', () => {
+  // Not in the design system, which draws sign-out as a ghost link. The one
+  // control on the profile screen that ends the session needs more weight
+  // than a text link, and the pairing is the one Tag's `accent` variant
+  // already uses: accent-200 ground, accent-800 text, 8.37:1.
+  it('renders accent-800 on accent-200', () => {
+    render(
+      <Button onPress={() => {}} variant="destructive" accessibilityLabel="Sign out">
+        Sign out
+      </Button>,
+    );
+    const button = screen.getByRole('button', { name: 'Sign out' });
+    // Not a plain `.style.backgroundColor` read: this react-native-web
+    // version (0.19+) compiles StyleSheet colours to atomic CSS classes
+    // (`.r-backgroundColor-<hash> { background-color: ... }`) injected into
+    // a stylesheet, rather than flattening them onto the DOM node's inline
+    // style -- so `.style.backgroundColor` is always `''` here regardless
+    // of which variant is applied. `getComputedStyle` resolves the atomic
+    // class the same way a browser would and reports the real rendered
+    // colour; there is no jest-dom in this repo, so no `toHaveStyle` either.
+    expect(getComputedStyle(button).backgroundColor).toBe('rgb(255, 225, 208)');
+    expect(getComputedStyle(screen.getByText('Sign out')).color).toBe('rgb(100, 51, 18)');
+  });
+
+  it('is still a button that reports its disabled state', () => {
+    render(
+      <Button onPress={() => {}} variant="destructive" disabled accessibilityLabel="Sign out">
+        Sign out
+      </Button>,
+    );
+    expect(
+      screen.getByRole('button', { name: 'Sign out' }).getAttribute('aria-disabled'),
+    ).toBe('true');
+  });
+});

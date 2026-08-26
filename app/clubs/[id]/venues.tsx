@@ -3,9 +3,11 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import Button from '../../../components/Button';
 import Card from '../../../components/Card';
+import DashboardHeader from '../../../components/DashboardHeader';
 import ErrorBanner from '../../../components/ErrorBanner';
 import Screen from '../../../components/Screen';
 import Tag from '../../../components/Tag';
+import TabBar from '../../../components/TabBar';
 import TextField from '../../../components/TextField';
 import { ChevronLeftIcon } from '../../../components/icons';
 import { canInvite, fetchClub, fetchRoster } from '../../../lib/clubs';
@@ -19,6 +21,7 @@ import {
 } from '../../../lib/venues';
 import { useSession } from '../../../lib/session';
 import { colors, space, type } from '../../../lib/theme';
+import { useViewerInitials } from '../../../lib/use-viewer';
 
 /**
  * The fix for a typeahead that can only create: a host who fat-fingers a
@@ -35,6 +38,7 @@ export default function VenuesScreen() {
   const { session, loading } = useSession();
   const userId = session?.user.id;
   const router = useRouter();
+  const initials = useViewerInitials();
 
   const [club, setClub] = useState<Club | null>(null);
   const [isOrganizer, setIsOrganizer] = useState(false);
@@ -88,7 +92,11 @@ export default function VenuesScreen() {
 
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered}>
+      <Screen
+        center
+        contentStyle={styles.centered}
+        tabBar={<TabBar active="club" />}
+      >
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
     );
@@ -105,7 +113,11 @@ export default function VenuesScreen() {
 
   if (!ready) {
     return (
-      <Screen center contentStyle={styles.centered}>
+      <Screen
+        center
+        contentStyle={styles.centered}
+        tabBar={<TabBar active="club" />}
+      >
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
     );
@@ -113,7 +125,7 @@ export default function VenuesScreen() {
 
   if (loadFailed || !club) {
     return (
-      <Screen contentStyle={styles.container}>
+      <Screen contentStyle={styles.container} tabBar={<TabBar active="club" />}>
         <ErrorBanner message={GENERIC_ERROR} />
       </Screen>
     );
@@ -166,7 +178,10 @@ export default function VenuesScreen() {
   }
 
   return (
-    <Screen scroll contentStyle={styles.container}>
+    <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="club" />}>
+      {/* Generic label, not club.name: the kicker right below already names
+          the club, so repeating it here would read as a mistake rather than
+          confirmation. Matches import.tsx and broadcasts.tsx. */}
       <Button
         variant="ghost"
         big={false}
@@ -175,10 +190,16 @@ export default function VenuesScreen() {
         accessibilityLabel="Back to the club"
         style={styles.backButton}
       >
-        {club.name}
+        Club
       </Button>
 
-      <Text style={styles.heading}>Venues</Text>
+      <DashboardHeader
+        kicker={club.name}
+        name="Venues"
+        meta=""
+        initials={initials}
+        onPressAvatar={() => router.push('/profile')}
+      />
       <Text style={styles.help}>
         Places this club plays. Add a new one while creating a game — this
         is where you fix a name or retire a venue you no longer use.
@@ -278,11 +299,6 @@ const styles = StyleSheet.create({
   container: { padding: space[6], gap: space[4] },
   centered: { alignItems: 'center' },
   backButton: { alignSelf: 'flex-start' },
-  heading: {
-    fontFamily: type.heading,
-    fontSize: type.size.h2,
-    color: colors.text,
-  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',

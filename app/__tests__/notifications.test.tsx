@@ -11,6 +11,9 @@ vi.mock('expo-router', () => ({
   Redirect: () => null,
   Link: ({ children }: { children: React.ReactNode }) => children,
   useRouter: () => ({ push, back: vi.fn() }),
+  // TabBar's own Alerts tab route: this screen IS /notifications, so its
+  // highlighted Alerts button stays the documented no-op.
+  usePathname: () => '/notifications',
 }));
 
 vi.mock('../../lib/session', () => ({
@@ -64,5 +67,15 @@ describe('notifications screen', () => {
 
     const pushOnly = screen.getByRole('radio', { name: 'Push only' });
     expect(pushOnly.getAttribute('aria-selected')).toBe('false');
+  });
+
+  it('carries the tab bar with Alerts marked', async () => {
+    render(<NotificationSettings />);
+    expect(
+      (await screen.findByRole('button', { name: 'Alerts' })).getAttribute(
+        'aria-selected',
+      ),
+    ).toBe('true');
+    expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
   });
 });

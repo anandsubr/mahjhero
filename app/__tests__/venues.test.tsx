@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 
 const push = vi.fn();
+const replace = vi.fn();
 
 const searchParams: Record<string, string> = { id: 'club-1' };
 
@@ -9,7 +10,11 @@ vi.mock('expo-router', () => ({
   Redirect: ({ href }: { href: string }) => (
     <div data-testid="redirect" data-href={href} />
   ),
-  useRouter: () => ({ push }),
+  useRouter: () => ({ push, replace }),
+  // TabBar reads this to decide whether its own tab's route is the current
+  // one; this screen lives under /clubs/[id]/venues, never at the Club
+  // tab's own /clubs, so its Club button always stays live.
+  usePathname: () => '/clubs/club-1/venues',
   useLocalSearchParams: () => searchParams,
 }));
 
@@ -50,6 +55,13 @@ vi.mock('../../lib/venues', () => ({
   archiveVenue: (...args: unknown[]) => archiveVenue(...args),
   searchVenues: (...args: unknown[]) => searchVenues(...args),
 }));
+
+const fetchProfile = vi.fn();
+
+vi.mock('../../lib/profile', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/profile')>();
+  return { ...actual, fetchProfile: (...args: unknown[]) => fetchProfile(...args) };
+});
 
 import VenuesScreen from '../clubs/[id]/venues';
 
@@ -98,6 +110,7 @@ beforeEach(() => {
   fetchClubVenues.mockResolvedValue([OWN_VENUE]);
   updateVenue.mockResolvedValue({ error: null });
   archiveVenue.mockResolvedValue({ error: null });
+  fetchProfile.mockResolvedValue(null);
 });
 
 // A guard-ordering regression this branch has already hit on four other
@@ -308,5 +321,44 @@ describe('retiring a venue', () => {
     expect(await screen.findByText('Something broke.')).toBeTruthy();
     expect(screen.getByText('The Annexe')).toBeTruthy();
     expect(fetchClubVenues).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('screen chrome', () => {
+  it('carries the tab bar', async () => {
+    render(<VenuesScreen />);
+    expect(await screen.findByRole('button', { name: 'Club' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Alerts' })).toBeTruthy();
+  });
+
+  it('carries the tab bar when the club cannot be loaded', async () => {
+    fetchClub.mockResolvedValueOnce(null);
+    render(<VenuesScreen />);
+    expect(await screen.findByText(/Could not reach MahjHero/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
+  });
+
+  it('heads the screen with the club as kicker and Venues as the name', async () => {
+    fetchProfile.mockResolvedValue({
+      id: 'test-user',
+      display_name: 'Pat Chen',
+      skill_level: 'intermediate',
+      avatar_url: null,
+      timezone: 'America/New_York',
+    });
+    render(<VenuesScreen />);
+    expect(await screen.findByText('Venues')).toBeTruthy();
+    expect(await screen.findByText('PC')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Your profile' }));
+    expect(push).toHaveBeenCalledWith('/profile');
+  });
+
+  // Kept, unlike the club screen's: no tab reaches a specific club, so the
+  // Club tab would strand a member at the dashboard rather than returning
+  // them to the club they came from.
+  it('keeps its back link to the club', async () => {
+    render(<VenuesScreen />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Back to the club' }));
+    expect(push).toHaveBeenCalledWith('/clubs/club-1');
   });
 });
