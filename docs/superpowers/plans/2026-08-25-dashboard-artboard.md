@@ -15,6 +15,13 @@
 - **No new SQL.** No migration, no new RPC, no change to any `supabase/` file.
 - **Preserve behaviour.** Promotion offers, waitlist management, decline and check-in keep their exact current logic and copy. This plan moves them inside a new row layout; it does not change when they appear or what they do.
 - **`needsAFourth` is not reimplemented.** `lib/bookings.ts` records that this rule reached three copies before one drifted. Call the existing function.
+- **No jest-dom, no `globals: true`.** This repo declares only
+  `@testing-library/dom` and `@testing-library/react`;
+  `@testing-library/jest-dom` is not a dependency. `vitest.setup.ts` records
+  that `test.globals` is deliberately off because enabling it "would inject
+  ambient globals across the whole suite". Assert DOM attributes with plain
+  `element.getAttribute(...)`, and never modify `vitest.config.mts` or
+  `vitest.setup.ts` to make an assertion style work.
 - **Test command:** `TZ=America/New_York npx vitest run <path>` — the TZ is required; `package.json`'s `test` script sets it and tests assert formatted times.
 - **Commit trailer:** every commit ends with `Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>`.
 - **Tab bar is a component, not a route group.** Wrapping the four tab screens in `app/(tabs)/` would put `app/(tabs)/clubs/index.tsx` and the existing `app/clubs/[id]/` tree in the same URL namespace, and would move files that six test files import by relative path. A presentational `TabBar` gets the artboard's bar with no route restructuring. Migrating to expo-router `Tabs` is a follow-up, recorded in the spec.
@@ -919,13 +926,18 @@ const CHIPS = [
 describe('ClubChips', () => {
   it('marks the selected chip and only that one', () => {
     render(<ClubChips chips={CHIPS} selected="club-1" onSelect={() => {}} />);
+    // Plain getAttribute, not jest-dom's toHaveAttribute: this repo does not
+    // depend on @testing-library/jest-dom, and vitest.setup.ts records that
+    // `globals: true` is deliberately off so no matcher package can
+    // auto-extend `expect`.
     expect(
-      screen.getByRole('button', { name: 'Riverside Mah Jongg' }),
-    ).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByRole('button', { name: 'All clubs' })).toHaveAttribute(
-      'aria-selected',
-      'false',
-    );
+      screen
+        .getByRole('button', { name: 'Riverside Mah Jongg' })
+        .getAttribute('aria-selected'),
+    ).toBe('true');
+    expect(
+      screen.getByRole('button', { name: 'All clubs' }).getAttribute('aria-selected'),
+    ).toBe('false');
   });
 
   it('reports the chip that was pressed', () => {
@@ -1564,14 +1576,12 @@ describe('TabBar', () => {
 
   it('marks only the active tab', () => {
     render(<TabBar active="profile" />);
-    expect(screen.getByRole('button', { name: 'Profile' })).toHaveAttribute(
-      'aria-selected',
-      'true',
-    );
-    expect(screen.getByRole('button', { name: 'Club' })).toHaveAttribute(
-      'aria-selected',
-      'false',
-    );
+    expect(
+      screen.getByRole('button', { name: 'Profile' }).getAttribute('aria-selected'),
+    ).toBe('true');
+    expect(
+      screen.getByRole('button', { name: 'Club' }).getAttribute('aria-selected'),
+    ).toBe('false');
   });
 
   it.each([
@@ -2447,10 +2457,11 @@ change is needed:
 it('carries the tab bar with Profile marked', async () => {
   // Arrange exactly as the file's existing "renders the form" test does.
   render(<ProfileScreen />);
-  expect(await screen.findByRole('button', { name: 'Profile' })).toHaveAttribute(
-    'aria-selected',
-    'true',
-  );
+  expect(
+    (await screen.findByRole('button', { name: 'Profile' })).getAttribute(
+      'aria-selected',
+    ),
+  ).toBe('true');
   expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
 });
 ```
