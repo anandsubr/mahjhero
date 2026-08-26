@@ -351,6 +351,21 @@ export default function EditEventScreen() {
     );
   }
 
+  // A game whose stored start time cannot be parsed cannot be edited: the
+  // form's TimeField has no honest way to show an unknown time. On web it
+  // would render empty, but the native picker has no empty state — it falls
+  // back to midnight (lib/time.ts's timeStringToDate), shows a plausible
+  // "12:00 AM", and a host who merely confirms the dialog saves a midnight
+  // nobody chose over the real value. Refusing the whole form is the only
+  // answer that cannot lose the stored time.
+  if (Number.isNaN(new Date(event.starts_at).getTime())) {
+    return (
+      <Screen contentStyle={styles.container}>
+        <ErrorBanner message="This game's start time could not be read, so it cannot be edited. Please contact support." />
+      </Screen>
+    );
+  }
+
   // Which snapshot the visible form fields (and onSave below) read from.
   // `series` must also be non-null, matching onSave's own condition. On
   // this screen the guard is currently unreachable: the scope buttons that

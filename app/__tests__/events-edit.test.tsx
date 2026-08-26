@@ -660,6 +660,29 @@ describe('the overridden-occurrences toggle', () => {
   });
 });
 
+// Task 3 made eventStartTimeInZone return '' for a starts_at that new
+// Date() cannot parse, reasoning that an empty TimeField is the honest
+// state. That only holds on web (TimeField.web.tsx renders an empty
+// <input type="time">) -- the native TimeField has no empty state, so ''
+// falls through lib/time.ts's timeStringToDate to midnight and the picker
+// shows a plausible "12:00 AM". A host who merely confirms that dialog
+// saves a midnight nobody chose over the real stored value. Fix pass 1
+// closes that path by refusing the whole form instead of ever handing a
+// TimeField an unreadable time. Asserted on 'Game name', a form control
+// every other test in this file relies on being present -- if the guard
+// were dropped, this test would fail the same way those do.
+describe('a game whose start time cannot be read', () => {
+  it('refuses to render the form, showing an error instead', async () => {
+    fetchEvent.mockResolvedValue({ ...ONE_OFF_EVENT, starts_at: 'not-a-date' });
+    render(<EditEventScreen />);
+
+    await screen.findByText(
+      "This game's start time could not be read, so it cannot be edited. Please contact support.",
+    );
+    expect(screen.queryByLabelText('Game name')).toBeNull();
+  });
+});
+
 describe('a series that failed to load', () => {
   it('says so, and still lets the host edit this one game', async () => {
     fetchEvent.mockResolvedValue(SERIES_EVENT);
