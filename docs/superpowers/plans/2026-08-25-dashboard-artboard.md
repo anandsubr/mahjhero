@@ -1599,12 +1599,15 @@ describe('TabBar', () => {
   });
 
   it.each([
-    ['Club', '/clubs'],
-    ['Messages', '/messages'],
-    ['Profile', '/profile'],
-    ['Alerts', '/notifications'],
-  ])('routes %s to %s', (label, href) => {
-    render(<TabBar active="club" />);
+    ['Club', '/clubs', 'alerts'],
+    ['Messages', '/messages', 'club'],
+    ['Profile', '/profile', 'club'],
+    ['Alerts', '/notifications', 'club'],
+  ] as const)('routes %s to %s', (label, href, otherActive) => {
+    // Rendered with a different tab active than the one under test: the
+    // active tab itself is a documented no-op (see the test below), so
+    // testing routing for a tab requires it not already be selected.
+    render(<TabBar active={otherActive} />);
     fireEvent.click(screen.getByRole('button', { name: label }));
     expect(replace).toHaveBeenCalledWith(href);
   });
