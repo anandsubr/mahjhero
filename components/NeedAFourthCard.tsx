@@ -11,6 +11,12 @@ import { colors, radius, space, type } from '../lib/theme';
  * font is shipped for it — iOS and Android both cover the character in their
  * system fallback stack, and the design's own stack (Hiragino Mincho ProN,
  * Songti SC, Noto Serif SC) is a web nicety rather than a requirement.
+ *
+ * The card's background is `colors.accent[700]`, not the artboard's
+ * `colors.accentColor` — the artboard's cream-on-accent pairing measures
+ * 3.03:1 (2.75:1 for the kicker) and fails WCAG AA at this text size.
+ * `accent[700]` brings cream text up to 5.72:1. The tile glyph and the
+ * "I'm in" button follow the same darker tone for coherence with the card.
  */
 export default function NeedAFourthCard({
   clubName,
@@ -24,7 +30,7 @@ export default function NeedAFourthCard({
   onTake: () => void;
 }) {
   return (
-    <Card row elevated background={colors.accentColor} style={styles.card}>
+    <Card row elevated background={colors.accent[700]} style={styles.card}>
       <View style={styles.tile}>
         <Text style={styles.glyph}>中</Text>
       </View>
@@ -34,6 +40,7 @@ export default function NeedAFourthCard({
       </View>
       <Button
         big={false}
+        variant="secondary"
         disabled={busy}
         onPress={onTake}
         accessibilityLabel={`I'm in — ${text}`}
@@ -63,7 +70,7 @@ const styles = StyleSheet.create({
   glyph: {
     fontSize: 22,
     lineHeight: 26,
-    color: colors.accentColor,
+    color: colors.accent[700],
   },
   body: {
     flex: 1,
@@ -75,7 +82,6 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
     textTransform: 'uppercase',
     color: colors.bg,
-    opacity: 0.9,
   },
   text: {
     fontFamily: type.bodyRegular,
