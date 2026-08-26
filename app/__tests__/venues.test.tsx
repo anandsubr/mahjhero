@@ -153,10 +153,8 @@ describe('empty and failed states', () => {
 
     expect(await screen.findByText(/Venues could not be loaded/)).toBeTruthy();
     expect(screen.queryByText('No venues yet. The first one is added when you create a game.')).toBeNull();
-    // The rest of the screen is unaffected. The club name now appears
-    // twice -- the back button and the header's kicker -- so this checks
-    // for both rather than a single unique match.
-    expect(screen.getAllByText('Riverside Mah Jongg')).toHaveLength(2);
+    // The rest of the screen is unaffected.
+    expect(screen.getByText('Riverside Mah Jongg')).toBeTruthy();
     expect(screen.getByText('Venues')).toBeTruthy();
     expect(screen.queryByText(/Could not reach MahjHero/)).toBeNull();
   });

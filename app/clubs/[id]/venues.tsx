@@ -179,6 +179,9 @@ export default function VenuesScreen() {
 
   return (
     <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="club" />}>
+      {/* Generic label, not club.name: the kicker right below already names
+          the club, so repeating it here would read as a mistake rather than
+          confirmation. Matches import.tsx and broadcasts.tsx. */}
       <Button
         variant="ghost"
         big={false}
@@ -187,7 +190,7 @@ export default function VenuesScreen() {
         accessibilityLabel="Back to the club"
         style={styles.backButton}
       >
-        {club.name}
+        Club
       </Button>
 
       <DashboardHeader
