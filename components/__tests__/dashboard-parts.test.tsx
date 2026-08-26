@@ -67,3 +67,51 @@ describe('ClubChips', () => {
     expect(onSelect).toHaveBeenCalledWith('club-1');
   });
 });
+
+import DashboardHeader from '../DashboardHeader';
+
+describe('DashboardHeader', () => {
+  it('shows the scope kicker, name and meta', () => {
+    render(
+      <DashboardHeader
+        kicker="Your clubs"
+        name="All your clubs"
+        meta="2 clubs"
+        initials="JW"
+        onPressAvatar={() => {}}
+      />,
+    );
+    expect(screen.getByText('Your clubs')).toBeTruthy();
+    expect(screen.getByText('All your clubs')).toBeTruthy();
+    expect(screen.getByText('2 clubs')).toBeTruthy();
+    expect(screen.getByText('JW')).toBeTruthy();
+  });
+
+  it('routes to the profile from the avatar', () => {
+    const onPressAvatar = vi.fn();
+    render(
+      <DashboardHeader
+        kicker="Your club"
+        name="Riverside Mah Jongg"
+        meta="Thursdays, 7pm"
+        initials="JW"
+        onPressAvatar={onPressAvatar}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Your profile' }));
+    expect(onPressAvatar).toHaveBeenCalled();
+  });
+
+  it('falls back to a glyph rather than inventing a letter', () => {
+    render(
+      <DashboardHeader
+        kicker="Your clubs"
+        name="All your clubs"
+        meta="1 club"
+        initials=""
+        onPressAvatar={() => {}}
+      />,
+    );
+    expect(screen.getByTestId('avatar-fallback')).toBeTruthy();
+  });
+});
