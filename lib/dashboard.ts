@@ -61,7 +61,14 @@ export function initialsFrom(displayName: string): string {
   const words = displayName.trim().split(/\s+/).filter(Boolean);
   return words
     .slice(0, 2)
-    .map((word) => word[0].toUpperCase())
+    // `Array.from(word)[0]`, not `word[0]`: string indexing yields a single
+    // UTF-16 code unit, so a name whose first character is astral produces a
+    // lone unpaired surrogate — a replacement glyph in the avatar rather
+    // than the letter the member chose. Array.from iterates code points.
+    // The `?? ''` is unreachable given the `filter(Boolean)` above, and is
+    // there so the expression types as `string` rather than
+    // `string | undefined` under noUncheckedIndexedAccess.
+    .map((word) => (Array.from(word)[0] ?? '').toUpperCase())
     .join('');
 }
 

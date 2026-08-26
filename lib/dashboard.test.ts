@@ -129,6 +129,15 @@ describe('initialsFrom', () => {
     expect(initialsFrom('')).toBe('');
     expect(initialsFrom('   ')).toBe('');
   });
+
+  // `word[0]` returns one UTF-16 code unit. A name starting with an astral
+  // character (an emoji, or a supplementary-plane letter) is a surrogate
+  // pair, so indexing yields a lone unpaired high surrogate — which renders
+  // in the avatar as a replacement glyph, not a letter.
+  it('keeps an astral first character whole', () => {
+    // U+1D49C MATHEMATICAL SCRIPT CAPITAL A, then a plain ASCII surname.
+    expect(initialsFrom('\u{1D49C}da Lovelace')).toBe('\u{1D49C}L');
+  });
 });
 
 describe('inScope', () => {
