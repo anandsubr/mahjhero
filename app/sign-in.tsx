@@ -1,9 +1,9 @@
-import { Redirect } from 'expo-router';
+import { Redirect, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Platform, StyleSheet, Text, View } from 'react-native';
 import Button from '../components/Button';
 import ErrorBanner from '../components/ErrorBanner';
-import { MailIcon } from '../components/icons';
+import { ChevronLeftIcon, MailIcon } from '../components/icons';
 import Screen from '../components/Screen';
 import TextField from '../components/TextField';
 import { availableProviders, isValidEmail, sendMagicLink, signInWithProvider } from '../lib/auth';
@@ -18,6 +18,7 @@ const PROVIDER_LABEL: Record<OAuthProvider, string> = {
 
 export default function SignIn() {
   const { session, loading } = useSession();
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [status, setStatus] = useState<'idle' | 'sending' | 'sent'>('idle');
   const [pendingProvider, setPendingProvider] = useState<OAuthProvider | null>(
@@ -112,6 +113,19 @@ export default function SignIn() {
 
   return (
     <Screen center contentStyle={styles.content}>
+      {/* Sign-in is a step inside the welcome screen now, not the app's
+          front door, so it needs a way back to it. The artboard draws this
+          same chevron. */}
+      <Button
+        variant="ghost"
+        big={false}
+        onPress={() => router.push('/welcome')}
+        icon={<ChevronLeftIcon color={colors.accentColor} />}
+        accessibilityLabel="Back to the welcome screen"
+        style={styles.backButton}
+      >
+        Back
+      </Button>
       <Text style={styles.heading}>Sign in to MahjHero</Text>
       <Text style={styles.body}>
         No password to remember. We'll email you a link that signs you straight in.
@@ -212,5 +226,8 @@ const styles = StyleSheet.create({
   },
   providerGroup: {
     gap: space[3],
+  },
+  backButton: {
+    alignSelf: 'flex-start',
   },
 });
