@@ -4,8 +4,16 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import Button from '../../components/Button';
 import Card from '../../components/Card';
 import CheckInControl from '../../components/CheckInControl';
+import ClubChips from '../../components/ClubChips';
+import DashboardHeader from '../../components/DashboardHeader';
+import DateTile from '../../components/DateTile';
 import ErrorBanner from '../../components/ErrorBanner';
+import NeedAFourthCard from '../../components/NeedAFourthCard';
+import NoticeBanner from '../../components/NoticeBanner';
 import Screen from '../../components/Screen';
+import Skeleton from '../../components/Skeleton';
+import TabBar from '../../components/TabBar';
+import Tag from '../../components/Tag';
 import {
   checkInOpen,
   clearAttendance,
@@ -15,6 +23,7 @@ import {
 import {
   acceptPromotionOffer,
   cancelBooking,
+  commitBooking,
   declineBooking,
   declinePromotionOffer,
   fetchMyUpcomingBookings,
@@ -25,9 +34,21 @@ import type { MyBooking } from '../../lib/bookings';
 import { fetchMyClubs } from '../../lib/clubs';
 import type { Club } from '../../lib/clubs';
 import { GENERIC_ERROR } from '../../lib/constants';
-import { formatEventWhen } from '../../lib/events';
+import {
+  ALL_CLUBS,
+  buildChips,
+  buildDashboardRows,
+  headerScope,
+  initialsFrom,
+  inScope,
+  needAFourthAlerts,
+} from '../../lib/dashboard';
+import type { DashboardRow, FourthAlert } from '../../lib/dashboard';
+import { fetchUpcomingEvents, formatEventWhen } from '../../lib/events';
+import type { ClubEvent } from '../../lib/events';
+import { fetchProfile } from '../../lib/profile';
 import { useSession } from '../../lib/session';
-import { colors, space, type } from '../../lib/theme';
+import { colors, radius, space, type } from '../../lib/theme';
 
 export default function ClubsScreen() {
   const { session, loading } = useSession();
@@ -47,13 +68,33 @@ export default function ClubsScreen() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [checkInBusy, setCheckInBusy] = useState(false);
 
+  const [events, setEvents] = useState<ClubEvent[]>([]);
+  const [profileName, setProfileName] = useState('');
+  const [selected, setSelected] = useState<string>(ALL_CLUBS);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [takeBusy, setTakeBusy] = useState(false);
+
   useEffect(() => {
     if (!userId) return;
     let cancelled = false;
-    fetchMyClubs().then((result) => {
+    fetchMyClubs().then(async (result) => {
       if (cancelled) return;
-      if (result === null) setLoadFailed(true);
-      else setClubs(result);
+      if (result === null) {
+        setLoadFailed(true);
+        setReady(true);
+        return;
+      }
+      setClubs(result);
+      // One read per club. Chatty by design for now — collapsing these into a
+      // single RPC is deferred item 8 in the spec, and wants the screen's shape
+      // to settle first. Failures degrade to "no open games" rather than
+      // blanking the screen: the member's own bookings are the load-bearing
+      // half and they came from a different call.
+      const perClub = await Promise.all(
+        result.map((club) => fetchUpcomingEvents(club.id)),
+      );
+      if (cancelled) return;
+      setEvents(perClub.filter((list): list is ClubEvent[] => list !== null).flat());
       setReady(true);
     });
     fetchMyUpcomingBookings().then((result) => {
@@ -63,6 +104,10 @@ export default function ClubsScreen() {
         setBookings(result);
         setBookingsFailed(false);
       }
+    });
+    fetchProfile(userId).then((profile) => {
+      if (cancelled) return;
+      setProfileName(profile?.display_name ?? '');
     });
     return () => {
       cancelled = true;
@@ -153,9 +198,49 @@ export default function ClubsScreen() {
     }
   }
 
+  // Taking the advertised seat: `preferredTableId` is the very table the
+  // alert counted as one short, so the member lands with the three people
+  // they were shown rather than wherever the server happens to have room.
+  async function takeSeat(alert: FourthAlert) {
+    setTakeBusy(true);
+    setActionError(null);
+    const { error } = await commitBooking({
+      eventId: alert.eventId,
+      players: [userId ?? ''],
+      preferredTableId: alert.tableId,
+      allowSplit: false,
+    });
+    setTakeBusy(false);
+    if (error) {
+      setActionError(error);
+      return;
+    }
+    setNotice(`You're in — ${alert.text}.`);
+    await reloadBookings();
+  }
+
+  // The same call with no table preference, and no notice — the row flipping
+  // from Join to Seated is its own confirmation.
+  async function joinGame(row: DashboardRow) {
+    setTakeBusy(true);
+    setActionError(null);
+    const { error } = await commitBooking({
+      eventId: row.eventId,
+      players: [userId ?? ''],
+      preferredTableId: null,
+      allowSplit: false,
+    });
+    setTakeBusy(false);
+    if (error) {
+      setActionError(error);
+      return;
+    }
+    await reloadBookings();
+  }
+
   if (loading) {
     return (
-      <Screen>
+      <Screen tabBar={<TabBar active="club" />}>
         <View style={styles.centered}>
           <ActivityIndicator color={colors.accentColor} />
         </View>
@@ -167,9 +252,11 @@ export default function ClubsScreen() {
 
   if (!ready) {
     return (
-      <Screen>
-        <View style={styles.centered}>
-          <ActivityIndicator color={colors.accentColor} />
+      <Screen contentStyle={styles.container} tabBar={<TabBar active="club" />}>
+        <View style={styles.list}>
+          <Skeleton />
+          <Skeleton delay={150} />
+          <Skeleton delay={300} />
         </View>
       </Screen>
     );
@@ -177,7 +264,7 @@ export default function ClubsScreen() {
 
   if (loadFailed) {
     return (
-      <Screen contentStyle={styles.container}>
+      <Screen contentStyle={styles.container} tabBar={<TabBar active="club" />}>
         <Text style={styles.heading}>Your clubs</Text>
         <ErrorBanner message={GENERIC_ERROR} />
       </Screen>
@@ -185,39 +272,88 @@ export default function ClubsScreen() {
   }
 
   const list = clubs ?? [];
-  const myGames = bookings ?? [];
-  const showGamesSection = bookingsFailed || myGames.length > 0;
+  const chips = buildChips(list);
+  const scope = headerScope(list, selected);
+  const rows = buildDashboardRows({
+    bookings: bookings ?? [],
+    events,
+    clubs: list,
+    userId: userId ?? '',
+  }).filter((row) => inScope(row.clubId, selected));
+  const alerts = needAFourthAlerts({
+    events,
+    clubs: list,
+    userId: userId ?? '',
+  }).filter((alert) => inScope(alert.clubId, selected));
 
   return (
-    <Screen scroll contentStyle={styles.container}>
-      {showGamesSection ? (
-        <View style={styles.gamesSection}>
-          <Text style={styles.heading}>Your games</Text>
+    <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="club" />}>
+      <DashboardHeader
+        kicker={scope.kicker}
+        name={scope.name}
+        meta={scope.meta}
+        initials={initialsFrom(profileName)}
+        onPressAvatar={() => router.push('/profile')}
+      />
 
-          {actionError ? <ErrorBanner message={actionError} /> : null}
-
-          {bookingsFailed ? (
-            <Text style={styles.help}>Could not load your games.</Text>
-          ) : (
-            myGames.map((booking) => (
-              <BookingCard
-                key={booking.booking_id}
-                booking={booking}
-                youId={userId}
-                busy={actionBusy}
-                checkInBusy={checkInBusy}
-                onDecline={handleDecline}
-                onAcceptOffer={handleAcceptOffer}
-                onDeclineOffer={handleDeclineOffer}
-                onLeaveWaitlist={handleLeaveWaitlist}
-                onCheckIn={handleCheckIn}
-              />
-            ))
-          )}
-        </View>
+      {list.length > 1 ? (
+        <ClubChips chips={chips} selected={selected} onSelect={setSelected} />
       ) : null}
 
-      <Text style={styles.heading}>Your clubs</Text>
+      {notice ? (
+        <NoticeBanner message={notice} onDismiss={() => setNotice(null)} />
+      ) : null}
+
+      {actionError ? <ErrorBanner message={actionError} /> : null}
+
+      {alerts.map((alert) => (
+        <NeedAFourthCard
+          key={`${alert.eventId}:${alert.tableId}`}
+          clubName={alert.clubName}
+          text={alert.text}
+          busy={takeBusy}
+          onTake={() => void takeSeat(alert)}
+        />
+      ))}
+
+      <Text style={styles.sectionTitle}>Your games</Text>
+
+      {bookingsFailed ? (
+        <Text style={styles.help}>Could not load your games.</Text>
+      ) : rows.length === 0 ? (
+        <View style={styles.emptyCard}>
+          <Text style={styles.help}>Nothing else coming up.</Text>
+          {selected !== ALL_CLUBS ? (
+            <Button
+              variant="secondary"
+              big={false}
+              onPress={() => router.push(`/clubs/${selected}/events/new`)}
+              accessibilityLabel="Host a table"
+            >
+              Host a table
+            </Button>
+          ) : null}
+        </View>
+      ) : (
+        rows.map((row) => (
+          <GameRow
+            key={row.eventId}
+            row={row}
+            youId={userId}
+            busy={actionBusy}
+            takeBusy={takeBusy}
+            checkInBusy={checkInBusy}
+            onJoin={joinGame}
+            onDecline={handleDecline}
+            onAcceptOffer={handleAcceptOffer}
+            onDeclineOffer={handleDeclineOffer}
+            onLeaveWaitlist={handleLeaveWaitlist}
+            onCheckIn={handleCheckIn}
+          />
+        ))
+      )}
+
+      <Text style={styles.sectionTitle}>Your clubs</Text>
 
       {list.length === 0 ? (
         <View style={styles.list}>
@@ -266,22 +402,105 @@ export default function ClubsScreen() {
           </Button>
         </View>
       )}
-
-      <Link href="/profile" style={styles.linkRow}>
-        <Text style={styles.link}>Your profile</Text>
-      </Link>
     </Screen>
   );
 }
 
 /**
- * One row of "Your games". Each booking carries its own action, in
- * priority order: a live offer (accept/decline, with its countdown) beats
- * a seat someone else booked for you (decline), which beats a self-held
- * waitlist spot (leave the waitlist). An ordinary confirmed seat you
- * booked yourself has nothing to press.
+ * One row of "Your games": the artboard's date tile, the club and title, and
+ * a single right-hand affordance — Join for an open game the member is not in
+ * yet, "Seated" for one they hold.
+ *
+ * A joinable row carries no booking, so none of the seat-management controls
+ * apply to it; everything they need lives in `BookingSeatControls` below,
+ * rendered only when `row.booking` is there.
  */
-function BookingCard({
+function GameRow({
+  row,
+  youId,
+  busy,
+  takeBusy,
+  checkInBusy,
+  onJoin,
+  onDecline,
+  onAcceptOffer,
+  onDeclineOffer,
+  onLeaveWaitlist,
+  onCheckIn,
+}: {
+  row: DashboardRow;
+  youId: string | undefined;
+  busy: boolean;
+  takeBusy: boolean;
+  checkInBusy: boolean;
+  onJoin: (row: DashboardRow) => void;
+  onDecline: (booking: MyBooking) => void;
+  onAcceptOffer: (booking: MyBooking) => void;
+  onDeclineOffer: (booking: MyBooking) => void;
+  onLeaveWaitlist: (booking: MyBooking) => void;
+  onCheckIn: (booking: MyBooking, next: AttendanceState | null) => void;
+}) {
+  const booking = row.booking;
+
+  return (
+    <Card>
+      <View style={styles.gameRow}>
+        <DateTile startsAt={row.startsAt} timezone={row.timezone} />
+        <View style={styles.gameBody}>
+          <Text style={styles.gameKicker}>{row.clubName}</Text>
+          <Text style={styles.gameTitle}>{row.title}</Text>
+          <Text style={styles.help}>
+            {formatEventWhen(row.startsAt, row.timezone)}
+            {' · '}
+            {row.venueName}
+          </Text>
+        </View>
+        {booking === null ? (
+          <Button
+            variant="secondary"
+            big={false}
+            disabled={takeBusy}
+            onPress={() => onJoin(row)}
+            accessibilityLabel={`Join ${row.title}`}
+            style={styles.gameAction}
+          >
+            Join
+          </Button>
+        ) : booking.status === 'confirmed' ? (
+          <Tag variant="accent2">Seated</Tag>
+        ) : null}
+      </View>
+
+      {booking !== null ? (
+        <BookingSeatControls
+          booking={booking}
+          youId={youId}
+          busy={busy}
+          checkInBusy={checkInBusy}
+          onDecline={onDecline}
+          onAcceptOffer={onAcceptOffer}
+          onDeclineOffer={onDeclineOffer}
+          onLeaveWaitlist={onLeaveWaitlist}
+          onCheckIn={onCheckIn}
+        />
+      ) : null}
+    </Card>
+  );
+}
+
+/**
+ * The seat this member holds, and whatever they can do about it. Each booking
+ * carries its own action, in priority order: a live offer (accept/decline,
+ * with its countdown) beats a seat someone else booked for you (decline),
+ * which beats a self-held waitlist spot (leave the waitlist). An ordinary
+ * confirmed seat you booked yourself has nothing to press.
+ *
+ * Split out of `GameRow` rather than inlined behind a `booking !== null`
+ * ternary so every derivation below can read a non-null `MyBooking` directly,
+ * exactly as it did when this was one component — no non-null assertions
+ * threaded through logic whose whole job is to be exact.
+ */
+function BookingSeatControls({
   booking,
   youId,
   busy,
@@ -358,14 +577,7 @@ function BookingCard({
   const bookedByOther = booking.booked_by !== youId;
 
   return (
-    <Card>
-      <Text style={styles.clubName}>{booking.event_title}</Text>
-      <Text style={styles.help}>
-        {formatEventWhen(booking.starts_at, booking.club_timezone)}
-      </Text>
-      <Text style={styles.help}>{booking.venue_name}</Text>
-      <Text style={styles.help}>{booking.club_name}</Text>
-
+    <>
       {seatStatus ? <Text style={styles.help}>{seatStatus}</Text> : null}
 
       {offerLive ? (
@@ -444,7 +656,7 @@ function BookingCard({
           onChange={(next) => onCheckIn(booking, next)}
         />
       ) : null}
-    </Card>
+    </>
   );
 }
 
@@ -458,9 +670,6 @@ const styles = StyleSheet.create({
     // "no page padding" item in todo.md.
     padding: space[6],
     gap: space[4],
-  },
-  gamesSection: {
-    gap: space[3],
   },
   heading: {
     fontFamily: type.heading,
@@ -492,10 +701,46 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     lineHeight: 24,
   },
-  linkRow: { marginTop: space[6] },
-  link: {
+  gameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[3],
+  },
+  gameBody: {
+    flex: 1,
+    minWidth: 0,
+  },
+  gameKicker: {
     fontFamily: type.bodySemiBold,
+    fontSize: type.size.helper,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    color: colors.textMuted,
+  },
+  gameTitle: {
+    fontFamily: type.bodyBold,
     fontSize: type.size.body,
-    color: colors.accentColor,
+    color: colors.text,
+    marginTop: 1,
+  },
+  gameAction: {
+    flexShrink: 0,
+  },
+  sectionTitle: {
+    fontFamily: type.bodyBold,
+    fontSize: type.size.body,
+    color: colors.text,
+    marginTop: space[2],
+  },
+  emptyCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: space[3],
+    padding: space[4],
+    borderRadius: radius.card,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    borderColor: colors.neutral[400],
   },
 });

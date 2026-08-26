@@ -136,10 +136,16 @@ afterEach(() => {
 });
 
 describe('Your games', () => {
-  it('is absent when the member holds no seats', async () => {
+  // Task 8 made the "Your games" title unconditional: the dashboard's
+  // section is always there, with a dashed empty card under it when nothing
+  // is coming up. So the thing that must be absent when the member holds no
+  // seats is a *row*, not the heading — asserting on the heading now only
+  // tests that a title exists, which is not what this ever cared about.
+  it('offers the empty state, not a row, when the member holds no seats', async () => {
     render(<ClubsScreen />);
     await waitFor(() => expect(fetchMyUpcomingBookings).toHaveBeenCalled());
-    expect(screen.queryByText('Your games')).toBeNull();
+    expect(await screen.findByText('Nothing else coming up.')).toBeTruthy();
+    expect(screen.queryByText('Tuesday game')).toBeNull();
   });
 
   it('lists a seat with when, where and which table', async () => {
@@ -147,7 +153,10 @@ describe('Your games', () => {
     render(<ClubsScreen />);
     expect(await screen.findByText('Tuesday game')).toBeTruthy();
     expect(screen.getByText('Table 2')).toBeTruthy();
-    expect(screen.getByText("St Mary's Hall")).toBeTruthy();
+    // Task 8's row puts the formatted time and the venue on one meta line
+    // separated by a middle dot, so the venue is no longer an element of its
+    // own and an exact-string query cannot find it.
+    expect(screen.getByText(/St Mary's Hall/)).toBeTruthy();
   });
 
   it('says who booked a seat for you, and offers a way out', async () => {
@@ -259,7 +268,13 @@ describe('Your games', () => {
     render(<ClubsScreen />);
     // The clubs are the point of this screen. A failed secondary fetch
     // says so quietly and gets out of the way.
-    expect(await screen.findByText('Your clubs')).toBeTruthy();
+    //
+    // "Your clubs" is on the Task 8 dashboard twice — the header's kicker
+    // above the scope name, and the club-list section title — hence
+    // findAllByText. The club list's own empty-state copy is the assertion
+    // that actually proves the clubs half was not blanked.
+    expect((await screen.findAllByText('Your clubs')).length).toBeGreaterThan(0);
+    expect(screen.getByText(/not in a club yet/i)).toBeTruthy();
     expect(screen.getByText('Could not load your games.')).toBeTruthy();
   });
 
@@ -351,8 +366,10 @@ describe('Your games', () => {
       }),
     ]);
     render(<ClubsScreen />);
-    expect(await screen.findByText('Tue 25 Aug, 6:30 pm')).toBeTruthy();
-    expect(await screen.findByText('Wed 26 Aug, 7:30 am')).toBeTruthy();
+    // Regex, not exact: each row's meta line is "<when> · <venue>" since
+    // Task 8, so the formatted time is a substring of its element's text.
+    expect(await screen.findByText(/Tue 25 Aug, 6:30 pm/)).toBeTruthy();
+    expect(await screen.findByText(/Wed 26 Aug, 7:30 am/)).toBeTruthy();
   });
 });
 

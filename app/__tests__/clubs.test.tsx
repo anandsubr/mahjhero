@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ClubsScreen from '../clubs/index';
 
 const push = vi.fn();
@@ -35,6 +35,9 @@ const fetchRoster = vi.fn();
 const fetchPendingInvites = vi.fn();
 const importRoster = vi.fn();
 const fetchUpcomingEvents = vi.fn();
+const fetchMyUpcomingBookings = vi.fn();
+const commitBooking = vi.fn();
+const fetchProfile = vi.fn();
 
 // One partial mock for the whole file, not one per describe block. Two
 // `vi.mock` calls for the same specifier are both hoisted and only one
@@ -66,6 +69,23 @@ vi.mock('../../lib/events', async (importOriginal) => {
   };
 });
 
+// Same one-mock-per-specifier rule as above. `offerCountdown`, `waitlistLabel`
+// and `needsAFourth` stay real: the dashboard's derivations run through them
+// and stubbing them would test the stub rather than the screen.
+vi.mock('../../lib/bookings', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/bookings')>();
+  return {
+    ...actual,
+    fetchMyUpcomingBookings: (...args: unknown[]) => fetchMyUpcomingBookings(...args),
+    commitBooking: (...args: unknown[]) => commitBooking(...args),
+  };
+});
+
+vi.mock('../../lib/profile', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/profile')>();
+  return { ...actual, fetchProfile: (...args: unknown[]) => fetchProfile(...args) };
+});
+
 const CLUB = {
   id: 'club-1',
   name: 'Riverside Mah Jongg',
@@ -73,6 +93,61 @@ const CLUB = {
   rhythm: 'Thursday evenings',
   visibility: 'private' as const,
   timezone: 'America/New_York',
+};
+
+// Shapes mirrored from lib/dashboard.test.ts's own `booking()`/`event()`
+// helpers, so the fixtures the screen renders are the same ones the
+// derivation module is tested against.
+//
+// `booked_by` is the fixed test-user: a booking somebody else made carries an
+// extra "X booked this for you" line and a Decline button, which is a
+// different branch of the row than the one most tests here are about.
+const BOOKING = {
+  booking_id: 'booking-1',
+  group_id: 'group-1',
+  event_id: 'event-9',
+  club_id: 'club-1',
+  club_name: 'Riverside Mah Jongg',
+  event_title: 'Sunday social',
+  starts_at: '2026-09-06T23:00:00.000Z',
+  club_timezone: 'America/New_York',
+  venue_name: 'The hall',
+  event_table_id: 'table-9',
+  table_label: 'Table 1',
+  status: 'confirmed' as const,
+  booked_by: 'test-user',
+  booked_by_name: 'You',
+  offer_id: null,
+  offer_seats: null,
+  offer_expires_at: null,
+  waitlist_position: null,
+  check_in_required: false,
+  check_in_state: null,
+  check_in_opens_at: null,
+  check_in_closes_at: null,
+};
+
+const EVENT = {
+  id: 'event-1',
+  club_id: 'club-1',
+  series_id: null,
+  title: 'Thursday night',
+  venue_id: 'venue-1',
+  venue_name: "Sara's place",
+  notes: '',
+  starts_at: '2026-09-02T23:00:00.000Z',
+  ends_at: '2026-09-03T02:00:00.000Z',
+  status: 'published' as const,
+  occurrence_date: null,
+  overrides: [],
+  table_count: 1,
+  event_tables: [{ id: 'table-1', capacity: 4, label: 'Table 1' }],
+  bookings: [] as {
+    profile_id: string;
+    status: 'confirmed' | 'waitlisted' | 'cancelled' | 'declined';
+    event_table_id: string | null;
+  }[],
+  check_in_required: false,
 };
 
 beforeEach(() => {
@@ -84,6 +159,14 @@ beforeEach(() => {
   fetchPendingInvites.mockResolvedValue([]);
   fetchUpcomingEvents.mockResolvedValue([]);
   importRoster.mockResolvedValue({ created: 2, error: null });
+  // Before Task 8 nothing mocked lib/bookings or lib/profile, so every test
+  // in this file let the real fetch fail against the placeholder Supabase env
+  // and land in the dashboard's `bookingsFailed` branch by accident. These
+  // give the whole file a defined starting state instead: a member with no
+  // games, no name set, and a booking write that succeeds.
+  fetchMyUpcomingBookings.mockResolvedValue([]);
+  commitBooking.mockResolvedValue({ result: null, error: null });
+  fetchProfile.mockResolvedValue(null);
 });
 
 describe('clubs list', () => {
@@ -126,6 +209,151 @@ describe('clubs list', () => {
     render(<ClubsScreen />);
     expect(await screen.findByText(/Could not reach MahjHero/)).toBeTruthy();
     expect(screen.queryByText(/not in a club yet/i)).toBeNull();
+  });
+});
+
+describe('dashboard artboard', () => {
+  it('heads the page with the club count and the profile avatar', async () => {
+    fetchMyClubs.mockResolvedValue([CLUB, { ...CLUB, id: 'club-2', name: 'Harbour' }]);
+    fetchMyUpcomingBookings.mockResolvedValue([]);
+    fetchUpcomingEvents.mockResolvedValue([]);
+    fetchProfile.mockResolvedValue({ id: 'test-user', display_name: 'Jean Wu', skill_level: null, avatar_url: null, timezone: 'America/New_York' });
+
+    render(<ClubsScreen />);
+
+    expect(await screen.findByText('All your clubs')).toBeTruthy();
+    expect(screen.getByText('2 clubs')).toBeTruthy();
+    expect(screen.getByText('JW')).toBeTruthy();
+  });
+
+  it('narrows the games list to the picked club', async () => {
+    fetchMyClubs.mockResolvedValue([CLUB, { ...CLUB, id: 'club-2', name: 'Harbour' }]);
+    fetchMyUpcomingBookings.mockResolvedValue([
+      { ...BOOKING, event_id: 'e1', club_id: CLUB.id, club_name: CLUB.name, event_title: 'Riverside game' },
+      { ...BOOKING, booking_id: 'b2', event_id: 'e2', club_id: 'club-2', club_name: 'Harbour', event_title: 'Harbour game' },
+    ]);
+    fetchUpcomingEvents.mockResolvedValue([]);
+    fetchProfile.mockResolvedValue(null);
+
+    render(<ClubsScreen />);
+
+    expect(await screen.findByText('Riverside game')).toBeTruthy();
+    expect(screen.getByText('Harbour game')).toBeTruthy();
+
+    // Two buttons answer to "Harbour": the club chip up top and the club's
+    // own card down in "Your clubs". The chip is the first in document
+    // order — `getByRole` would refuse the ambiguity rather than pick.
+    fireEvent.click(screen.getAllByRole('button', { name: 'Harbour' })[0]);
+
+    expect(screen.queryByText('Riverside game')).toBeNull();
+    expect(screen.getByText('Harbour game')).toBeTruthy();
+    expect(screen.getByText('Your club')).toBeTruthy();
+  });
+
+  it('shows skeletons before the first load resolves', () => {
+    fetchMyClubs.mockReturnValue(new Promise(() => {}));
+    fetchMyUpcomingBookings.mockReturnValue(new Promise(() => {}));
+    fetchUpcomingEvents.mockReturnValue(new Promise(() => {}));
+    fetchProfile.mockReturnValue(new Promise(() => {}));
+
+    render(<ClubsScreen />);
+
+    expect(screen.getAllByTestId('skeleton')).toHaveLength(3);
+  });
+
+  it('takes a seat from a need-a-fourth card and raises the notice', async () => {
+    const soon = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    fetchMyClubs.mockResolvedValue([CLUB]);
+    fetchMyUpcomingBookings.mockResolvedValue([]);
+    fetchUpcomingEvents.mockResolvedValue([
+      {
+        ...EVENT,
+        id: 'e1',
+        club_id: CLUB.id,
+        title: 'Thursday night',
+        starts_at: soon,
+        status: 'published',
+        event_tables: [{ id: 'table-1', capacity: 4, label: 'Table 1' }],
+        bookings: [
+          { profile_id: 'a', status: 'confirmed', event_table_id: 'table-1' },
+          { profile_id: 'b', status: 'confirmed', event_table_id: 'table-1' },
+          { profile_id: 'c', status: 'confirmed', event_table_id: 'table-1' },
+        ],
+      },
+    ]);
+    fetchProfile.mockResolvedValue(null);
+    commitBooking.mockResolvedValue({ result: {}, error: null });
+
+    render(<ClubsScreen />);
+
+    const take = await screen.findByRole('button', { name: /I'm in/ });
+    fireEvent.click(take);
+
+    await waitFor(() => expect(commitBooking).toHaveBeenCalled());
+    expect(commitBooking.mock.calls[0][0]).toMatchObject({
+      eventId: 'e1',
+      players: ['test-user'],
+      preferredTableId: 'table-1',
+      allowSplit: false,
+    });
+    expect(await screen.findByRole('button', { name: 'Dismiss' })).toBeTruthy();
+  });
+
+  it('surfaces a failed take without raising a notice', async () => {
+    const soon = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    fetchMyClubs.mockResolvedValue([CLUB]);
+    fetchMyUpcomingBookings.mockResolvedValue([]);
+    fetchUpcomingEvents.mockResolvedValue([
+      {
+        ...EVENT,
+        id: 'e1',
+        club_id: CLUB.id,
+        starts_at: soon,
+        status: 'published',
+        event_tables: [{ id: 'table-1', capacity: 4, label: 'Table 1' }],
+        bookings: [
+          { profile_id: 'a', status: 'confirmed', event_table_id: 'table-1' },
+          { profile_id: 'b', status: 'confirmed', event_table_id: 'table-1' },
+          { profile_id: 'c', status: 'confirmed', event_table_id: 'table-1' },
+        ],
+      },
+    ]);
+    fetchProfile.mockResolvedValue(null);
+    commitBooking.mockResolvedValue({ result: null, error: 'That seat just went.' });
+
+    render(<ClubsScreen />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /I'm in/ }));
+
+    expect(await screen.findByText('That seat just went.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Dismiss' })).toBeNull();
+  });
+
+  it('offers Join on an open game and Seated on a held one', async () => {
+    fetchMyClubs.mockResolvedValue([CLUB]);
+    fetchMyUpcomingBookings.mockResolvedValue([
+      { ...BOOKING, event_id: 'mine', club_id: CLUB.id, club_name: CLUB.name, event_title: 'My game', status: 'confirmed' },
+    ]);
+    fetchUpcomingEvents.mockResolvedValue([
+      { ...EVENT, id: 'open', club_id: CLUB.id, title: 'Open game', status: 'published', event_tables: [{ id: 't', capacity: 4, label: 'T' }], bookings: [] },
+    ]);
+    fetchProfile.mockResolvedValue(null);
+
+    render(<ClubsScreen />);
+
+    expect(await screen.findByText('Seated')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Join Open game/ })).toBeTruthy();
+  });
+
+  it('shows the dashed empty state when nothing is coming up', async () => {
+    fetchMyClubs.mockResolvedValue([CLUB]);
+    fetchMyUpcomingBookings.mockResolvedValue([]);
+    fetchUpcomingEvents.mockResolvedValue([]);
+    fetchProfile.mockResolvedValue(null);
+
+    render(<ClubsScreen />);
+
+    expect(await screen.findByText('Nothing else coming up.')).toBeTruthy();
   });
 });
 
