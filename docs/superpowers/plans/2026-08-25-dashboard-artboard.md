@@ -612,7 +612,7 @@ export function needAFourthAlerts(input: {
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `TZ=America/New_York npx vitest run lib/dashboard.test.ts`
-Expected: PASS — 17 tests.
+Expected: PASS — 19 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -2337,9 +2337,46 @@ return (
   },
 ```
 
-   Add `radius` to the file's `lib/theme` import. Delete the now-unused
-   `heading`, `linkRow`, `link`, `gamesSection` and `centered` styles and the
-   `ActivityIndicator` import if nothing else references them.
+   Add `radius` to the file's `lib/theme` import.
+
+   **Delete only these styles:** `linkRow` and `link` (used solely by the
+   deleted "Your profile" link) and `gamesSection` (used solely by the
+   replaced games section).
+
+   **Keep `heading`, `centered`, and the `ActivityIndicator` import.** Two
+   branches above the main tree still use them and are NOT changed by this
+   task:
+
+   - the `loading` (auth) branch renders `<View style={styles.centered}>`
+     around an `ActivityIndicator` — that is an auth gate, not content
+     loading, and the spec keeps its spinner
+   - the `loadFailed` branch renders `<Text style={styles.heading}>Your
+     clubs</Text>` above an `ErrorBanner`
+
+   Both branches also gain the tab bar, so the member is not stranded:
+
+```tsx
+if (loading) {
+  return (
+    <Screen tabBar={<TabBar active="club" />}>
+      <View style={styles.centered}>
+        <ActivityIndicator color={colors.accentColor} />
+      </View>
+    </Screen>
+  );
+}
+```
+
+```tsx
+if (loadFailed) {
+  return (
+    <Screen contentStyle={styles.container} tabBar={<TabBar active="club" />}>
+      <Text style={styles.heading}>Your clubs</Text>
+      <ErrorBanner message={GENERIC_ERROR} />
+    </Screen>
+  );
+}
+```
 
 - [ ] **Step 4: Update the existing assertions**
 
