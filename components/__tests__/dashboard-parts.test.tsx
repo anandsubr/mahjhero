@@ -46,13 +46,18 @@ const CHIPS = [
 describe('ClubChips', () => {
   it('marks the selected chip and only that one', () => {
     render(<ClubChips chips={CHIPS} selected="club-1" onSelect={() => {}} />);
+    // Plain getAttribute, not jest-dom's toHaveAttribute: this repo does not
+    // depend on @testing-library/jest-dom, and vitest.setup.ts records that
+    // `globals: true` is deliberately off so no matcher package can
+    // auto-extend `expect`.
     expect(
-      screen.getByRole('button', { name: 'Riverside Mah Jongg' }),
-    ).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByRole('button', { name: 'All clubs' })).toHaveAttribute(
-      'aria-selected',
-      'false',
-    );
+      screen
+        .getByRole('button', { name: 'Riverside Mah Jongg' })
+        .getAttribute('aria-selected'),
+    ).toBe('true');
+    expect(
+      screen.getByRole('button', { name: 'All clubs' }).getAttribute('aria-selected'),
+    ).toBe('false');
   });
 
   it('reports the chip that was pressed', () => {
