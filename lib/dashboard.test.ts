@@ -192,21 +192,45 @@ describe('buildDashboardRows', () => {
     expect(rows[0].joinable).toBe(false);
   });
 
-  it('drops a full event, a cancelled one, and one already started', () => {
-    const full = event({
-      id: 'full',
-      bookings: [
-        { profile_id: 'a', status: 'confirmed', event_table_id: 'table-1' },
-        { profile_id: 'b', status: 'confirmed', event_table_id: 'table-1' },
-        { profile_id: 'c', status: 'confirmed', event_table_id: 'table-1' },
-        { profile_id: 'd', status: 'confirmed', event_table_id: 'table-1' },
-      ],
-    });
-    const cancelled = event({ id: 'cancelled', status: 'cancelled' });
-    const past = event({ id: 'past', starts_at: '2026-08-01T23:00:00Z' });
+  // One assertion per exclusion path. These were a single test asserting
+  // `rows).toEqual([])` over all three events at once, which any two of them
+  // could regress under without the assertion changing.
+  it('drops an event with no free seat', () => {
     const rows = buildDashboardRows({
       bookings: [],
-      events: [full, cancelled, past],
+      events: [
+        event({
+          id: 'full',
+          bookings: [
+            { profile_id: 'a', status: 'confirmed', event_table_id: 'table-1' },
+            { profile_id: 'b', status: 'confirmed', event_table_id: 'table-1' },
+            { profile_id: 'c', status: 'confirmed', event_table_id: 'table-1' },
+            { profile_id: 'd', status: 'confirmed', event_table_id: 'table-1' },
+          ],
+        }),
+      ],
+      clubs: CLUBS,
+      userId: 'me',
+      now: NOW,
+    });
+    expect(rows).toEqual([]);
+  });
+
+  it('drops a cancelled event', () => {
+    const rows = buildDashboardRows({
+      bookings: [],
+      events: [event({ id: 'cancelled', status: 'cancelled' })],
+      clubs: CLUBS,
+      userId: 'me',
+      now: NOW,
+    });
+    expect(rows).toEqual([]);
+  });
+
+  it('drops an event that has already started', () => {
+    const rows = buildDashboardRows({
+      bookings: [],
+      events: [event({ id: 'past', starts_at: '2026-08-01T23:00:00Z' })],
       clubs: CLUBS,
       userId: 'me',
       now: NOW,
@@ -357,5 +381,30 @@ describe('needAFourthAlerts', () => {
     expect(new Set(alerts.map((alert) => alert.eventId))).toEqual(
       new Set(['event-1']),
     );
+  });
+
+  // The negative of the pair above. The two-table cases covered "one short"
+  // and "both short" but never "neither short", so a `needsAFourth` that had
+  // come to return true for a table with two free seats would have passed
+  // every multi-table test in this file.
+  it('stays silent when neither table is short', () => {
+    const alerts = needAFourthAlerts({
+      events: [
+        event({
+          event_tables: twoTables,
+          table_count: 2,
+          bookings: [
+            { profile_id: 'a', status: 'confirmed', event_table_id: 'table-1' },
+            { profile_id: 'b', status: 'confirmed', event_table_id: 'table-1' },
+            { profile_id: 'c', status: 'confirmed', event_table_id: 'table-2' },
+            { profile_id: 'd', status: 'confirmed', event_table_id: 'table-2' },
+          ],
+        }),
+      ],
+      clubs: CLUBS,
+      userId: 'me',
+      now: NOW,
+    });
+    expect(alerts).toEqual([]);
   });
 });
