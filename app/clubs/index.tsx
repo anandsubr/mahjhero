@@ -39,16 +39,15 @@ import {
   buildChips,
   buildDashboardRows,
   headerScope,
-  initialsFrom,
   inScope,
   needAFourthAlerts,
 } from '../../lib/dashboard';
 import type { DashboardRow, FourthAlert } from '../../lib/dashboard';
 import { fetchUpcomingEvents, formatEventWhen } from '../../lib/events';
 import type { ClubEvent } from '../../lib/events';
-import { fetchProfile } from '../../lib/profile';
 import { useSession } from '../../lib/session';
 import { colors, radius, space, type } from '../../lib/theme';
+import { useViewerInitials } from '../../lib/use-viewer';
 
 /**
  * The waitlist half of a `commit_booking` outcome, worded as the event screen
@@ -83,10 +82,10 @@ export default function ClubsScreen() {
   const [checkInBusy, setCheckInBusy] = useState(false);
 
   const [events, setEvents] = useState<ClubEvent[]>([]);
-  const [profileName, setProfileName] = useState('');
   const [selected, setSelected] = useState<string>(ALL_CLUBS);
   const [notice, setNotice] = useState<string | null>(null);
   const [takeBusy, setTakeBusy] = useState(false);
+  const initials = useViewerInitials();
 
   useEffect(() => {
     if (!userId) return;
@@ -111,10 +110,6 @@ export default function ClubsScreen() {
         setBookings(result);
         setBookingsFailed(false);
       }
-    });
-    fetchProfile(userId).then((profile) => {
-      if (cancelled) return;
-      setProfileName(profile?.display_name ?? '');
     });
     return () => {
       cancelled = true;
@@ -367,7 +362,7 @@ export default function ClubsScreen() {
         kicker={scope.kicker}
         name={scope.name}
         meta={scope.meta}
-        initials={initialsFrom(profileName)}
+        initials={initials}
         onPressAvatar={() => router.push('/profile')}
       />
 
