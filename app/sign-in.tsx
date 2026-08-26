@@ -117,20 +117,23 @@ export default function SignIn() {
           front door, so it needs a way back to it. The artboard draws this
           same chevron.
 
-          `replace`, not `push`: welcome's two CTAs push here, so pushing
-          back would let a visitor stack welcome→sign-in→welcome→sign-in...
-          without bound just by reconsidering or retyping an email, and on
-          web the browser's own back button would then cycle inside the
-          flow instead of leaving it. `replace` keeps the stack bounded.
+          `back()`, not `replace`: welcome's two CTAs push here, and back()
+          reuses that existing history entry instead of appending a new one.
+          `replace` alone doesn't bound the stack — driving the real web
+          build across three welcome→sign-in→welcome round trips showed
+          history.length climbing 3 -> 4 -> 5, because replace lands on the
+          last entry and the next push still appends, filling the stack with
+          duplicate /welcome entries.
 
-          Not `router.back()` either: /sign-in is reachable directly on a
-          cold start (the route is linkable, and other screens redirect
+          `canGoBack()` guards the cold-start case: /sign-in is reachable
+          directly (the route is linkable, and other screens redirect
           straight to it), where back() has nowhere to go. `replace` always
-          lands somewhere real. */}
+          lands somewhere real, so it's the fallback when there's nothing to
+          go back to. */}
       <Button
         variant="ghost"
         big={false}
-        onPress={() => router.replace('/welcome')}
+        onPress={() => (router.canGoBack() ? router.back() : router.replace('/welcome'))}
         icon={<ChevronLeftIcon color={colors.accentColor} />}
         accessibilityLabel="Back to the welcome screen"
         style={styles.backButton}
