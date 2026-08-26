@@ -243,9 +243,9 @@ export function initialsFrom(displayName: string): string {
     // UTF-16 code unit, so a name whose first character is astral produces a
     // lone unpaired surrogate — a replacement glyph in the avatar rather
     // than the letter the member chose. Array.from iterates code points.
-    // The `?? ''` is unreachable given the `filter(Boolean)` above, and is
-    // there so the expression types as `string` rather than
-    // `string | undefined` under noUncheckedIndexedAccess.
+    // The `?? ''` is unreachable — `filter(Boolean)` above has already
+    // dropped every empty string — and is kept only so this line cannot
+    // become a crash if that filter is ever loosened.
     .map((word) => (Array.from(word)[0] ?? '').toUpperCase())
     .join('');
 }
