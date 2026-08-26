@@ -457,7 +457,9 @@ describe('dashboard artboard', () => {
     render(<ClubsScreen />);
     fireEvent.click(await screen.findByRole('button', { name: /I'm in/ }));
 
-    expect(await screen.findByText('2nd on the waitlist')).toBeTruthy();
+    // The banner names the game, exactly as the seated half does. Matched by
+    // prefix: the rest is the formatted date, which moves with the clock.
+    expect(await screen.findByText(/^2nd on the waitlist — /)).toBeTruthy();
     expect(screen.queryByText(/You're in/)).toBeNull();
   });
 
@@ -494,7 +496,7 @@ describe('dashboard artboard', () => {
     render(<ClubsScreen />);
     fireEvent.click(await screen.findByRole('button', { name: /Join Open game/ }));
 
-    expect(await screen.findByText('1st on the waitlist')).toBeTruthy();
+    expect(await screen.findByText(/^1st on the waitlist — .*Open game$/)).toBeTruthy();
   });
 
   // The alerts are derived from `events`, not from `bookings`. Reloading only
@@ -682,16 +684,17 @@ describe('dashboard artboard', () => {
     render(<ClubsScreen />);
     fireEvent.click(await screen.findByRole('button', { name: /Join Open game/ }));
 
-    // Two matches on purpose: the banner the Join raised, and the row's own
-    // seat status. `findAllByText` rather than `findByText` for that reason.
-    expect(
-      (await screen.findAllByText('1st on the waitlist')).length,
-    ).toBeGreaterThan(0);
+    // Two different strings now: the banner names the game, the row's own
+    // seat status does not. Asserted separately — the previous
+    // `findAllByText(...).length > 0` would have been satisfied by either
+    // one alone, which is exactly the ambiguity naming the game removes.
+    expect(await screen.findByText(/^1st on the waitlist — .*Open game$/)).toBeTruthy();
+    expect(screen.getByText('1st on the waitlist')).toBeTruthy();
 
     fireEvent.click(screen.getByLabelText('Leave the waitlist for Open game'));
 
     await waitFor(() =>
-      expect(screen.queryAllByText('1st on the waitlist')).toHaveLength(0),
+      expect(screen.queryAllByText(/1st on the waitlist/)).toHaveLength(0),
     );
   });
 

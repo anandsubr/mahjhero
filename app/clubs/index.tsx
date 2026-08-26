@@ -51,16 +51,27 @@ import { useViewerInitials } from '../../lib/use-viewer';
 
 /**
  * The waitlist half of a `commit_booking` outcome, worded as the event screen
- * words it (`waitlistLabel`), or null when the write actually seated the
- * member. A waitlisted outcome can carry a null `waitlist_position` — the
- * same "waiting, position unknown" case the row's own seat status already
- * words as "Waiting for a seat".
+ * words it (`waitlistLabel`) and naming the game it is about. A waitlisted
+ * outcome can carry a null `waitlist_position` — the same "waiting, position
+ * unknown" case the row's own seat status already words as "Waiting for a
+ * seat".
+ *
+ * `description` is not optional. The seated notice has always named its game
+ * ("You're in — Thu 4 Sep, 7:00 pm — Club Night") while this one said only
+ * "2nd on the waitlist", which on a dashboard listing several games named
+ * none of them. Requiring the argument is what stops the two halves drifting
+ * apart again.
  */
-function waitlistNotice(result: BookingOutcome | null): string | null {
+function waitlistNotice(
+  result: BookingOutcome | null,
+  description: string,
+): string | null {
   if (!result || result.outcome !== 'waitlisted') return null;
-  return result.waitlist_position !== null
-    ? waitlistLabel(result.waitlist_position)
-    : 'Waiting for a seat';
+  const position =
+    result.waitlist_position !== null
+      ? waitlistLabel(result.waitlist_position)
+      : 'Waiting for a seat';
+  return `${position} — ${description}`;
 }
 
 export default function ClubsScreen() {
@@ -269,7 +280,7 @@ export default function ClubsScreen() {
     // with `outcome: 'waitlisted'` — someone else got there first — is an
     // ordinary outcome, not a rare race, and must not be reported as
     // "You're in".
-    setNotice(waitlistNotice(result) ?? `You're in — ${alert.text}.`);
+    setNotice(waitlistNotice(result, alert.text) ?? `You're in — ${alert.text}.`);
     await reloadAfterBooking();
   }
 
@@ -293,7 +304,10 @@ export default function ClubsScreen() {
       setActionError(error);
       return;
     }
-    setNotice(waitlistNotice(result));
+    // Built the way the alert builds its own `text`, so both notices read
+    // alike whichever button raised them.
+    const description = `${formatEventWhen(row.startsAt, row.timezone)} — ${row.title}`;
+    setNotice(waitlistNotice(result, description));
     await reloadAfterBooking();
   }
 
