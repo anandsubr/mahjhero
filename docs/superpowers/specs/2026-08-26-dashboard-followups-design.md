@@ -250,8 +250,10 @@ New coverage:
   `/welcome`.
 - `app/__tests__/clubs.test.tsx` — a game row navigates to its event; the
   need-a-fourth pre-assertion.
-- `app/__tests__/club-detail.test.tsx` / `venues.test.tsx` — the header renders
-  in the ready state and the tab bar renders in all three.
+- `app/__tests__/clubs.test.tsx` (its existing `club detail screen` describe)
+  and `app/__tests__/venues.test.tsx` — the header renders in the ready state
+  and the tab bar renders in all three. Both screens already have a test
+  harness in those files; a new file per screen would duplicate the mocks.
 - `app/__tests__/profile.test.tsx` — no back link; sign out is a block
   destructive button.
 - `lib/dashboard.test.ts` — the zero-alert two-table case; `initialsFrom` on an
