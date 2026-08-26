@@ -172,8 +172,16 @@ Kept, under a section header matching the new visual language. The bottom
 ## Tab bar
 
 The artboard's four-tab bottom bar, on `colors.surface`, active tab in
-`colors.accentColor`. Introduced as an expo-router layout so it persists
-across the tabbed screens.
+`colors.accent[700]` — not the artboard's `accentColor`, which measures
+2.69:1 on that ground and made the selected tab less legible than the
+unselected ones.
+
+It is a plain component (`components/TabBar.tsx`) that each tab screen renders
+through `Screen`'s `tabBar` prop, **not** an expo-router layout. A `(tabs)`
+route group would put `app/(tabs)/clubs/index.tsx` in the same URL namespace as
+the existing `app/clubs/[id]/` tree and would move files that several test
+files import by relative path. Migrating to expo-router's own `Tabs` is a
+follow-up, not a prerequisite; see the component's own docstring.
 
 | Tab | Route | State |
 |---|---|---|
