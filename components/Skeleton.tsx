@@ -8,27 +8,31 @@ import { colors, radius } from '../lib/theme';
  * `delay`, which is why the stagger is a prop rather than baked in.
  *
  * `@keyframes shimmer { 0%, 100% { opacity: .5 } 50% { opacity: .9 } }` in
- * the design; a two-leg Animated sequence is the same curve.
+ * the design; a two-leg Animated sequence is the same curve. `delay` is
+ * applied once, up front, before the loop starts — not on every cycle —
+ * so all three blocks settle into the same 1200ms period, just phase-shifted.
  */
 export default function Skeleton({ delay = 0 }: { delay?: number }) {
   const opacity = useRef(new Animated.Value(0.5)).current;
 
   useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(opacity, {
-          toValue: 0.9,
-          duration: 600,
-          delay,
-          useNativeDriver: true,
-        }),
-        Animated.timing(opacity, {
-          toValue: 0.5,
-          duration: 600,
-          useNativeDriver: true,
-        }),
-      ]),
-    );
+    const loop = Animated.sequence([
+      Animated.delay(delay),
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(opacity, {
+            toValue: 0.9,
+            duration: 600,
+            useNativeDriver: true,
+          }),
+          Animated.timing(opacity, {
+            toValue: 0.5,
+            duration: 600,
+            useNativeDriver: true,
+          }),
+        ]),
+      ),
+    ]);
     loop.start();
     // Stopped on unmount: a running loop holds a reference to the component's
     // Animated.Value and keeps ticking after the content has arrived.
