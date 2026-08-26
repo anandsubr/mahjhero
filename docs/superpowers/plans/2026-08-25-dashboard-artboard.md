@@ -830,21 +830,28 @@ export default function Skeleton({ delay = 0 }: { delay?: number }) {
   const opacity = useRef(new Animated.Value(0.5)).current;
 
   useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(opacity, {
-          toValue: 0.9,
-          duration: 600,
-          delay,
-          useNativeDriver: true,
-        }),
-        Animated.timing(opacity, {
-          toValue: 0.5,
-          duration: 600,
-          useNativeDriver: true,
-        }),
-      ]),
-    );
+    // The offset applies once, OUTSIDE the loop. Animated.loop resets and
+    // restarts its whole child every iteration, so a `delay` on the first
+    // timing leg would re-apply every cycle — giving the three blocks
+    // periods of 1200/1350/1500ms and a pause at rest each time, instead of
+    // the one-time offset CSS `animation-delay` describes.
+    const loop = Animated.sequence([
+      Animated.delay(delay),
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(opacity, {
+            toValue: 0.9,
+            duration: 600,
+            useNativeDriver: true,
+          }),
+          Animated.timing(opacity, {
+            toValue: 0.5,
+            duration: 600,
+            useNativeDriver: true,
+          }),
+        ]),
+      ),
+    ]);
     loop.start();
     // Stopped on unmount: a running loop holds a reference to the component's
     // Animated.Value and keeps ticking after the content has arrived.
