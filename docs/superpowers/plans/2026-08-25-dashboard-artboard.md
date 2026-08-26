@@ -1430,6 +1430,13 @@ import { colors, radius, space, type } from '../lib/theme';
  * The artboard's call for a fourth: an accent card with a red-dragon tile,
  * the club it belongs to, and one button that takes the seat.
  *
+ * The card sits on accent[700], not the artboard's accent. The artboard
+ * pairs cream text with #c67139, which measures 3.03:1 for the body and
+ * 2.75:1 for the kicker — both under WCAG AA's 4.5:1 at these sizes. One
+ * step down the palette's own ramp puts both at 5.72:1 and keeps the
+ * design's cream-on-orange character. This app has already had to lift one
+ * screen over the same line.
+ *
  * The glyph is 中 on a background-coloured tile, exactly as drawn. No custom
  * font is shipped for it — iOS and Android both cover the character in their
  * system fallback stack, and the design's own stack (Hiragino Mincho ProN,
@@ -1447,7 +1454,7 @@ export default function NeedAFourthCard({
   onTake: () => void;
 }) {
   return (
-    <Card row elevated background={colors.accentColor} style={styles.card}>
+    <Card row elevated background={colors.accent[700]} style={styles.card}>
       <View style={styles.tile}>
         <Text style={styles.glyph}>中</Text>
       </View>
@@ -1455,7 +1462,15 @@ export default function NeedAFourthCard({
         <Text style={styles.kicker}>{`Need a 4th · ${clubName}`}</Text>
         <Text style={styles.text}>{text}</Text>
       </View>
+      {/*
+        variant="secondary", not the default primary. Button applies the
+        caller's `style` to the Pressable but never to the label, whose
+        colour comes only from the variant — so a primary Button with
+        `backgroundColor: colors.bg` renders cream text on a cream pill.
+        Secondary's label is colors.text: 13.95:1 against the pill.
+      */}
       <Button
+        variant="secondary"
         big={false}
         disabled={busy}
         onPress={onTake}
@@ -1486,7 +1501,7 @@ const styles = StyleSheet.create({
   glyph: {
     fontSize: 22,
     lineHeight: 26,
-    color: colors.accentColor,
+    color: colors.accent[700],
   },
   body: {
     flex: 1,
@@ -1498,7 +1513,6 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
     textTransform: 'uppercase',
     color: colors.bg,
-    opacity: 0.9,
   },
   text: {
     fontFamily: type.bodyRegular,
