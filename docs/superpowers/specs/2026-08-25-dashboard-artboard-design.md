@@ -35,16 +35,40 @@ which is scoped to a single club.
 
 ## Scope of this pass
 
-Presentation only. No new routes, no schema change, no new SQL, no new RPC,
-and no new query written. Every existing behaviour is preserved: promotion
-offers, waitlist management, decline, and check-in all keep their current
-logic and their current copy.
+No schema change, no new SQL, no new RPC. Every existing behaviour is
+preserved: promotion offers, waitlist management, decline, and check-in all
+keep their current logic and their current copy.
 
-The screen does gain one call to an existing function — `fetchProfile(userId)`
-from `lib/profile.ts` — to supply the avatar's initials. It replaces the
-bottom "Your profile" link rather than adding a net affordance. If it fails,
-the avatar falls back to a neutral glyph and the screen is otherwise
-unaffected.
+The screen calls three existing functions it did not call before:
+
+- `fetchProfile(userId)` (`lib/profile.ts`) for the avatar's initials. It
+  replaces the bottom "Your profile" link rather than adding a net
+  affordance. On failure the avatar falls back to a neutral glyph.
+- `fetchUpcomingEvents(clubId)` (`lib/events.ts`), once per club. This is
+  what makes the "Need a 4th" card and the Join button possible — see below.
+- `commitBooking(...)` (`lib/bookings.ts`) for the "I'm in" and "Join"
+  actions.
+
+One new route is added: a Messages placeholder, so the tab bar has four real
+destinations.
+
+### Correction to an earlier draft of this spec
+
+An earlier draft deferred the "Need a 4th" card and the Join button on the
+grounds that the dashboard could not get seat counts. That was wrong, and it
+came from looking only at `my_upcoming_bookings`.
+
+`fetchMyUpcomingBookings()` indeed carries no capacity or confirmed counts,
+and returns only bookings the caller is already in. But
+`fetchUpcomingEvents(clubId)` returns `ClubEvent`, which carries
+`event_tables` (each with `capacity`) and `bookings` (every row, live and
+dead) — and `needsAFourth(capacity, confirmed, startsAt, now)` plus
+`eventStatusLine()` already compute the need-a-fourth condition from exactly
+that shape. It also returns every upcoming event in the club, not merely the
+caller's, so "open games you are not in" is derivable from the same data.
+
+Both features are therefore buildable with no new SQL, at a cost of one
+additional read per club.
 
 ## Layout
 
@@ -76,21 +100,43 @@ both the games list and the header.
 Rendered only when the member belongs to more than one club. A single-club
 member gets no switcher, because there is nothing to switch between.
 
-### 3. Loading
+### 3. Notice banner
+
+An accent-2 card with a check icon and a ghost "Dismiss" button, shown after
+taking a seat from an alert. Its copy mirrors the design's: "You're in — "
+plus the alert text. Client-side state, cleared on dismiss.
+
+### 4. Loading
 
 Three shimmering blocks — 86px tall, `radius.card`, `colors.surface`,
 staggered — replacing the full-screen `ActivityIndicator` for the `!ready`
 state, driven by `Animated.loop` on opacity. The pre-session `loading` gate
 keeps its spinner; that is an auth gate, not content loading.
 
-### 4. Section header
+### 5. "Need a 4th" alert cards
+
+One card per table in the chip scope that `needsAFourth()` reports as one
+short and starting within 48 hours, excluding events the viewer is already
+in. Accent background, a `中` glyph on a `colors.bg` tile, an uppercase
+"Need a 4th · <club>" kicker over the call text, and an "I'm in" button.
+
+Data comes from `fetchUpcomingEvents(clubId)` per club — `event_tables`
+gives `capacity`, `bookings` gives the confirmed count per table. The
+condition is `needsAFourth()` itself, not a fourth reimplementation of the
+rule; `lib/bookings.ts` already warns that this rule reached three copies
+before one drifted.
+
+"I'm in" calls `commitBooking({ eventId, players: [userId], preferredTableId,
+allowSplit: false })`, then reloads and raises the notice banner.
+
+### 6. Section header
 
 The artboard's baseline-aligned row. No "See all" link: there is no
 all-games screen to link to.
 
-### 5. Game rows
+### 7. Game rows
 
-The substantive change. Each booking's `Card` becomes a three-part row:
+The substantive change. Each `Card` becomes a three-part row:
 
 - **Date tile** on the left: day abbreviation over the date number, on
   `colors.bg`, with a 4px `neutral[200]` bottom border standing in for the
@@ -98,25 +144,52 @@ The substantive change. Each booking's `Card` becomes a three-part row:
 - **Title block**: club name as an uppercase muted kicker, event title in
   bold, venue and time as the muted meta line.
 - **Status slot** on the right: `Tag` in the `accent2` variant reading
-  "Seated" for a confirmed seat; otherwise the existing vocabulary
-  (`waitlistLabel(...)`, "Not seated yet").
+  "Seated" for a confirmed seat; a "Join" button for an open game the viewer
+  is not in; otherwise the existing vocabulary (`waitlistLabel(...)`, "Not
+  seated yet").
+
+The list is the union of the viewer's bookings (`fetchMyUpcomingBookings`)
+and open events they are not in (`fetchUpcomingEvents` per club), matching
+the artboard's mixed Seated/Join list. Rows are keyed by event id so a game
+the viewer is booked into never appears twice.
 
 Offer countdown, accept/decline, leave-waitlist and `CheckInControl` keep
 their current behaviour and gating, stacked below the row inside the same
-card. The artboard has no place for them because it predates those
-features; dropping them to match it literally would delete shipped
-functionality.
+card. The artboard has no place for them because it predates those features;
+dropping them to match it literally would delete shipped functionality.
 
-### 6. Empty state
+### 8. Empty state
 
 A card with a 2px dashed `neutral[400]` border. Its "Host a table" button
 renders only when the chip filter is scoped to a single club, since the
 route needs a club id.
 
-### 7. Your clubs list
+### 9. Your clubs list
 
 Kept, under a section header matching the new visual language. The bottom
 "Your profile" link is removed — the avatar is now that affordance.
+
+## Tab bar
+
+The artboard's four-tab bottom bar, on `colors.surface`, active tab in
+`colors.accentColor`. Introduced as an expo-router layout so it persists
+across the tabbed screens.
+
+| Tab | Route | State |
+|---|---|---|
+| Club | `/clubs` | exists |
+| Messages | `/messages` | **new placeholder** — "Messages are on the way", nothing else |
+| Profile | `/profile` | exists |
+| Alerts | `/notifications` | exists |
+
+The Alerts tab needs no new screen. The design's "Notifications" artboard is
+a *settings* screen — delivery channel, quiet hours, "Mute need a 4th" —
+which is what `app/notifications.tsx` already implements. It is not a feed,
+and nothing in the design implies one.
+
+Screens outside the four tabs (`/clubs/[id]/...`, `/sign-in`, `/join/...`,
+`/profile` sub-flows) stay on the stack and are pushed over the tab shell as
+they are today.
 
 ## Structure
 
@@ -127,6 +200,8 @@ Kept, under a section header matching the new visual language. The bottom
 - `ClubChips.tsx` — the scroller, takes labels and a selection callback
 - `DashboardHeader.tsx` — kicker/name/meta plus the avatar
 - `Skeleton.tsx` — one shimmer block
+- `NeedAFourthCard.tsx` — the accent alert card and its "I'm in" action
+- `NoticeBanner.tsx` — the dismissible accent-2 confirmation
 
 Each is independently testable and none needs to know about `MyBooking`.
 
@@ -145,66 +220,72 @@ Each is independently testable and none needs to know about `MyBooking`.
 
 Recorded here so none of it is lost. Nothing below is built in this pass.
 
-### Needs data the app does not yet read
+### Features, not presentation
 
-1. **"Need a 4th" alert card** — the accent card with the 中 tile glyph and
-   the "I'm in" button. `needsAFourth(capacity, confirmed, startsAt, now)`
-   already exists in `lib/bookings.ts`, but `MyBooking` carries no per-table
-   capacity or confirmed count, so the dashboard cannot evaluate it. Needs a
-   cross-club read of table seat counts.
-2. **"Join" button and open-game rows** — the artboard's `g.open` state.
-   `fetchMyUpcomingBookings()` returns only bookings you are already in, so
-   every row is by definition already yours. Needs a cross-club "open games
-   you are not in" read.
-3. **Member count in the header meta** — restoring `"N clubs · M members"`
-   needs `fetchMyClubs()` to return counts.
+1. **Messages** — the artboards `1C messages`, `1C thread` and `1C compose`
+   describe club threads with replies. This pass ships only a placeholder at
+   `/messages` so the tab bar has four destinations. The app's existing
+   broadcasts are a different thing: one-way, organizer-to-club, no thread.
+2. **Unread badges on club chips** — the design's model carries `hasUnread`
+   and `unread` per club. Depends on Messages existing.
+3. **Friends** (`1C friends`), **Host a table** (`1C host a table`),
+   **Start a club** (`1C start a club`), **Join a table**
+   (`1C join a table`) — separate screens, separate passes. `/clubs/new` and
+   `/clubs/[id]/events/new` cover some of this ground today with a different
+   layout.
 
-### Depends on deferred items above
+### Needs data the app does not read
 
-4. **Dismissible notice banner** — the accent-2 card with the check icon.
-   In the design its only source is taking an alert (`alertTaken` sets
-   `notice`), so it has nothing to show until item 1 exists.
+4. **Member count in the header meta** — restoring the artboard's
+   `"3 clubs · 47 members"` needs counts `fetchMyClubs()` does not return.
+   Reachable via `fetchRoster()` per club, but that is a second N-read fan-out
+   for one line of text; better folded into the batching work in item 8.
 
-### Needs screens or navigation the app does not have
+### Needs screens or navigation this pass does not add
 
-5. **Four-tab bottom bar** (Club / Messages / Profile / Alerts) — the app
-   has no tab navigation at all; adding it restructures expo-router layout
-   across every screen. Explicitly out of scope, decided up front.
-6. **Header switcher chevron** — becomes meaningful only if the dashboard
-   and the clubs list are split into separate screens as the design has
-   them.
-7. **"See all"** — needs an all-games screen.
-8. **Messages, thread and compose screens** — artboards `1C messages`,
-   `1C thread`, `1C compose`. No such feature exists; the app has
-   broadcasts, which is a different thing.
-9. **Unread badges on club chips** — the design's model carries
-   `hasUnread` / `unread` per club. Depends on messages.
-10. **Friends, Host a table, Start a club, Join a table** — artboards
-    `1C friends`, `1C host a table`, `1C start a club`, `1C join a table`.
-    Separate screens, separate passes.
+5. **Header switcher chevron** — becomes meaningful only if the dashboard and
+   the clubs list are split into separate screens as the design has them.
+   Here they share one screen and the chips do the switching.
+6. **"See all"** — needs an all-games screen.
 
 ### Presentation work not attempted here
 
-11. **"This week" windowing** — filtering to 7 days and grouping the
-    remainder under a "Later" heading, which would let the section carry the
-    artboard's actual label.
-12. **`app/clubs/[id]/index.tsx`** — the per-club screen keeps its current
-    look and will visually clash with the rebuilt dashboard until it gets
-    the same treatment.
-13. **Desktop artboard** (`1C desktop`) — a three-column layout. The app
-    caps content at `layout.contentMaxWidth` (440px) on every viewport.
+7. **"This week" windowing** — filtering to 7 days and grouping the remainder
+   under a "Later" heading, which would let the section carry the artboard's
+   actual label instead of "Your games".
+8. **Batching the dashboard's reads** — this pass leaves the screen at
+   `fetchMyClubs` + `fetchMyUpcomingBookings` + `fetchProfile` + one
+   `fetchUpcomingEvents` per club. For a member in three clubs that is six
+   round trips where one RPC would do. Correct but chatty; worth collapsing
+   once the shape settles.
+9. **`app/clubs/[id]/index.tsx`** — the per-club screen keeps its current
+   look and will visually clash with the rebuilt dashboard until it gets the
+   same treatment.
+10. **Desktop artboard** (`1C desktop`) — a three-column layout. The app caps
+    content at `layout.contentMaxWidth` (440px) on every viewport.
 
 ## Testing
 
 Test-driven. `app/__tests__/clubs.test.tsx` holds 27 tests; those asserting
-text that this change removes or renames need updating. New coverage:
+text that this change removes or renames need updating. Introducing the tab
+layout also touches `app/_layout.tsx`, so the whole suite is run to catch any
+screen whose test depends on the current navigation shape. New coverage:
 
 - chip filtering narrows the games list and updates the header
 - header meta reads `"N clubs"` for all, the club's `rhythm` for one
 - the skeleton state renders while `!ready`
 - the date tile shows the right day and date for a booking's timezone
 - the status slot shows "Seated" for confirmed, the waitlist label otherwise
+- a table one short and starting inside 48 hours raises exactly one
+  "Need a 4th" card, and none is raised for an event the viewer is in
+- "I'm in" and "Join" call `commitBooking` with the viewer as the only
+  player, and a failure surfaces the error without leaving a stale notice
+- the games list de-duplicates an event the viewer is booked into against
+  the same event coming back from `fetchUpcomingEvents`
 - offers, decline, leave-waitlist and check-in still behave as before
+
+The tab bar gets its own coverage: four tabs render, the active one is
+marked, and each routes where the table above says.
 
 ## Branching
 
