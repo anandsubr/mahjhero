@@ -66,6 +66,19 @@ vi.mock('../../lib/clubs', async (importOriginal) => {
   };
 });
 
+const fetchProfile = vi.fn();
+
+// The dashboard reads the member's display name for the header avatar. With
+// lib/profile left unmocked, every test in this file fired a real request at
+// the placeholder Supabase env — caught and swallowed by `fetchProfile`, so
+// nothing failed, but a unit test has no business on the network. Same
+// partial-mock shape as the modules above, and exactly ONE `vi.mock` for this
+// specifier: two are both hoisted and only one survives.
+vi.mock('../../lib/profile', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/profile')>();
+  return { ...actual, fetchProfile: (...args: unknown[]) => fetchProfile(...args) };
+});
+
 import ClubsScreen from '../clubs/index';
 import type { MyBooking } from '../../lib/bookings';
 
@@ -114,8 +127,13 @@ beforeEach(() => {
   recordAttendance.mockReset();
   clearAttendance.mockReset();
   fetchMyClubs.mockReset();
+  fetchProfile.mockReset();
   fetchMyUpcomingBookings.mockResolvedValue([]);
   fetchMyClubs.mockResolvedValue([]);
+  // No display name set, which is what the header's avatar falls back to a
+  // person glyph for — the state every test here was already implicitly in
+  // when the real call failed.
+  fetchProfile.mockResolvedValue(null);
   recordAttendance.mockResolvedValue({ error: null });
   clearAttendance.mockResolvedValue({ error: null });
   // Every fixture's `starts_at` is a fixed calendar timestamp

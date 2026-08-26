@@ -30,7 +30,7 @@ import {
   offerCountdown,
   waitlistLabel,
 } from '../../lib/bookings';
-import type { MyBooking } from '../../lib/bookings';
+import type { BookingOutcome, MyBooking } from '../../lib/bookings';
 import { fetchMyClubs } from '../../lib/clubs';
 import type { Club } from '../../lib/clubs';
 import { GENERIC_ERROR } from '../../lib/constants';
@@ -49,6 +49,20 @@ import type { ClubEvent } from '../../lib/events';
 import { fetchProfile } from '../../lib/profile';
 import { useSession } from '../../lib/session';
 import { colors, radius, space, type } from '../../lib/theme';
+
+/**
+ * The waitlist half of a `commit_booking` outcome, worded as the event screen
+ * words it (`waitlistLabel`), or null when the write actually seated the
+ * member. A waitlisted outcome can carry a null `waitlist_position` — the
+ * same "waiting, position unknown" case the row's own seat status already
+ * words as "Waiting for a seat".
+ */
+function waitlistNotice(result: BookingOutcome | null): string | null {
+  if (!result || result.outcome !== 'waitlisted') return null;
+  return result.waitlist_position !== null
+    ? waitlistLabel(result.waitlist_position)
+    : 'Waiting for a seat';
+}
 
 export default function ClubsScreen() {
   const { session, loading } = useSession();
@@ -85,16 +99,9 @@ export default function ClubsScreen() {
         return;
       }
       setClubs(result);
-      // One read per club. Chatty by design for now — collapsing these into a
-      // single RPC is deferred item 8 in the spec, and wants the screen's shape
-      // to settle first. Failures degrade to "no open games" rather than
-      // blanking the screen: the member's own bookings are the load-bearing
-      // half and they came from a different call.
-      const perClub = await Promise.all(
-        result.map((club) => fetchUpcomingEvents(club.id)),
-      );
+      const perClub = await fetchEventsForClubs(result);
       if (cancelled) return;
-      setEvents(perClub.filter((list): list is ClubEvent[] => list !== null).flat());
+      setEvents(perClub);
       setReady(true);
     });
     fetchMyUpcomingBookings().then((result) => {
@@ -113,6 +120,23 @@ export default function ClubsScreen() {
       cancelled = true;
     };
   }, [userId]);
+
+  // One read per club. Chatty by design for now — collapsing these into a
+  // single RPC is deferred item 8 in the spec, and wants the screen's shape
+  // to settle first. Failures degrade to "no open games" rather than
+  // blanking the screen: the member's own bookings are the load-bearing
+  // half and they came from a different call.
+  //
+  // Shared by the mount effect and by the refresh after a successful take or
+  // join, so the two paths cannot drift. Returns rather than setting state
+  // itself: the mount path has to drop a result that arrived after its effect
+  // was cancelled, which a self-setting helper could not see.
+  async function fetchEventsForClubs(list: Club[]): Promise<ClubEvent[]> {
+    const perClub = await Promise.all(
+      list.map((club) => fetchUpcomingEvents(club.id)),
+    );
+    return perClub.filter((events): events is ClubEvent[] => events !== null).flat();
+  }
 
   async function reloadBookings() {
     const result = await fetchMyUpcomingBookings();
@@ -198,13 +222,31 @@ export default function ClubsScreen() {
     }
   }
 
+  // Both halves of the screen move after a successful booking write, so both
+  // are re-read. The alerts and the joinable rows are derived from `events`,
+  // not from `bookings`: reloading only the bookings left the need-a-fourth
+  // card the member had just acted on still on screen, with a live "I'm in"
+  // button whose only possible outcome was the
+  // `bookings_one_active_per_person_idx` refusal.
+  async function reloadAfterBooking() {
+    const [, freshEvents] = await Promise.all([
+      reloadBookings(),
+      fetchEventsForClubs(clubs ?? []),
+    ]);
+    setEvents(freshEvents);
+  }
+
   // Taking the advertised seat: `preferredTableId` is the very table the
   // alert counted as one short, so the member lands with the three people
   // they were shown rather than wherever the server happens to have room.
   async function takeSeat(alert: FourthAlert) {
     setTakeBusy(true);
     setActionError(null);
-    const { error } = await commitBooking({
+    // Any standing confirmation describes an earlier action. Leaving it up
+    // while this one runs — or after it fails — makes a claim the screen can
+    // no longer stand behind.
+    setNotice(null);
+    const { result, error } = await commitBooking({
       eventId: alert.eventId,
       players: [userId ?? ''],
       preferredTableId: alert.tableId,
@@ -215,16 +257,26 @@ export default function ClubsScreen() {
       setActionError(error);
       return;
     }
-    setNotice(`You're in — ${alert.text}.`);
-    await reloadBookings();
+    // Told from this attempt's own result, the way the event screen's
+    // `bookSeat` already does it: this card advertises ONE seat to every
+    // eligible member at once, so `commit_booking` answering `error: null`
+    // with `outcome: 'waitlisted'` — someone else got there first — is an
+    // ordinary outcome, not a rare race, and must not be reported as
+    // "You're in".
+    setNotice(waitlistNotice(result) ?? `You're in — ${alert.text}.`);
+    await reloadAfterBooking();
   }
 
-  // The same call with no table preference, and no notice — the row flipping
-  // from Join to Seated is its own confirmation.
+  // The same call with no table preference. A seated join raises no notice —
+  // the row flipping from Join to Seated is its own confirmation — but a
+  // waitlisted one still has to say so, for the same reason as above:
+  // nothing else on the screen would tell the member the game filled up
+  // between the render and the tap.
   async function joinGame(row: DashboardRow) {
     setTakeBusy(true);
     setActionError(null);
-    const { error } = await commitBooking({
+    setNotice(null);
+    const { result, error } = await commitBooking({
       eventId: row.eventId,
       players: [userId ?? ''],
       preferredTableId: null,
@@ -235,7 +287,8 @@ export default function ClubsScreen() {
       setActionError(error);
       return;
     }
-    await reloadBookings();
+    setNotice(waitlistNotice(result));
+    await reloadAfterBooking();
   }
 
   if (loading) {
@@ -297,7 +350,17 @@ export default function ClubsScreen() {
       />
 
       {list.length > 1 ? (
-        <ClubChips chips={chips} selected={selected} onSelect={setSelected} />
+        <ClubChips
+          chips={chips}
+          selected={selected}
+          // A confirmation raised for a game at one club is not an answer to
+          // "show me a different club" — the notice would otherwise sit above
+          // content it has nothing to do with.
+          onSelect={(id) => {
+            setSelected(id);
+            setNotice(null);
+          }}
+        />
       ) : null}
 
       {notice ? (

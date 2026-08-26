@@ -109,7 +109,11 @@ const BOOKING = {
   club_id: 'club-1',
   club_name: 'Riverside Mah Jongg',
   event_title: 'Sunday social',
-  starts_at: '2026-09-06T23:00:00.000Z',
+  // Relative, for the same reason EVENT's own `starts_at` is (see below):
+  // a fixed calendar date silently turns every row derived from this fixture
+  // into a past game once the clock rolls past it, and the row's
+  // seat-management controls are gated on `starts_at > now()`.
+  starts_at: new Date(Date.now() + 14 * 864e5).toISOString(),
   club_timezone: 'America/New_York',
   venue_name: 'The hall',
   event_table_id: 'table-9',
@@ -135,8 +139,15 @@ const EVENT = {
   venue_id: 'venue-1',
   venue_name: "Sara's place",
   notes: '',
-  starts_at: '2026-09-02T23:00:00.000Z',
-  ends_at: '2026-09-03T02:00:00.000Z',
+  // Relative to now, never a fixed calendar date. `buildDashboardRows` drops
+  // any event whose start is already past, so a hardcoded timestamp makes
+  // every test that spreads EVENT without overriding `starts_at` fail on a
+  // calendar rollover rather than on a code change — this fixture was one
+  // week from going red that way. Fake timers are deliberately NOT installed
+  // for this file: the other tests here read the real clock and freezing it
+  // would disturb all of them for no benefit.
+  starts_at: new Date(Date.now() + 7 * 864e5).toISOString(),
+  ends_at: new Date(Date.now() + 7 * 864e5 + 3 * 3600e3).toISOString(),
   status: 'published' as const,
   occurrence_date: null,
   overrides: [],
@@ -149,6 +160,39 @@ const EVENT = {
   }[],
   check_in_required: false,
 };
+
+// A published game one seat short at its only table, starting soon enough for
+// `needsAFourth`'s 48-hour window — the shape that raises a need-a-fourth
+// card, and (having a free seat) a joinable row under it as well.
+function oneShortEvent(startsAt: string) {
+  return {
+    ...EVENT,
+    id: 'e1',
+    club_id: CLUB.id,
+    starts_at: startsAt,
+    bookings: [
+      { profile_id: 'a', status: 'confirmed' as const, event_table_id: 'table-1' },
+      { profile_id: 'b', status: 'confirmed' as const, event_table_id: 'table-1' },
+      { profile_id: 'c', status: 'confirmed' as const, event_table_id: 'table-1' },
+    ],
+  };
+}
+
+/** The same game as `oneShortEvent`, re-read after the viewer took the seat. */
+function seatedEvent(startsAt: string) {
+  const event = oneShortEvent(startsAt);
+  return {
+    ...event,
+    bookings: [
+      ...event.bookings,
+      {
+        profile_id: 'test-user',
+        status: 'confirmed' as const,
+        event_table_id: 'table-1',
+      },
+    ],
+  };
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -327,6 +371,149 @@ describe('dashboard artboard', () => {
 
     expect(await screen.findByText('That seat just went.')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Dismiss' })).toBeNull();
+  });
+
+  // The need-a-fourth card advertises ONE seat to every eligible member of
+  // the club at once, so two people pressing "I'm in" within a second of each
+  // other is the expected case, not a rare race. `commit_booking` answers the
+  // loser with `error: null` and `outcome: 'waitlisted'` — a success as far
+  // as the error channel is concerned. Reading only `{ error }` therefore
+  // told that member "You're in", in a green banner, directly above a row
+  // that said they were waiting. The event screen's `bookSeat` already reads
+  // `result.outcome` for exactly this; these two pin the dashboard to the
+  // same behaviour and the same wording (`waitlistLabel`).
+  it('reports the waitlist outcome, not "You\'re in", when the advertised seat has gone', async () => {
+    const soon = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    fetchMyClubs.mockResolvedValue([CLUB]);
+    fetchMyUpcomingBookings.mockResolvedValue([]);
+    fetchUpcomingEvents.mockResolvedValue([oneShortEvent(soon)]);
+    fetchProfile.mockResolvedValue(null);
+    commitBooking.mockResolvedValue({
+      result: {
+        outcome: 'waitlisted',
+        split: false,
+        group_id: 'g1',
+        waitlist_position: 2,
+        offer: null,
+        placements: [],
+      },
+      error: null,
+    });
+
+    render(<ClubsScreen />);
+    fireEvent.click(await screen.findByRole('button', { name: /I'm in/ }));
+
+    expect(await screen.findByText('2nd on the waitlist')).toBeTruthy();
+    expect(screen.queryByText(/You're in/)).toBeNull();
+  });
+
+  it('reports the waitlist outcome when a Join lands on the waitlist', async () => {
+    fetchMyClubs.mockResolvedValue([CLUB]);
+    fetchMyUpcomingBookings.mockResolvedValue([]);
+    // Two of four seats taken: joinable, but not one short, so this raises a
+    // row with a Join button and no need-a-fourth card.
+    fetchUpcomingEvents.mockResolvedValue([
+      {
+        ...EVENT,
+        id: 'open',
+        club_id: CLUB.id,
+        title: 'Open game',
+        bookings: [
+          { profile_id: 'a', status: 'confirmed', event_table_id: 'table-1' },
+          { profile_id: 'b', status: 'confirmed', event_table_id: 'table-1' },
+        ],
+      },
+    ]);
+    fetchProfile.mockResolvedValue(null);
+    commitBooking.mockResolvedValue({
+      result: {
+        outcome: 'waitlisted',
+        split: false,
+        group_id: 'g1',
+        waitlist_position: 1,
+        offer: null,
+        placements: [],
+      },
+      error: null,
+    });
+
+    render(<ClubsScreen />);
+    fireEvent.click(await screen.findByRole('button', { name: /Join Open game/ }));
+
+    expect(await screen.findByText('1st on the waitlist')).toBeTruthy();
+  });
+
+  // The alerts are derived from `events`, not from `bookings`. Reloading only
+  // the bookings after a successful write left the card that was just acted
+  // on sitting there with a live "I'm in" button, whose only possible outcome
+  // is the `bookings_one_active_per_person_idx` refusal.
+  it('drops the need-a-fourth card once the seat has been taken', async () => {
+    const soon = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    fetchMyClubs.mockResolvedValue([CLUB]);
+    fetchUpcomingEvents
+      .mockResolvedValueOnce([oneShortEvent(soon)])
+      .mockResolvedValue([seatedEvent(soon)]);
+    fetchMyUpcomingBookings
+      .mockResolvedValueOnce([])
+      .mockResolvedValue([
+        { ...BOOKING, event_id: 'e1', starts_at: soon, event_title: 'Thursday night' },
+      ]);
+    fetchProfile.mockResolvedValue(null);
+    commitBooking.mockResolvedValue({
+      result: {
+        outcome: 'seated',
+        split: false,
+        group_id: 'g1',
+        waitlist_position: null,
+        offer: null,
+        placements: [],
+      },
+      error: null,
+    });
+
+    render(<ClubsScreen />);
+    fireEvent.click(await screen.findByRole('button', { name: /I'm in/ }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /I'm in/ })).toBeNull(),
+    );
+  });
+
+  // Same staleness, reached through the row's Join button rather than the
+  // card's: the game the member just joined was also one seat short, so the
+  // card above it has to go too.
+  it('drops the need-a-fourth card once the same game has been joined', async () => {
+    const soon = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    fetchMyClubs.mockResolvedValue([CLUB]);
+    fetchUpcomingEvents
+      .mockResolvedValueOnce([oneShortEvent(soon)])
+      .mockResolvedValue([seatedEvent(soon)]);
+    fetchMyUpcomingBookings
+      .mockResolvedValueOnce([])
+      .mockResolvedValue([
+        { ...BOOKING, event_id: 'e1', starts_at: soon, event_title: 'Thursday night' },
+      ]);
+    fetchProfile.mockResolvedValue(null);
+    commitBooking.mockResolvedValue({
+      result: {
+        outcome: 'seated',
+        split: false,
+        group_id: 'g1',
+        waitlist_position: null,
+        offer: null,
+        placements: [],
+      },
+      error: null,
+    });
+
+    render(<ClubsScreen />);
+    fireEvent.click(
+      await screen.findByRole('button', { name: /Join Thursday night/ }),
+    );
+
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /I'm in/ })).toBeNull(),
+    );
   });
 
   it('offers Join on an open game and Seated on a held one', async () => {
