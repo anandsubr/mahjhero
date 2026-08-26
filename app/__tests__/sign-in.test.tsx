@@ -2,12 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 
 const push = vi.fn();
+const replace = vi.fn();
 
 vi.mock('expo-router', () => ({
   Redirect: ({ href }: { href: string }) => (
     <div data-testid="redirect" data-href={href} />
   ),
-  useRouter: () => ({ push }),
+  useRouter: () => ({ push, replace }),
 }));
 
 vi.mock('../../lib/session', () => ({
@@ -30,13 +31,17 @@ describe('sign-in screen', () => {
   beforeEach(() => vi.clearAllMocks());
 
   // Sign-in is now a step inside the welcome screen rather than the app's
-  // front door, so it needs a way back to it.
+  // front door, so it needs a way back to it. Welcome's two CTAs push here,
+  // so this replaces rather than pushes back — otherwise going back and
+  // forth stacks history entries without bound (see welcome.tsx's CTAs and
+  // this button's comment).
   it('offers a way back to the welcome screen', () => {
     render(<SignIn />);
     fireEvent.click(
       screen.getByRole('button', { name: 'Back to the welcome screen' }),
     );
-    expect(push).toHaveBeenCalledWith('/welcome');
+    expect(replace).toHaveBeenCalledWith('/welcome');
+    expect(push).not.toHaveBeenCalled();
   });
 
   it('still offers the magic-link form', () => {

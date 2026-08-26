@@ -115,11 +115,22 @@ export default function SignIn() {
     <Screen center contentStyle={styles.content}>
       {/* Sign-in is a step inside the welcome screen now, not the app's
           front door, so it needs a way back to it. The artboard draws this
-          same chevron. */}
+          same chevron.
+
+          `replace`, not `push`: welcome's two CTAs push here, so pushing
+          back would let a visitor stack welcome→sign-in→welcome→sign-in...
+          without bound just by reconsidering or retyping an email, and on
+          web the browser's own back button would then cycle inside the
+          flow instead of leaving it. `replace` keeps the stack bounded.
+
+          Not `router.back()` either: /sign-in is reachable directly on a
+          cold start (the route is linkable, and other screens redirect
+          straight to it), where back() has nowhere to go. `replace` always
+          lands somewhere real. */}
       <Button
         variant="ghost"
         big={false}
-        onPress={() => router.push('/welcome')}
+        onPress={() => router.replace('/welcome')}
         icon={<ChevronLeftIcon color={colors.accentColor} />}
         accessibilityLabel="Back to the welcome screen"
         style={styles.backButton}

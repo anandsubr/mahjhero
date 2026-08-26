@@ -13,16 +13,24 @@ import { colors, radius, shadow, space, type } from '../lib/theme';
  * accent tile, fanned by a few degrees each way.
  *
  * Hidden from assistive tech: it is decoration, and the headline beneath it
- * says what the app is. The design draws each tile's lip with an inset
- * box-shadow, which React Native has no equivalent for — a bottom border is
- * visually the same thing at this size, the way DateTile already does it.
+ * says what the app is. `accessibilityElementsHidden` /
+ * `importantForAccessibility` cover iOS and Android; `aria-hidden` is the
+ * flat prop react-native-web actually forwards (see its
+ * forwardedProps/index.js — neither native prop is on that list), the same
+ * way components/Button.tsx uses flat `aria-disabled`/`aria-busy` instead of
+ * `accessibilityState`. Both are needed because neither covers both targets
+ * on its own. The design draws each tile's lip with an inset box-shadow,
+ * which React Native has no equivalent for — a bottom border is visually the
+ * same thing at this size, the way DateTile already does it.
  */
 function TileHero() {
   return (
     <View
+      testID="welcome-hero"
       style={styles.hero}
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
+      aria-hidden={true}
     >
       <View style={[styles.tile, styles.tileLeft]}>
         <Svg

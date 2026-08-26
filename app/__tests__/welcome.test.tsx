@@ -72,4 +72,15 @@ describe('welcome screen', () => {
     expect(screen.queryByTestId('redirect')).toBeNull();
     expect(screen.getByText("Your club's table, always set.")).toBeTruthy();
   });
+
+  // accessibilityElementsHidden / importantForAccessibility are native-only
+  // props react-native-web silently drops (see its
+  // forwardedProps/index.js). aria-hidden is the flat prop it actually
+  // forwards, so that's what a web screen reader sees.
+  it('hides the decorative tile hero from web assistive tech', () => {
+    render(<Welcome />);
+    expect(screen.getByTestId('welcome-hero').getAttribute('aria-hidden')).toBe(
+      'true',
+    );
+  });
 });
