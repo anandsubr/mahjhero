@@ -895,8 +895,13 @@ In `app/__tests__/profile.test.tsx`, add inside `describe('profile screen', ...)
     });
     render(<ProfileScreen />);
     const signOut = await screen.findByRole('button', { name: 'Sign out' });
-    expect(signOut.style.backgroundColor).toBe('rgb(255, 225, 208)');
-    expect(signOut.style.width).toBe('100%');
+    // `getComputedStyle`, not `.style`: this repo's react-native-web emits
+    // atomic CSS classes into an injected stylesheet rather than flattening
+    // StyleSheet values onto the node's inline style, so `.style.*` reads
+    // empty for every variant — an assertion that would pass whether or not
+    // the variant were applied. Task 6 established this.
+    expect(getComputedStyle(signOut).backgroundColor).toBe('rgb(255, 225, 208)');
+    expect(getComputedStyle(signOut).width).not.toBe('');
   });
 ```
 
@@ -906,7 +911,9 @@ In `app/__tests__/profile.test.tsx`, add inside `describe('profile screen', ...)
 npm test -- app/__tests__/profile.test.tsx
 ```
 
-Expected: FAIL, 2 failures — the back button is found, and the sign-out button's `backgroundColor` is `''` (ghost is transparent) with no `width`.
+Expected: FAIL, 2 failures — the back button is still found, and the sign-out button computes as `rgba(0, 0, 0, 0)` (ghost is transparent) rather than the destructive ground.
+
+If `getComputedStyle` does not resolve the atomic class in jsdom for this screen the way it did in Task 6, say so rather than relaxing the assertion until it passes — a test that asserts whatever the code happens to do is worthless. Asserting the button is `block` may need a different handle; if so, report what you found.
 
 - [ ] **Step 3: Remove the back link**
 
