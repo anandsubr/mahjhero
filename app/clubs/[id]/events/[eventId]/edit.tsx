@@ -361,7 +361,7 @@ export default function EditEventScreen() {
   if (Number.isNaN(new Date(event.starts_at).getTime())) {
     return (
       <Screen contentStyle={styles.container}>
-        <ErrorBanner message="This game's start time could not be read, so it cannot be edited. Please contact support." />
+        <ErrorBanner message="This game's start time could not be read, so it cannot be edited." />
       </Screen>
     );
   }

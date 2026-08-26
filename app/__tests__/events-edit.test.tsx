@@ -677,7 +677,7 @@ describe('a game whose start time cannot be read', () => {
     render(<EditEventScreen />);
 
     await screen.findByText(
-      "This game's start time could not be read, so it cannot be edited. Please contact support.",
+      "This game's start time could not be read, so it cannot be edited.",
     );
     expect(screen.queryByLabelText('Game name')).toBeNull();
   });
