@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { Animated } from 'react-native';
 import DateTile from '../DateTile';
 import Skeleton from '../Skeleton';
 import ClubChips from '../ClubChips';
@@ -40,6 +41,23 @@ describe('Skeleton', () => {
       </>,
     );
     expect(screen.getAllByTestId('skeleton')).toHaveLength(3);
+  });
+
+  // The `delay` prop is passed by three call sites on the dashboard and was
+  // asserted by none, so the stagger could have silently collapsed to three
+  // blocks pulsing in unison. Spying the Animated call is the only handle:
+  // the phase shift is not observable in the rendered DOM.
+  it('staggers each block by the delay it was given', () => {
+    const delay = vi.spyOn(Animated, 'delay');
+    render(
+      <>
+        <Skeleton />
+        <Skeleton delay={150} />
+        <Skeleton delay={300} />
+      </>,
+    );
+    expect(delay.mock.calls.map(([ms]) => ms)).toEqual([0, 150, 300]);
+    delay.mockRestore();
   });
 });
 

@@ -45,11 +45,19 @@ export default function ClubChips({
   );
 }
 
+/**
+ * The artboard's chip row is `overflow-x: auto` with `padding-bottom: 2px`,
+ * a literal 2 rather than a step on the spacing scale — whose smallest step,
+ * space[1], is 4.4. Named here so the number is not a mystery, and NOT added
+ * to lib/theme.ts: a value with one call site is a literal, not a token.
+ */
+const SCROLL_GUTTER = 2;
+
 const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     gap: space[2],
-    paddingBottom: 2,
+    paddingBottom: SCROLL_GUTTER,
   },
   chip: {
     flexDirection: 'row',

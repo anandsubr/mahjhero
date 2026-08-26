@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Animated, StyleSheet } from 'react-native';
+import { Animated, Platform, StyleSheet } from 'react-native';
 import { colors, radius } from '../lib/theme';
 
 /**
@@ -23,12 +23,20 @@ export default function Skeleton({ delay = 0 }: { delay?: number }) {
           Animated.timing(opacity, {
             toValue: 0.9,
             duration: 600,
-            useNativeDriver: true,
+            // No native driver exists on the web target, where
+            // react-native-web logs a fallback warning on every mount —
+            // three per dashboard load, since the dashboard stacks three of
+            // these. Opacity animates fine on the JS driver there.
+            useNativeDriver: Platform.OS !== 'web',
           }),
           Animated.timing(opacity, {
             toValue: 0.5,
             duration: 600,
-            useNativeDriver: true,
+            // No native driver exists on the web target, where
+            // react-native-web logs a fallback warning on every mount —
+            // three per dashboard load, since the dashboard stacks three of
+            // these. Opacity animates fine on the JS driver there.
+            useNativeDriver: Platform.OS !== 'web',
           }),
         ]),
       ),
