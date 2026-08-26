@@ -813,6 +813,72 @@ describe('dashboard artboard', () => {
 
     release({ result: null, error: null });
   });
+
+  // The write above closed the write-vs-write race, but `setBusy(false)` ran
+  // right after the write's own await and before `await
+  // reloadAfterBooking()` — and `reloadAfterBooking` is the half that
+  // actually writes `events` and `bookings`. So a decline's reload could
+  // still land after a later join's and overwrite it with a snapshot taken
+  // before the join existed. This test holds the *reload* open instead of
+  // the write: the write resolves normally, and it's the first
+  // `fetchMyUpcomingBookings` call that follows it — the reload's own read —
+  // that stays in flight for the assertion.
+  it('locks the other booking actions while a reload is in flight', async () => {
+    const soon = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    fetchMyClubs.mockResolvedValue([CLUB]);
+    const heldBooking = {
+      ...BOOKING,
+      event_id: 'held',
+      starts_at: soon,
+      event_title: 'Held game',
+      status: 'waitlisted' as const,
+      event_table_id: null,
+      table_label: null,
+      waitlist_position: 2,
+    };
+    // The mount effect's own read gets the initial fixture; the second call
+    // — the reload `runBookingAction` fires after the join succeeds — is the
+    // one held open, so a controlled promise rather than a resolved value.
+    let releaseReload: (value: (typeof heldBooking)[]) => void = () => {};
+    fetchMyUpcomingBookings
+      .mockResolvedValueOnce([heldBooking])
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          releaseReload = resolve;
+        }),
+      );
+    fetchUpcomingEvents.mockResolvedValue([
+      {
+        ...EVENT,
+        id: 'open',
+        club_id: CLUB.id,
+        title: 'Open game',
+        starts_at: soon,
+        bookings: [
+          { profile_id: 'a', status: 'confirmed' as const, event_table_id: 'table-1' },
+        ],
+      },
+    ]);
+
+    render(<ClubsScreen />);
+    fireEvent.click(await screen.findByRole('button', { name: /Join Open game/ }));
+
+    // Wait until the reload's own read has actually been issued — i.e. the
+    // write has resolved and `reloadAfterBooking` is under way — before
+    // asserting anything. Asserting right after the click would pass
+    // trivially either way: `setBusy(true)` is synchronous on the click, so
+    // `waitFor`'s very first (immediate) check would already see the control
+    // disabled regardless of this bug, and `waitFor` doesn't keep watching
+    // once it has passed once. Only checking once the write is done and the
+    // reload is the one thing left in flight tells the two behaviours apart.
+    await waitFor(() => expect(fetchMyUpcomingBookings).toHaveBeenCalledTimes(2));
+
+    expect(
+      screen.getByLabelText('Leave the waitlist for Held game').getAttribute('aria-disabled'),
+    ).toBe('true');
+
+    releaseReload([heldBooking]);
+  });
 });
 
 import ImportRosterScreen from '../clubs/[id]/import';

@@ -89,10 +89,18 @@ export default function ClubsScreen() {
   const [bookings, setBookings] = useState<MyBooking[] | null>(null);
   const [bookingsFailed, setBookingsFailed] = useState(false);
   // One flag for every booking write — take, join, decline, accept-offer,
-  // decline-offer, leave-waitlist. These used to be two independent flags
-  // (`takeBusy` and `actionBusy`), so a decline could start while a join was
-  // still in flight and the two reloadAfterBooking calls would race to set
-  // `events` and `bookings`, with the loser's stale read winning.
+  // decline-offer, leave-waitlist — held across the write AND its reload,
+  // not just the write. These used to be two independent flags (`takeBusy`
+  // and `actionBusy`), so a decline could start while a join was still in
+  // flight and the two reloadAfterBooking calls would race to set `events`
+  // and `bookings`, with the loser's stale read winning. Merging them into
+  // one flag closed that write-vs-write window, but an earlier version of
+  // this fix released the flag right after the write's own await — before
+  // `await reloadAfterBooking()` — which left a write-vs-reload window open
+  // instead: `reloadAfterBooking` is the half that actually writes `events`
+  // and `bookings`, so a decline's reload could still land after a later
+  // join's reload and overwrite it with a snapshot taken before the join
+  // existed. The flag now stays true until that reload finishes too.
   //
   // `checkInBusy` stays separate on purpose: the check-in control writes
   // optimistically, for one person, and deliberately does not wait on the
@@ -101,6 +109,16 @@ export default function ClubsScreen() {
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [checkInBusy, setCheckInBusy] = useState(false);
+  // `busy` above is read from the render closure, so a guard written as
+  // `if (busy) return` is blind to a tap landing in the same tick as an
+  // earlier `setBusy(true)` — a queued tap, a screen reader activation, a
+  // native double-tap — since the closure still holds the old value in that
+  // window. And once the re-render does land, `Pressable`'s own `disabled`
+  // prop already swallows the press, so the state check adds nothing there
+  // either. This ref is written synchronously alongside `setBusy`, so it is
+  // what actually makes the guard sound; `busy` itself keeps doing its own
+  // job of re-rendering the buttons into their disabled look.
+  const busyRef = useRef(false);
 
   const [events, setEvents] = useState<ClubEvent[]>([]);
   const [selected, setSelected] = useState<string>(ALL_CLUBS);
@@ -191,21 +209,23 @@ export default function ClubsScreen() {
   // "2nd on the waitlist" banner describes a waitlist spot this action may
   // have just given up.
   async function runBookingAction(action: () => Promise<{ error: string | null }>) {
-    // The buttons are all disabled while `busy`, but a queued tap, a screen
-    // reader activation, or a native double-tap can still arrive between the
-    // state change and the re-render.
-    if (busy) return;
+    if (busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     setActionError(null);
     setNotice(null);
     const { error } = await action();
     if (!mounted.current) return;
-    setBusy(false);
     if (error) {
+      busyRef.current = false;
+      setBusy(false);
       setActionError(error);
       return;
     }
     await reloadAfterBooking();
+    if (!mounted.current) return;
+    busyRef.current = false;
+    setBusy(false);
   }
 
   function handleDecline(booking: MyBooking) {
@@ -288,7 +308,8 @@ export default function ClubsScreen() {
   // alert counted as one short, so the member lands with the three people
   // they were shown rather than wherever the server happens to have room.
   async function takeSeat(alert: FourthAlert) {
-    if (busy) return;
+    if (busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     setActionError(null);
     // Any standing confirmation describes an earlier action. Leaving it up
@@ -302,8 +323,9 @@ export default function ClubsScreen() {
       allowSplit: false,
     });
     if (!mounted.current) return;
-    setBusy(false);
     if (error) {
+      busyRef.current = false;
+      setBusy(false);
       setActionError(error);
       return;
     }
@@ -315,6 +337,9 @@ export default function ClubsScreen() {
     // "You're in".
     setNotice(waitlistNotice(result, alert.text) ?? `You're in — ${alert.text}.`);
     await reloadAfterBooking();
+    if (!mounted.current) return;
+    busyRef.current = false;
+    setBusy(false);
   }
 
   // The same call with no table preference. A seated join raises no notice —
@@ -323,7 +348,8 @@ export default function ClubsScreen() {
   // nothing else on the screen would tell the member the game filled up
   // between the render and the tap.
   async function joinGame(row: DashboardRow) {
-    if (busy) return;
+    if (busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     setActionError(null);
     setNotice(null);
@@ -334,8 +360,9 @@ export default function ClubsScreen() {
       allowSplit: false,
     });
     if (!mounted.current) return;
-    setBusy(false);
     if (error) {
+      busyRef.current = false;
+      setBusy(false);
       setActionError(error);
       return;
     }
@@ -344,6 +371,9 @@ export default function ClubsScreen() {
     const description = `${formatEventWhen(row.startsAt, row.timezone)} — ${row.title}`;
     setNotice(waitlistNotice(result, description));
     await reloadAfterBooking();
+    if (!mounted.current) return;
+    busyRef.current = false;
+    setBusy(false);
   }
 
   if (loading) {
