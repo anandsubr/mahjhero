@@ -5,6 +5,7 @@ import Button from '../components/Button';
 import Card from '../components/Card';
 import ErrorBanner from '../components/ErrorBanner';
 import Screen from '../components/Screen';
+import TabBar from '../components/TabBar';
 import TimeField from '../components/TimeField';
 import Toggle from '../components/Toggle';
 import { ChevronLeftIcon } from '../components/icons';
@@ -141,7 +142,7 @@ export default function NotificationSettings() {
   }
 
   return (
-    <Screen scroll contentStyle={styles.container}>
+    <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="alerts" />}>
       {/* Without this the screen was a dead end on native: nothing else on
           it navigates away, so a member who opened it had no way off short
           of the OS back gesture (web) or force-quitting (there is no

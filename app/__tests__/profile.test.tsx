@@ -68,4 +68,22 @@ describe('profile screen', () => {
     const beginner = screen.getByRole('radio', { name: 'Beginner' });
     expect(beginner.getAttribute('aria-selected')).toBe('false');
   });
+
+  it('carries the tab bar with Profile marked', async () => {
+    // Arrange exactly as the file's existing "renders the form" test does.
+    fetchProfile.mockResolvedValueOnce({
+      id: 'test-user',
+      display_name: 'Pat',
+      skill_level: 'intermediate',
+      avatar_url: null,
+      timezone: 'America/New_York',
+    });
+    render(<ProfileScreen />);
+    expect(
+      (await screen.findByRole('button', { name: 'Profile' })).getAttribute(
+        'aria-selected',
+      ),
+    ).toBe('true');
+    expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
+  });
 });

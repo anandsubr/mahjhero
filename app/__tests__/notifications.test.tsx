@@ -65,4 +65,14 @@ describe('notifications screen', () => {
     const pushOnly = screen.getByRole('radio', { name: 'Push only' });
     expect(pushOnly.getAttribute('aria-selected')).toBe('false');
   });
+
+  it('carries the tab bar with Alerts marked', async () => {
+    render(<NotificationSettings />);
+    expect(
+      (await screen.findByRole('button', { name: 'Alerts' })).getAttribute(
+        'aria-selected',
+      ),
+    ).toBe('true');
+    expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
+  });
 });

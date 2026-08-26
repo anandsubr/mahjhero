@@ -6,6 +6,7 @@ import Card from '../components/Card';
 import ErrorBanner from '../components/ErrorBanner';
 import Screen from '../components/Screen';
 import SkillLevelPicker from '../components/SkillLevelPicker';
+import TabBar from '../components/TabBar';
 import TextField from '../components/TextField';
 import { ChevronLeftIcon } from '../components/icons';
 import { GENERIC_ERROR } from '../lib/constants';
@@ -145,7 +146,7 @@ export default function ProfileScreen() {
   const canSave = complete && !saving;
 
   return (
-    <Screen scroll contentStyle={styles.container}>
+    <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="profile" />}>
       {/* Profile is no longer the landing screen (app/index.tsx now sends
           signed-in members to /clubs), so without this back link profile
           becomes the dead end that notifications used to be. */}
