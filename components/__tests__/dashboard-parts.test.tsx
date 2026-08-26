@@ -115,3 +115,45 @@ describe('DashboardHeader', () => {
     expect(screen.getByTestId('avatar-fallback')).toBeTruthy();
   });
 });
+
+import NoticeBanner from '../NoticeBanner';
+import NeedAFourthCard from '../NeedAFourthCard';
+
+describe('NoticeBanner', () => {
+  it('shows the message and dismisses', () => {
+    const onDismiss = vi.fn();
+    render(<NoticeBanner message="You're in — Thursday night." onDismiss={onDismiss} />);
+    expect(screen.getByText("You're in — Thursday night.")).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    expect(onDismiss).toHaveBeenCalled();
+  });
+});
+
+describe('NeedAFourthCard', () => {
+  it('names the club in the kicker and carries the call text', () => {
+    render(
+      <NeedAFourthCard
+        clubName="Riverside Mah Jongg"
+        text="Thu, 3 Sep, 7:00 pm — Thursday night"
+        busy={false}
+        onTake={() => {}}
+      />,
+    );
+    expect(screen.getByText('Need a 4th · Riverside Mah Jongg')).toBeTruthy();
+    expect(screen.getByText('Thu, 3 Sep, 7:00 pm — Thursday night')).toBeTruthy();
+  });
+
+  it('takes the seat', () => {
+    const onTake = vi.fn();
+    render(<NeedAFourthCard clubName="Riverside" text="Tonight" busy={false} onTake={onTake} />);
+    fireEvent.click(screen.getByRole('button', { name: "I'm in — Tonight" }));
+    expect(onTake).toHaveBeenCalled();
+  });
+
+  it('does not fire while a take is in flight', () => {
+    const onTake = vi.fn();
+    render(<NeedAFourthCard clubName="Riverside" text="Tonight" busy onTake={onTake} />);
+    fireEvent.click(screen.getByRole('button', { name: "I'm in — Tonight" }));
+    expect(onTake).not.toHaveBeenCalled();
+  });
+});
