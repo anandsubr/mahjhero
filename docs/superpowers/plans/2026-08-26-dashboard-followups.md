@@ -901,7 +901,9 @@ In `app/__tests__/profile.test.tsx`, add inside `describe('profile screen', ...)
     // empty for every variant — an assertion that would pass whether or not
     // the variant were applied. Task 6 established this.
     expect(getComputedStyle(signOut).backgroundColor).toBe('rgb(255, 225, 208)');
-    expect(getComputedStyle(signOut).width).not.toBe('');
+    // `block` sets `width: '100%'` via StyleSheet, so it atomizes the same
+    // way — assert the resolved value, not merely that something is set.
+    expect(getComputedStyle(signOut).width).toBe('100%');
   });
 ```
 
