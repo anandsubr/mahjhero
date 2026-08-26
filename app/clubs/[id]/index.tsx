@@ -10,11 +10,12 @@ import {
 } from 'react-native';
 import Button from '../../../components/Button';
 import Card from '../../../components/Card';
+import DashboardHeader from '../../../components/DashboardHeader';
 import ErrorBanner from '../../../components/ErrorBanner';
 import Screen from '../../../components/Screen';
 import SkillLevelPips from '../../../components/SkillLevelPips';
 import Tag from '../../../components/Tag';
-import { ChevronLeftIcon } from '../../../components/icons';
+import TabBar from '../../../components/TabBar';
 import {
   canInvite,
   createInvite,
@@ -32,6 +33,7 @@ import {
 import type { ClubEvent } from '../../../lib/events';
 import { useSession } from '../../../lib/session';
 import { colors, space, type } from '../../../lib/theme';
+import { useViewerInitials } from '../../../lib/use-viewer';
 
 export default function ClubDetailScreen() {
   const { id, imported } = useLocalSearchParams<{
@@ -41,6 +43,7 @@ export default function ClubDetailScreen() {
   const { session, loading } = useSession();
   const userId = session?.user.id;
   const router = useRouter();
+  const initials = useViewerInitials();
 
   const [club, setClub] = useState<Club | null>(null);
   const [roster, setRoster] = useState<ClubMember[]>([]);
@@ -87,7 +90,11 @@ export default function ClubDetailScreen() {
 
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered}>
+      <Screen
+        center
+        contentStyle={styles.centered}
+        tabBar={<TabBar active="club" />}
+      >
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
     );
@@ -97,7 +104,11 @@ export default function ClubDetailScreen() {
 
   if (!ready) {
     return (
-      <Screen center contentStyle={styles.centered}>
+      <Screen
+        center
+        contentStyle={styles.centered}
+        tabBar={<TabBar active="club" />}
+      >
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
     );
@@ -105,7 +116,7 @@ export default function ClubDetailScreen() {
 
   if (loadFailed || !club) {
     return (
-      <Screen contentStyle={styles.container}>
+      <Screen contentStyle={styles.container} tabBar={<TabBar active="club" />}>
         <ErrorBanner message={GENERIC_ERROR} />
       </Screen>
     );
@@ -155,22 +166,14 @@ export default function ClubDetailScreen() {
   }
 
   return (
-    <Screen scroll contentStyle={styles.container}>
-      <Button
-        variant="ghost"
-        big={false}
-        icon={<ChevronLeftIcon color={colors.accentColor} />}
-        onPress={() => router.push('/clubs')}
-        accessibilityLabel="Back to your clubs"
-        style={styles.backButton}
-      >
-        Clubs
-      </Button>
-
-      <Text style={styles.heading}>{club.name}</Text>
-      {club.rhythm.length > 0 ? (
-        <Text style={styles.help}>{club.rhythm}</Text>
-      ) : null}
+    <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="club" />}>
+      <DashboardHeader
+        kicker="Your club"
+        name={club.name}
+        meta={club.rhythm}
+        initials={initials}
+        onPressAvatar={() => router.push('/profile')}
+      />
 
       <Text style={styles.sectionTitle}>Upcoming</Text>
 
@@ -412,14 +415,6 @@ const styles = StyleSheet.create({
   },
   centered: {
     alignItems: 'center',
-  },
-  backButton: {
-    alignSelf: 'flex-start',
-  },
-  heading: {
-    fontFamily: type.heading,
-    fontSize: type.size.h2,
-    color: colors.text,
   },
   sectionTitle: {
     fontFamily: type.bodyBold,

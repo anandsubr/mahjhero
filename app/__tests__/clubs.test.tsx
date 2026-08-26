@@ -823,6 +823,56 @@ describe('club detail screen', () => {
     // the mutation this guards against is treating "not set" as "mixed".
     expect(screen.queryByTestId('pip-dash')).toBeNull();
   });
+
+  // TabBar navigates with router.replace off an entry route that is itself a
+  // Redirect, so the history stack is typically one deep. A club screen with
+  // no bar and (below) no back button would be a dead end on native.
+  it('carries the tab bar', async () => {
+    render(<ClubDetailScreen />);
+    expect(await screen.findByRole('button', { name: 'Club' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Messages' })).toBeTruthy();
+  });
+
+  it('carries the tab bar while the club is still loading', () => {
+    // A promise that never settles: the screen stays in its !ready state for
+    // the life of the test.
+    fetchClub.mockReturnValueOnce(new Promise(() => {}));
+    fetchRoster.mockReturnValueOnce(new Promise(() => {}));
+    render(<ClubDetailScreen />);
+    expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
+  });
+
+  it('carries the tab bar when the club cannot be loaded', async () => {
+    fetchClub.mockResolvedValueOnce(null);
+    render(<ClubDetailScreen />);
+    expect(await screen.findByText(/Could not reach MahjHero/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
+  });
+
+  it('names the club in the dashboard header, with the avatar to profile', async () => {
+    fetchProfile.mockResolvedValue({
+      id: 'test-user',
+      display_name: 'Pat Chen',
+      skill_level: 'intermediate',
+      avatar_url: null,
+      timezone: 'America/New_York',
+    });
+    render(<ClubDetailScreen />);
+    expect(await screen.findByText('Your club')).toBeTruthy();
+    expect(screen.getByText('Riverside Mah Jongg')).toBeTruthy();
+    expect(screen.getByText('Thursday evenings')).toBeTruthy();
+    expect(await screen.findByText('PC')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Your profile' }));
+    expect(push).toHaveBeenCalledWith('/profile');
+  });
+
+  // Removed with the tab bar's arrival: the Club tab is the same
+  // destination, so the chevron was a second way to do one thing.
+  it('no longer draws its own back link', async () => {
+    render(<ClubDetailScreen />);
+    expect(await screen.findByText('Upcoming')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Back to your clubs' })).toBeNull();
+  });
 });
 
 function escapeForRegExp(value: string): string {
