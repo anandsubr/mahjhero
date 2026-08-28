@@ -129,4 +129,18 @@ describe('profile screen', () => {
     // way — assert the resolved value, not merely that something is set.
     expect(getComputedStyle(signOut).width).toBe('100%');
   });
+
+  // The only way to /friends. app/friends.tsx has no tab and nothing else
+  // links to it, so this assertion is what keeps the screen reachable.
+  it('links to the friends screen', async () => {
+    fetchProfile.mockResolvedValueOnce({
+      id: 'test-user',
+      display_name: 'Alice Ng',
+      skill_level: 'intermediate',
+      avatar_url: null,
+      timezone: 'America/New_York',
+    });
+    render(<ProfileScreen />);
+    expect(await screen.findByText('Friends')).toBeTruthy();
+  });
 });
