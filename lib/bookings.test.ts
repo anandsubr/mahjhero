@@ -473,6 +473,24 @@ describe('BOOKING_REFUSALS (self-audit against the migrations)', () => {
     'event does not belong to this club':
       'raised by broadcast_recipient_count/send_broadcast — lib/broadcasts.ts (Task 12, not yet created) is the module responsible, and by design relays error.message rather than mapping through a refusal table',
 
+    // Raised by add_friend (20260828010000_friend_mutations.sql) when the
+    // target is the caller or when they do not share a club. The compose
+    // screen only ever offers people who share a club with the caller, and a
+    // member cannot tap an "Add" control that points to themselves — so a
+    // caller hitting these is malicious or buggy, not a member doing
+    // something reasonable. Unlike booking refusals, though, it is not this
+    // module's call to make: add_friend is not called from lib/bookings.ts,
+    // and the module that DOES call it — lib/friends.ts — is designed to
+    // relay `error.message` from add_friend verbatim rather than mapping
+    // through a refusal table (see addFriend's docstring, which records this
+    // deliberately). So these messages reaching a member are the plan's own
+    // intended behaviour, not a gap — same as the broadcasts entry above,
+    // this module is not the one responsible for it either way.
+    'you cannot add yourself':
+      'raised by add_friend — lib/friends.ts is the module responsible, and by design relays error.message rather than mapping through a refusal table',
+    'you can only add someone from one of your clubs':
+      'raised by add_friend — lib/friends.ts is the module responsible, and by design relays error.message rather than mapping through a refusal table',
+
     // series_occurrence_dates is revoked from public/anon/authenticated
     // (20260822197000, restated 20260823000000) and called only from inside
     // create_event_series/materialize_event_series's own plpgsql bodies —
