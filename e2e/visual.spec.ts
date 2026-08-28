@@ -80,11 +80,13 @@ async function captureScreen(page: Page, vp: Viewport, name: string) {
 
   // Grow-and-resettle can itself introduce a little more overflow (a taller
   // window can reflow text), so repeat the measurement until it settles.
-  // Bounded rather than looped to convergence: a screen that never settles
-  // should fail loudly, not hang the suite.
+  // Bounded to 3 iterations to prevent hanging. An assertion after the loop
+  // fails loudly if a screen never settles, ensuring a test failure instead
+  // of a truncated PNG baseline on first generation.
+  let overflow = 0;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     // Measure only after fonts have landed — text reflow changes the height.
-    const overflow = await page.evaluate((selector) => {
+    overflow = await page.evaluate((selector) => {
       const scroller = document.querySelector(selector);
       const scrollerOverflow = scroller
         ? scroller.scrollHeight - scroller.clientHeight
@@ -105,6 +107,8 @@ async function captureScreen(page: Page, vp: Viewport, name: string) {
     // Re-settle: the resize triggers a relayout and a fresh paint.
     await settle(page);
   }
+
+  expect(overflow <= 0, `Screen "${name}" never stopped overflowing (overflow: ${overflow}px)`).toBe(true);
 
   await expect(page).toHaveScreenshot(name);
 }
