@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(85);
+select plan(89);
 
 /*
  * Guards the privileges themselves, not the policies.
@@ -718,7 +718,8 @@ select is(
        'public.add_friend(uuid)',
        'public.remove_friend(uuid)',
        'public.fetch_friends()',
-       'public.fetch_addable_people()'
+       'public.fetch_addable_people()',
+       'public.can_read_thread(uuid)'
      ]) as f
    ) expected
    where not exists (
@@ -786,7 +787,8 @@ select is(
          'public.add_friend(uuid)',
          'public.remove_friend(uuid)',
          'public.fetch_friends()',
-         'public.fetch_addable_people()'
+         'public.fetch_addable_people()',
+         'public.can_read_thread(uuid)'
        ]) as f
        where to_regprocedure(f) = p.oid::regprocedure
      )),
@@ -839,6 +841,41 @@ select ok(
 select ok(
   not has_function_privilege('anon', 'public.add_friend(uuid)', 'EXECUTE'),
   'anon cannot execute add_friend'
+);
+
+-- ---------------------------------------------------------------------
+-- Messages (20260829000000, 20260829010000).
+-- ---------------------------------------------------------------------
+
+-- can_read_thread is invoked directly inside the USING clause of the
+-- select policies on message_threads/thread_members/messages, and that
+-- invocation runs under the querying role's own EXECUTE privilege, not
+-- the table owner's — SECURITY DEFINER only changes whose privileges
+-- apply inside the function body, not who may call it. It needs the same
+-- grant is_booking_group_member has above, or every plain `select` an
+-- authenticated client issues against those tables fails outright.
+select ok(
+  has_function_privilege(
+    'authenticated', 'public.can_read_thread(uuid)', 'EXECUTE'),
+  'authenticated can execute can_read_thread'
+);
+select ok(
+  not has_function_privilege(
+    'anon', 'public.can_read_thread(uuid)', 'EXECUTE'),
+  'anon cannot execute can_read_thread'
+);
+
+-- can_post_thread and is_club_organizer_of are not referenced by any
+-- policy — every write goes through an RPC — so both stay fully internal.
+select ok(
+  not has_function_privilege(
+    'authenticated', 'public.can_post_thread(uuid)', 'EXECUTE'),
+  'can_post_thread is revoked from authenticated'
+);
+select ok(
+  not has_function_privilege(
+    'authenticated', 'public.is_club_organizer_of(uuid, uuid)', 'EXECUTE'),
+  'is_club_organizer_of is revoked from authenticated'
 );
 
 select * from finish();
