@@ -721,7 +721,10 @@ select is(
        'public.fetch_addable_people()',
        'public.can_read_thread(uuid)',
        'public.open_thread_for_club(uuid)',
-       'public.open_thread_for_event(uuid)'
+       'public.open_thread_for_event(uuid)',
+       'public.create_group_thread(text, uuid[])',
+       'public.add_to_group_thread(uuid, uuid[])',
+       'public.leave_group_thread(uuid)'
      ]) as f
    ) expected
    where not exists (
@@ -792,7 +795,10 @@ select is(
          'public.fetch_addable_people()',
          'public.can_read_thread(uuid)',
          'public.open_thread_for_club(uuid)',
-         'public.open_thread_for_event(uuid)'
+         'public.open_thread_for_event(uuid)',
+         'public.create_group_thread(text, uuid[])',
+         'public.add_to_group_thread(uuid, uuid[])',
+         'public.leave_group_thread(uuid)'
        ]) as f
        where to_regprocedure(f) = p.oid::regprocedure
      )),

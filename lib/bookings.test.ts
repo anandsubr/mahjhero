@@ -513,6 +513,39 @@ describe('BOOKING_REFUSALS (self-audit against the migrations)', () => {
     // same shape as the broadcasts and add_friend entries above.
     'you are not part of this game':
       'raised by open_thread_for_event — lib/messages.ts (Task 5, not yet created) is the module responsible, and by design relays error.message rather than mapping through a refusal table',
+
+    // Raised by create_group_thread (20260829030000_group_threads.sql) when
+    // p_members, after dropping the caller and nulls, is empty. The picker
+    // that builds p_members never lets a caller submit with nobody chosen,
+    // so a caller hitting this is maligned input, not a member doing
+    // something reasonable — same shape as 'duplicate player' above. But it
+    // is not this module's call to make: create_group_thread is not called
+    // from lib/bookings.ts, and lib/messages.ts (Task 5, not yet created) is
+    // designed to relay error.message from these RPCs verbatim rather than
+    // mapping through a refusal table, the same as every other messages.ts
+    // entry in this allowlist.
+    'pick somebody to message':
+      'raised by create_group_thread — lib/messages.ts (Task 5, not yet created) is the module responsible, and by design relays error.message rather than mapping through a refusal table',
+    // Raised by create_group_thread and add_to_group_thread when a member
+    // being added is neither a friend nor a club-mate of the caller. The
+    // picker only ever offers people can_reach already allows, so a caller
+    // hitting this is malicious or buggy. lib/messages.ts owns it, per the
+    // note above.
+    'you can only message people from your clubs or your friends':
+      'raised by create_group_thread/add_to_group_thread — lib/messages.ts (Task 5, not yet created) is the module responsible, and by design relays error.message rather than mapping through a refusal table',
+    // Raised by add_to_group_thread when the target thread is a club or
+    // game thread rather than a group. The UI only ever offers "add people"
+    // on a group thread screen, so a caller hitting this is malicious or
+    // buggy. lib/messages.ts owns it, per the note above.
+    'only a group has people to add':
+      'raised by add_to_group_thread — lib/messages.ts (Task 5, not yet created) is the module responsible, and by design relays error.message rather than mapping through a refusal table',
+    // Raised by add_to_group_thread when the caller is not themselves a
+    // member of the target group. The "add people" control only ever
+    // renders inside a group thread the caller is already reading, so a
+    // caller hitting this is malicious or buggy. lib/messages.ts owns it,
+    // per the note above.
+    'you are not in this conversation':
+      'raised by add_to_group_thread — lib/messages.ts (Task 5, not yet created) is the module responsible, and by design relays error.message rather than mapping through a refusal table',
   };
 
   function distinctRaisedMessages(): string[] {
