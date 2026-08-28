@@ -56,6 +56,21 @@ async function settle(page: Page) {
  * `Screen` renders as a plain View and vertically centres) are not resized at
  * all, so their baselines stay at true device dimensions.
  *
+ * The amount grown is the scroller's OVERFLOW — scrollHeight minus its own
+ * clientHeight — not its scrollHeight outright. components/Screen.tsx renders
+ * the bottom tab bar as a flex SIBLING of the scroller (`tabShellBody` holds
+ * the scroller, `tabBarColumn` holds the bar), not inside it, so on any
+ * tab-bar screen the scroller's clientHeight is already short by the bar's
+ * height. Growing the viewport to scrollHeight outright reproduces that same
+ * shortfall one level up and clips the last of the content — exactly what
+ * happened to the committed profile-mobile baseline, which came out missing
+ * its Sign out button. Adding the overflow to the CURRENT viewport height
+ * instead accounts for whatever space is already spoken for outside the
+ * scroller, whatever it is, so it isn't tied to the tab bar specifically. For
+ * a screen with nothing outside the scroller, clientHeight already equals the
+ * viewport height, so this yields the same number the old content-height
+ * check did — those baselines do not move.
+ *
  * A baseline's height is therefore content-dependent. That is intentional:
  * if a screen grows or shrinks, Playwright reports a size mismatch, which is
  * a diff, which is the point.
@@ -63,17 +78,30 @@ async function settle(page: Page) {
 async function captureScreen(page: Page, vp: Viewport, name: string) {
   await settle(page);
 
-  // Measure only after fonts have landed — text reflow changes the height.
-  const needed = await page.evaluate((selector) => {
-    const scroller = document.querySelector(selector);
-    return Math.max(
-      scroller ? scroller.scrollHeight : 0,
-      document.documentElement.scrollHeight,
-    );
-  }, SCROLLER);
+  // Grow-and-resettle can itself introduce a little more overflow (a taller
+  // window can reflow text), so repeat the measurement until it settles.
+  // Bounded rather than looped to convergence: a screen that never settles
+  // should fail loudly, not hang the suite.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    // Measure only after fonts have landed — text reflow changes the height.
+    const overflow = await page.evaluate((selector) => {
+      const scroller = document.querySelector(selector);
+      const scrollerOverflow = scroller
+        ? scroller.scrollHeight - scroller.clientHeight
+        : 0;
+      const docOverflow =
+        document.documentElement.scrollHeight -
+        document.documentElement.clientHeight;
+      return Math.max(scrollerOverflow, docOverflow, 0);
+    }, SCROLLER);
 
-  if (needed > vp.height) {
-    await page.setViewportSize({ width: vp.width, height: Math.ceil(needed) });
+    if (overflow <= 0) break;
+
+    const vpNow = page.viewportSize() ?? vp;
+    await page.setViewportSize({
+      width: vp.width,
+      height: vpNow.height + Math.ceil(overflow),
+    });
     // Re-settle: the resize triggers a relayout and a fresh paint.
     await settle(page);
   }
@@ -147,10 +175,11 @@ test.describe('signed in', () => {
 
     // The EMPTY state: this block's user belongs to no club, so there are
     // neither friends nor anybody to add. Anchored on the intro copy rather
-    // than the "Friends" heading — the Profile screen's own link carries
-    // that word too, and a heading that matches twice is a hard failure
-    // under Playwright's strict mode. Same collision the `messages` and
-    // `clubs` tests above already record.
+    // than the "Friends" heading — not because of a same-page collision like
+    // the `messages` and `clubs` tests above (this page navigates fully, so
+    // Profile isn't rendered, and app/friends.tsx has exactly one "Friends"
+    // string and no tab bar), but because the intro copy is simply the more
+    // specific anchor for this screen's empty state.
     test(`friends at ${vp.name}`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/friends');
