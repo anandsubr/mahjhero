@@ -500,6 +500,19 @@ describe('BOOKING_REFUSALS (self-audit against the migrations)', () => {
     // against a future enum member, matching 'unrecognized stage: %' above.
     'series_occurrence_dates: unhandled frequency %':
       'only reachable from an internal, non-granted function (series_occurrence_dates); frequency is a Postgres enum so every current value is handled',
+
+    // Raised by open_thread_for_event (20260829020000_open_threads.sql) both
+    // when the event does not exist and when the caller has no confirmed or
+    // waitlisted seat and is not a club organizer. The two cases are
+    // deliberately given the same message and errcode: distinguishing "no
+    // such game" from "not your game" would let the event id be used to
+    // probe which events exist. Neither function nor module is called from
+    // lib/bookings.ts, and the module that DOES call it — lib/messages.ts
+    // (Task 5, not yet created) — is designed to relay `error.message` from
+    // this RPC verbatim rather than mapping through a refusal table, the
+    // same shape as the broadcasts and add_friend entries above.
+    'you are not part of this game':
+      'raised by open_thread_for_event — lib/messages.ts (Task 5, not yet created) is the module responsible, and by design relays error.message rather than mapping through a refusal table',
   };
 
   function distinctRaisedMessages(): string[] {

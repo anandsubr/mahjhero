@@ -719,7 +719,9 @@ select is(
        'public.remove_friend(uuid)',
        'public.fetch_friends()',
        'public.fetch_addable_people()',
-       'public.can_read_thread(uuid)'
+       'public.can_read_thread(uuid)',
+       'public.open_thread_for_club(uuid)',
+       'public.open_thread_for_event(uuid)'
      ]) as f
    ) expected
    where not exists (
@@ -788,7 +790,9 @@ select is(
          'public.remove_friend(uuid)',
          'public.fetch_friends()',
          'public.fetch_addable_people()',
-         'public.can_read_thread(uuid)'
+         'public.can_read_thread(uuid)',
+         'public.open_thread_for_club(uuid)',
+         'public.open_thread_for_event(uuid)'
        ]) as f
        where to_regprocedure(f) = p.oid::regprocedure
      )),
