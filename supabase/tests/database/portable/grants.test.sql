@@ -714,7 +714,11 @@ select is(
        'public.send_broadcast(uuid, uuid, text, text)',
        'public.record_attendance(uuid, uuid, public.attendance_state, timestamptz)',
        'public.clear_attendance(uuid, uuid)',
-       'public.event_attendance(uuid)'
+       'public.event_attendance(uuid)',
+       'public.add_friend(uuid)',
+       'public.remove_friend(uuid)',
+       'public.fetch_friends()',
+       'public.fetch_addable_people()'
      ]) as f
    ) expected
    where not exists (
@@ -778,7 +782,11 @@ select is(
          'public.send_broadcast(uuid, uuid, text, text)',
          'public.record_attendance(uuid, uuid, public.attendance_state, timestamptz)',
          'public.clear_attendance(uuid, uuid)',
-         'public.event_attendance(uuid)'
+         'public.event_attendance(uuid)',
+         'public.add_friend(uuid)',
+         'public.remove_friend(uuid)',
+         'public.fetch_friends()',
+         'public.fetch_addable_people()'
        ]) as f
        where to_regprocedure(f) = p.oid::regprocedure
      )),
