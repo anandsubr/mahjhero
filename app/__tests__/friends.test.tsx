@@ -1,0 +1,108 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import FriendsScreen from '../friends';
+
+vi.mock('expo-router', () => ({
+  Redirect: () => null,
+  Link: ({ children }: { children: React.ReactNode }) => children,
+  useRouter: () => ({ push: vi.fn(), back: vi.fn() }),
+  usePathname: () => '/friends',
+}));
+
+vi.mock('../../lib/session', () => ({
+  useSession: () => ({ session: { user: { id: 'me' } }, loading: false }),
+}));
+
+const fetchFriends = vi.fn();
+const fetchAddablePeople = vi.fn();
+const addFriend = vi.fn();
+const removeFriend = vi.fn();
+
+vi.mock('../../lib/friends', async () => {
+  // sharedClubsLabel is pure and already covered in lib/friends.test.ts;
+  // mocking it would only let this screen render a label the real one never
+  // produces.
+  const actual = await vi.importActual<typeof import('../../lib/friends')>(
+    '../../lib/friends',
+  );
+  return {
+    sharedClubsLabel: actual.sharedClubsLabel,
+    fetchFriends: (...a: unknown[]) => fetchFriends(...a),
+    fetchAddablePeople: (...a: unknown[]) => fetchAddablePeople(...a),
+    addFriend: (...a: unknown[]) => addFriend(...a),
+    removeFriend: (...a: unknown[]) => removeFriend(...a),
+  };
+});
+
+const BOB = { profile_id: 'p1', display_name: 'Bob Reyes', club_names: ['Riverside'] };
+const CAROL = { profile_id: 'p2', display_name: 'Carol Diaz', club_name: 'Oakfield' };
+
+describe('friends screen', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    fetchFriends.mockResolvedValue([]);
+    fetchAddablePeople.mockResolvedValue([]);
+    addFriend.mockResolvedValue({ error: null });
+    removeFriend.mockResolvedValue({ error: null });
+  });
+
+  it('lists a friend with the clubs they still share', async () => {
+    fetchFriends.mockResolvedValueOnce([BOB]);
+    render(<FriendsScreen />);
+    expect(await screen.findByText('Bob Reyes')).toBeTruthy();
+    expect(screen.getByText('Riverside')).toBeTruthy();
+  });
+
+  it('says so plainly for a friend from a club neither of you is in now', async () => {
+    fetchFriends.mockResolvedValueOnce([{ ...BOB, club_names: [] }]);
+    render(<FriendsScreen />);
+    expect(await screen.findByText('No clubs in common')).toBeTruthy();
+  });
+
+  it('shows the dashed empty card when there are no friends yet', async () => {
+    render(<FriendsScreen />);
+    expect(await screen.findByText(/No friends yet/)).toBeTruthy();
+  });
+
+  // "we could not ask" and "you have no friends" are different claims. An
+  // empty state for a failed read tells the member something false about
+  // themselves.
+  it('shows an error rather than the empty card when the load fails', async () => {
+    fetchFriends.mockResolvedValueOnce(null);
+    render(<FriendsScreen />);
+    expect(await screen.findByText(/Could not reach MahjHero/)).toBeTruthy();
+    expect(screen.queryByText(/No friends yet/)).toBeNull();
+  });
+
+  it('offers club-mates who are not yet friends, and adds one', async () => {
+    fetchAddablePeople.mockResolvedValueOnce([CAROL]);
+    render(<FriendsScreen />);
+    expect(await screen.findByText('Carol Diaz')).toBeTruthy();
+    expect(screen.getByText('Oakfield')).toBeTruthy();
+
+    fireEvent.click(screen.getByLabelText('Add Carol Diaz'));
+    await waitFor(() => expect(addFriend).toHaveBeenCalledWith('p2'));
+    // Both lists move: she leaves the suggestions and joins the friends.
+    await waitFor(() => expect(fetchFriends).toHaveBeenCalledTimes(2));
+  });
+
+  it('surfaces a refusal from add_friend in the member’s own words', async () => {
+    fetchAddablePeople.mockResolvedValueOnce([CAROL]);
+    addFriend.mockResolvedValueOnce({
+      error: 'you can only add someone from one of your clubs',
+    });
+    render(<FriendsScreen />);
+    fireEvent.click(await screen.findByLabelText('Add Carol Diaz'));
+    expect(
+      await screen.findByText('you can only add someone from one of your clubs'),
+    ).toBeTruthy();
+  });
+
+  it('removes a friend and reloads', async () => {
+    fetchFriends.mockResolvedValueOnce([BOB]);
+    render(<FriendsScreen />);
+    fireEvent.click(await screen.findByLabelText('Remove Bob Reyes'));
+    await waitFor(() => expect(removeFriend).toHaveBeenCalledWith('p1'));
+    await waitFor(() => expect(fetchFriends).toHaveBeenCalledTimes(2));
+  });
+});
