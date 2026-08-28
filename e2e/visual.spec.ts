@@ -145,6 +145,21 @@ test.describe('signed in', () => {
       await captureScreen(page, vp, `messages-${vp.name}.png`);
     });
 
+    // The EMPTY state: this block's user belongs to no club, so there are
+    // neither friends nor anybody to add. Anchored on the intro copy rather
+    // than the "Friends" heading — the Profile screen's own link carries
+    // that word too, and a heading that matches twice is a hard failure
+    // under Playwright's strict mode. Same collision the `messages` and
+    // `clubs` tests above already record.
+    test(`friends at ${vp.name}`, async ({ page }) => {
+      await page.setViewportSize({ width: vp.width, height: vp.height });
+      await page.goto('/friends');
+      await expect(
+        page.getByText('These are the people you can hold seats with'),
+      ).toBeVisible();
+      await captureScreen(page, vp, `friends-${vp.name}.png`);
+    });
+
     // The EMPTY state, and it stays that way: this block's user belongs to no
     // club. The seeding hook lives in the nested describe below precisely so
     // that adding populated baselines could not quietly turn this one into a
