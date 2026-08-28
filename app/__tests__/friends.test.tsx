@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import FriendsScreen from '../friends';
 
 vi.mock('expo-router', () => ({
@@ -96,6 +96,34 @@ describe('friends screen', () => {
     expect(
       await screen.findByText('you can only add someone from one of your clubs'),
     ).toBeTruthy();
+  });
+
+  // A second activation landing in the same tick as the first — a queued
+  // tap, a screen-reader double-activation — must not slip past the guard
+  // just because React hasn't re-rendered with the new `busy` state yet.
+  // Both clicks are fired inside one `act` so neither gets a re-render in
+  // between, reproducing that same-tick window deterministically.
+  it('does not double-fire addFriend when Add is activated twice before the write resolves', async () => {
+    fetchAddablePeople.mockResolvedValueOnce([CAROL]);
+    let resolveAdd: (v: { error: string | null }) => void = () => {};
+    addFriend.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveAdd = resolve;
+        }),
+    );
+    render(<FriendsScreen />);
+    const addButton = await screen.findByLabelText('Add Carol Diaz');
+
+    act(() => {
+      fireEvent.click(addButton);
+      fireEvent.click(addButton);
+    });
+
+    expect(addFriend).toHaveBeenCalledTimes(1);
+
+    resolveAdd({ error: null });
+    await waitFor(() => expect(fetchFriends).toHaveBeenCalledTimes(2));
   });
 
   it('removes a friend and reloads', async () => {

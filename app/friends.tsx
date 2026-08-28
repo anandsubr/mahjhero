@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Redirect, useRouter } from 'expo-router';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import Button from '../components/Button';
@@ -40,6 +40,15 @@ export default function FriendsScreen() {
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // `busy` above is read from the render closure, so a guard written as
+  // `if (busy) return` is blind to a tap landing in the same tick as an
+  // earlier `setBusy(true)` — a queued tap, a screen reader activation, a
+  // native double-tap — since the closure still holds the old value in that
+  // window. This ref is written synchronously alongside `setBusy`, so it is
+  // what actually makes the guard sound; `busy` itself keeps doing its own
+  // job of driving the disabled look of the Add/Remove controls. See
+  // app/clubs/index.tsx's identical comment for the same bug class.
+  const busyRef = useRef(false);
 
   const load = useCallback(async () => {
     const [f, p] = await Promise.all([fetchFriends(), fetchAddablePeople()]);
@@ -66,19 +75,22 @@ export default function FriendsScreen() {
 
   const act = useCallback(
     async (run: () => Promise<{ error: string | null }>) => {
-      if (busy) return;
+      if (busyRef.current) return;
+      busyRef.current = true;
       setBusy(true);
       setError(null);
       const { error: refusal } = await run();
       if (refusal) {
+        busyRef.current = false;
         setError(refusal);
         setBusy(false);
         return;
       }
       await load();
+      busyRef.current = false;
       setBusy(false);
     },
-    [busy, load],
+    [load],
   );
 
   if (loading) {
@@ -127,6 +139,7 @@ export default function FriendsScreen() {
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={`Remove ${f.display_name}`}
+                disabled={busy}
                 onPress={() => void act(() => removeFriend(f.profile_id))}
               >
                 <Text style={styles.remove}>Remove</Text>
@@ -152,6 +165,7 @@ export default function FriendsScreen() {
               <Button
                 variant="secondary"
                 big={false}
+                disabled={busy}
                 accessibilityLabel={`Add ${p.display_name}`}
                 onPress={() => void act(() => addFriend(p.profile_id))}
               >
