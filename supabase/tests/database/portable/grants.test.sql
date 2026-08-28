@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(77);
+select plan(85);
 
 /*
  * Guards the privileges themselves, not the policies.
@@ -792,6 +792,53 @@ select is(
      )),
   '',
   'no UNEXPECTED function is reachable by authenticated'
+);
+
+-- ---------------------------------------------------------------------
+-- Friends (20260828000000, 20260828010000).
+-- ---------------------------------------------------------------------
+
+select ok(
+  not has_table_privilege('authenticated', 'public.friendships', 'TRUNCATE'),
+  'authenticated cannot TRUNCATE friendships'
+);
+
+-- Edges are written only by add_friend/remove_friend. Direct DML here would
+-- let a client write an edge for somebody else's profile_id, which the
+-- select policy would then hide from the person it was written about.
+select ok(
+  not has_table_privilege('authenticated', 'public.friendships', 'INSERT'),
+  'authenticated cannot INSERT a friendship directly'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.friendships', 'DELETE'),
+  'authenticated cannot DELETE a friendship directly'
+);
+select ok(
+  has_table_privilege('authenticated', 'public.friendships', 'SELECT'),
+  'authenticated can SELECT friendships, scoped by the own-rows policy'
+);
+
+-- can_reach is internal. This assertion is the one that catches Supabase's
+-- hosted bootstrap grant, which `revoke … from public` does not clear and
+-- which the local stack never creates.
+select ok(
+  not has_function_privilege(
+    'authenticated', 'public.can_reach(uuid, uuid)', 'EXECUTE'),
+  'can_reach is revoked from authenticated'
+);
+
+select ok(
+  has_function_privilege('authenticated', 'public.add_friend(uuid)', 'EXECUTE'),
+  'authenticated can execute add_friend'
+);
+select ok(
+  has_function_privilege('authenticated', 'public.fetch_friends()', 'EXECUTE'),
+  'authenticated can execute fetch_friends'
+);
+select ok(
+  not has_function_privilege('anon', 'public.add_friend(uuid)', 'EXECUTE'),
+  'anon cannot execute add_friend'
 );
 
 select * from finish();
