@@ -90,6 +90,16 @@ import {
   updateVenue,
   VENUE_COLUMNS,
 } from './venues';
+import {
+  createGroupThread,
+  fetchThread,
+  fetchThreadMessages,
+  MESSAGE_COLUMNS,
+  openThreadForEvent,
+  postMessage,
+  THREAD_COLUMNS,
+} from './messages';
+import type { ThreadDetail, ThreadMessage } from './messages';
 
 const SKILL_LEVELS = ['beginner', 'intermediate', 'advanced'];
 const NOTIFY_CHANNELS = ['push', 'email', 'both'];
@@ -2089,5 +2099,422 @@ describe.runIf(reachable || required)('attendance schema contract', () => {
         row!.check_in_closes_at as string,
       ),
     ).toBe(true);
+  });
+});
+
+/*
+ * ---------------------------------------------------------------------------
+ * Messages cross the boundary too.
+ * ---------------------------------------------------------------------------
+ *
+ * lib/messages.ts's THREAD_COLUMNS and MESSAGE_COLUMNS carry the one embed
+ * in this codebase whose resolution is a genuine open question rather than a
+ * formality: `messages` self-references through `reply_to_id`, by way of a
+ * COMPOSITE foreign key -- `(reply_to_id, thread_id) references messages
+ * (id, thread_id)` -- and MESSAGE_COLUMNS asks PostgREST to embed it as
+ * `reply_to:reply_to_id(...)`. Whether PostgREST resolves a composite
+ * self-reference through a column-name hint at all, and whether it embeds
+ * one row (not many, and not the wrong side of the pair) is exactly what a
+ * mocked Vitest suite cannot see -- the mock answers whatever shape the test
+ * hands it, so a broken hint and a working one look identical to it. Only a
+ * real PostgREST server, on a real composite foreign key, can prove this one
+ * way or the other.
+ */
+describe.runIf(reachable || required)('messages schema contract', () => {
+  let admin: SupabaseClient;
+  let userId: string;
+  let otherId: string;
+  let otherEmail: string;
+  let clubId: string;
+  let venueId: string;
+  let eventId: string;
+  let gameThreadId: string;
+  let groupThreadId: string;
+
+  beforeAll(async () => {
+    expect(
+      reachable,
+      `Local Supabase stack not reachable at ${local.url}. Run \`npx supabase start\`.`,
+    ).toBe(true);
+    ({ admin, userId } = await signInFreshUser());
+
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    const { data: club, error: clubError } = await admin
+      .from('clubs')
+      .insert({
+        name: 'Messages Contract Club',
+        slug: `messages-contract-${suffix}`,
+        timezone: 'America/New_York',
+        created_by: userId,
+      })
+      .select('id')
+      .single();
+    expect(clubError, `seeding club failed: ${clubError?.message}`).toBeNull();
+    clubId = club!.id;
+
+    const { error: memberError } = await admin.from('club_members').insert({
+      club_id: clubId,
+      profile_id: userId,
+      role: 'host',
+      status: 'active',
+    });
+    expect(memberError, `seeding host failed: ${memberError?.message}`).toBeNull();
+
+    const { error: nameError } = await admin
+      .from('profiles')
+      .update({ display_name: 'Contract Poster' })
+      .eq('id', userId);
+    expect(nameError, `naming caller profile failed: ${nameError?.message}`).toBeNull();
+
+    // A second real profile, in the same club, so createGroupThread's
+    // can_reach check (shared active club membership) passes -- and so
+    // THREAD_COLUMNS' thread_members embed carries two distinguishable
+    // rows, not the caller alone.
+    otherEmail = `messages-contract-other-${suffix}@mahjhero.test`;
+    const { data: otherUser, error: otherError } = await admin.auth.admin.createUser({
+      email: otherEmail,
+      email_confirm: true,
+    });
+    expect(otherError, `seeding second profile failed: ${otherError?.message}`).toBeNull();
+    otherId = otherUser!.user!.id;
+    const { error: otherMemberError } = await admin.from('club_members').insert({
+      club_id: clubId,
+      profile_id: otherId,
+      role: 'member',
+      status: 'active',
+    });
+    expect(
+      otherMemberError,
+      `seeding second member failed: ${otherMemberError?.message}`,
+    ).toBeNull();
+    const { error: otherNameError } = await admin
+      .from('profiles')
+      .update({ display_name: 'Contract Other' })
+      .eq('id', otherId);
+    expect(
+      otherNameError,
+      `naming second profile failed: ${otherNameError?.message}`,
+    ).toBeNull();
+
+    const { data: venue, error: venueError } = await admin
+      .from('venues')
+      .insert({
+        name: 'Messages Contract Hall',
+        visibility: 'club',
+        added_by_club_id: clubId,
+        created_by: userId,
+      })
+      .select('id')
+      .single();
+    expect(venueError, `seeding venue failed: ${venueError?.message}`).toBeNull();
+    venueId = venue!.id;
+
+    const { data: event, error: eventError } = await admin
+      .from('events')
+      .insert({
+        club_id: clubId,
+        title: 'Contract Mahjong Night',
+        venue_id: venueId,
+        notes: '',
+        starts_at: '2099-09-08T23:00:00Z',
+        ends_at: '2099-09-09T02:00:00Z',
+        created_by: userId,
+      })
+      .select('id')
+      .single();
+    expect(eventError, `seeding event failed: ${eventError?.message}`).toBeNull();
+    eventId = event!.id;
+
+    // A confirmed booking, so the caller (already the host, but this keeps
+    // the fixture honest about who a real game-thread poster is) can open
+    // and post to the game thread below.
+    const { data: table, error: tableError } = await admin
+      .from('event_tables')
+      .insert({ event_id: eventId, club_id: clubId, label: 'Table 1', position: 1 })
+      .select('id')
+      .single();
+    expect(tableError, `seeding table failed: ${tableError?.message}`).toBeNull();
+
+    const { data: group, error: groupError } = await admin
+      .from('booking_groups')
+      .insert({
+        event_id: eventId,
+        club_id: clubId,
+        created_by: userId,
+        preferred_table_id: table!.id,
+        status: 'confirmed',
+      })
+      .select('id')
+      .single();
+    expect(groupError, `seeding booking group failed: ${groupError?.message}`).toBeNull();
+
+    const { error: bookingError } = await admin.from('bookings').insert({
+      group_id: group!.id,
+      event_id: eventId,
+      club_id: clubId,
+      event_table_id: table!.id,
+      profile_id: userId,
+      booked_by: userId,
+      status: 'confirmed',
+    });
+    expect(bookingError, `seeding booking failed: ${bookingError?.message}`).toBeNull();
+
+    // Opened through the real RPCs as the signed-in caller -- can_read_thread
+    // and can_post_thread must actually pass here, not merely be assumed.
+    const { id: openedGameThreadId, error: openGameError } =
+      await openThreadForEvent(eventId);
+    expect(openGameError, `openThreadForEvent failed: ${openGameError}`).toBeNull();
+    gameThreadId = openedGameThreadId!;
+
+    const { id: openedGroupThreadId, error: groupThreadError } = await createGroupThread(
+      'Contract Group',
+      [otherId],
+    );
+    expect(groupThreadError, `createGroupThread failed: ${groupThreadError}`).toBeNull();
+    groupThreadId = openedGroupThreadId!;
+  });
+
+  afterAll(async () => {
+    await supabase.auth.signOut();
+    if (admin) {
+      if (eventId) {
+        await admin.from('bookings').delete().eq('event_id', eventId);
+        await admin.from('booking_groups').delete().eq('event_id', eventId);
+        await admin.from('event_tables').delete().eq('event_id', eventId);
+      }
+      if (groupThreadId) {
+        await admin.from('message_threads').delete().eq('id', groupThreadId);
+      }
+      if (eventId) await admin.from('events').delete().eq('id', eventId);
+      if (venueId) await admin.from('venues').delete().eq('id', venueId);
+      if (clubId) await admin.from('club_members').delete().eq('club_id', clubId);
+      if (clubId) await admin.from('clubs').delete().eq('id', clubId);
+    }
+    if (admin && otherId) await admin.auth.admin.deleteUser(otherId);
+    if (admin && userId) await admin.auth.admin.deleteUser(userId);
+  });
+
+  it('answers THREAD_COLUMNS with exactly the columns ThreadDetail names, for a game thread', async () => {
+    const { data, error } = await supabase
+      .from('message_threads')
+      .select(THREAD_COLUMNS)
+      .eq('id', gameThreadId)
+      .single();
+    expect(error).toBeNull();
+    const row = data as unknown as Record<string, unknown>;
+
+    // Same pattern as BROADCAST_COLUMNS above: expected keys come from
+    // `keyof ThreadDetail`, not a retyped array literal, so an added or
+    // renamed field on the type fails at compile time as well as here.
+    const declaredFields: Record<keyof ThreadDetail, true> = {
+      id: true,
+      club_id: true,
+      event_id: true,
+      title: true,
+      clubs: true,
+      events: true,
+      thread_members: true,
+    };
+    expect(Object.keys(row).sort()).toEqual(Object.keys(declaredFields).sort());
+
+    expect(row.club_id).toBe(clubId);
+    expect(row.event_id).toBe(eventId);
+    expect((row.clubs as { name: string }).name).toBe('Messages Contract Club');
+    expect((row.events as { title: string }).title).toBe('Contract Mahjong Night');
+    // Game threads never populate thread_members -- membership is derived
+    // from bookings, not materialized -- so the embed must resolve to an
+    // empty array, not a missing key or an error.
+    expect(row.thread_members).toEqual([]);
+  });
+
+  it('answers THREAD_COLUMNS with exactly the columns ThreadDetail names, for a group thread', async () => {
+    const { data, error } = await supabase
+      .from('message_threads')
+      .select(THREAD_COLUMNS)
+      .eq('id', groupThreadId)
+      .single();
+    expect(error).toBeNull();
+    const row = data as unknown as Record<string, unknown>;
+
+    expect(row.club_id).toBeNull();
+    expect(row.event_id).toBeNull();
+    expect(row.clubs).toBeNull();
+    expect(row.events).toBeNull();
+    const members = row.thread_members as {
+      profile_id: string;
+      profiles: { display_name: string } | null;
+    }[];
+    expect(members.map((m) => m.profile_id).sort()).toEqual([userId, otherId].sort());
+
+    /*
+     * A FINDING, pinned rather than papered over: `profiles` has been
+     * self-row-only since 20260822180000 (see that migration's own
+     * docstring -- a plain member reading a co-member's quiet hours was the
+     * defect it closed), and the fix moved co-member identity behind a
+     * SECURITY DEFINER function, `club_roster`, rather than reopening the
+     * table's RLS. THREAD_COLUMNS' `thread_members(profile_id,
+     * profiles!thread_members_profile_id_fkey(display_name))` is a plain
+     * select, so it inherits that same self-only policy: the caller's OWN
+     * row in the embed carries a name, and everyone else's carries
+     * `profiles: null`, silently, exactly the shape a co-member's
+     * quiet-hours leak used to take before club_roster closed it.
+     *
+     * There is no club to hand a `club_roster`-style function for a GROUP
+     * thread -- that is the whole reason it has no club_id -- so closing
+     * this needs a new definer function (a `thread_roster`, by the same
+     * shape), which is a migration, out of this task's scope. Recorded here
+     * so a future "who's in this group" screen finds a failing assertion
+     * instead of a silently blank name list.
+     */
+    const caller = members.find((m) => m.profile_id === userId);
+    expect(caller!.profiles!.display_name).toBe('Contract Poster');
+    const other = members.find((m) => m.profile_id === otherId);
+    expect(other!.profiles).toBeNull();
+  });
+
+  it('fetchThread returns the ThreadDetail shape for both a game and a group thread', async () => {
+    const game = await fetchThread(gameThreadId);
+    expect(game).not.toBeNull();
+    expect(game!.event_id).toBe(eventId);
+    expect(game!.events!.title).toBe('Contract Mahjong Night');
+
+    const group = await fetchThread(groupThreadId);
+    expect(group).not.toBeNull();
+    expect(group!.title).toBe('Contract Group');
+    expect(group!.thread_members).toHaveLength(2);
+  });
+
+  /*
+   * MESSAGE_COLUMNS' finding, pinned as a regression test rather than left
+   * as a one-time observation: `messages` has exactly one foreign key into
+   * itself, `messages_reply_to_id_thread_id_fkey`, a COMPOSITE key on
+   * (reply_to_id, thread_id). Verified directly against this stack's
+   * PostgREST (v14.15) that no hint syntax resolves it as an embed --
+   * `reply_to:reply_to_id(...)` (the brief's original form),
+   * `reply_to:messages!messages_reply_to_id_thread_id_fkey(...)`, and the
+   * bare constraint-name hint all answer PGRST200 ("Could not find a
+   * relationship between 'messages' and 'messages' in the schema cache"),
+   * never PGRST201 (ambiguity) -- proving the schema cache does not expose
+   * this relationship as embeddable at all, not merely that it needs a
+   * hint. See the task report for the full curl transcript. So
+   * MESSAGE_COLUMNS carries no reply_to embed, and this first assertion
+   * pins that absence: a future MESSAGE_COLUMNS that re-adds the embed
+   * (say, after a PostgREST upgrade) should extend this test, not silently
+   * pass it.
+   */
+  it('MESSAGE_COLUMNS answers exactly its own columns -- no reply_to embed, because PostgREST cannot serve one', async () => {
+    const { id: firstId, error: firstError } = await postMessage(
+      groupThreadId,
+      'First message, nothing quoted',
+    );
+    expect(firstError, `postMessage (first) failed: ${firstError}`).toBeNull();
+
+    const { id: replyId, error: replyError } = await postMessage(
+      groupThreadId,
+      'Replying to the first',
+      false,
+      firstId,
+    );
+    expect(replyError, `postMessage (reply) failed: ${replyError}`).toBeNull();
+
+    const { data, error } = await supabase
+      .from('messages')
+      .select(MESSAGE_COLUMNS)
+      .eq('id', replyId!)
+      .single();
+    expect(error).toBeNull();
+    const row = data as unknown as Record<string, unknown>;
+
+    // Every key of ThreadMessage EXCEPT reply_to, which fetchThreadMessages
+    // fills in from a second query rather than this select list.
+    const declaredFields: Record<Exclude<keyof ThreadMessage, 'reply_to'>, true> = {
+      id: true,
+      author_id: true,
+      body: true,
+      subject: true,
+      is_announcement: true,
+      created_at: true,
+      profiles: true,
+      reply_to_id: true,
+    };
+    expect(Object.keys(row).sort()).toEqual(Object.keys(declaredFields).sort());
+    expect(row.reply_to_id).toBe(firstId);
+    expect(row).not.toHaveProperty('reply_to');
+  });
+
+  it('fetchThreadMessages resolves the quoted message with its own second query, scoped to the thread', async () => {
+    const messages = await fetchThreadMessages(groupThreadId);
+    expect(messages).not.toBeNull();
+    expect(messages!.length).toBeGreaterThanOrEqual(2);
+
+    const reply = messages!.find((m) => m.reply_to_id !== null);
+    expect(reply, 'expected the seeded reply among the thread messages').toBeDefined();
+    expect(reply!.reply_to).not.toBeNull();
+    expect(reply!.reply_to!.body).toBe('First message, nothing quoted');
+
+    const first = messages!.find((m) => m.id === reply!.reply_to_id);
+    expect(
+      first,
+      'expected the quoted message itself among the thread messages',
+    ).toBeDefined();
+    expect(first!.reply_to).toBeNull();
+  });
+
+  /*
+   * A second FINDING, in the same shape as the thread_members one above,
+   * and worth pinning separately because it hits MESSAGE_COLUMNS' `profiles`
+   * embed -- the sender's name on every bubble, not a members list. Posted
+   * by a REAL second session (not the service-role client, which bypasses
+   * RLS and would hide exactly this), then read back through the caller's
+   * own session -- the only way to observe what RLS actually does, not what
+   * a service-role query would suggest it does.
+   */
+  it('MESSAGE_COLUMNS names the sender only when the sender is the caller -- profiles is self-only RLS', async () => {
+    const otherClient = createClient(local.url, local.anonKey, {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    });
+    const { data: link, error: linkError } = await admin.auth.admin.generateLink({
+      type: 'magiclink',
+      email: otherEmail,
+    });
+    expect(linkError, `generateLink for second session failed: ${linkError?.message}`).toBeNull();
+    const { error: verifyError } = await otherClient.auth.verifyOtp({
+      token_hash: link!.properties!.hashed_token,
+      type: 'magiclink',
+    });
+    expect(verifyError, `signing in second session failed: ${verifyError?.message}`).toBeNull();
+
+    // Posted as otherId, through a real RPC call on otherClient -- not
+    // lib/messages.ts's postMessage, which is wired to the module-mocked
+    // `supabase` singleton (userId's session) and cannot be pointed at a
+    // second client.
+    const { data: otherMessageId, error: postError } = await otherClient.rpc('post_message', {
+      target_thread: groupThreadId,
+      p_body: 'A message from the other member',
+      p_announce: false,
+      p_reply_to: null,
+    });
+    expect(postError, `post_message as the other member failed: ${postError?.message}`).toBeNull();
+    await otherClient.auth.signOut();
+
+    // Read back as the ORIGINAL caller (userId) -- the session this whole
+    // describe block otherwise runs as.
+    const { data, error } = await supabase
+      .from('messages')
+      .select(MESSAGE_COLUMNS)
+      .eq('id', otherMessageId as string)
+      .single();
+    expect(error).toBeNull();
+    const row = data as unknown as Record<string, unknown>;
+    expect(row.author_id).toBe(otherId);
+    // Not `.toBe('Contract Other')`. The same profiles_select_own policy
+    // that hid the co-member's name in thread_members (20260822180000) hides
+    // it here too -- MESSAGE_COLUMNS' profiles embed is a plain select, so
+    // it inherits the caller's own RLS, and a message from anyone but the
+    // caller carries a sender with no name. Recorded here, alongside the
+    // thread_members finding, so a chat screen relying on this column list
+    // finds a failing assertion first rather than shipping blank senders.
+    expect(row.profiles).toBeNull();
   });
 });

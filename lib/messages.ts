@@ -1,0 +1,493 @@
+import { GENERIC_ERROR } from './constants';
+import { supabase } from './supabase';
+
+export type ThreadKind = 'club' | 'game' | 'group' | 'direct';
+
+/**
+ * One `fetch_my_threads` row.
+ *
+ * `thread_id` is null for a club thread nobody has opened yet — the row is
+ * still listed, because the artboard always shows "Everyone at <club>", and
+ * the client calls `openThreadForClub(club_id)` on tap. Every caller
+ * navigates that way, existing row or not, so there is one path rather than
+ * two.
+ */
+export type ThreadListRow = {
+  thread_id: string | null;
+  kind: ThreadKind;
+  title: string;
+  club_id: string | null;
+  club_name: string | null;
+  member_count: number;
+  last_body: string | null;
+  last_author: string | null;
+  last_is_announcement: boolean;
+  last_message_at: string | null;
+  unread: number;
+  event_id: string | null;
+  event_starts_at: string | null;
+  event_timezone: string | null;
+};
+
+export type ThreadMessage = {
+  id: string;
+  author_id: string;
+  body: string;
+  subject: string | null;
+  is_announcement: boolean;
+  created_at: string;
+  profiles: { display_name: string } | null;
+  reply_to_id: string | null;
+  /**
+   * The quoted message, embedded by PostgREST through `reply_to_id`'s
+   * foreign key. Null when nothing was quoted — and also null if the parent
+   * was ever removed, since the key is `on delete set null`. The bubble
+   * renders as an ordinary message in both cases rather than as an empty
+   * quote.
+   */
+  reply_to: { id: string; body: string; profiles: { display_name: string } | null } | null;
+};
+
+export type ThreadDetail = {
+  id: string;
+  club_id: string | null;
+  event_id: string | null;
+  title: string | null;
+  clubs: { name: string; timezone: string } | null;
+  events: { title: string; starts_at: string } | null;
+  thread_members: { profile_id: string; profiles: { display_name: string } | null }[];
+};
+
+/**
+ * The exact select lists the client relies on, named once so
+ * lib/schema-contract.test.ts can assert the database really answers with
+ * the shape the types above claim — the pattern PROFILE_COLUMNS records in
+ * lib/profile.ts. A column dropped here without the contract test noticing
+ * is exactly the drift that suite exists to catch.
+ *
+ * These are plain selects rather than an RPC because the thread screen must
+ * open a thread `fetch_my_threads` has already dropped from the list — a
+ * finished game's thread stays readable from the game screen. RLS still
+ * governs: `messages_select` and `message_threads_select` both call
+ * `can_read_thread`.
+ *
+ * Both embeds below carry a `!constraint_name` hint, and neither hint is
+ * decorative — verified against a real PostgREST (v14.15, the version this
+ * project's local stack runs), not assumed from the migrations:
+ *
+ *   - `events!message_threads_event_id_fkey`: message_threads carries TWO
+ *     foreign keys into events — the plain `event_id references events(id)`
+ *     and the composite `(event_id, club_id) references events(id,
+ *     club_id)` that makes a thread pointing at another club's event
+ *     unstateable (20260829000000's own comment). PostgREST refuses the
+ *     embed with PGRST201 ("more than one relationship was found") without
+ *     a hint naming which one to use.
+ *   - `profiles!thread_members_profile_id_fkey`: thread_members carries two
+ *     foreign keys into profiles — `profile_id` (who is in the group) and
+ *     `added_by` (who added them). Same PGRST201 without the hint.
+ */
+export const THREAD_COLUMNS =
+  'id, club_id, event_id, title, clubs(name, timezone), ' +
+  'events!message_threads_event_id_fkey(title, starts_at), ' +
+  'thread_members(profile_id, profiles!thread_members_profile_id_fkey(display_name))';
+
+/*
+ * Does NOT embed reply_to, and that is a finding, not an oversight.
+ *
+ * The brief this module was built from specified a named embed —
+ * `reply_to:reply_to_id(id, body, profiles(display_name))` — reasoning that
+ * `messages` has two foreign-key paths to itself once thread_id and
+ * reply_to_id both exist. That reasoning about AMBIGUITY was right, but the
+ * conclusion was wrong: `messages` has exactly ONE foreign key into itself,
+ * `messages_reply_to_id_thread_id_fkey`, a COMPOSITE key on
+ * (reply_to_id, thread_id) — the same key 20260829000000's own docstring
+ * argues for at length, because it is what makes a cross-thread quote
+ * unstateable. Verified directly against the local stack's PostgREST
+ * (v14.15) with curl, every hint form PostgREST documents fails the same
+ * way: `reply_to:reply_to_id(...)`, `reply_to:messages!<constraint>(...)`,
+ * and the bare column-name hint all answer PGRST200, "Could not find a
+ * relationship between 'messages' and 'messages' in the schema cache" — not
+ * an ambiguity (PGRST201, which DOES fire for the two THREAD_COLUMNS cases
+ * above, proving the schema cache sees those fine). PostgREST's schema-cache
+ * introspection does not expose a composite SELF-referential foreign key as
+ * an embeddable relationship at all, for any table in this schema, at this
+ * version. There is no view, no second single-column FK, and no alternate
+ * hint syntax that recovers it — see the task report for the full curl
+ * transcript.
+ *
+ * fetchThreadMessages below resolves the quote with a second query instead,
+ * scoped to the same thread. That second query is not a workaround so much
+ * as the more defensive shape anyway: the composite foreign key guarantees
+ * a reply's parent lives in the same thread, and scoping the lookup
+ * explicitly by thread_id repeats that guarantee rather than trusting it
+ * silently.
+ */
+export const MESSAGE_COLUMNS =
+  'id, author_id, body, subject, is_announcement, created_at, reply_to_id, ' +
+  'profiles(display_name)';
+
+/** The columns fetchThreadMessages' second query needs for a quoted message. */
+const QUOTE_COLUMNS = 'id, body, profiles(display_name)';
+
+/** Mirrors messages.body's check constraint exactly. */
+export const BODY_MAX = 2000;
+/** Mirrors messages.subject's, and broadcasts.subject's before it. */
+export const SUBJECT_MAX = 120;
+
+/**
+ * Mirrors Postgres's `[[:cntrl:]]` under en_US.UTF-8, which is not merely
+ * 0x00-0x1F and 0x7F — it also carries the C1 range, U+0080-U+009F, which a
+ * pattern stopping at \x7f misses entirely. lib/broadcasts.ts records the
+ * same range and the same reason: a subject that picked up a C1 character
+ * from a bad Windows-1252 round-trip would sail through a narrower check
+ * and hit the database constraint anyway.
+ */
+const CONTROL_CHAR_PATTERN = /[\x00-\x1f\x7f-\x9f]/g;
+
+/**
+ * The announcement subject, derived rather than typed.
+ *
+ * An email needs a subject line and the compose artboard has one input, so
+ * the body's first line becomes the subject — and the screen shows this
+ * value back in the confirmation, so it is disclosed rather than invented
+ * silently.
+ *
+ * This MUST agree with post_message's SQL character for character. Drift
+ * means the organizer confirms one subject and the email carries another.
+ */
+export function deriveSubject(body: string): string {
+  const firstLine = (body ?? '').split('\n')[0] ?? '';
+  const cleaned = firstLine.replace(CONTROL_CHAR_PATTERN, '').trim();
+  if (cleaned.length > SUBJECT_MAX) {
+    return `${cleaned.slice(0, SUBJECT_MAX - 1)}…`;
+  }
+  return cleaned;
+}
+
+/** The artboard's "club - kind" line. */
+export function kindLabel(kind: ThreadKind): string {
+  if (kind === 'club') return 'Announcement';
+  if (kind === 'game') return 'Game';
+  if (kind === 'direct') return 'Direct';
+  return 'Group';
+}
+
+/**
+ * The row's one-line preview. Newlines are collapsed here rather than left
+ * to `numberOfLines`, which clips at the first break — so a message that
+ * begins with one would render an empty preview.
+ */
+export function messagePreview(row: ThreadListRow): string {
+  if (!row.last_body) return 'No messages yet';
+  const body = row.last_body.replace(/\s+/g, ' ').trim();
+  if (!row.last_author) return body;
+  return `${row.last_author}: ${body}`;
+}
+
+export function unreadLabel(n: number): string {
+  return n > 99 ? '99+' : String(n);
+}
+
+/**
+ * The one-line quoted stub above a reply, and in the composer while one is
+ * being written. Truncated to 80 characters: the stub is a reminder of what
+ * is being answered, not a second copy of it.
+ */
+export function quoteStub(
+  quoted: { body: string; profiles: { display_name: string } | null } | null,
+): string | null {
+  if (!quoted) return null;
+  const body = quoted.body.replace(/\s+/g, ' ').trim();
+  const short = body.length > 80 ? `${body.slice(0, 79)}…` : body;
+  const who = quoted.profiles?.display_name;
+  return who ? `${who}: ${short}` : short;
+}
+
+/** The Recent sort. Empty club threads have no `last_message_at` and sink. */
+export function sortThreads(rows: ThreadListRow[]): ThreadListRow[] {
+  return [...rows].sort((a, b) => {
+    if (a.last_message_at === b.last_message_at) return 0;
+    if (a.last_message_at === null) return 1;
+    if (b.last_message_at === null) return -1;
+    return a.last_message_at < b.last_message_at ? 1 : -1;
+  });
+}
+
+export type ThreadSection = {
+  title: string;
+  /** Null for the pinned People section, which spans clubs by definition. */
+  clubId: string | null;
+  unread: number;
+  rows: ThreadListRow[];
+};
+
+/**
+ * The By club view: one People section pinned above the clubs, then a
+ * section per club with its club thread first and its games after, soonest
+ * first.
+ *
+ * People is pinned rather than filed under a club because a group's club is
+ * not a stable fact. Deriving one from the member set would move a group
+ * between sections the moment somebody from another club is added.
+ */
+export function sectionThreads(rows: ThreadListRow[]): ThreadSection[] {
+  const people = rows.filter((r) => r.club_id === null);
+  const byClub = new Map<string, ThreadListRow[]>();
+
+  for (const r of rows) {
+    if (r.club_id === null) continue;
+    const existing = byClub.get(r.club_id);
+    if (existing) existing.push(r);
+    else byClub.set(r.club_id, [r]);
+  }
+
+  const sections: ThreadSection[] = [];
+
+  if (people.length > 0) {
+    sections.push({
+      title: 'People',
+      clubId: null,
+      unread: people.reduce((n, r) => n + r.unread, 0),
+      rows: sortThreads(people),
+    });
+  }
+
+  const clubSections = [...byClub.entries()].map(([clubId, clubRows]) => ({
+    title: clubRows[0].club_name ?? '',
+    clubId,
+    unread: clubRows.reduce((n, r) => n + r.unread, 0),
+    rows: [...clubRows].sort((a, b) => {
+      // The club thread always heads its own section.
+      if (a.kind === 'club') return -1;
+      if (b.kind === 'club') return 1;
+      // Then games, soonest first — a list about what happens next.
+      return (a.event_starts_at ?? '') < (b.event_starts_at ?? '') ? -1 : 1;
+    }),
+  }));
+
+  clubSections.sort((a, b) => a.title.localeCompare(b.title));
+  return [...sections, ...clubSections];
+}
+
+/**
+ * The thread screen's header title.
+ *
+ * Computed here rather than read from `ThreadListRow.title` because the
+ * thread screen must open a thread the list has already dropped — a
+ * finished game's, reached from the game screen.
+ */
+export function threadTitleFor(thread: ThreadDetail, viewerId: string): string {
+  if (thread.event_id) return thread.events?.title ?? 'Game';
+  if (thread.club_id) return `Everyone at ${thread.clubs?.name ?? ''}`;
+
+  if (thread.title && thread.title.trim()) return thread.title.trim();
+  const others = thread.thread_members.filter((m) => m.profile_id !== viewerId);
+  if (others.length === 1) return others[0].profiles?.display_name ?? 'Direct';
+  return others
+    .map((m) => (m.profiles?.display_name ?? '').split(' ')[0])
+    .filter(Boolean)
+    .join(', ');
+}
+
+// ---------------------------------------------------------------------
+// Reads. All resolve null on failure rather than rejecting — the screens
+// await these directly, and an escaping rejection would leave them
+// spinning with no message. Same contract as fetchProfile in lib/profile.ts.
+// ---------------------------------------------------------------------
+
+export async function fetchMyThreads(): Promise<ThreadListRow[] | null> {
+  try {
+    const { data, error } = await supabase.rpc('fetch_my_threads');
+    if (error) {
+      console.error('fetchMyThreads failed', error);
+      return null;
+    }
+    return (data ?? []) as ThreadListRow[];
+  } catch (cause) {
+    console.error('fetchMyThreads failed', cause);
+    return null;
+  }
+}
+
+export async function fetchUnreadCounts(): Promise<
+  { club_id: string | null; unread: number }[] | null
+> {
+  try {
+    const { data, error } = await supabase.rpc('my_unread_counts');
+    if (error) {
+      console.error('fetchUnreadCounts failed', error);
+      return null;
+    }
+    return (data ?? []) as { club_id: string | null; unread: number }[];
+  } catch (cause) {
+    console.error('fetchUnreadCounts failed', cause);
+    return null;
+  }
+}
+
+export async function fetchThread(threadId: string): Promise<ThreadDetail | null> {
+  try {
+    const { data, error } = await supabase
+      .from('message_threads')
+      .select(THREAD_COLUMNS)
+      .eq('id', threadId)
+      .single();
+    if (error) {
+      console.error('fetchThread failed', error);
+      return null;
+    }
+    return data as unknown as ThreadDetail;
+  } catch (cause) {
+    console.error('fetchThread failed', cause);
+    return null;
+  }
+}
+
+export async function fetchThreadMessages(
+  threadId: string,
+): Promise<ThreadMessage[] | null> {
+  try {
+    const { data, error } = await supabase
+      .from('messages')
+      .select(MESSAGE_COLUMNS)
+      .eq('thread_id', threadId)
+      .order('created_at', { ascending: true });
+    if (error) {
+      console.error('fetchThreadMessages failed', error);
+      return null;
+    }
+    const rows = (data ?? []) as unknown as Omit<ThreadMessage, 'reply_to'>[];
+
+    // The reply_to embed PostgREST cannot serve (see MESSAGE_COLUMNS'
+    // docstring) resolved as a second query instead, scoped to this same
+    // thread — belt-and-braces alongside the composite foreign key that
+    // already guarantees a reply's parent never lives in another thread.
+    const quotedIds = [
+      ...new Set(rows.map((r) => r.reply_to_id).filter((id): id is string => id !== null)),
+    ];
+
+    const quotedById = new Map<
+      string,
+      { id: string; body: string; profiles: { display_name: string } | null }
+    >();
+    if (quotedIds.length > 0) {
+      const { data: quoted, error: quotedError } = await supabase
+        .from('messages')
+        .select(QUOTE_COLUMNS)
+        .eq('thread_id', threadId)
+        .in('id', quotedIds);
+      if (quotedError) {
+        console.error('fetchThreadMessages failed', quotedError);
+        return null;
+      }
+      for (const q of (quoted ?? []) as unknown as {
+        id: string;
+        body: string;
+        profiles: { display_name: string } | null;
+      }[]) {
+        quotedById.set(q.id, q);
+      }
+    }
+
+    return rows.map((r) => ({
+      ...r,
+      reply_to: r.reply_to_id ? (quotedById.get(r.reply_to_id) ?? null) : null,
+    }));
+  } catch (cause) {
+    console.error('fetchThreadMessages failed', cause);
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------
+// Writes. Refusals from the RPCs are relayed verbatim rather than mapped
+// through a refusal table — they are already written to be read by a
+// member. Same deliberate contract lib/broadcasts.ts records for
+// sendBroadcast.
+// ---------------------------------------------------------------------
+
+async function idRpc(
+  name: string,
+  args: Record<string, unknown>,
+): Promise<{ id: string | null; error: string | null }> {
+  try {
+    const { data, error } = await supabase.rpc(name, args);
+    if (error) return { id: null, error: error.message };
+    return { id: (data as string) ?? null, error: null };
+  } catch (cause) {
+    console.error(`${name} failed`, cause);
+    return { id: null, error: GENERIC_ERROR };
+  }
+}
+
+async function voidRpc(
+  name: string,
+  args: Record<string, unknown>,
+): Promise<{ error: string | null }> {
+  try {
+    const { error } = await supabase.rpc(name, args);
+    if (error) return { error: error.message };
+    return { error: null };
+  } catch (cause) {
+    console.error(`${name} failed`, cause);
+    return { error: GENERIC_ERROR };
+  }
+}
+
+export function openThreadForClub(clubId: string) {
+  return idRpc('open_thread_for_club', { target_club: clubId });
+}
+
+export function openThreadForEvent(eventId: string) {
+  return idRpc('open_thread_for_event', { target_event: eventId });
+}
+
+export function createGroupThread(title: string, memberIds: string[]) {
+  if (memberIds.length === 0) {
+    return Promise.resolve({ id: null, error: 'Pick somebody to message.' });
+  }
+  // An empty title is sent as NULL, not '': fetch_my_threads names an
+  // untitled group from its members at read time, and '' would defeat that.
+  return idRpc('create_group_thread', {
+    p_title: title.trim() || null,
+    p_members: memberIds,
+  });
+}
+
+export function addToGroupThread(threadId: string, memberIds: string[]) {
+  return voidRpc('add_to_group_thread', {
+    target_thread: threadId,
+    p_members: memberIds,
+  });
+}
+
+export function leaveGroupThread(threadId: string) {
+  return voidRpc('leave_group_thread', { target_thread: threadId });
+}
+
+export async function postMessage(
+  threadId: string,
+  body: string,
+  announce = false,
+  replyToId: string | null = null,
+): Promise<{ id: string | null; error: string | null }> {
+  const trimmed = (body ?? '').trim();
+  // Checked here as well as in post_message so a member who taps Send on an
+  // empty composer gets an answer without a round trip.
+  if (trimmed.length === 0) {
+    return { id: null, error: 'Write something first.' };
+  }
+  if (trimmed.length > BODY_MAX) {
+    return { id: null, error: 'That message is too long.' };
+  }
+  return idRpc('post_message', {
+    target_thread: threadId,
+    p_body: trimmed,
+    p_announce: announce,
+    p_reply_to: replyToId,
+  });
+}
+
+export function markThreadRead(threadId: string) {
+  return voidRpc('mark_thread_read', { target_thread: threadId });
+}
