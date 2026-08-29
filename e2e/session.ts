@@ -1000,6 +1000,74 @@ export async function seedClubWithEvent(profileId: string): Promise<{
 }
 
 /**
+ * Seeds one club-thread message authored by somebody OTHER than the
+ * signed-in member, for the one baseline that has to picture the unread
+ * badge (Task 16 shipped it on the Messages tab and the dashboard's club
+ * chips; nothing had ever screenshotted it — see the visual suite's own
+ * comment on `messages badge at …`).
+ *
+ * Deliberately NOT folded into `seedClubWithEvent`: that function runs from
+ * the shared `beforeEach` in `e2e/visual.spec.ts`'s "with a seeded club"
+ * block, so anything it seeds lands in EVERY test there, including the
+ * `clubs-populated` and `club-detail` baselines this task does not touch. A
+ * standalone function called from just the one new test keeps this addition
+ * as narrow as the picture it exists to take.
+ *
+ * A message the viewer sent themselves is never unread —
+ * `fetch_my_threads`' own unread lateral join filters on
+ * `m.author_id <> auth.uid()` — so this mints a fresh filler profile as the
+ * author, the same way `seedFillerProfile` above does for a seat, rather
+ * than reusing the signed-in member's own id.
+ *
+ * Writes the `message_threads` and `messages` rows directly, the same
+ * service-role, no-RPC pattern `seatBooking` uses and for the same reason:
+ * service_role carries no JWT, so `post_message`'s own `auth.uid()` checks
+ * have nothing to authenticate against. No `thread_members` row is needed —
+ * a club thread's membership is derived from `club_members`, never
+ * materialised (20260829000000's own docstring).
+ */
+export async function seedUnreadClubMessage(
+  clubId: string,
+  suffix: string,
+): Promise<void> {
+  const admin = adminClient('seed unread message');
+
+  const need = <T>(what: string, result: { data: unknown; error: unknown }): T => {
+    if (result.error || result.data == null) {
+      throw new Error(`seedUnreadClubMessage: ${what} failed: ${JSON.stringify(result.error)}`);
+    }
+    return result.data as T;
+  };
+
+  const authorId = await seedFillerProfile(admin, 'Nadia Farouk', 'unread-author', suffix);
+
+  const thread = need<{ id: string }>(
+    'unread club thread insert',
+    await admin
+      .from('message_threads')
+      .insert({
+        club_id: clubId,
+        event_id: null,
+        created_by: authorId,
+        last_message_at: new Date().toISOString(),
+      })
+      .select('id')
+      .single(),
+  );
+
+  const { error: messageError } = await admin.from('messages').insert({
+    thread_id: thread.id,
+    author_id: authorId,
+    body: 'Reminder: bring your own set this week if you can!',
+  });
+  if (messageError) {
+    throw new Error(
+      `seedUnreadClubMessage: message insert failed: ${JSON.stringify(messageError)}`,
+    );
+  }
+}
+
+/**
  * The localStorage key supabase-js persists its session under, derived from
  * the project ref in the URL. Keep in step with the client's own convention:
  * see `defaultStorageKey` in `node_modules/@supabase/supabase-js/src/SupabaseClient.ts`

@@ -1,5 +1,10 @@
 import { expect, test, type Page } from '@playwright/test';
-import { mintSession, seedClubWithEvent, storageKeyFor } from './session';
+import {
+  mintSession,
+  seedClubWithEvent,
+  seedUnreadClubMessage,
+  storageKeyFor,
+} from './session';
 
 // The LOCAL stack — the same project the bundle was built against in
 // playwright.config.ts. Deliberately not EXPO_PUBLIC_SUPABASE_URL, which
@@ -172,7 +177,7 @@ test.describe('signed in', () => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/messages');
       await expect(
-        page.getByText('Club messages are on the way.'),
+        page.getByText('No conversations yet. Start one with New.'),
       ).toBeVisible();
       await captureScreen(page, vp, `messages-${vp.name}.png`);
     });
@@ -333,6 +338,74 @@ test.describe('signed in', () => {
         // needing to disambiguate the two cards.
         await expect(page.getByText('2 tables').first()).toBeVisible();
         await captureScreen(page, vp, `club-detail-${vp.name}.png`);
+      });
+
+      test(`new message at ${vp.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        await page.goto('/messages/new');
+        await expect(page.getByText('Send to')).toBeVisible();
+        await captureScreen(page, vp, `message-new-${vp.name}.png`);
+      });
+
+      test(`club thread at ${vp.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        await page.goto('/messages');
+        // Through the row, not a guessed id: thread ids are generated and
+        // the club thread has none at all until it is opened. Named exactly
+        // rather than the brief's bare `/^Everyone at /` — Task 15's
+        // booking-state fixtures (e2e/session.ts) seed a SECOND club,
+        // "Thursday Casuals", so this list carries two club-thread rows and
+        // the loose pattern is a strict-mode hard failure now, the same
+        // "Your clubs" trap this file's other comments record.
+        await page
+          .getByRole('button', { name: 'Everyone at Riverside Mah Jongg' })
+          .click();
+        // `exact: true` — the brief's own bare `getByLabel('Message')` is
+        // ALSO a substring match on this screen's own "< Messages" back
+        // link (accessibilityLabel="Messages", app/messages/[threadId].tsx),
+        // a same-page collision on top of the multi-club one above.
+        await expect(page.getByLabel('Message', { exact: true })).toBeVisible();
+        await captureScreen(page, vp, `thread-${vp.name}.png`);
+      });
+
+      // The unread badge, pictured for the first time. Task 16 shipped it on
+      // the Messages tab and on the dashboard's club chips (components/TabBar.tsx,
+      // components/ClubChips.tsx), and every OTHER baseline in this suite is
+      // shot with a freshly-seeded user who has nothing unread — UnreadBadge
+      // (components/UnreadBadge.tsx) returns null at count 0, so all 32
+      // pre-existing baselines came back byte-identical whether the badge
+      // code was there or not. Its real rendering — whether the pill clips
+      // the icon, overflows the tab, or collides with the label — was
+      // guarded by nothing.
+      //
+      // `seedUnreadClubMessage` (e2e/session.ts) posts as a FRESH filler
+      // profile, never the signed-in member: a message you sent yourself is
+      // never unread (fetch_my_threads' own lateral join filters on
+      // `author_id <> auth.uid()`), so seeding it as the viewer would prove
+      // nothing. The dashboard is the one screen that renders both badge
+      // sites at once — TabBar's own Messages tab and ClubChips' Riverside
+      // chip — so one capture pictures both.
+      test(`messages badge at ${vp.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        await seedUnreadClubMessage(seeded.clubId, userId.slice(0, 8));
+        await page.goto('/clubs');
+        // `.first()` — the same trap `clubs list with a club`'s own comment
+        // records: ClubChips' Riverside chip and the club LIST card below it
+        // (line ~549) share the exact accessible name "Riverside Mah Jongg".
+        // The chip renders first in the DOM, so `.first()` reaches it; only
+        // the chip carries a badge, so scoping the "1" to it (rather than
+        // asserting the bare count anywhere on the page) proves the badge
+        // itself painted, not just that some "1" exists somewhere in a
+        // table-count or seats-free label.
+        const clubChip = page
+          .getByRole('button', { name: 'Riverside Mah Jongg', exact: true })
+          .first();
+        await expect(clubChip.getByText('1', { exact: true })).toBeVisible();
+        // The Messages tab's own badge, scoped to its button for the same
+        // reason — TabBar.tsx renders it inside the "Messages" Pressable.
+        const messagesTab = page.getByRole('button', { name: 'Messages', exact: true });
+        await expect(messagesTab.getByText('1', { exact: true })).toBeVisible();
+        await captureScreen(page, vp, `messages-badge-${vp.name}.png`);
       });
 
       test(`event detail at ${vp.name}`, async ({ page }) => {
