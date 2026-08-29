@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Redirect, useRouter } from 'expo-router';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
 import ClubChips from '../../components/ClubChips';
@@ -10,7 +17,7 @@ import { GENERIC_ERROR } from '../../lib/constants';
 import { fetchMyClubs, type Club } from '../../lib/clubs';
 import { initialsFrom } from '../../lib/dashboard';
 import { fetchAddablePeople, fetchFriends } from '../../lib/friends';
-import { createGroupThread, openThreadForClub } from '../../lib/messages';
+import { createGroupThread, openThreadForClub, postMessage } from '../../lib/messages';
 import { useSession } from '../../lib/session';
 import { colors, radius, space, type } from '../../lib/theme';
 
@@ -25,6 +32,22 @@ type Candidate = { profile_id: string; display_name: string; meta: string };
  * covers the same ground and a third choice would be a distinction without
  * a difference. Recorded in the spec so it is not later read as an
  * oversight.
+ *
+ * One step, not two: the artboard puts the message box and Send on THIS
+ * screen, not on a thread screen reached after picking a target. The old
+ * two-step flow was never a design decision -- it fell out of
+ * fetch_my_threads listing a group thread from the moment it is created,
+ * with no message required. Pick somebody, tap Start, close the app, and
+ * they had an empty conversation from you reading "No messages yet." One
+ * step makes that unrepresentable for People, because the thread does not
+ * exist until there is something to say.
+ *
+ * The two targets are deliberately NOT symmetric. People is creating a
+ * thread in someone else's list for the first time, so a message is
+ * required. Everyone's club thread conceptually always exists and is
+ * already in everyone's list, so opening it to read without writing is
+ * legitimate -- Everyone posts if there is text and just opens if there
+ * is not.
  */
 export default function NewMessageScreen() {
   const { session, loading } = useSession();
@@ -35,6 +58,7 @@ export default function NewMessageScreen() {
   const [target, setTarget] = useState<'everyone' | 'people'>('everyone');
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [picked, setPicked] = useState<string[]>([]);
+  const [draft, setDraft] = useState('');
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -45,6 +69,17 @@ export default function NewMessageScreen() {
   // `busyRef`/`openingRef`/`sendingRef` in app/clubs/index.tsx,
   // app/friends.tsx, app/messages/index.tsx and app/messages/[threadId].tsx.
   const busyRef = useRef(false);
+  // The thread id from a create/open that SUCCEEDED, kept only across a
+  // subsequent post that failed. create_group_thread is a creation-time
+  // convenience with no dedup (see
+  // supabase/migrations/20260829030000_group_threads.sql) -- it makes a new
+  // thread every call. Without remembering the id here, tapping the button
+  // again after a failed post would create a second, near-duplicate group
+  // thread for the same people instead of retrying the post into the one
+  // that already exists. Cleared whenever the target/club/picked selection
+  // changes underneath it, since at that point the remembered thread no
+  // longer matches what the member is asking to send.
+  const createdThreadRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!session) return;
@@ -94,9 +129,20 @@ export default function NewMessageScreen() {
   }, [session]);
 
   const toggle = useCallback((id: string) => {
+    createdThreadRef.current = null;
     setPicked((current) =>
       current.includes(id) ? current.filter((x) => x !== id) : [...current, id],
     );
+  }, []);
+
+  const selectTarget = useCallback((option: 'everyone' | 'people') => {
+    createdThreadRef.current = null;
+    setTarget(option);
+  }, []);
+
+  const selectClub = useCallback((id: string) => {
+    createdThreadRef.current = null;
+    setClubId(id);
   }, []);
 
   const start = useCallback(async () => {
@@ -116,29 +162,78 @@ export default function NewMessageScreen() {
       return;
     }
 
-    const result =
-      target === 'everyone'
-        ? clubId
-          ? await openThreadForClub(clubId)
-          : { id: null, error: 'Pick a club first.' }
-        : await createGroupThread('', picked);
-
-    if (result.error || !result.id) {
-      // Cleared on this exit path too — a ref set and never cleared makes
-      // the picker permanently dead, which is worse than the double-submit
-      // bug it guards against.
+    const trimmed = draft.trim();
+    // People is creating the thread in someone else's list for the first
+    // time -- unlike Everyone's club thread, which already exists and is
+    // legitimate to open and just read. Refused here, before any RPC call,
+    // the same way the empty-picked case above is refused -- and with
+    // postMessage's own wording for an empty body, since that is the
+    // refusal this would otherwise get one round trip later.
+    if (target === 'people' && trimmed.length === 0) {
       busyRef.current = false;
       setBusy(false);
-      setError(result.error ?? GENERIC_ERROR);
+      setError('Write something first.');
       return;
     }
+
+    let threadId = createdThreadRef.current;
+    if (!threadId) {
+      const result =
+        target === 'everyone'
+          ? clubId
+            ? await openThreadForClub(clubId)
+            : { id: null, error: 'Pick a club first.' }
+          : await createGroupThread('', picked);
+
+      if (result.error || !result.id) {
+        // Cleared on this exit path too — a ref set and never cleared makes
+        // the picker permanently dead, which is worse than the double-submit
+        // bug it guards against.
+        busyRef.current = false;
+        setBusy(false);
+        setError(result.error ?? GENERIC_ERROR);
+        return;
+      }
+      threadId = result.id;
+      createdThreadRef.current = threadId;
+    }
+
+    // Everyone with nothing typed just opens the thread -- no post call at
+    // all, since it is legitimate to open a club thread to read without
+    // writing. People always has a body here, having refused above if not.
+    if (trimmed.length > 0) {
+      const { error: refusal } = await postMessage(threadId, trimmed, false, null);
+      if (refusal) {
+        // The thread now exists whether or not this post succeeds --
+        // create_group_thread and open_thread_for_club have already run,
+        // and undoing that isn't a call this module exposes. What stays in
+        // this screen's control: not losing what they typed (draft and
+        // picked are untouched) and not swallowing the refusal (relayed
+        // verbatim below) -- the same "keep the text, show the error"
+        // contract [threadId].tsx's own `send` keeps on a failed post.
+        // createdThreadRef keeps the id so the next tap retries the post
+        // into this same thread instead of creating another one.
+        busyRef.current = false;
+        setBusy(false);
+        setError(refusal);
+        return;
+      }
+    }
+
     busyRef.current = false;
     setBusy(false);
+    createdThreadRef.current = null;
     // `replace`, not `push`: the compose screen has served its purpose and
     // backing out of a thread should land on the list, not on a picker with
     // stale selections.
-    router.replace(`/messages/${result.id}`);
-  }, [target, clubId, picked, router]);
+    router.replace(`/messages/${threadId}`);
+  }, [target, clubId, picked, draft, router]);
+
+  // "Send" when the tap is about to post (People always requires a body;
+  // Everyone posts when there is one), "Open" when Everyone has nothing
+  // typed and the tap will just open the club thread to read. A button
+  // labelled for the wrong one of those is worse than no label at all.
+  const actionLabel = target === 'people' || draft.trim() ? 'Send' : 'Open';
 
   const clubName = useMemo(
     () => clubs.find((c) => c.id === clubId)?.name ?? '',
@@ -174,7 +269,7 @@ export default function NewMessageScreen() {
               <ClubChips
                 chips={clubs.map((c) => ({ id: c.id, label: c.name }))}
                 selected={clubId ?? ''}
-                onSelect={setClubId}
+                onSelect={selectClub}
               />
             </>
           ) : null}
@@ -184,7 +279,7 @@ export default function NewMessageScreen() {
             {(['everyone', 'people'] as const).map((option) => (
               <Pressable
                 key={option}
-                onPress={() => setTarget(option)}
+                onPress={() => selectTarget(option)}
                 accessibilityRole="button"
                 aria-selected={target === option}
                 style={[
@@ -239,14 +334,24 @@ export default function NewMessageScreen() {
             })
           )}
 
+          <Text style={styles.label}>Message</Text>
+          <TextInput
+            style={styles.input}
+            value={draft}
+            onChangeText={setDraft}
+            placeholder="Message"
+            accessibilityLabel="Message"
+            multiline
+          />
+
           <Button
             block
-            accessibilityLabel="Start"
+            accessibilityLabel={actionLabel}
             disabled={busy}
             loading={busy}
             onPress={() => void start()}
           >
-            Start
+            {actionLabel}
           </Button>
         </>
       )}
@@ -325,5 +430,19 @@ const styles = StyleSheet.create({
     fontFamily: type.bodyRegular,
     fontSize: type.size.helper,
     color: colors.textMuted,
+  },
+  // Same input treatment as [threadId].tsx's composer, minus that screen's
+  // `flex: 1` -- there it shares a row with an inline Send control, here the
+  // primary action is its own full-width Button below.
+  input: {
+    minHeight: 58,
+    maxHeight: 140,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surface,
+    paddingHorizontal: space[4],
+    paddingVertical: space[3],
+    fontFamily: type.bodyRegular,
+    fontSize: type.size.body,
+    color: colors.text,
   },
 });

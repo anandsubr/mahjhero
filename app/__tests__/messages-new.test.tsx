@@ -25,6 +25,7 @@ const fetchFriends = vi.fn();
 const fetchAddablePeople = vi.fn();
 const openThreadForClub = vi.fn();
 const createGroupThread = vi.fn();
+const postMessage = vi.fn();
 
 vi.mock('../../lib/clubs', () => ({
   fetchMyClubs: (...a: unknown[]) => fetchMyClubs(...a),
@@ -42,6 +43,7 @@ vi.mock('../../lib/messages', async () => {
     ...actual,
     openThreadForClub: (...a: unknown[]) => openThreadForClub(...a),
     createGroupThread: (...a: unknown[]) => createGroupThread(...a),
+    postMessage: (...a: unknown[]) => postMessage(...a),
   };
 });
 
@@ -60,6 +62,7 @@ describe('new message screen', () => {
     ]);
     openThreadForClub.mockResolvedValue({ id: 't1', error: null });
     createGroupThread.mockResolvedValue({ id: 't9', error: null });
+    postMessage.mockResolvedValue({ id: 'm1', error: null });
   });
 
   it('offers Everyone and People, and not the artboard’s middle segment', async () => {
@@ -107,15 +110,6 @@ describe('new message screen', () => {
     expect(screen.queryByLabelText('Oakfield')).toBeNull();
   });
 
-  it('sends Everyone to the picked club’s thread', async () => {
-    render(<NewMessageScreen />);
-    fireEvent.click(await screen.findByLabelText('Oakfield'));
-    fireEvent.click(screen.getByText('Everyone'));
-    fireEvent.click(screen.getByLabelText('Start'));
-    await waitFor(() => expect(openThreadForClub).toHaveBeenCalledWith('c2'));
-    await waitFor(() => expect(replace).toHaveBeenCalledWith('/messages/t1'));
-  });
-
   // Friends first: they are the people you deliberately kept, and they are
   // the only ones who may not appear under any club.
   it('lists friends above people from your clubs', async () => {
@@ -125,14 +119,76 @@ describe('new message screen', () => {
     expect(names.map((n) => n.textContent)).toEqual(['Bob Reyes', 'Carol Diaz']);
   });
 
-  it('creates a group from the picked people', async () => {
+  // One step: Everyone's club thread already exists conceptually and is
+  // already in everyone's list, so opening it to read without writing is
+  // legitimate. The button says "Open", not "Send", and no post is made.
+  it('opens Everyone’s thread without posting when there is no message', async () => {
+    render(<NewMessageScreen />);
+    fireEvent.click(await screen.findByLabelText('Oakfield'));
+    fireEvent.click(screen.getByText('Everyone'));
+    expect(await screen.findByLabelText('Open')).toBeTruthy();
+    fireEvent.click(screen.getByLabelText('Open'));
+    await waitFor(() => expect(openThreadForClub).toHaveBeenCalledWith('c2'));
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/messages/t1'));
+    expect(postMessage).not.toHaveBeenCalled();
+  });
+
+  // With something typed, Everyone posts it into the (already-existing)
+  // club thread and the button says "Send", not "Open".
+  it('posts to Everyone’s thread when there is a message', async () => {
+    render(<NewMessageScreen />);
+    fireEvent.click(await screen.findByLabelText('Oakfield'));
+    fireEvent.click(screen.getByText('Everyone'));
+    fireEvent.change(screen.getByLabelText('Message'), {
+      target: { value: 'See everyone Thursday' },
+    });
+    expect(await screen.findByLabelText('Send')).toBeTruthy();
+    fireEvent.click(screen.getByLabelText('Send'));
+    await waitFor(() => expect(openThreadForClub).toHaveBeenCalledWith('c2'));
+    await waitFor(() =>
+      expect(postMessage).toHaveBeenCalledWith(
+        't1',
+        'See everyone Thursday',
+        false,
+        null,
+      ),
+    );
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/messages/t1'));
+  });
+
+  // People is creating the thread in someone else's list for the first
+  // time, so a message is required -- the one-step flow's whole point is
+  // that an empty person-to-person thread can no longer be created.
+  it('refuses an empty message to People before any RPC call', async () => {
+    render(<NewMessageScreen />);
+    fireEvent.click(await screen.findByText('People'));
+    fireEvent.click(await screen.findByLabelText('Bob Reyes'));
+    fireEvent.click(screen.getByLabelText('Send'));
+    expect(await screen.findByText('Write something first.')).toBeTruthy();
+    expect(createGroupThread).not.toHaveBeenCalled();
+    expect(postMessage).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it('creates a group from the picked people and posts the first message', async () => {
     render(<NewMessageScreen />);
     fireEvent.click(await screen.findByText('People'));
     fireEvent.click(await screen.findByLabelText('Bob Reyes'));
     fireEvent.click(screen.getByLabelText('Carol Diaz'));
-    fireEvent.click(screen.getByLabelText('Start'));
+    fireEvent.change(screen.getByLabelText('Message'), {
+      target: { value: 'Table for four Tuesday?' },
+    });
+    fireEvent.click(screen.getByLabelText('Send'));
     await waitFor(() =>
       expect(createGroupThread).toHaveBeenCalledWith('', ['p1', 'p2']),
+    );
+    await waitFor(() =>
+      expect(postMessage).toHaveBeenCalledWith(
+        't9',
+        'Table for four Tuesday?',
+        false,
+        null,
+      ),
     );
     await waitFor(() => expect(replace).toHaveBeenCalledWith('/messages/t9'));
   });
@@ -142,7 +198,10 @@ describe('new message screen', () => {
     fireEvent.click(await screen.findByText('People'));
     fireEvent.click(await screen.findByLabelText('Bob Reyes'));
     fireEvent.click(screen.getByLabelText('Bob Reyes'));
-    fireEvent.click(screen.getByLabelText('Start'));
+    fireEvent.change(screen.getByLabelText('Message'), {
+      target: { value: 'Hello' },
+    });
+    fireEvent.click(screen.getByLabelText('Send'));
     await waitFor(() => expect(createGroupThread).not.toHaveBeenCalled());
     expect(await screen.findByText('Pick somebody to message.')).toBeTruthy();
   });
@@ -155,12 +214,56 @@ describe('new message screen', () => {
     render(<NewMessageScreen />);
     fireEvent.click(await screen.findByText('People'));
     fireEvent.click(await screen.findByLabelText('Bob Reyes'));
-    fireEvent.click(screen.getByLabelText('Start'));
+    fireEvent.change(screen.getByLabelText('Message'), {
+      target: { value: 'Hello' },
+    });
+    fireEvent.click(screen.getByLabelText('Send'));
     expect(
       await screen.findByText(
         'you can only message people from your clubs or your friends',
       ),
     ).toBeTruthy();
+    expect(postMessage).not.toHaveBeenCalled();
     expect(replace).not.toHaveBeenCalled();
+  });
+
+  // The thread was already created by the time the post fails -- undoing
+  // that isn't a call this screen can make. What it owes the member: the
+  // text they typed is still there (not silently dropped), the refusal is
+  // shown (not swallowed), and they are NOT bounced into a half-created
+  // thread. A second tap retries the POST into the thread that already
+  // exists rather than creating a second, near-duplicate one.
+  it('keeps the message and retries the post, not the create, after a failed post', async () => {
+    postMessage.mockResolvedValueOnce({
+      id: null,
+      error: 'that message could not be sent',
+    });
+    render(<NewMessageScreen />);
+    fireEvent.click(await screen.findByText('People'));
+    fireEvent.click(await screen.findByLabelText('Bob Reyes'));
+    const input = screen.getByLabelText('Message');
+    fireEvent.change(input, { target: { value: 'Table for four Tuesday?' } });
+    fireEvent.click(screen.getByLabelText('Send'));
+
+    expect(
+      await screen.findByText('that message could not be sent'),
+    ).toBeTruthy();
+    expect((input as HTMLTextAreaElement).value).toBe('Table for four Tuesday?');
+    expect(replace).not.toHaveBeenCalled();
+    expect(createGroupThread).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByLabelText('Send'));
+    await waitFor(() =>
+      expect(postMessage).toHaveBeenCalledWith(
+        't9',
+        'Table for four Tuesday?',
+        false,
+        null,
+      ),
+    );
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/messages/t9'));
+    // Retried the post into the thread already created -- did not create a
+    // second one.
+    expect(createGroupThread).toHaveBeenCalledTimes(1);
   });
 });
