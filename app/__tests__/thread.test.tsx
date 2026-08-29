@@ -2,9 +2,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ThreadScreen from '../messages/[threadId]';
 
+// Hoisted rather than a fresh `vi.fn()` per `useRouter()` call: a factory
+// returning brand-new mocks on every render would make `expect(replace)
+// .toHaveBeenCalledWith(...)` assert against a mock instance the component
+// never actually called, since each render gets its own. Same pattern
+// app/__tests__/messages-new.test.tsx already uses for `push`/`replace`.
+const push = vi.fn();
+const replace = vi.fn();
+const back = vi.fn();
+
 vi.mock('expo-router', () => ({
   Redirect: () => null,
-  useRouter: () => ({ push: vi.fn(), back: vi.fn(), replace: vi.fn() }),
+  useRouter: () => ({ push, back, replace }),
   usePathname: () => '/messages/t1',
   useLocalSearchParams: () => ({ threadId: 't1' }),
 }));
@@ -23,9 +32,21 @@ const fetchThreadMessages = vi.fn();
 const postMessage = vi.fn();
 const markThreadRead = vi.fn();
 const countBroadcastRecipients = vi.fn();
+const addToGroupThread = vi.fn();
+const leaveGroupThread = vi.fn();
+const fetchFriends = vi.fn();
+const fetchAddablePeople = vi.fn();
 
 vi.mock('../../lib/broadcasts', () => ({
   countBroadcastRecipients: (...a: unknown[]) => countBroadcastRecipients(...a),
+}));
+
+// The same candidate source app/messages/new.tsx already uses for its own
+// People picker, reused rather than a second way of gathering who is
+// addable — see this screen's own comment above `openAdding`.
+vi.mock('../../lib/friends', () => ({
+  fetchFriends: (...a: unknown[]) => fetchFriends(...a),
+  fetchAddablePeople: (...a: unknown[]) => fetchAddablePeople(...a),
 }));
 
 vi.mock('../../lib/messages', async () => {
@@ -37,6 +58,8 @@ vi.mock('../../lib/messages', async () => {
     fetchThreadMessages: (...a: unknown[]) => fetchThreadMessages(...a),
     postMessage: (...a: unknown[]) => postMessage(...a),
     markThreadRead: (...a: unknown[]) => markThreadRead(...a),
+    addToGroupThread: (...a: unknown[]) => addToGroupThread(...a),
+    leaveGroupThread: (...a: unknown[]) => leaveGroupThread(...a),
   };
 });
 
@@ -64,6 +87,23 @@ const CLUB_THREAD = {
   clubs: { name: 'Riverside', timezone: 'America/New_York' },
   events: null,
   thread_members: [],
+};
+
+// A group, not a direct: three members, so threadTitleFor's "join first
+// names" branch fires rather than the single-other-person branch, and
+// there is genuinely more than one member for the members panel to list.
+const GROUP_THREAD = {
+  id: 't1',
+  club_id: null,
+  event_id: null,
+  title: null,
+  clubs: null,
+  events: null,
+  thread_members: [
+    { profile_id: 'me', profiles: { display_name: 'You' } },
+    { profile_id: 'other', profiles: { display_name: 'Sara Lindqvist' } },
+    { profile_id: 'third', profiles: { display_name: 'Peter Ng' } },
+  ],
 };
 
 const MESSAGES = [
@@ -101,6 +141,14 @@ describe('thread screen', () => {
     postMessage.mockResolvedValue({ id: 'm3', error: null });
     markThreadRead.mockResolvedValue({ error: null });
     countBroadcastRecipients.mockResolvedValue(14);
+    addToGroupThread.mockResolvedValue({ error: null });
+    leaveGroupThread.mockResolvedValue({ error: null });
+    fetchFriends.mockResolvedValue([
+      { profile_id: 'p1', display_name: 'Bob Reyes', club_names: [] },
+    ]);
+    fetchAddablePeople.mockResolvedValue([
+      { profile_id: 'p2', display_name: 'Carol Diaz', club_name: 'Riverside' },
+    ]);
   });
 
   it('shows the thread title and every message', async () => {
@@ -399,5 +447,148 @@ describe('thread screen', () => {
       await screen.findByText('Answering something that no longer exists.'),
     ).toBeTruthy();
     expect(screen.queryByTestId('quote-stub')).toBeNull();
+  });
+
+  // `leave_group_thread` and `add_to_group_thread` shipped fully wired
+  // server-side (migrations, grants, pgTAP) but with no caller anywhere in
+  // app/ or components/: anyone sharing an active club with you could add
+  // you to a group, and you had no leave, no mute, no block. This block
+  // covers the client wiring that closes that gap.
+  describe('group membership', () => {
+    // A club or game thread's membership is derived, not stored -- there is
+    // nothing to leave and nobody to add. Only a group or direct (both
+    // thread.club_id === null) gets the Members affordance at all.
+    it('offers no Members control on a club thread', async () => {
+      render(<ThreadScreen />);
+      await screen.findByText('Everyone at Riverside');
+      expect(screen.queryByLabelText('Members')).toBeNull();
+    });
+
+    it('opens a members panel listing the roster, for a group thread', async () => {
+      fetchThread.mockResolvedValueOnce(GROUP_THREAD);
+      fetchThreadMessages.mockResolvedValueOnce([]);
+      render(<ThreadScreen />);
+      fireEvent.click(await screen.findByLabelText('Members'));
+      expect(await screen.findByText('You')).toBeTruthy();
+      expect(screen.getByText('Sara Lindqvist')).toBeTruthy();
+      expect(screen.getByText('Peter Ng')).toBeTruthy();
+      expect(screen.getByLabelText('Add people')).toBeTruthy();
+      expect(screen.getByLabelText('Leave')).toBeTruthy();
+    });
+
+    // Friends first, then people from your clubs -- the same shape and the
+    // same ordering app/messages/new.tsx's own People picker uses, reused
+    // rather than a second way of gathering who is addable.
+    it('adds the picked people to the group', async () => {
+      fetchThread.mockResolvedValue(GROUP_THREAD);
+      fetchThreadMessages.mockResolvedValueOnce([]);
+      render(<ThreadScreen />);
+      fireEvent.click(await screen.findByLabelText('Members'));
+      fireEvent.click(await screen.findByLabelText('Add people'));
+      fireEvent.click(await screen.findByLabelText('Bob Reyes'));
+      fireEvent.click(screen.getByLabelText('Add'));
+      await waitFor(() =>
+        expect(addToGroupThread).toHaveBeenCalledWith('t1', ['p1']),
+      );
+      // A successful add reloads the thread, the same way send() reloads
+      // after posting -- the roster shown has to include who was just added.
+      await waitFor(() => expect(fetchThread).toHaveBeenCalledTimes(2));
+    });
+
+    // Guards against the same bug class as sendingRef: `addBusy` state is
+    // read from the render closure, so a second activation landing before
+    // React re-renders with the disabled button would otherwise double the
+    // RPC call. Both clicks fire inside one `act()` so no render lands
+    // between them.
+    it('adds only once when Add is activated twice before it settles', async () => {
+      let resolveAdd!: (value: { error: string | null }) => void;
+      addToGroupThread.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveAdd = resolve;
+          }),
+      );
+      fetchThread.mockResolvedValue(GROUP_THREAD);
+      fetchThreadMessages.mockResolvedValueOnce([]);
+      render(<ThreadScreen />);
+      fireEvent.click(await screen.findByLabelText('Members'));
+      fireEvent.click(await screen.findByLabelText('Add people'));
+      fireEvent.click(await screen.findByLabelText('Bob Reyes'));
+      const add = screen.getByLabelText('Add');
+
+      act(() => {
+        fireEvent.click(add);
+        fireEvent.click(add);
+      });
+
+      expect(addToGroupThread).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        resolveAdd({ error: null });
+        await Promise.resolve();
+      });
+    });
+
+    // Leaving deletes the last member's own view of the thread and, if
+    // nobody is left, the thread itself -- the same irreversible shape as
+    // an announcement, so it asks first with the identical two-step control
+    // Send already uses on this screen.
+    it('leaves on confirm and returns to the messages list', async () => {
+      fetchThread.mockResolvedValueOnce(GROUP_THREAD);
+      fetchThreadMessages.mockResolvedValueOnce([]);
+      render(<ThreadScreen />);
+      fireEvent.click(await screen.findByLabelText('Members'));
+      fireEvent.click(await screen.findByLabelText('Leave'));
+      expect(leaveGroupThread).not.toHaveBeenCalled();
+      fireEvent.click(await screen.findByLabelText('Confirm leave'));
+      await waitFor(() => expect(leaveGroupThread).toHaveBeenCalledWith('t1'));
+      await waitFor(() => expect(replace).toHaveBeenCalledWith('/messages'));
+    });
+
+    it('surfaces a refusal instead of leaving', async () => {
+      leaveGroupThread.mockResolvedValueOnce({
+        error: 'you are not in this conversation',
+      });
+      fetchThread.mockResolvedValueOnce(GROUP_THREAD);
+      fetchThreadMessages.mockResolvedValueOnce([]);
+      render(<ThreadScreen />);
+      fireEvent.click(await screen.findByLabelText('Members'));
+      fireEvent.click(await screen.findByLabelText('Leave'));
+      fireEvent.click(await screen.findByLabelText('Confirm leave'));
+      expect(
+        await screen.findByText('you are not in this conversation'),
+      ).toBeTruthy();
+      expect(replace).not.toHaveBeenCalledWith('/messages');
+    });
+
+    // Same guard-ordering bug class as Add above, for the destructive action
+    // that cannot be undone.
+    it('leaves only once when Confirm is activated twice before it settles', async () => {
+      let resolveLeave!: (value: { error: string | null }) => void;
+      leaveGroupThread.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveLeave = resolve;
+          }),
+      );
+      fetchThread.mockResolvedValueOnce(GROUP_THREAD);
+      fetchThreadMessages.mockResolvedValueOnce([]);
+      render(<ThreadScreen />);
+      fireEvent.click(await screen.findByLabelText('Members'));
+      fireEvent.click(await screen.findByLabelText('Leave'));
+      const confirm = await screen.findByLabelText('Confirm leave');
+
+      act(() => {
+        fireEvent.click(confirm);
+        fireEvent.click(confirm);
+      });
+
+      expect(leaveGroupThread).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        resolveLeave({ error: null });
+        await Promise.resolve();
+      });
+    });
   });
 });
