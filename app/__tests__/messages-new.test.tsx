@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import NewMessageScreen from '../messages/new';
@@ -9,6 +10,13 @@ vi.mock('expo-router', () => ({
   Redirect: () => null,
   useRouter: () => ({ push, replace, back: vi.fn() }),
   usePathname: () => '/messages/new',
+  // Wrapped in a real `useEffect` keyed on the callback's identity, not
+  // called inline on every render: `(cb) => cb()` fires on every render,
+  // which the real hook never does, and would refire `useUnreadCounts`'s
+  // fetch (now pulled in by TabBar) on every state update it causes.
+  useFocusEffect: (cb: () => void | (() => void)) => {
+    useEffect(cb, [cb]);
+  },
 }));
 
 // Module-scoped constant, not a fresh object per render: a fresh object
@@ -44,6 +52,9 @@ vi.mock('../../lib/messages', async () => {
     openThreadForClub: (...a: unknown[]) => openThreadForClub(...a),
     createGroupThread: (...a: unknown[]) => createGroupThread(...a),
     postMessage: (...a: unknown[]) => postMessage(...a),
+    // TabBar (now carried by this screen) calls `useUnreadCounts`, which
+    // reaches this.
+    fetchUnreadCounts: vi.fn(async () => []),
   };
 });
 
@@ -265,5 +276,25 @@ describe('new message screen', () => {
     // Retried the post into the thread already created -- did not create a
     // second one.
     expect(createGroupThread).toHaveBeenCalledTimes(1);
+  });
+
+  // TabBar navigates with router.replace off an entry route that is itself
+  // a Redirect, so the history stack is typically one deep. A compose screen
+  // with no bar would be a dead end on native short of relaunching the app.
+  //
+  // This screen's own "Messages" back link (above the heading) shares its
+  // accessible name with TabBar's own Messages tab, so `getByRole` can't
+  // pick one -- `getAllByRole` plus the aria-selected TabBar sets (and the
+  // back link never does) is what actually distinguishes them.
+  it('carries the tab bar with Messages marked', async () => {
+    render(<NewMessageScreen />);
+    await screen.findByText('New message');
+    const messagesButtons = screen.getAllByRole('button', { name: 'Messages' });
+    expect(
+      messagesButtons.some((b) => b.getAttribute('aria-selected') === 'true'),
+    ).toBe(true);
+    expect(
+      screen.getByRole('button', { name: 'Club' }).getAttribute('aria-selected'),
+    ).toBe('false');
   });
 });

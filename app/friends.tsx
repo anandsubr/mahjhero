@@ -5,6 +5,7 @@ import Button from '../components/Button';
 import Card from '../components/Card';
 import ErrorBanner from '../components/ErrorBanner';
 import Screen from '../components/Screen';
+import TabBar from '../components/TabBar';
 import { GENERIC_ERROR } from '../lib/constants';
 import { initialsFrom } from '../lib/dashboard';
 import {
@@ -22,8 +23,11 @@ import { colors, radius, space, type } from '../lib/theme';
 /**
  * The `1C friends` artboard.
  *
- * No tab bar: this is not one of the four tabs. It hangs off Profile, which
- * is where the artboard's own back link points.
+ * Not one of the four tabs itself, but `appScreens` in the design still
+ * renders the bar as a sibling of every signed-in screen, this one included
+ * — the design source has no per-screen gate. It carries `active="profile"`:
+ * this screen hangs off Profile, which is where the artboard's own back link
+ * (below) also points.
  *
  * The "+ Invite someone by email" ghost button the artboard draws is
  * deliberately absent — it would need its own token, an acceptance path and
@@ -95,7 +99,7 @@ export default function FriendsScreen() {
 
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered}>
+      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="profile" />}>
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
     );
@@ -103,7 +107,7 @@ export default function FriendsScreen() {
   if (!session) return <Redirect href="/sign-in" />;
 
   return (
-    <Screen scroll contentStyle={styles.container}>
+    <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="profile" />}>
       <Button variant="ghost" onPress={() => router.push('/profile')} big={false}>
         Profile
       </Button>

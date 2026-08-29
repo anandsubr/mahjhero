@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ThreadScreen from '../messages/[threadId]';
@@ -16,6 +17,13 @@ vi.mock('expo-router', () => ({
   useRouter: () => ({ push, back, replace }),
   usePathname: () => '/messages/t1',
   useLocalSearchParams: () => ({ threadId: 't1' }),
+  // Wrapped in a real `useEffect` keyed on the callback's identity, not
+  // called inline on every render: `(cb) => cb()` fires on every render,
+  // which the real hook never does, and would refire `useUnreadCounts`'s
+  // fetch (now pulled in by TabBar) on every state update it causes.
+  useFocusEffect: (cb: () => void | (() => void)) => {
+    useEffect(cb, [cb]);
+  },
 }));
 
 // A module-scoped constant, not a fresh object literal per render: a fresh
@@ -60,6 +68,9 @@ vi.mock('../../lib/messages', async () => {
     markThreadRead: (...a: unknown[]) => markThreadRead(...a),
     addToGroupThread: (...a: unknown[]) => addToGroupThread(...a),
     leaveGroupThread: (...a: unknown[]) => leaveGroupThread(...a),
+    // TabBar (now carried by this screen) calls `useUnreadCounts`, which
+    // reaches this.
+    fetchUnreadCounts: vi.fn(async () => []),
   };
 });
 
@@ -636,5 +647,35 @@ describe('thread screen', () => {
         await Promise.resolve();
       });
     });
+  });
+
+  // TabBar navigates with router.replace off an entry route that is itself
+  // a Redirect, so the history stack is typically one deep. A thread screen
+  // with no bar would be a dead end on native short of relaunching the app.
+  //
+  // This screen's own "Messages" back link (above the heading) shares its
+  // accessible name with TabBar's own Messages tab, so `getByRole` can't
+  // pick one -- `getAllByRole` plus the aria-selected TabBar sets (and the
+  // back link never does) is what actually distinguishes them.
+  it('carries the tab bar with Messages marked', async () => {
+    render(<ThreadScreen />);
+    await screen.findByText('Everyone at Riverside');
+    const messagesButtons = screen.getAllByRole('button', { name: 'Messages' });
+    expect(
+      messagesButtons.some((b) => b.getAttribute('aria-selected') === 'true'),
+    ).toBe(true);
+    expect(
+      screen.getByRole('button', { name: 'Club' }).getAttribute('aria-selected'),
+    ).toBe('false');
+  });
+
+  it('carries the tab bar when the thread cannot be loaded', async () => {
+    fetchThread.mockResolvedValueOnce(null);
+    render(<ThreadScreen />);
+    expect(await screen.findByText(/Could not reach MahjHero/)).toBeTruthy();
+    const messagesButtons = screen.getAllByRole('button', { name: 'Messages' });
+    expect(
+      messagesButtons.some((b) => b.getAttribute('aria-selected') === 'true'),
+    ).toBe(true);
   });
 });

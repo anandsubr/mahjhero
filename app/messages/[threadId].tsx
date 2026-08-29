@@ -12,6 +12,7 @@ import {
 import Button from '../../components/Button';
 import ErrorBanner from '../../components/ErrorBanner';
 import Screen from '../../components/Screen';
+import TabBar from '../../components/TabBar';
 import Tag from '../../components/Tag';
 import Toggle from '../../components/Toggle';
 import { ChevronLeftIcon } from '../../components/icons';
@@ -48,6 +49,11 @@ type Candidate = { profile_id: string; display_name: string; meta: string };
  * second authorization surface. Subscribing across every thread would keep
  * badges live at the cost of a connection held for the whole session and the
  * hardest thing in the plan to test; the list refetches on focus instead.
+ *
+ * Carries the tab bar with `active="messages"`, the same as every other
+ * signed-in screen: the design source renders the bar as a sibling of every
+ * `appScreens` entry, `thread` included — it is not gated to the four tabs
+ * themselves.
  */
 export default function ThreadScreen() {
   const { session, loading } = useSession();
@@ -277,7 +283,7 @@ export default function ThreadScreen() {
 
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered}>
+      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="messages" />}>
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
     );
@@ -296,7 +302,7 @@ export default function ThreadScreen() {
   const canManageMembers = thread !== null && thread.club_id === null;
 
   return (
-    <Screen contentStyle={styles.container}>
+    <Screen contentStyle={styles.container} tabBar={<TabBar active="messages" />}>
       <Pressable
         onPress={() => router.push('/messages')}
         accessibilityRole="button"

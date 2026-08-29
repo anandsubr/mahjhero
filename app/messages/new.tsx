@@ -13,6 +13,7 @@ import Card from '../../components/Card';
 import ClubChips from '../../components/ClubChips';
 import ErrorBanner from '../../components/ErrorBanner';
 import Screen from '../../components/Screen';
+import TabBar from '../../components/TabBar';
 import { GENERIC_ERROR } from '../../lib/constants';
 import { fetchMyClubs, type Club } from '../../lib/clubs';
 import { initialsFrom } from '../../lib/dashboard';
@@ -25,6 +26,11 @@ type Candidate = { profile_id: string; display_name: string; meta: string };
 
 /**
  * The `1C compose` artboard, with one deliberate deviation.
+ *
+ * Carries the tab bar with `active="messages"`, the same as every other
+ * signed-in screen: the design source renders the bar as a sibling of every
+ * `appScreens` entry, `compose` included — it is not gated to the four tabs
+ * themselves.
  *
  * The artboard offers Everyone / A group / People, where "a group" is a
  * NAMED per-club list — "Tuesday table", "Hosts" — that somebody maintains.
@@ -242,7 +248,7 @@ export default function NewMessageScreen() {
 
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered}>
+      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="messages" />}>
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
     );
@@ -250,7 +256,7 @@ export default function NewMessageScreen() {
   if (!session) return <Redirect href="/sign-in" />;
 
   return (
-    <Screen scroll contentStyle={styles.container}>
+    <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="messages" />}>
       <Button variant="ghost" big={false} onPress={() => router.push('/messages')}>
         Messages
       </Button>
