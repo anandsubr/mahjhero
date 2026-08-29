@@ -778,18 +778,12 @@ describe('thread screen', () => {
   // TabBar navigates with router.replace off an entry route that is itself
   // a Redirect, so the history stack is typically one deep. A thread screen
   // with no bar would be a dead end on native short of relaunching the app.
-  //
-  // This screen's own "Messages" back link (above the heading) shares its
-  // accessible name with TabBar's own Messages tab, so `getByRole` can't
-  // pick one -- `getAllByRole` plus the aria-selected TabBar sets (and the
-  // back link never does) is what actually distinguishes them.
   it('carries the tab bar with Messages marked', async () => {
     render(<ThreadScreen />);
     await screen.findByText('Everyone at Riverside');
-    const messagesButtons = screen.getAllByRole('button', { name: 'Messages' });
     expect(
-      messagesButtons.some((b) => b.getAttribute('aria-selected') === 'true'),
-    ).toBe(true);
+      screen.getByRole('button', { name: 'Messages' }).getAttribute('aria-selected'),
+    ).toBe('true');
     expect(
       screen.getByRole('button', { name: 'Club' }).getAttribute('aria-selected'),
     ).toBe('false');
@@ -799,9 +793,22 @@ describe('thread screen', () => {
     fetchThread.mockResolvedValueOnce(null);
     render(<ThreadScreen />);
     expect(await screen.findByText(/Could not reach MahjHero/)).toBeTruthy();
-    const messagesButtons = screen.getAllByRole('button', { name: 'Messages' });
     expect(
-      messagesButtons.some((b) => b.getAttribute('aria-selected') === 'true'),
-    ).toBe(true);
+      screen.getByRole('button', { name: 'Messages' }).getAttribute('aria-selected'),
+    ).toBe('true');
+  });
+
+  // Removed with the tab bar's arrival: the Messages tab reaches the
+  // identical route (`/messages`) this screen's own back link used to, so
+  // the chevron above the heading was a second way to do one thing -- the
+  // same reasoning the club detail screen's own "no longer draws its own
+  // back link" test already records. Pinned as a count rather than a
+  // `queryByRole` miss: this control shared its accessible name ("Messages")
+  // with TabBar's own tab, so a stray second one would otherwise pass a
+  // `queryByRole(..., { name: 'Messages' })` check silently.
+  it('no longer draws its own back link', async () => {
+    render(<ThreadScreen />);
+    await screen.findByText('Everyone at Riverside');
+    expect(screen.getAllByRole('button', { name: 'Messages' })).toHaveLength(1);
   });
 });

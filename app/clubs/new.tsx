@@ -4,12 +4,25 @@ import { ActivityIndicator, StyleSheet, Text } from 'react-native';
 import Button from '../../components/Button';
 import ErrorBanner from '../../components/ErrorBanner';
 import Screen from '../../components/Screen';
+import TabBar from '../../components/TabBar';
 import TextField from '../../components/TextField';
-import { ChevronLeftIcon } from '../../components/icons';
 import { createClub } from '../../lib/clubs';
 import { useSession } from '../../lib/session';
 import { colors, space, type } from '../../lib/theme';
 
+/**
+ * The `newclub` artboard.
+ *
+ * Carries the tab bar with `active="club"`, the same as every other
+ * signed-in screen: the design source renders the bar as a sibling of every
+ * `appScreens` entry, `newclub` included — it is not gated to the four tabs
+ * themselves.
+ *
+ * The `← Clubs` back link the artboard also draws is deliberately absent:
+ * the Club tab reaches the identical `/clubs` route, so it was a second way
+ * to do one thing — the same call already made once for the club detail
+ * screen (`app/clubs/[id]/index.tsx`'s own docstring).
+ */
 export default function NewClubScreen() {
   const { session, loading } = useSession();
   const router = useRouter();
@@ -20,7 +33,7 @@ export default function NewClubScreen() {
 
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered}>
+      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="club" />}>
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
     );
@@ -42,18 +55,7 @@ export default function NewClubScreen() {
   }
 
   return (
-    <Screen scroll contentStyle={styles.container}>
-      <Button
-        variant="ghost"
-        big={false}
-        onPress={() => router.push('/clubs')}
-        icon={<ChevronLeftIcon color={colors.accentColor} />}
-        accessibilityLabel="Back to your clubs"
-        style={styles.backButton}
-      >
-        Clubs
-      </Button>
-
+    <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="club" />}>
       <Text style={styles.heading}>Start a club</Text>
       <Text style={styles.help}>
         A club is just a name and a rhythm. Invite people once it exists.
@@ -98,9 +100,6 @@ const styles = StyleSheet.create({
   },
   centered: {
     alignItems: 'center',
-  },
-  backButton: {
-    alignSelf: 'flex-start',
   },
   heading: {
     fontFamily: type.heading,

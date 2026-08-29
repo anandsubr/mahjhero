@@ -30,7 +30,10 @@ type Candidate = { profile_id: string; display_name: string; meta: string };
  * Carries the tab bar with `active="messages"`, the same as every other
  * signed-in screen: the design source renders the bar as a sibling of every
  * `appScreens` entry, `compose` included — it is not gated to the four tabs
- * themselves.
+ * themselves. Its own "Messages" ghost back link, drawn above the heading
+ * until the bar arrived, is gone now that the Messages tab reaches the
+ * identical `/messages` route — the same call already made once for the
+ * club detail screen (`app/clubs/[id]/index.tsx`'s own docstring).
  *
  * The artboard offers Everyone / A group / People, where "a group" is a
  * NAMED per-club list — "Tuesday table", "Hosts" — that somebody maintains.
@@ -257,10 +260,6 @@ export default function NewMessageScreen() {
 
   return (
     <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="messages" />}>
-      <Button variant="ghost" big={false} onPress={() => router.push('/messages')}>
-        Messages
-      </Button>
-
       <Text style={styles.heading}>New message</Text>
 
       {error ? <ErrorBanner message={error} /> : null}

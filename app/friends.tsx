@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Redirect, useRouter } from 'expo-router';
+import { Redirect } from 'expo-router';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import Button from '../components/Button';
 import Card from '../components/Card';
@@ -26,8 +26,10 @@ import { colors, radius, space, type } from '../lib/theme';
  * Not one of the four tabs itself, but `appScreens` in the design still
  * renders the bar as a sibling of every signed-in screen, this one included
  * — the design source has no per-screen gate. It carries `active="profile"`:
- * this screen hangs off Profile, which is where the artboard's own back link
- * (below) also points.
+ * this screen hangs off Profile. The artboard's own back link, pointing at
+ * that same Profile screen, is gone now that the Profile tab reaches the
+ * identical route — the same call already made once for the club detail
+ * screen (`app/clubs/[id]/index.tsx`'s own docstring).
  *
  * The "+ Invite someone by email" ghost button the artboard draws is
  * deliberately absent — it would need its own token, an acceptance path and
@@ -37,7 +39,6 @@ import { colors, radius, space, type } from '../lib/theme';
  */
 export default function FriendsScreen() {
   const { session, loading } = useSession();
-  const router = useRouter();
 
   const [friends, setFriends] = useState<Friend[] | null>(null);
   const [people, setPeople] = useState<AddablePerson[] | null>(null);
@@ -108,10 +109,6 @@ export default function FriendsScreen() {
 
   return (
     <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="profile" />}>
-      <Button variant="ghost" onPress={() => router.push('/profile')} big={false}>
-        Profile
-      </Button>
-
       <Text style={styles.heading}>Friends</Text>
       <Text style={styles.intro}>
         These are the people you can hold seats with when you join a table.

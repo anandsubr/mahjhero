@@ -15,7 +15,6 @@ import Screen from '../../components/Screen';
 import TabBar from '../../components/TabBar';
 import Tag from '../../components/Tag';
 import Toggle from '../../components/Toggle';
-import { ChevronLeftIcon } from '../../components/icons';
 import { countBroadcastRecipients } from '../../lib/broadcasts';
 import { GENERIC_ERROR } from '../../lib/constants';
 import { fetchAddablePeople, fetchFriends } from '../../lib/friends';
@@ -53,7 +52,10 @@ type Candidate = { profile_id: string; display_name: string; meta: string };
  * Carries the tab bar with `active="messages"`, the same as every other
  * signed-in screen: the design source renders the bar as a sibling of every
  * `appScreens` entry, `thread` included — it is not gated to the four tabs
- * themselves.
+ * themselves. Its own "← Messages" back link, drawn above the heading until
+ * the bar arrived, is gone now that the Messages tab reaches the identical
+ * `/messages` route — the same call already made once for the club detail
+ * screen (`app/clubs/[id]/index.tsx`'s own docstring).
  */
 // Monotonic, not `Date.now()`/`Math.random()`: incremented once per Realtime
 // subscription below so a topic can never be handed back to a still-live
@@ -333,16 +335,6 @@ export default function ThreadScreen() {
 
   return (
     <Screen contentStyle={styles.container} tabBar={<TabBar active="messages" />}>
-      <Pressable
-        onPress={() => router.push('/messages')}
-        accessibilityRole="button"
-        accessibilityLabel="Messages"
-        style={styles.back}
-      >
-        <ChevronLeftIcon color={colors.text} />
-        <Text style={styles.backText}>Messages</Text>
-      </Pressable>
-
       {error ? <ErrorBanner message={error} /> : null}
 
       {!ready ? (
@@ -653,12 +645,6 @@ export default function ThreadScreen() {
 const styles = StyleSheet.create({
   container: { padding: space[6], gap: space[3], flex: 1 },
   centered: { alignItems: 'center' },
-  back: { flexDirection: 'row', alignItems: 'center', gap: space[1] },
-  backText: {
-    fontFamily: type.bodySemiBold,
-    fontSize: type.size.body,
-    color: colors.text,
-  },
   heading: {
     fontFamily: type.heading,
     fontSize: type.size.h3,

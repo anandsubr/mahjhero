@@ -163,20 +163,13 @@ describe('friends screen', () => {
   // TabBar navigates with router.replace off an entry route that is itself
   // a Redirect, so the history stack is typically one deep. A friends screen
   // with no bar would be a dead end on native short of relaunching the app.
-  // Profile, not Messages -- this screen hangs off Profile, and its own
-  // back link (above) goes there too.
-  //
-  // That back link shares its accessible name ("Profile") with TabBar's own
-  // Profile tab, so `getByRole` can't pick one -- `getAllByRole` plus the
-  // aria-selected TabBar sets (and the back link never does) is what
-  // actually distinguishes them.
+  // Profile, not Messages -- this screen hangs off Profile.
   it('carries the tab bar with Profile marked', async () => {
     render(<FriendsScreen />);
     await screen.findByText('Friends');
-    const profileButtons = screen.getAllByRole('button', { name: 'Profile' });
     expect(
-      profileButtons.some((b) => b.getAttribute('aria-selected') === 'true'),
-    ).toBe(true);
+      screen.getByRole('button', { name: 'Profile' }).getAttribute('aria-selected'),
+    ).toBe('true');
     expect(
       screen.getByRole('button', { name: 'Club' }).getAttribute('aria-selected'),
     ).toBe('false');
@@ -186,9 +179,22 @@ describe('friends screen', () => {
     fetchFriends.mockResolvedValueOnce(null);
     render(<FriendsScreen />);
     expect(await screen.findByText(/Could not reach MahjHero/)).toBeTruthy();
-    const profileButtons = screen.getAllByRole('button', { name: 'Profile' });
     expect(
-      profileButtons.some((b) => b.getAttribute('aria-selected') === 'true'),
-    ).toBe(true);
+      screen.getByRole('button', { name: 'Profile' }).getAttribute('aria-selected'),
+    ).toBe('true');
+  });
+
+  // Removed with the tab bar's arrival: the Profile tab reaches the
+  // identical route (`/profile`) this screen's own back link used to, so the
+  // ghost button above the heading was a second way to do one thing -- the
+  // same reasoning the club detail screen's own "no longer draws its own
+  // back link" test already records. Pinned as a count rather than a
+  // `queryByRole` miss: this control shared its accessible name ("Profile")
+  // with TabBar's own tab, so a stray second one would otherwise pass a
+  // `queryByRole(..., { name: 'Profile' })` check silently.
+  it('no longer draws its own back link', async () => {
+    render(<FriendsScreen />);
+    await screen.findByText('Friends');
+    expect(screen.getAllByRole('button', { name: 'Profile' })).toHaveLength(1);
   });
 });
