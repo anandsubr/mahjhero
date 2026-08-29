@@ -726,7 +726,9 @@ select is(
        'public.add_to_group_thread(uuid, uuid[])',
        'public.leave_group_thread(uuid)',
        'public.post_message(uuid, text, boolean, uuid)',
-       'public.mark_thread_read(uuid)'
+       'public.mark_thread_read(uuid)',
+       'public.fetch_my_threads()',
+       'public.my_unread_counts()'
      ]) as f
    ) expected
    where not exists (
@@ -802,7 +804,9 @@ select is(
          'public.add_to_group_thread(uuid, uuid[])',
          'public.leave_group_thread(uuid)',
          'public.post_message(uuid, text, boolean, uuid)',
-         'public.mark_thread_read(uuid)'
+         'public.mark_thread_read(uuid)',
+         'public.fetch_my_threads()',
+         'public.my_unread_counts()'
        ]) as f
        where to_regprocedure(f) = p.oid::regprocedure
      )),
