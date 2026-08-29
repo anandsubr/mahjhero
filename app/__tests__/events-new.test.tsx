@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 
@@ -14,6 +15,14 @@ vi.mock('expo-router', () => ({
   ),
   useRouter: () => ({ push, replace, back, canGoBack }),
   useLocalSearchParams: () => searchParams,
+  usePathname: () => '/clubs/club-1/events/new',
+  // Wrapped in a real `useEffect` keyed on the callback's identity, not
+  // called inline on every render: `(cb) => cb()` fires on every render,
+  // which the real hook never does, and would refire `useUnreadCounts`'s
+  // fetch (now pulled in by TabBar) on every state update it causes.
+  useFocusEffect: (cb: () => void | (() => void)) => {
+    useEffect(cb, [cb]);
+  },
 }));
 
 const useSessionMock = vi.fn(
@@ -32,6 +41,18 @@ const fetchClub = vi.fn();
 vi.mock('../../lib/clubs', () => ({
   fetchClub: (...args: unknown[]) => fetchClub(...args),
 }));
+
+// TabBar (now carried by this screen) calls `useUnreadCounts`, which reaches
+// `fetchUnreadCounts`. Spread `actual` rather than replacing the module
+// outright, the same pattern app/__tests__/friends.test.tsx uses -- TabBar
+// also calls `unreadSuffix`, a pure helper already covered elsewhere.
+vi.mock('../../lib/messages', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/messages')>();
+  return {
+    ...actual,
+    fetchUnreadCounts: vi.fn(async () => []),
+  };
+});
 
 const createEvent = vi.fn();
 const createEventSeries = vi.fn();
@@ -598,5 +619,42 @@ describe('the duration/table-count/repeat chips reach the DOM with aria-selected
     expect(
       screen.getByRole('button', { name: '3 hours' }).getAttribute('aria-selected'),
     ).toBe('false');
+  });
+});
+
+// TabBar navigates with router.replace off an entry route that is itself a
+// Redirect, so the history stack is typically one deep. This screen's own
+// Cancel button (asserted elsewhere in this file) is not a substitute: it
+// goes to this specific club, not the Club tab's dashboard, so a member
+// without the bar would still have no way to any OTHER tab. Every state
+// carries it, matching app/profile.tsx's own pattern.
+describe('carries the tab bar', () => {
+  it('with Club marked, on the loaded form', async () => {
+    render(<NewEventScreen />);
+    await screen.findByText('Add a game');
+    expect(
+      screen.getByRole('button', { name: 'Club' }).getAttribute('aria-selected'),
+    ).toBe('true');
+  });
+
+  it('while the session is still loading', () => {
+    useSessionMock.mockReturnValueOnce({ session: null, loading: true });
+    render(<NewEventScreen />);
+    expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
+  });
+
+  it('while the club is still loading', () => {
+    // A promise that never settles: the screen stays in its !ready state for
+    // the life of the test.
+    fetchClub.mockReturnValueOnce(new Promise(() => {}));
+    render(<NewEventScreen />);
+    expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
+  });
+
+  it('when the club cannot be loaded', async () => {
+    fetchClub.mockResolvedValueOnce(null);
+    render(<NewEventScreen />);
+    expect(await screen.findByText('That club could not be loaded.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
   });
 });

@@ -5,6 +5,7 @@ import Button from '../../../../components/Button';
 import DateField from '../../../../components/DateField';
 import ErrorBanner from '../../../../components/ErrorBanner';
 import Screen from '../../../../components/Screen';
+import TabBar from '../../../../components/TabBar';
 import TextField from '../../../../components/TextField';
 import TimeField from '../../../../components/TimeField';
 import Toggle from '../../../../components/Toggle';
@@ -135,6 +136,15 @@ const chipStyles = StyleSheet.create({
  * supabase/migrations/20260823070000 gave `create_event` the same calendar
  * arguments the series functions take so that there is nothing left here to
  * disagree.
+ *
+ * Carries the tab bar with `active="club"`, the same as every other
+ * signed-in screen: the design source renders the bar as a sibling of every
+ * `appScreens` entry, `host` included — it is not gated to the four tabs
+ * themselves. The Cancel button below is NOT redundant with the Club tab and
+ * stays: it returns to THIS specific club (`/clubs/${clubId}`), while the
+ * Club tab goes to the clubs dashboard (`/clubs`) — different destinations,
+ * unlike the `newclub` screen's dropped `← Clubs` link, which pointed at the
+ * same place its tab does.
  */
 export default function NewEventScreen() {
   const { id: clubId } = useLocalSearchParams<{ id: string }>();
@@ -191,7 +201,7 @@ export default function NewEventScreen() {
 
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered}>
+      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="club" />}>
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
     );
@@ -207,7 +217,7 @@ export default function NewEventScreen() {
 
   if (!ready) {
     return (
-      <Screen center contentStyle={styles.centered}>
+      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="club" />}>
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
     );
@@ -215,7 +225,7 @@ export default function NewEventScreen() {
 
   if (!club) {
     return (
-      <Screen contentStyle={styles.container}>
+      <Screen contentStyle={styles.container} tabBar={<TabBar active="club" />}>
         <ErrorBanner message="That club could not be loaded." />
       </Screen>
     );
@@ -301,7 +311,7 @@ export default function NewEventScreen() {
   }
 
   return (
-    <Screen scroll contentStyle={styles.container}>
+    <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="club" />}>
       <Text style={styles.heading}>Add a game</Text>
 
       {error ? <ErrorBanner message={error} /> : null}
