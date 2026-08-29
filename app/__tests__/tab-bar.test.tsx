@@ -1,6 +1,31 @@
+import { useEffect } from 'react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import TabBar from '../../components/TabBar';
+
+const unreadCounts = vi.fn(
+  async (): Promise<{ club_id: string | null; unread: number }[]> => [],
+);
+vi.mock('../../lib/messages', async () => {
+  // UnreadBadge (rendered inside TabBar) calls the real `unreadLabel`, a
+  // pure helper covered by lib/messages.test.ts — only `fetchUnreadCounts`
+  // needs to be a controllable double here.
+  const actual =
+    await vi.importActual<typeof import('../../lib/messages')>('../../lib/messages');
+  return {
+    ...actual,
+    fetchUnreadCounts: () => unreadCounts(),
+  };
+});
+
+// Module-scoped constant, not a fresh object per render: TabBar now reads
+// `useSession` (via `useUnreadCounts`), and a fresh object there would break
+// the referential stability `useUnreadCounts`'s `useCallback([session])`
+// depends on, refiring its effect on every render.
+const SESSION = { session: { user: { id: 'test-user' } }, loading: false };
+vi.mock('../../lib/session', () => ({
+  useSession: () => SESSION,
+}));
 
 const replace = vi.fn();
 
@@ -16,6 +41,13 @@ vi.mock('expo-router', () => ({
   Redirect: ({ href }: { href: string }) => <div data-href={href} />,
   Link: ({ children }: { children: React.ReactNode }) => children,
   useLocalSearchParams: () => ({}),
+  // Wrapped in a real `useEffect` keyed on the callback's identity, not
+  // called inline on every render: `(cb) => cb()` fires on every render,
+  // which the real hook never does, and would refire `useUnreadCounts`'s
+  // fetch on every state update it causes.
+  useFocusEffect: (cb: () => void | (() => void)) => {
+    useEffect(cb, [cb]);
+  },
 }));
 
 beforeEach(() => {
@@ -80,5 +112,23 @@ describe('TabBar', () => {
     ).toBe('true');
     fireEvent.click(screen.getByRole('button', { name: 'Club' }));
     expect(replace).toHaveBeenCalledWith('/clubs');
+  });
+
+  // Ordinary messages never email, so this badge is the ONLY off-screen
+  // signal a member gets. It is not decoration.
+  it('badges the Messages tab with the unread total', async () => {
+    unreadCounts.mockResolvedValueOnce([
+      { club_id: 'c1', unread: 2 },
+      { club_id: null, unread: 3 },
+    ]);
+    render(<TabBar active="club" />);
+    expect(await screen.findByText('5')).toBeTruthy();
+  });
+
+  it('shows no badge when nothing is unread', async () => {
+    unreadCounts.mockResolvedValueOnce([]);
+    render(<TabBar active="club" />);
+    await waitFor(() => expect(unreadCounts).toHaveBeenCalled());
+    expect(screen.queryByText('0')).toBeNull();
   });
 });

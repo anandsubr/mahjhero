@@ -1,7 +1,9 @@
 import { usePathname, useRouter } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { BellIcon, HomeIcon, MessageIcon, PersonIcon } from './icons';
+import UnreadBadge from './UnreadBadge';
 import { colors, space, type } from '../lib/theme';
+import { useUnreadCounts } from '../lib/use-unread';
 
 export type TabKey = 'club' | 'messages' | 'profile' | 'alerts';
 
@@ -51,6 +53,7 @@ function icon(key: TabKey, color: string) {
 export default function TabBar({ active }: { active: TabKey }) {
   const router = useRouter();
   const pathname = usePathname();
+  const { total } = useUnreadCounts();
 
   return (
     <View style={styles.bar}>
@@ -75,7 +78,14 @@ export default function TabBar({ active }: { active: TabKey }) {
             aria-selected={selected}
             style={styles.tab}
           >
-            {icon(tab.key, tint)}
+            <View style={styles.iconWrap}>
+              {icon(tab.key, tint)}
+              {tab.key === 'messages' ? (
+                <View style={styles.badge}>
+                  <UnreadBadge count={total} />
+                </View>
+              ) : null}
+            </View>
             <Text style={[styles.label, { color: tint }]}>{tab.label}</Text>
           </Pressable>
         );
@@ -97,6 +107,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: space[1],
     minHeight: 58,
+  },
+  iconWrap: {
+    // Positions the badge relative to the icon alone, not the whole tab —
+    // an absolutely-positioned child otherwise anchors to the nearest
+    // positioned ancestor, which would be this Pressable's full width.
+    position: 'relative',
+  },
+  badge: {
+    position: 'absolute',
+    top: -space[2],
+    right: -space[3],
   },
   label: {
     fontFamily: type.bodySemiBold,

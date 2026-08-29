@@ -1,4 +1,5 @@
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import UnreadBadge from './UnreadBadge';
 import type { Chip } from '../lib/dashboard';
 import { colors, radius, space, type } from '../lib/theme';
 
@@ -14,10 +15,12 @@ export default function ClubChips({
   chips,
   selected,
   onSelect,
+  unreadByClub,
 }: {
   chips: Chip[];
   selected: string;
   onSelect: (id: string) => void;
+  unreadByClub?: Record<string, number>;
 }) {
   return (
     <ScrollView
@@ -38,6 +41,7 @@ export default function ClubChips({
           >
             {active ? <View style={styles.dot} /> : null}
             <Text style={styles.label}>{chip.label}</Text>
+            <UnreadBadge count={unreadByClub?.[chip.id] ?? 0} />
           </Pressable>
         );
       })}

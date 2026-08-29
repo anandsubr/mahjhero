@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import ProfileScreen from '../profile';
@@ -9,10 +10,22 @@ vi.mock('expo-router', () => ({
   // TabBar's own Profile tab route: this screen IS /profile, so its
   // highlighted Profile button stays the documented no-op.
   usePathname: () => '/profile',
+  // Wrapped in a real `useEffect` keyed on the callback's identity, not
+  // called inline on every render: `(cb) => cb()` fires on every render,
+  // which the real hook never does, and would refire `useUnreadCounts`'s
+  // fetch (now pulled in by TabBar) on every state update it causes.
+  useFocusEffect: (cb: () => void | (() => void)) => {
+    useEffect(cb, [cb]);
+  },
 }));
 
+// Module-scoped constant, not a fresh object per render: TabBar's badge now
+// reads `useSession` too (via `useUnreadCounts`), and a fresh object here
+// breaks the referential stability its `useCallback([session])` depends on,
+// refiring the fetch on every render.
+const SESSION = { session: { user: { id: 'test-user' } }, loading: false };
 vi.mock('../../lib/session', () => ({
-  useSession: () => ({ session: { user: { id: 'test-user' } }, loading: false }),
+  useSession: () => SESSION,
 }));
 
 const fetchProfile = vi.fn();
@@ -22,6 +35,12 @@ vi.mock('../../lib/profile', () => ({
   updateProfile: vi.fn(async () => ({ error: null })),
   isCompleteProfile: (p: { display_name: string; skill_level: string | null }) =>
     p.display_name.trim().length > 0 && p.skill_level !== null,
+}));
+
+// TabBar (carried by this screen) now calls `useUnreadCounts`, which reaches
+// `fetchUnreadCounts`.
+vi.mock('../../lib/messages', () => ({
+  fetchUnreadCounts: vi.fn(async () => []),
 }));
 
 describe('profile screen', () => {

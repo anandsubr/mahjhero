@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -50,13 +51,28 @@ vi.mock('expo-router', () => ({
   // TabBar's own Club tab route: ClubsScreen here IS /clubs, so its
   // highlighted Club button stays the documented no-op.
   usePathname: () => '/clubs',
+  // Wrapped in a real `useEffect` keyed on the callback's identity, not
+  // called inline on every render: `(cb) => cb()` fires on every render,
+  // which the real hook never does, and would refire `useUnreadCounts`'s
+  // fetch (now pulled in by TabBar) on every state update it causes.
+  useFocusEffect: (cb: () => void | (() => void)) => {
+    useEffect(cb, [cb]);
+  },
 }));
 
+// Module-scoped constant, not a fresh object per render: TabBar's badge now
+// reads `useSession` too (via `useUnreadCounts`), and a fresh object here
+// breaks the referential stability its `useCallback([session])` depends on,
+// refiring the fetch on every render.
+const SESSION = { session: { user: { id: 'me' } }, loading: false };
 vi.mock('../../lib/session', () => ({
-  useSession: () => ({
-    session: { user: { id: 'me' } },
-    loading: false,
-  }),
+  useSession: () => SESSION,
+}));
+
+// TabBar (carried by ClubsScreen, which this file renders) now calls
+// `useUnreadCounts`, which reaches `fetchUnreadCounts`.
+vi.mock('../../lib/messages', () => ({
+  fetchUnreadCounts: vi.fn(async () => []),
 }));
 
 const fetchMyClubs = vi.fn();

@@ -47,6 +47,7 @@ import { fetchUpcomingEvents, formatEventWhen } from '../../lib/events';
 import type { ClubEvent } from '../../lib/events';
 import { useSession } from '../../lib/session';
 import { colors, radius, space, type } from '../../lib/theme';
+import { useUnreadCounts } from '../../lib/use-unread';
 import { useViewerInitials } from '../../lib/use-viewer';
 
 /**
@@ -124,6 +125,7 @@ export default function ClubsScreen() {
   const [selected, setSelected] = useState<string>(ALL_CLUBS);
   const [notice, setNotice] = useState<string | null>(null);
   const initials = useViewerInitials();
+  const { byClub: unreadByClub } = useUnreadCounts();
 
   // Every write below awaits the network and then calls setState. Nothing
   // checked the screen was still mounted, so navigating away mid-write —
@@ -449,6 +451,7 @@ export default function ClubsScreen() {
         <ClubChips
           chips={chips}
           selected={selected}
+          unreadByClub={unreadByClub}
           // A confirmation raised for a game at one club is not an answer to
           // "show me a different club" — the notice would otherwise sit above
           // content it has nothing to do with.

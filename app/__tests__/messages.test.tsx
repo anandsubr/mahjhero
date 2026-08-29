@@ -41,6 +41,10 @@ vi.mock('../../lib/session', () => ({
 
 const fetchMyThreads = vi.fn();
 const openThreadForClub = vi.fn();
+// TabBar (carried by this screen) now calls `useUnreadCounts`, which reaches
+// this — added to the existing factory below rather than a second
+// `vi.mock('../../lib/messages', …)`, since only one survives hoisting.
+const fetchUnreadCounts = vi.fn(async () => []);
 
 vi.mock('../../lib/messages', async () => {
   // The pure helpers are covered in lib/messages.test.ts. Mocking them here
@@ -52,6 +56,7 @@ vi.mock('../../lib/messages', async () => {
     ...actual,
     fetchMyThreads: (...a: unknown[]) => fetchMyThreads(...a),
     openThreadForClub: (...a: unknown[]) => openThreadForClub(...a),
+    fetchUnreadCounts: () => fetchUnreadCounts(),
   };
 });
 

@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 
@@ -16,6 +17,13 @@ vi.mock('expo-router', () => ({
   // tab's own /clubs, so its Club button always stays live.
   usePathname: () => '/clubs/club-1/venues',
   useLocalSearchParams: () => searchParams,
+  // Wrapped in a real `useEffect` keyed on the callback's identity, not
+  // called inline on every render: `(cb) => cb()` fires on every render,
+  // which the real hook never does, and would refire `useUnreadCounts`'s
+  // fetch (now pulled in by TabBar) on every state update it causes.
+  useFocusEffect: (cb: () => void | (() => void)) => {
+    useEffect(cb, [cb]);
+  },
 }));
 
 const useSessionMock = vi.fn(
@@ -62,6 +70,12 @@ vi.mock('../../lib/profile', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../lib/profile')>();
   return { ...actual, fetchProfile: (...args: unknown[]) => fetchProfile(...args) };
 });
+
+// TabBar (carried by this screen) now calls `useUnreadCounts`, which reaches
+// `fetchUnreadCounts`.
+vi.mock('../../lib/messages', () => ({
+  fetchUnreadCounts: vi.fn(async () => []),
+}));
 
 import VenuesScreen from '../clubs/[id]/venues';
 

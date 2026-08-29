@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ClubsScreen from '../clubs/index';
@@ -43,14 +44,24 @@ vi.mock('expo-router', () => ({
   useRouter: () => ({ push, replace }),
   usePathname: () => pathname,
   useLocalSearchParams: () => searchParams,
+  // Wrapped in a real `useEffect` keyed on the callback's identity, not
+  // called inline on every render: `(cb) => cb()` fires on every render,
+  // which the real hook never does, and would refire `useUnreadCounts`'s
+  // fetch (now pulled in by TabBar) on every state update it causes.
+  useFocusEffect: (cb: () => void | (() => void)) => {
+    useEffect(cb, [cb]);
+  },
 }));
 
-const useSessionMock = vi.fn(
-  (): { session: { user: { id: string } } | null; loading: boolean } => ({
-    session: { user: { id: 'test-user' } },
-    loading: false,
-  }),
-);
+// Module-scoped constant, not the fresh object per call this used to be:
+// TabBar's badge now reads `useSession` too (via `useUnreadCounts`), and a
+// fresh object there breaks the referential stability its
+// `useCallback([session])` depends on, refiring the fetch on every render.
+const SESSION: { session: { user: { id: string } } | null; loading: boolean } = {
+  session: { user: { id: 'test-user' } },
+  loading: false,
+};
+const useSessionMock = vi.fn(() => SESSION);
 
 vi.mock('../../lib/session', () => ({
   useSession: () => useSessionMock(),
@@ -113,6 +124,19 @@ vi.mock('../../lib/bookings', async (importOriginal) => {
 vi.mock('../../lib/profile', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../lib/profile')>();
   return { ...actual, fetchProfile: (...args: unknown[]) => fetchProfile(...args) };
+});
+
+// TabBar (carried by every screen in this file) and, on the dashboard,
+// ClubChips both now call `useUnreadCounts`, which reaches `fetchUnreadCounts`.
+// `unreadLabel` stays real — UnreadBadge calls it, and it is the pure helper
+// covered by lib/messages.test.ts.
+const fetchUnreadCounts = vi.fn(async () => []);
+vi.mock('../../lib/messages', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/messages')>();
+  return {
+    ...actual,
+    fetchUnreadCounts: () => fetchUnreadCounts(),
+  };
 });
 
 const CLUB = {
