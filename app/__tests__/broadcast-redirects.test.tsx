@@ -63,4 +63,22 @@ describe('the old broadcast routes', () => {
     render(<BroadcastRedirect />);
     await waitFor(() => expect(replace).toHaveBeenCalledWith('/clubs/c1'));
   });
+
+  // A malformed route (no club id) must not dead-end on the loading
+  // spinner forever -- the effect that would otherwise navigate never
+  // runs when id is missing, so the guard has to send it somewhere real.
+  it('sends the club compose route to the dashboard when the id is missing', async () => {
+    params = {};
+    render(<BroadcastRedirect />);
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/clubs'));
+    expect(openThreadForClub).not.toHaveBeenCalled();
+    expect(openThreadForEvent).not.toHaveBeenCalled();
+  });
+
+  it('sends the sent-history route to the dashboard when the id is missing', async () => {
+    params = {};
+    render(<BroadcastsRedirect />);
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/clubs'));
+    expect(openThreadForClub).not.toHaveBeenCalled();
+  });
 });

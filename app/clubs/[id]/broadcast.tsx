@@ -21,7 +21,14 @@ export default function BroadcastRedirect() {
   const router = useRouter();
 
   useEffect(() => {
-    if (!session || !id) return;
+    if (!session) return;
+    if (!id) {
+      // Only reachable via a malformed route -- send it to the dashboard
+      // rather than falling through to the same spinner this screen uses
+      // while loading, which would otherwise never resolve.
+      router.replace('/clubs');
+      return;
+    }
     let cancelled = false;
 
     void (async () => {
