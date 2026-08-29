@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(90);
+select plan(100);
 
 /*
  * Guards the privileges themselves, not the policies.
@@ -865,6 +865,48 @@ select ok(
 -- Messages (20260829000000, 20260829010000).
 -- ---------------------------------------------------------------------
 
+-- TRUNCATE is not subject to RLS, so a bare `revoke all ... grant select`
+-- (20260829000000) leaves every one of these four tables open to it unless
+-- revoked explicitly. Same reasoning as every TRUNCATE block above.
+select ok(
+  not has_table_privilege('authenticated', 'public.message_threads', 'TRUNCATE'),
+  'authenticated cannot TRUNCATE message_threads'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.thread_members', 'TRUNCATE'),
+  'authenticated cannot TRUNCATE thread_members'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.messages', 'TRUNCATE'),
+  'authenticated cannot TRUNCATE messages'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.thread_reads', 'TRUNCATE'),
+  'authenticated cannot TRUNCATE thread_reads'
+);
+
+-- No messaging table takes direct DML. A client that could INSERT into
+-- messages could forge an author_id, and the select policy would then show
+-- it to the thread as somebody else's words. thread_reads is written only
+-- through mark_thread_read, so a direct UPDATE would let a member move their
+-- own read marker without the can_read_thread check that RPC applies.
+select ok(
+  not has_table_privilege('authenticated', 'public.messages', 'INSERT'),
+  'authenticated cannot INSERT a message directly'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.thread_members', 'INSERT'),
+  'authenticated cannot add themselves to a thread directly'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.message_threads', 'INSERT'),
+  'authenticated cannot create a thread directly'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.thread_reads', 'UPDATE'),
+  'authenticated cannot move their own read marker directly'
+);
+
 -- can_read_thread is invoked directly inside the USING clause of the
 -- select policies on message_threads/thread_members/messages, and that
 -- invocation runs under the querying role's own EXECUTE privilege, not
@@ -905,6 +947,21 @@ select ok(
   not has_function_privilege(
     'authenticated', 'public.backfill_broadcasts_into_threads()', 'EXECUTE'),
   'backfill_broadcasts_into_threads is revoked from authenticated'
+);
+
+-- The client's actual API. Already proven reachable via Direction 1 of the
+-- bidirectional allowlist above, but named here too — the same treatment
+-- commit_booking and event_seating get — because these are the two RPCs the
+-- compose and inbox screens call directly.
+select ok(
+  has_function_privilege(
+    'authenticated', 'public.post_message(uuid, text, boolean, uuid)', 'EXECUTE'),
+  'authenticated can execute post_message'
+);
+select ok(
+  has_function_privilege(
+    'authenticated', 'public.fetch_my_threads()', 'EXECUTE'),
+  'authenticated can execute fetch_my_threads'
 );
 
 select * from finish();
