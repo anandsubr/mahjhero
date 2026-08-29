@@ -131,4 +131,25 @@ describe('TabBar', () => {
     await waitFor(() => expect(unreadCounts).toHaveBeenCalled());
     expect(screen.queryByText('0')).toBeNull();
   });
+
+  // UnreadBadge's own <Text> never reaches assistive tech: this Pressable's
+  // accessibilityLabel emits aria-label on react-native-web, which REPLACES
+  // the accessible name computed from children (the badge included) rather
+  // than merging with it. The count has to be composed into "Messages"
+  // itself for a screen-reader user to ever hear it.
+  it('composes the unread total into the Messages tab’s accessible name', async () => {
+    unreadCounts.mockResolvedValueOnce([
+      { club_id: 'c1', unread: 2 },
+      { club_id: null, unread: 3 },
+    ]);
+    render(<TabBar active="club" />);
+    expect(await screen.findByRole('button', { name: 'Messages, 5 unread' })).toBeTruthy();
+  });
+
+  it('carries no unread suffix on any tab when nothing is unread', async () => {
+    unreadCounts.mockResolvedValueOnce([]);
+    render(<TabBar active="club" />);
+    await waitFor(() => expect(unreadCounts).toHaveBeenCalled());
+    expect(screen.getByRole('button', { name: 'Messages' })).toBeTruthy();
+  });
 });

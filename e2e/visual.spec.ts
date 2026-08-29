@@ -389,21 +389,26 @@ test.describe('signed in', () => {
         await page.setViewportSize({ width: vp.width, height: vp.height });
         await seedUnreadClubMessage(seeded.clubId, userId.slice(0, 8));
         await page.goto('/clubs');
-        // `.first()` — the same trap `clubs list with a club`'s own comment
-        // records: ClubChips' Riverside chip and the club LIST card below it
-        // (line ~549) share the exact accessible name "Riverside Mah Jongg".
-        // The chip renders first in the DOM, so `.first()` reaches it; only
-        // the chip carries a badge, so scoping the "1" to it (rather than
-        // asserting the bare count anywhere on the page) proves the badge
-        // itself painted, not just that some "1" exists somewhere in a
-        // table-count or seats-free label.
+        // ClubChips and TabBar compose the unread count straight into their
+        // accessibilityLabel now (components/ClubChips.tsx,
+        // components/TabBar.tsx) rather than leaving it on UnreadBadge's own
+        // nested <Text> — react-native-web's aria-label REPLACES the
+        // accessible name computed from children, it does not merge with
+        // it, so the count never reached assistive tech any other way. That
+        // also settles the trap this comment used to record: the club LIST
+        // card below (line ~549) shares "Riverside Mah Jongg" with the chip,
+        // but only the chip carries a badge, so its composed name is unique
+        // on its own — `.first()` stays only as a defensive belt.
         const clubChip = page
-          .getByRole('button', { name: 'Riverside Mah Jongg', exact: true })
+          .getByRole('button', { name: 'Riverside Mah Jongg, 1 unread', exact: true })
           .first();
         await expect(clubChip.getByText('1', { exact: true })).toBeVisible();
         // The Messages tab's own badge, scoped to its button for the same
         // reason — TabBar.tsx renders it inside the "Messages" Pressable.
-        const messagesTab = page.getByRole('button', { name: 'Messages', exact: true });
+        const messagesTab = page.getByRole('button', {
+          name: 'Messages, 1 unread',
+          exact: true,
+        });
         await expect(messagesTab.getByText('1', { exact: true })).toBeVisible();
         await captureScreen(page, vp, `messages-badge-${vp.name}.png`);
       });

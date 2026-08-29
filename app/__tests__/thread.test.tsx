@@ -340,6 +340,26 @@ describe('thread screen', () => {
     );
   });
 
+  // postMessage trims before sending, and post_message's own SQL trims the
+  // WHOLE body before taking its first line -- `body := trim(coalesce(
+  // p_body, ''))`, then `split_part(body, E'\n', 1)`. Passing the raw,
+  // untrimmed draft to deriveSubject here used to disagree: the first LINE
+  // of an untrimmed body starting with a blank line is empty, so the
+  // confirmation showed no subject at all while post_message was about to
+  // mail a real one.
+  it('shows the real subject, not an empty one, for a body that starts with a blank line', async () => {
+    render(<ThreadScreen />);
+    fireEvent.change(await screen.findByLabelText('Message'), {
+      target: { value: '\n\nHall is closed Friday' },
+    });
+    fireEvent.click(screen.getByLabelText('Also email everyone'));
+    expect(
+      await screen.findByText(
+        'Emails the club with the subject: Hall is closed Friday',
+      ),
+    ).toBeTruthy();
+  });
+
   // "Emails 0 members" is a claim; a failed count has nothing to say.
   it('omits the number when the count cannot be fetched', async () => {
     countBroadcastRecipients.mockResolvedValueOnce(null);

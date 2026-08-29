@@ -529,8 +529,8 @@ export default function ThreadScreen() {
           {announce && draft.trim() ? (
             <Text style={styles.announceNote}>
               {recipients === null
-                ? `Emails the club with the subject: ${deriveSubject(draft)}`
-                : `Emails ${recipients} ${recipients === 1 ? 'member' : 'members'}, subject: ${deriveSubject(draft)}`}
+                ? `Emails the club with the subject: ${deriveSubject(draft.trim())}`
+                : `Emails ${recipients} ${recipients === 1 ? 'member' : 'members'}, subject: ${deriveSubject(draft.trim())}`}
             </Text>
           ) : null}
 

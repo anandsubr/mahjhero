@@ -5,6 +5,8 @@ import { MessageIcon, PersonIcon } from './icons';
 import {
   kindLabel,
   messagePreview,
+  rowTitle,
+  unreadSuffix,
   type ThreadListRow,
 } from '../lib/messages';
 import { colors, radius, space, type } from '../lib/theme';
@@ -30,12 +32,17 @@ export default function ThreadRow({
   const kicker = row.club_name
     ? `${row.club_name} · ${kindLabel(row.kind)}`
     : kindLabel(row.kind);
+  const title = rowTitle(row);
 
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={row.title}
+      // The count is composed in here rather than left on UnreadBadge's own
+      // <Text>: react-native-web's aria-label REPLACES the accessible name
+      // computed from a Pressable's children, it does not merge with it, so
+      // the badge nested below would otherwise never reach assistive tech.
+      accessibilityLabel={`${title}${unreadSuffix(row.unread)}`}
       style={styles.row}
     >
       <View style={styles.tile}>
@@ -58,7 +65,7 @@ export default function ThreadRow({
 
       <View style={styles.body}>
         <Text style={styles.title} numberOfLines={1}>
-          {row.title}
+          {title}
         </Text>
         <Text style={styles.kicker} numberOfLines={1}>
           {kicker}

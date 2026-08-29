@@ -124,4 +124,49 @@ describe('ThreadRow', () => {
     fireEvent.click(screen.getByLabelText('Everyone at Riverside'));
     expect(onPress).toHaveBeenCalled();
   });
+
+  // fetch_my_threads' SQL can answer title as NULL (an untitled group whose
+  // only member left is the caller) or '' (a direct thread whose only other
+  // member never set a display name, since profiles.display_name defaults
+  // to '' rather than null). Both used to render a blank row and an
+  // accessibilityLabel of null/''; rowTitle falls back to the kind label.
+  it('shows the kind label instead of a blank row when title is missing', () => {
+    render(
+      <ThreadRow
+        row={row({ title: null, kind: 'group', club_id: null, club_name: null })}
+        onPress={vi.fn()}
+      />,
+    );
+    // "Group" legitimately appears twice here -- once as the fallback
+    // title, once as the kicker's kind label (club_name is null too) -- so
+    // this asserts there IS a title rather than a blank one, not that the
+    // two happen to differ.
+    expect(screen.getAllByText('Group')).toHaveLength(2);
+    expect(screen.getByLabelText('Group')).toBeTruthy();
+  });
+
+  it('shows the kind label instead of a blank row when title is empty', () => {
+    render(
+      <ThreadRow
+        row={row({ title: '', kind: 'direct', club_id: null, club_name: null })}
+        onPress={vi.fn()}
+      />,
+    );
+    expect(screen.getByLabelText('Direct')).toBeTruthy();
+  });
+
+  // UnreadBadge's own <Text> never reaches assistive tech here:
+  // accessibilityLabel on this Pressable emits aria-label on
+  // react-native-web, which REPLACES the accessible name computed from
+  // children rather than merging with it. The count has to be composed into
+  // this same label instead.
+  it('composes the unread count into the accessible name', () => {
+    render(<ThreadRow row={row({ unread: 4 })} onPress={vi.fn()} />);
+    expect(screen.getByLabelText('Everyone at Riverside, 4 unread')).toBeTruthy();
+  });
+
+  it('carries no unread suffix when nothing is unread', () => {
+    render(<ThreadRow row={row({ unread: 0 })} onPress={vi.fn()} />);
+    expect(screen.getByLabelText('Everyone at Riverside')).toBeTruthy();
+  });
 });

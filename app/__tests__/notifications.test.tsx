@@ -35,9 +35,17 @@ vi.mock('../../lib/session', () => ({
 
 // TabBar (carried by this screen) now calls `useUnreadCounts`, which reaches
 // `fetchUnreadCounts`.
-vi.mock('../../lib/messages', () => ({
-  fetchUnreadCounts: vi.fn(async () => []),
-}));
+// Spread `actual` rather than replacing the module outright: TabBar (carried
+// by this screen) now also calls `unreadSuffix`, a pure helper covered by
+// lib/messages.test.ts -- only `fetchUnreadCounts` needs to be a
+// controllable double here.
+vi.mock('../../lib/messages', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/messages')>();
+  return {
+    ...actual,
+    fetchUnreadCounts: vi.fn(async () => []),
+  };
+});
 
 vi.mock('../../lib/profile', () => ({
   fetchPreferences: vi.fn(async () => ({

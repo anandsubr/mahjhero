@@ -15,7 +15,19 @@ export type ThreadKind = 'club' | 'game' | 'group' | 'direct';
 export type ThreadListRow = {
   thread_id: string | null;
   kind: ThreadKind;
-  title: string;
+  /**
+   * Honestly nullable. `fetch_my_threads`' SQL names an untitled group from
+   * `string_agg(...) filter (where p.id <> auth.uid())`, which answers NULL
+   * when that filter matches nobody — the caller is the thread's only
+   * member, the state `leave_group_thread` leaves behind right before the
+   * last-member-out delete. It can also arrive as '' for a direct thread
+   * whose only other member never set a display name: `profiles.display_name`
+   * is `text not null default ''`, not null, so the SQL's `other_name`
+   * comes back empty rather than absent. `rowTitle` below is the fallback
+   * for both; a bare `string` type here would have this lying about the one
+   * it never got tested against.
+   */
+  title: string | null;
   club_id: string | null;
   club_name: string | null;
   member_count: number;
@@ -163,12 +175,33 @@ const CONTROL_CHAR_PATTERN = /[\x00-\x1f\x7f-\x9f]/g;
  *
  * This MUST agree with post_message's SQL character for character. Drift
  * means the organizer confirms one subject and the email carries another.
+ *
+ * Two agreements to keep, not one:
+ *
+ *   - The INPUT must already be the same string post_message derives from.
+ *     post_message computes `body := trim(coalesce(p_body, ''))` FIRST and
+ *     only then takes that trimmed body's first line — so a body starting
+ *     with a blank line loses the blank line before the split, not after.
+ *     This function takes the first line of whatever it is GIVEN, so the
+ *     caller must pass the trimmed draft, not the raw one: see the call
+ *     site in app/messages/[threadId].tsx, which used to pass the untrimmed
+ *     draft and show an empty subject for a body that was about to mail a
+ *     real one.
+ *   - The TRUNCATION must count characters the way Postgres's `length()`/
+ *     `left()` do, which is codepoints, not `.length`/`.slice`'s UTF-16
+ *     units. An astral character (outside the BMP) is one codepoint but a
+ *     surrogate PAIR — two units — so a unit-counting truncation disagrees
+ *     with Postgres about where 120 characters ends, and `.slice` can cut
+ *     a pair in half outright. `Array.from` (and `for...of`) iterate a
+ *     string by codepoint, which is what the split and slice below use
+ *     instead.
  */
 export function deriveSubject(body: string): string {
   const firstLine = (body ?? '').split('\n')[0] ?? '';
   const cleaned = firstLine.replace(CONTROL_CHAR_PATTERN, '').trim();
-  if (cleaned.length > SUBJECT_MAX) {
-    return `${cleaned.slice(0, SUBJECT_MAX - 1)}…`;
+  const codepoints = Array.from(cleaned);
+  if (codepoints.length > SUBJECT_MAX) {
+    return `${codepoints.slice(0, SUBJECT_MAX - 1).join('')}…`;
   }
   return cleaned;
 }
@@ -195,6 +228,27 @@ export function messagePreview(row: ThreadListRow): string {
 
 export function unreadLabel(n: number): string {
   return n > 99 ? '99+' : String(n);
+}
+
+/**
+ * The count, phrased to be composed onto an EXISTING accessibilityLabel
+ * rather than read on its own.
+ *
+ * components/UnreadBadge.tsx renders a bare `<Text>`, and all three of its
+ * parents (TabBar, ClubChips, ThreadRow) set `accessibilityLabel` on the
+ * surrounding Pressable — which on react-native-web emits `aria-label` and
+ * REPLACES the accessible name computed from children entirely, rather than
+ * merging with it. The badge's own count never reached assistive tech at any
+ * of the three sites. Composing `label + unreadSuffix(n)` into that one
+ * label is the fix; a second, competing label on the badge itself would only
+ * repeat how this got confusing in the first place.
+ *
+ * Empty at zero so a caller never needs a conditional, and capped at 99+
+ * with `unreadLabel` so the spoken count never disagrees with the pill's
+ * printed one.
+ */
+export function unreadSuffix(n: number): string {
+  return n > 0 ? `, ${unreadLabel(n)} unread` : '';
 }
 
 /**
@@ -291,11 +345,33 @@ export function threadTitleFor(thread: ThreadDetail, viewerId: string): string {
 
   if (thread.title && thread.title.trim()) return thread.title.trim();
   const others = thread.thread_members.filter((m) => m.profile_id !== viewerId);
-  if (others.length === 1) return others[0].profiles?.display_name ?? 'Direct';
-  return others
+  if (others.length === 1) {
+    // `??` alone does not catch this: `profiles.display_name` is `text not
+    // null default ''`, so a counterpart who never set a name comes back as
+    // '', not null, and `?? 'Direct'` would pass '' straight through.
+    const name = others[0].profiles?.display_name?.trim();
+    return name ? name : 'Direct';
+  }
+  const names = others
     .map((m) => (m.profiles?.display_name ?? '').split(' ')[0])
     .filter(Boolean)
     .join(', ');
+  // Same hole, plural: every other member nameless empties the join, and a
+  // blank header is worse than a generic one.
+  return names || 'Group';
+}
+
+/**
+ * `row.title`'s fallback, for the one place it is rendered
+ * (components/ThreadRow.tsx). See the field's own docstring in
+ * `ThreadListRow` for the two ways it arrives blank -- NULL from
+ * `fetch_my_threads`' SQL, or '' from a nameless direct counterpart. Falls
+ * back to the row's kind label, the same word `kindLabel` already uses for
+ * this row's kicker line, rather than inventing a second placeholder.
+ */
+export function rowTitle(row: ThreadListRow): string {
+  const trimmed = row.title?.trim();
+  return trimmed ? trimmed : kindLabel(row.kind);
 }
 
 // ---------------------------------------------------------------------

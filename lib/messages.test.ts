@@ -20,18 +20,23 @@ vi.mock('./supabase', () => ({
 
 import { GENERIC_ERROR } from './constants';
 import {
+  addToGroupThread,
   createGroupThread,
   deriveSubject,
   fetchThread,
   fetchThreadMessages,
   fetchMyThreads,
   kindLabel,
+  leaveGroupThread,
   messagePreview,
   postMessage,
   quoteStub,
+  rowTitle,
   sectionThreads,
   sortThreads,
+  threadTitleFor,
   unreadLabel,
+  unreadSuffix,
   type ThreadDetail,
   type ThreadListRow,
 } from './messages';
@@ -87,6 +92,24 @@ describe('deriveSubject', () => {
   it('is empty for a body with no usable first line', () => {
     expect(deriveSubject('   \n\nreal content')).toBe('');
   });
+
+  // Postgres's `length()`/`left()` count characters, not UTF-16 code units.
+  // `.length`/`.slice` count UTF-16 units, so an astral character (outside
+  // the BMP, encoded as a surrogate pair) counts as ONE character server-side
+  // and TWO client-side -- a mismatched truncation point, and `.slice` can
+  // land exactly between the two halves of a pair. Each 😀 below is one
+  // codepoint but two UTF-16 units, so this body is 130 codepoints / 260
+  // units: a `.slice`-based truncation would cut at unit 119, inside a
+  // surrogate pair, and disagree with Postgres about where 120 characters
+  // ends.
+  it('truncates by codepoint, not UTF-16 unit, so a surrogate pair is never split', () => {
+    const subject = deriveSubject('😀'.repeat(130));
+    expect(Array.from(subject)).toHaveLength(120);
+    expect(subject.endsWith('…')).toBe(true);
+    // Every UTF-16 unit pairs up correctly -- a split surrogate would leave
+    // a lone low or high surrogate as its own "character" here.
+    expect(Array.from(subject).every((ch) => ch !== '�')).toBe(true);
+  });
 });
 
 describe('unreadLabel', () => {
@@ -126,6 +149,157 @@ describe('kindLabel', () => {
     expect(kindLabel('game')).toBe('Game');
     expect(kindLabel('group')).toBe('Group');
     expect(kindLabel('direct')).toBe('Direct');
+  });
+});
+
+describe('threadTitleFor', () => {
+  function thread(over: Partial<ThreadDetail> = {}): ThreadDetail {
+    return {
+      id: 't1',
+      club_id: null,
+      event_id: null,
+      title: null,
+      clubs: null,
+      events: null,
+      thread_members: [
+        { profile_id: 'me', profiles: { display_name: 'You' } },
+        { profile_id: 'other', profiles: { display_name: 'Sara Lindqvist' } },
+      ],
+      ...over,
+    };
+  }
+
+  it('names a direct thread from the other member', () => {
+    expect(threadTitleFor(thread(), 'me')).toBe('Sara Lindqvist');
+  });
+
+  // profiles.display_name is `text not null default ''`, so a counterpart
+  // who never set a name comes back as '' -- not null -- and `??` does not
+  // catch an empty string. This is the direct-thread half of the same hole
+  // ThreadListRow.title has in fetch_my_threads' SQL.
+  it('falls back to Direct when the other member has no display name', () => {
+    expect(
+      threadTitleFor(
+        thread({
+          thread_members: [
+            { profile_id: 'me', profiles: { display_name: 'You' } },
+            { profile_id: 'other', profiles: { display_name: '' } },
+          ],
+        }),
+        'me',
+      ),
+    ).toBe('Direct');
+  });
+
+  it('joins first names for a group', () => {
+    expect(
+      threadTitleFor(
+        thread({
+          thread_members: [
+            { profile_id: 'me', profiles: { display_name: 'You' } },
+            { profile_id: 'other', profiles: { display_name: 'Sara Lindqvist' } },
+            { profile_id: 'third', profiles: { display_name: 'Peter Ng' } },
+          ],
+        }),
+        'me',
+      ),
+    ).toBe('Sara, Peter');
+  });
+
+  // Every other member nameless -- `.filter(Boolean)` drops each empty first
+  // name, and joining an empty array reads as a blank header instead of a
+  // meaningful one.
+  it('falls back to Group when every other member has no display name', () => {
+    expect(
+      threadTitleFor(
+        thread({
+          thread_members: [
+            { profile_id: 'me', profiles: { display_name: 'You' } },
+            { profile_id: 'other', profiles: { display_name: '' } },
+            { profile_id: 'third', profiles: null },
+          ],
+        }),
+        'me',
+      ),
+    ).toBe('Group');
+  });
+});
+
+describe('rowTitle', () => {
+  // fetch_my_threads' SQL can answer an untitled group's title with NULL
+  // (string_agg over zero rows -- the caller is the thread's only member),
+  // and ThreadListRow.title is typed to admit that honestly.
+  it('falls back to the kind label when title is null', () => {
+    expect(rowTitle(row({ title: null, kind: 'group' }))).toBe('Group');
+  });
+
+  // profiles.display_name defaults to '' (not null), so a direct thread
+  // with a nameless counterpart answers '' rather than NULL -- a second,
+  // reachable-today path to the same blank row.
+  it('falls back to the kind label when title is empty', () => {
+    expect(rowTitle(row({ title: '', kind: 'direct' }))).toBe('Direct');
+  });
+
+  it('uses the title when there is one', () => {
+    expect(rowTitle(row({ title: 'Everyone at Riverside', kind: 'club' }))).toBe(
+      'Everyone at Riverside',
+    );
+  });
+});
+
+describe('unreadSuffix', () => {
+  // Composed onto an existing accessibilityLabel rather than read
+  // separately: react-native-web's aria-label REPLACES the accessible name
+  // computed from a Pressable's children, so UnreadBadge's own <Text> never
+  // reaches assistive tech on any of its three parents unless the count is
+  // folded into that same label.
+  it('is empty at zero, so it can always be appended without a conditional', () => {
+    expect(unreadSuffix(0)).toBe('');
+  });
+
+  it('names the count', () => {
+    expect(unreadSuffix(5)).toBe(', 5 unread');
+  });
+
+  it('caps a large count the same way the badge does', () => {
+    expect(unreadSuffix(140)).toBe(', 99+ unread');
+  });
+});
+
+describe('addToGroupThread', () => {
+  beforeEach(() => rpcMock.mockReset());
+
+  it('calls add_to_group_thread with the thread and the picked members', async () => {
+    rpcMock.mockResolvedValueOnce({ data: null, error: null });
+    await expect(addToGroupThread('t1', ['p1', 'p2'])).resolves.toEqual({
+      error: null,
+    });
+    expect(rpcMock).toHaveBeenCalledWith('add_to_group_thread', {
+      target_thread: 't1',
+      p_members: ['p1', 'p2'],
+    });
+  });
+
+  it('relays a refusal verbatim', async () => {
+    rpcMock.mockResolvedValueOnce({
+      data: null,
+      error: { message: 'you can only message people from your clubs or your friends' },
+    });
+    await expect(addToGroupThread('t1', ['p1'])).resolves.toEqual({
+      error: 'you can only message people from your clubs or your friends',
+    });
+  });
+});
+
+describe('leaveGroupThread', () => {
+  beforeEach(() => rpcMock.mockReset());
+
+  it('calls leave_group_thread with the thread', async () => {
+    rpcMock.mockResolvedValueOnce({ data: null, error: null });
+    await expect(leaveGroupThread('t1')).resolves.toEqual({ error: null });
+    expect(rpcMock).toHaveBeenCalledWith('leave_group_thread', {
+      target_thread: 't1',
+    });
   });
 });
 

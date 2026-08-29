@@ -2,6 +2,7 @@ import { usePathname, useRouter } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { BellIcon, HomeIcon, MessageIcon, PersonIcon } from './icons';
 import UnreadBadge from './UnreadBadge';
+import { unreadSuffix } from '../lib/messages';
 import { colors, space, type } from '../lib/theme';
 import { useUnreadCounts } from '../lib/use-unread';
 
@@ -66,6 +67,9 @@ export default function TabBar({ active }: { active: TabKey }) {
         // 5.09:1 and clears AA. Same failure, and the same fix, as
         // components/NeedAFourthCard.tsx's own card background.
         const tint = selected ? colors.accent[700] : colors.neutral[700];
+        // Only the Messages tab carries a badge, so every other tab's
+        // suffix is always empty.
+        const badgeCount = tab.key === 'messages' ? total : 0;
         return (
           <Pressable
             key={tab.key}
@@ -74,7 +78,12 @@ export default function TabBar({ active }: { active: TabKey }) {
               router.replace(tab.href);
             }}
             accessibilityRole="button"
-            accessibilityLabel={tab.label}
+            // The count is composed in here rather than left on
+            // UnreadBadge's own <Text>: react-native-web's aria-label
+            // REPLACES the accessible name computed from a Pressable's
+            // children, it does not merge with it, so the badge nested
+            // below would otherwise never reach assistive tech.
+            accessibilityLabel={`${tab.label}${unreadSuffix(badgeCount)}`}
             aria-selected={selected}
             style={styles.tab}
           >
