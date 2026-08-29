@@ -58,3 +58,14 @@ describe('field labels clear AA on both grounds', () => {
     expect(contrast(colors.textLabel, colors.surface)).toBeGreaterThanOrEqual(AA);
   });
 });
+
+// UnreadBadge is the only signal an ordinary message produces — ordinary
+// messages never email. `colors.bg` on `accentColor` measured 3.03:1, which
+// fails AA at this weight (16px bold, below the 14pt-bold large-text
+// threshold); accent[700] fixed it at 5.72:1. Pinned here so a future
+// palette change that reopens the hole fails a test instead of shipping.
+describe('unread badge text clears AA on its background', () => {
+  it('clears AA on accent[700]', () => {
+    expect(contrast(colors.bg, colors.accent[700])).toBeGreaterThanOrEqual(AA);
+  });
+});

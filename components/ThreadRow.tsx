@@ -18,7 +18,7 @@ import { colors, radius, space, type } from '../lib/theme';
  *   club    the chat glyph
  *   game    the existing DateTile, reused rather than a second 52x70 tile
  *   direct  nothing borrowed — a person glyph
- *   group   a person glyph too, with the member count beneath
+ *   group   a person glyph too, no distinct tile of its own
  */
 export default function ThreadRow({
   row,
