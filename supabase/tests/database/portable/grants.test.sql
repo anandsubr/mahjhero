@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(89);
+select plan(90);
 
 /*
  * Guards the privileges themselves, not the policies.
@@ -894,6 +894,17 @@ select ok(
   not has_function_privilege(
     'authenticated', 'public.is_club_organizer_of(uuid, uuid)', 'EXECUTE'),
   'is_club_organizer_of is revoked from authenticated'
+);
+
+-- backfill_broadcasts_into_threads (20260829060000) is a one-shot data
+-- migration: the migration calls it once at creation time, and the
+-- thread_lists fixture calls it again as the table owner to exercise it.
+-- Neither caller is a client session, so it stays fully internal, the same
+-- as can_post_thread and is_club_organizer_of above.
+select ok(
+  not has_function_privilege(
+    'authenticated', 'public.backfill_broadcasts_into_threads()', 'EXECUTE'),
+  'backfill_broadcasts_into_threads is revoked from authenticated'
 );
 
 select * from finish();
