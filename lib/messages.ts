@@ -442,8 +442,7 @@ export async function fetchThreadMessages(
 // ---------------------------------------------------------------------
 // Writes. Refusals from the RPCs are relayed verbatim rather than mapped
 // through a refusal table — they are already written to be read by a
-// member. Same deliberate contract lib/broadcasts.ts records for
-// sendBroadcast.
+// member. Same deliberate contract lib/friends.ts records for addFriend.
 // ---------------------------------------------------------------------
 
 async function idRpc(

@@ -74,8 +74,8 @@ export async function fetchAddablePeople(): Promise<AddablePerson[] | null> {
  * Relays `error.message` from `add_friend` verbatim rather than mapping it
  * through a refusal table. Its two refusals — 'you can only add someone
  * from one of your clubs' and 'you cannot add yourself' — are already
- * written to be read by a member. Same deliberate contract as sendBroadcast
- * in lib/broadcasts.ts.
+ * written to be read by a member. Same deliberate contract lib/messages.ts
+ * records for postMessage.
  */
 export async function addFriend(
   targetId: string,

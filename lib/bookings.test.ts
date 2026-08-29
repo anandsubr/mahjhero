@@ -455,23 +455,19 @@ describe('BOOKING_REFUSALS (self-audit against the migrations)', () => {
 
     // Raised by broadcast_recipient_count and send_broadcast
     // (20260826030000_broadcasts.sql) when the event id passed does not
-    // belong to the club id passed. The compose screen only ever offers
-    // events that belong to the club being messaged, so a caller hitting
-    // this is malicious or buggy, not a member doing something reasonable
-    // — the same shape as 'duplicate player' / 'nothing to decline' above.
-    // Unlike those, though, it is not this module's call to make: neither
-    // function is called from lib/bookings.ts, and the module that DOES
-    // call them — lib/broadcasts.ts (not yet created; Task 12 of
-    // docs/superpowers/plans/2026-08-23-notifications-and-comms.md) — is
-    // designed to relay `error.message` from these two RPCs verbatim
-    // rather than mapping through a refusal table (see that task's
-    // `sendBroadcast`, which returns `error.message` directly and only
-    // falls back to GENERIC_ERROR on a thrown/network failure). So this
-    // message reaching a client is the plan's own intended behaviour, not
-    // a gap — same as Category 2/3 above, this module is not the one
-    // responsible for it either way.
+    // belong to the club id passed. Neither function is called from
+    // lib/bookings.ts. Task 15 absorbed the broadcast compose/history
+    // screens into the message threads: lib/broadcasts.ts's
+    // countBroadcastRecipients still calls broadcast_recipient_count, but
+    // swallows every error to null rather than relaying `error.message`
+    // (deliberately — see its own docstring), and send_broadcast itself
+    // has no remaining client caller now that lib/broadcasts.ts's
+    // sendBroadcast was removed in favour of lib/messages.ts's
+    // postMessage. So this message is raised in the schema but currently
+    // unreachable through any live client path — this module is not the
+    // one responsible for it either way.
     'event does not belong to this club':
-      'raised by broadcast_recipient_count/send_broadcast — lib/broadcasts.ts (Task 12, not yet created) is the module responsible, and by design relays error.message rather than mapping through a refusal table',
+      'raised by broadcast_recipient_count/send_broadcast — lib/broadcasts.ts’s countBroadcastRecipients calls broadcast_recipient_count but swallows the error to null, and send_broadcast has no remaining caller since Task 15 removed sendBroadcast',
 
     // Raised by add_friend (20260828010000_friend_mutations.sql) when the
     // target is the caller or when they do not share a club. The compose

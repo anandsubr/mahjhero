@@ -1,5 +1,5 @@
 import { Link, Redirect, useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import BringSomeoneSheet from '../../../../../components/BringSomeoneSheet';
 import Button from '../../../../../components/Button';
@@ -21,6 +21,7 @@ import {
 } from '../../../../../lib/attendance';
 import { canInvite, fetchClub, fetchRoster } from '../../../../../lib/clubs';
 import type { Club, ClubMember } from '../../../../../lib/clubs';
+import { GENERIC_ERROR } from '../../../../../lib/constants';
 import {
   acceptPromotionOffer,
   callForAFourth,
@@ -53,6 +54,7 @@ import {
   type EventSeries,
   type EventTable,
 } from '../../../../../lib/events';
+import { openThreadForEvent } from '../../../../../lib/messages';
 import { useSession } from '../../../../../lib/session';
 import { addHours } from '../../../../../lib/time';
 import { colors, space, type } from '../../../../../lib/theme';
@@ -135,6 +137,11 @@ export default function EventScreen() {
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Written synchronously and cleared on every exit path -- `busy` state
+  // alone is read from the render closure, so a guard written as `if (busy)
+  // return` is blind to a second tap landing before React has re-rendered
+  // with the disabled button. See app/clubs/index.tsx's busyRef.
+  const messageBusyRef = useRef(false);
 
   // Who is coming: every live (confirmed or waitlisted) booking, plus
   // whether the fetch itself failed. Kept separate from `tablesFailed` for
@@ -349,6 +356,19 @@ export default function EventScreen() {
       return;
     }
     await load();
+  }
+
+  async function onMessageEveryoneBooked() {
+    if (!eventId || messageBusyRef.current) return;
+    messageBusyRef.current = true;
+    setError(null);
+    const { id: threadId, error: threadError } = await openThreadForEvent(eventId);
+    messageBusyRef.current = false;
+    if (threadError || !threadId) {
+      setError(threadError ?? GENERIC_ERROR);
+      return;
+    }
+    router.push(`/messages/${threadId}`);
   }
 
   // One instant, shared by `canBook` and every table's `needsAFourth` call
@@ -981,9 +1001,7 @@ export default function EventScreen() {
 
           <Button
             variant="secondary"
-            onPress={() =>
-              router.push(`/clubs/${clubId}/broadcast?eventId=${eventId}`)
-            }
+            onPress={onMessageEveryoneBooked}
             accessibilityLabel="Message everyone booked"
           >
             Message everyone booked

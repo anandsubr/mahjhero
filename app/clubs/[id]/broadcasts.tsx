@@ -1,251 +1,48 @@
+import { useEffect } from 'react';
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text } from 'react-native';
-import Button from '../../../components/Button';
-import Card from '../../../components/Card';
+import { ActivityIndicator } from 'react-native';
 import Screen from '../../../components/Screen';
-import { ChevronLeftIcon } from '../../../components/icons';
-import { fetchBroadcasts, type Broadcast } from '../../../lib/broadcasts';
-import { canInvite, fetchRoster } from '../../../lib/clubs';
+import { openThreadForClub } from '../../../lib/messages';
 import { useSession } from '../../../lib/session';
-import { colors, space, type } from '../../../lib/theme';
+import { colors } from '../../../lib/theme';
 
-export default function BroadcastHistory() {
+/**
+ * Was the sent-broadcast history. The club thread IS that history now, with
+ * every past broadcast backfilled into it by 20260829060000 — and unlike the
+ * old screen it also shows what members said back.
+ */
+export default function BroadcastsRedirect() {
   const { session, loading } = useSession();
-  const userId = session?.user.id;
+  const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { id } = useLocalSearchParams<{ id?: string }>();
-  const clubId = id ?? '';
-
-  const [sent, setSent] = useState<Broadcast[] | null>(null);
-  // Distinguished from `sent === null` on purpose: "not loaded yet" and
-  // "loaded and failed" look identical otherwise, and the screen would say
-  // "you haven't sent anything" to a host whose read was denied.
-  const [ready, setReady] = useState(false);
-
-  // Reachable directly by URL same as app/clubs/[id]/broadcast.tsx, and
-  // gated the same way: RLS filters a non-organizer's read to zero rows
-  // rather than erroring, which without this made "you haven't sent
-  // anything to this club yet" -- with a "Write another" button leading
-  // straight back to the send screen -- the answer for any member who
-  // happened to visit this URL, organizer or not.
-  const [isOrganizer, setIsOrganizer] = useState(false);
-  const [organizerReady, setOrganizerReady] = useState(false);
-  // `fetchRoster` resolves null on ANY failure, indistinguishable from
-  // `isOrganizer = false` unless tracked separately -- see the matching
-  // comment in broadcast.tsx. Collapsing the two told a genuine host, on a
-  // bad connection, the affirmatively false "Only a club's host or
-  // co-organizers can see what's been sent to it."
-  const [rosterFailed, setRosterFailed] = useState(false);
 
   useEffect(() => {
-    if (!clubId) return;
+    if (!session || !id) return;
     let cancelled = false;
-    setReady(false);
-    fetchBroadcasts(clubId).then((rows) => {
+
+    void (async () => {
+      const result = await openThreadForClub(id);
       if (cancelled) return;
-      setSent(rows);
-      setReady(true);
-    });
+      router.replace(result.id ? `/messages/${result.id}` : `/clubs/${id}`);
+    })();
+
     return () => {
       cancelled = true;
     };
-  }, [clubId]);
-
-  useEffect(() => {
-    // Only reachable via a malformed route -- but without this, the effect
-    // below never runs when either id is missing, and `organizerReady`
-    // stayed false forever: a spinner with no escape, on a screen that
-    // rendered fine before this gate existed. Fail closed instead of
-    // hanging.
-    if (!userId || !clubId) {
-      setIsOrganizer(false);
-      setRosterFailed(false);
-      setOrganizerReady(true);
-      return;
-    }
-    let cancelled = false;
-    setOrganizerReady(false);
-    fetchRoster(clubId).then((rows) => {
-      if (cancelled) return;
-      const me = (rows ?? []).find((m) => m.profile_id === userId);
-      setIsOrganizer(me ? canInvite(me.role) : false);
-      setRosterFailed(rows === null);
-      setOrganizerReady(true);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [userId, clubId]);
-
-  async function retryRoster() {
-    setOrganizerReady(false);
-    const rows = await fetchRoster(clubId);
-    const me = (rows ?? []).find((m) => m.profile_id === userId);
-    setIsOrganizer(me ? canInvite(me.role) : false);
-    setRosterFailed(rows === null);
-    setOrganizerReady(true);
-  }
+  }, [session, id, router]);
 
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered}>
-        <ActivityIndicator />
+      <Screen center>
+        <ActivityIndicator color={colors.accentColor} />
       </Screen>
     );
   }
-
   if (!session) return <Redirect href="/sign-in" />;
 
-  if (!organizerReady) {
-    return (
-      <Screen center contentStyle={styles.centered}>
-        <ActivityIndicator />
-      </Screen>
-    );
-  }
-
-  if (rosterFailed) {
-    // Distinct from "not an organizer": the check itself did not run, so
-    // it must not be spoken as an answer either way. A retry, not a false
-    // claim that the viewer can't see what their club has sent.
-    return (
-      <Screen scroll contentStyle={styles.container}>
-        <Button
-          variant="ghost"
-          big={false}
-          onPress={() => router.push(`/clubs/${clubId}`)}
-          icon={<ChevronLeftIcon color={colors.accentColor} />}
-          accessibilityLabel="Back to the club"
-          style={styles.backButton}
-        >
-          Club
-        </Button>
-        <Text style={styles.heading}>Sent messages</Text>
-        <Card>
-          <Text style={styles.help}>
-            Couldn't check whether you can see what's been sent to this club.
-          </Text>
-          <Button
-            variant="ghost"
-            big={false}
-            onPress={retryRoster}
-            accessibilityLabel="Try checking your role again"
-          >
-            Try again
-          </Button>
-        </Card>
-      </Screen>
-    );
-  }
-
-  if (!isOrganizer) {
-    return (
-      <Screen scroll contentStyle={styles.container}>
-        <Button
-          variant="ghost"
-          big={false}
-          onPress={() => router.push(`/clubs/${clubId}`)}
-          icon={<ChevronLeftIcon color={colors.accentColor} />}
-          accessibilityLabel="Back to the club"
-          style={styles.backButton}
-        >
-          Club
-        </Button>
-        <Text style={styles.heading}>Sent messages</Text>
-        <Card>
-          <Text style={styles.help}>
-            Only a club's host or co-organizers can see what's been sent to
-            it.
-          </Text>
-        </Card>
-      </Screen>
-    );
-  }
-
   return (
-    <Screen scroll contentStyle={styles.container}>
-      <Button
-        variant="ghost"
-        big={false}
-        onPress={() => router.push(`/clubs/${clubId}`)}
-        icon={<ChevronLeftIcon color={colors.accentColor} />}
-        accessibilityLabel="Back to the club"
-        style={styles.backButton}
-      >
-        Club
-      </Button>
-
-      <Text style={styles.heading}>Sent messages</Text>
-
-      {!ready ? (
-        <ActivityIndicator />
-      ) : sent === null ? (
-        <Card>
-          <Text style={styles.help}>We couldn't load what you've sent.</Text>
-        </Card>
-      ) : sent.length === 0 ? (
-        <Card>
-          <Text style={styles.help}>
-            You haven't sent anything to this club yet.
-          </Text>
-        </Card>
-      ) : (
-        sent.map((message) => (
-          <Card key={message.id} style={styles.item}>
-            <Text style={styles.subject}>{message.subject}</Text>
-            <Text style={styles.body}>{message.body}</Text>
-            <Text style={styles.meta}>
-              {message.recipient_count === 1
-                ? 'Sent to 1 member'
-                : `Sent to ${message.recipient_count} members`}
-              {message.event_id ? ' booked into one game' : ''}
-            </Text>
-          </Card>
-        ))
-      )}
-
-      <Button
-        variant="secondary"
-        onPress={() => router.push(`/clubs/${clubId}/broadcast`)}
-        accessibilityLabel="Write another message"
-      >
-        Write another
-      </Button>
+    <Screen center>
+      <ActivityIndicator color={colors.accentColor} />
     </Screen>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { padding: space[6], gap: space[3] },
-  centered: { alignItems: 'center' },
-  backButton: { alignSelf: 'flex-start' },
-  heading: {
-    fontFamily: type.heading,
-    fontSize: type.size.h2,
-    color: colors.text,
-  },
-  item: { gap: space[2] },
-  subject: {
-    fontFamily: type.bodyBold,
-    fontSize: type.size.body,
-    color: colors.text,
-  },
-  body: {
-    fontFamily: type.bodyRegular,
-    fontSize: type.size.body,
-    lineHeight: 24,
-    color: colors.text,
-  },
-  meta: {
-    fontFamily: type.bodyRegular,
-    fontSize: type.size.helper,
-    color: colors.textMuted,
-  },
-  help: {
-    fontFamily: type.bodyRegular,
-    fontSize: type.size.helper,
-    lineHeight: 22,
-    color: colors.textMuted,
-  },
-});

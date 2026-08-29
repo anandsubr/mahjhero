@@ -80,7 +80,7 @@ import {
   updateEventSeries,
   updateEventTable,
 } from './events';
-import { BROADCAST_COLUMNS, fetchBroadcasts } from './broadcasts';
+import { BROADCAST_COLUMNS } from './broadcasts';
 import type { Broadcast } from './broadcasts';
 import {
   archiveVenue,
@@ -1811,7 +1811,7 @@ describe.runIf(reachable || required)('broadcasts schema contract', () => {
     // Seeded through the service-role client rather than send_broadcast —
     // this suite is testing what the SELECT side hands back, not the RPC's
     // own fan-out. event_id null (the whole-roster case) exercises the
-    // branch fetchBroadcasts's type declares as nullable.
+    // branch the `Broadcast` type declares as nullable.
     const { data: broadcast, error: broadcastError } = await admin
       .from('broadcasts')
       .insert({
@@ -1838,12 +1838,21 @@ describe.runIf(reachable || required)('broadcasts schema contract', () => {
     if (admin && userId) await admin.auth.admin.deleteUser(userId);
   });
 
-  it('answers with the shape lib/broadcasts.ts claims', async () => {
-    const rows = await fetchBroadcasts(clubId);
-    expect(rows).not.toBeNull();
+  it('answers with the shape the `Broadcast` type claims', async () => {
+    // fetchBroadcasts is gone (Task 15 absorbed the broadcast compose and
+    // history screens into the message threads) — the RLS-governed read it
+    // used to wrap is exercised directly here instead, through the same
+    // authenticated client and column list fetchBroadcasts used to use.
+    const { data, error } = await supabase
+      .from('broadcasts')
+      .select(BROADCAST_COLUMNS)
+      .eq('club_id', clubId)
+      .order('created_at', { ascending: false });
+    expect(error).toBeNull();
+    const rows = (data ?? []) as unknown as Broadcast[];
     expect(rows).toHaveLength(1);
 
-    const [row] = rows!;
+    const [row] = rows;
     // Every field the type declares, with the type it declares. This is the
     // boundary Critical 1 lived in: both suites were green while
     // `quiet_hours_start` arrived as "21:00:00" and the client expected

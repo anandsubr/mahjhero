@@ -363,8 +363,10 @@ export async function seedClubWithEvent(profileId: string): Promise<{
   /** A table one short of a fourth, inside the 48-hour call window, for
    * the `event needs a fourth` baseline. */
   needsAFourthEventId: string;
-  /** One broadcast already sent to Riverside, for the `broadcast history`
-   * baseline. */
+  /** One broadcast already sent to Riverside. The `broadcast history`
+   * baseline that read this row was retired in Task 15 — the row is left
+   * in place as harmless fixture data exercising the `broadcasts` table,
+   * which lib/schema-contract.test.ts and the Edge Function still read. */
   broadcastId: string;
   /** Check-in required, window open at the frozen clock, one person per
    * door-screen render group — for the `check-in door` baseline. */
@@ -434,10 +436,10 @@ export async function seedClubWithEvent(profileId: string): Promise<{
     );
   }
 
-  // One broadcast already sent, so `broadcast history` has a real row to
-  // screenshot rather than the empty state. event_id null — the
-  // whole-roster case — since nothing about that baseline needs the
-  // event-scoped variant.
+  // One broadcast already sent. This used to give `broadcast history` a
+  // real row to screenshot rather than the empty state; that baseline is
+  // gone (Task 15), but the row is kept as harmless fixture data. event_id
+  // null — the whole-roster case.
   const broadcast = need<{ id: string }>(
     'broadcast insert',
     await admin

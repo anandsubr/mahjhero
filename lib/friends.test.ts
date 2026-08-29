@@ -55,7 +55,7 @@ describe('fetchFriends', () => {
 
   // null is reserved for "we could not ask" so the screen can tell that
   // apart from "you have no friends" and show an error instead of an empty
-  // state. Same contract as fetchBroadcasts in lib/broadcasts.ts.
+  // state. Same contract as fetchThreadMessages in lib/messages.ts.
   it('resolves null on failure rather than rejecting', async () => {
     rpcMock.mockResolvedValueOnce({ data: null, error: { message: 'boom' } });
     await expect(fetchFriends()).resolves.toBeNull();
@@ -98,8 +98,8 @@ describe('addFriend', () => {
 
   // add_friend's refusal is written to be read by a member — "you can only
   // add someone from one of your clubs" — so it is relayed verbatim rather
-  // than flattened to GENERIC_ERROR. Same contract sendBroadcast records in
-  // lib/broadcasts.ts.
+  // than flattened to GENERIC_ERROR. Same contract lib/messages.ts records
+  // for postMessage.
   it('relays the refusal verbatim', async () => {
     rpcMock.mockResolvedValueOnce({
       data: null,

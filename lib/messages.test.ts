@@ -428,7 +428,7 @@ describe('postMessage', () => {
 
   // post_message's refusals are already written to be read by a member --
   // "you cannot post in this conversation" -- so they are relayed verbatim.
-  // Same deliberate contract as sendBroadcast in lib/broadcasts.ts.
+  // Same deliberate contract as addFriend in lib/friends.ts.
   it('relays a refusal verbatim', async () => {
     rpcMock.mockResolvedValueOnce({
       data: null,
