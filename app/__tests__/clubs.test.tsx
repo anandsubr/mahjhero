@@ -1045,6 +1045,22 @@ describe('club detail screen', () => {
     expect(screen.queryByTestId('pip-dash')).toBeNull();
   });
 
+  // This button used to push to a compose screen that emailed the whole
+  // roster; it now opens an in-app thread with the "Also email everyone"
+  // toggle off by default. "Message members" was left over from the old
+  // behaviour, and an organizer's muscle memory would read it as "this
+  // emails the club" — which it no longer does.
+  it('offers to open the club thread, not the old email-flavoured label', async () => {
+    fetchRoster.mockResolvedValue([
+      { profile_id: 'test-user', role: 'host', display_name: 'Ada', skill_level: null },
+    ]);
+    render(<ClubDetailScreen />);
+    expect(
+      await screen.findByRole('button', { name: 'Open the club thread' }),
+    ).toBeTruthy();
+    expect(screen.queryByText('Message members')).toBeNull();
+  });
+
   // TabBar navigates with router.replace off an entry route that is itself a
   // Redirect, so the history stack is typically one deep. A club screen with
   // no bar and (below) no back button would be a dead end on native.

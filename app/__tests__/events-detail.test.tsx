@@ -491,6 +491,20 @@ describe('organizer view', () => {
     fetchRoster.mockResolvedValue(HOST_ROLE);
   });
 
+  // This button used to push to a compose screen that emailed the
+  // confirmed bookings; it now opens an in-app thread with the "Also email
+  // everyone" toggle off by default. "Message everyone booked" was left
+  // over from the old behaviour, and an organizer's muscle memory would
+  // read it as "this emails everyone booked" — which it no longer does.
+  it('offers to open the game thread, not the old email-flavoured label', async () => {
+    render(<EventScreen />);
+    await screen.findByText('Thursday Mahjong');
+    expect(
+      await screen.findByRole('button', { name: 'Open the game thread' }),
+    ).toBeTruthy();
+    expect(screen.queryByText('Message everyone booked')).toBeNull();
+  });
+
   it('shows tier chip buttons and retiers a table', async () => {
     render(<EventScreen />);
     await screen.findByText('Thursday Mahjong');

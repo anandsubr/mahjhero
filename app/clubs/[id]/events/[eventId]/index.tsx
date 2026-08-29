@@ -999,12 +999,22 @@ export default function EventScreen() {
             Add a table
           </Button>
 
+          {/*
+            "Message everyone booked" -- this button's label before it
+            stopped pushing to a compose screen that emailed the confirmed
+            bookings -- is muscle-memory copy for an action that no longer
+            emails anybody. Ordinary messages never email; only the thread
+            screen's own "Also email everyone" toggle does, and it defaults
+            off. Naming the destination rather than the old verb keeps the
+            label honest. See the identical fix on app/clubs/[id]/index.tsx's
+            "Message members" button.
+          */}
           <Button
             variant="secondary"
             onPress={onMessageEveryoneBooked}
-            accessibilityLabel="Message everyone booked"
+            accessibilityLabel="Open the game thread"
           >
-            Message everyone booked
+            Open the game thread
           </Button>
 
           {/*

@@ -280,12 +280,18 @@ export default function ClubDetailScreen() {
       ) : null}
 
       {mayInvite ? (
+        // "Message members" -- this button's label before it stopped
+        // pushing to a compose screen that emailed the roster -- is
+        // muscle-memory copy for an action that no longer emails anybody.
+        // Ordinary messages never email; only the thread screen's own
+        // "Also email everyone" toggle does, and it defaults off. Naming
+        // the destination rather than the old verb keeps the label honest.
         <Button
           variant="secondary"
           onPress={onMessageMembers}
-          accessibilityLabel="Message members"
+          accessibilityLabel="Open the club thread"
         >
-          Message members
+          Open the club thread
         </Button>
       ) : null}
 

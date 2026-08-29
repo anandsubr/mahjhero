@@ -202,7 +202,15 @@ export default function NewMessageScreen() {
           {target === 'everyone' ? (
             <Card background={colors.accent2[100]}>
               <Text style={styles.note}>
-                Goes to everyone at {clubName} as a club announcement.
+                {/*
+                  Ordinary messages never email -- only the thread screen's
+                  "Also email everyone" toggle does, and it defaults off.
+                  This used to say "as a club announcement", which read as a
+                  promise that picking Everyone reaches the outbox. It does
+                  not: Send here posts in the app only.
+                */}
+                Goes to everyone at {clubName}, in the app. Email is a
+                separate opt-in on the thread.
               </Text>
             </Card>
           ) : (

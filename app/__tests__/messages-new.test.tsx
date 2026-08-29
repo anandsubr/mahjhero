@@ -69,6 +69,18 @@ describe('new message screen', () => {
     expect(screen.queryByText('A group')).toBeNull();
   });
 
+  // Picking Everyone lands on a thread with `announce` defaulting false --
+  // Send posts in the app only. The note used to say "as a club
+  // announcement", which reads as a promise that this reaches the outbox;
+  // it does not, and the old copy contradicted the toggle it sits above.
+  it('says Everyone posts in the app, not that it announces or emails', async () => {
+    render(<NewMessageScreen />);
+    expect(
+      await screen.findByText(/Goes to everyone at Riverside, in the app\./),
+    ).toBeTruthy();
+    expect(screen.queryByText(/as a club announcement/)).toBeNull();
+  });
+
   // A member in one club has nothing to switch between.
   //
   // The brief's version of this test called render() a second time inside
