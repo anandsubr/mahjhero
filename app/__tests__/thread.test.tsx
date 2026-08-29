@@ -26,13 +26,24 @@ vi.mock('expo-router', () => ({
   },
 }));
 
-// A module-scoped constant, not a fresh object literal per render: a fresh
-// object breaks the referential stability the real Context provides and
-// produces a genuine render loop in effects that depend on `session`.
-const SESSION_STATE = { session: { user: { id: 'me' } }, loading: false };
+// A `vi.fn()` whose return value is set in `beforeEach` and held fixed for
+// the body of a test, not a fresh object literal per render: a fresh object
+// on every call breaks the referential stability the real Context provides
+// and produces a genuine render loop in effects that depend on `session`.
+// The regression test below reassigns it mid-test (same shape
+// `app/__tests__/index-screen.test.tsx` and `lib/use-viewer.test.tsx` already
+// use) to model `lib/session.tsx` handing out a fresh `Session` object with
+// the same user id on `TOKEN_REFRESHED` -- the trap `lib/use-viewer.ts`'s
+// docstring documents.
+const useSessionMock = vi.fn(
+  (): { session: { user: { id: string } } | null; loading: boolean } => ({
+    session: { user: { id: 'me' } },
+    loading: false,
+  }),
+);
 
 vi.mock('../../lib/session', () => ({
-  useSession: () => SESSION_STATE,
+  useSession: () => useSessionMock(),
 }));
 
 const fetchThread = vi.fn();
@@ -74,19 +85,95 @@ vi.mock('../../lib/messages', async () => {
   };
 });
 
-// The Realtime boundary. `on` and `subscribe` chain, and `removeChannel` is
-// what the unsubscribe assertion below watches.
-const channelOn = vi.fn();
-const channelSubscribe = vi.fn();
-const removeChannel = vi.fn();
-const channel = { on: channelOn, subscribe: channelSubscribe };
-channelOn.mockReturnValue(channel);
-channelSubscribe.mockReturnValue(channel);
+// The Realtime boundary, modeled after the real behavior traced in
+// node_modules/@supabase/realtime-js, not just its call shape:
+//
+//  - `supabase.channel(topic)` REUSES: RealtimeClient.channel finds an
+//    existing channel by topic and returns it rather than creating a
+//    second one. A stub that hands back a fresh object per call cannot see
+//    a bug that depends on the second call getting the SAME, already-
+//    subscribed channel back.
+//  - `.on()` on the real RealtimeChannel THROWS once the channel is
+//    subscribed (RealtimeChannel.js:418) -- that's the exact crash this
+//    file exists to catch, so the double has to be able to throw it too.
+//  - `removeChannel` is ASYNC on the real client (it awaits
+//    `channel.unsubscribe()` before deregistering the topic); a
+//    synchronous double would let a test pass by accident on timing the
+//    real client never provides, since a React cleanup can't await it.
+// Typed as plain call signatures, not `ReturnType<typeof vi.fn>`: `vi.fn`
+// is itself generic, so extracting its return type without pinning the
+// type parameter resolves against the generic's constraint
+// (`Procedure | Constructable`) rather than a real function, and a `Mock`
+// of that union loses its call signature entirely -- `mock.on(...)` would
+// no longer type-check as callable. `vi.fn(impl)` still returns a `Mock<T>`
+// that is assignable to these plain signatures, so nothing about the
+// mocking itself changes.
+type MockChannel = {
+  topic: string;
+  subscribed: boolean;
+  on: (...args: unknown[]) => MockChannel;
+  subscribe: () => MockChannel;
+  unsubscribe: () => Promise<string>;
+};
+
+let channelsByTopic: Map<string, MockChannel>;
+
+function makeMockChannel(topic: string): MockChannel {
+  const ch = {} as MockChannel;
+  ch.topic = topic;
+  ch.subscribed = false;
+  ch.on = vi.fn((..._args: unknown[]) => {
+    if (ch.subscribed) {
+      throw new Error(
+        `cannot add \`postgres_changes\` callbacks for realtime:${topic} after \`subscribe()\`.`,
+      );
+    }
+    return ch;
+  });
+  ch.subscribe = vi.fn(() => {
+    ch.subscribed = true;
+    return ch;
+  });
+  // Real unsubscribe() also returns a Promise; nothing here reads the
+  // result, but shape parity with the client matters more than
+  // convenience.
+  ch.unsubscribe = vi.fn(async () => {
+    // The real unsubscribe() waits on a server round trip before the
+    // channel is actually torn down -- it does not flip synchronously.
+    // React's cleanup for the old effect and the setup for the new one run
+    // synchronously back to back in the same commit, with no microtask
+    // flush in between; this await is what lets that new setup still find
+    // the channel subscribed, exactly as the real async client does. A
+    // synchronous flip here would make `subscribed` already false by the
+    // time the new effect body runs, and the mock would fail to reproduce
+    // the crash it exists to catch.
+    await Promise.resolve();
+    ch.subscribed = false;
+    return 'ok';
+  });
+  return ch;
+}
+
+const channelFn = vi.fn<(topic: string) => MockChannel>((topic) => {
+  const existing = channelsByTopic.get(topic);
+  if (existing) return existing;
+  const created = makeMockChannel(topic);
+  channelsByTopic.set(topic, created);
+  return created;
+});
+
+// Async, like the real RealtimeClient.removeChannel: it awaits the
+// channel's own unsubscribe before the topic is free to be reused.
+const removeChannel = vi.fn(async (ch: MockChannel): Promise<string> => {
+  await ch.unsubscribe();
+  channelsByTopic.delete(ch.topic);
+  return 'ok';
+});
 
 vi.mock('../../lib/supabase', () => ({
   supabase: {
-    channel: vi.fn(() => channel),
-    removeChannel: (...a: unknown[]) => removeChannel(...a),
+    channel: (...a: [string]) => channelFn(...a),
+    removeChannel: (...a: [MockChannel]) => removeChannel(...a),
   },
 }));
 
@@ -151,8 +238,12 @@ const MESSAGES = [
 describe('thread screen', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    channelOn.mockReturnValue(channel);
-    channelSubscribe.mockReturnValue(channel);
+    // clearAllMocks resets call history but not a mock's configured return
+    // value, so both need re-establishing explicitly each test -- otherwise
+    // whatever the previous test last set (a reassigned session, a leftover
+    // topic) would leak forward.
+    useSessionMock.mockReturnValue({ session: { user: { id: 'me' } }, loading: false });
+    channelsByTopic = new Map();
     fetchThread.mockResolvedValue(CLUB_THREAD);
     fetchThreadMessages.mockResolvedValue(MESSAGES);
     postMessage.mockResolvedValue({ id: 'm3', error: null });
@@ -220,8 +311,14 @@ describe('thread screen', () => {
 
   it('subscribes to the thread and tears the channel down on unmount', async () => {
     const { unmount } = render(<ThreadScreen />);
-    await waitFor(() => expect(channelSubscribe).toHaveBeenCalled());
-    expect(channelOn).toHaveBeenCalledWith(
+    await waitFor(() => expect(channelsByTopic.size).toBe(1));
+    const ch = [...channelsByTopic.values()][0];
+    // The topic must still carry the thread id, so a live channel is
+    // identifiable when debugging -- it need not equal `thread:t1` exactly,
+    // since the fix makes it unique per subscription.
+    expect(ch.topic.startsWith('thread:t1')).toBe(true);
+    expect(ch.subscribe).toHaveBeenCalled();
+    expect(ch.on).toHaveBeenCalledWith(
       'postgres_changes',
       expect.objectContaining({
         event: 'INSERT',
@@ -234,7 +331,36 @@ describe('thread screen', () => {
     unmount();
     // An un-torn-down subscription is the bug this kind of screen actually
     // ships, and nothing else in the suite would notice it.
-    expect(removeChannel).toHaveBeenCalledWith(channel);
+    expect(removeChannel).toHaveBeenCalledWith(ch);
+  });
+
+  // The regression this file exists to add. `session` is an OBJECT, and
+  // lib/session.tsx hands out a fresh one on every onAuthStateChange --
+  // TOKEN_REFRESHED included, which fires within the hour and on web tab
+  // focus (see lib/use-viewer.ts's docstring, which documents the identical
+  // trap). If the effect below is keyed on that object, a same-user token
+  // refresh re-runs it; `supabase.channel(topic)` then hands back the SAME,
+  // still-subscribed channel (removeChannel is async, so the old channel's
+  // teardown hasn't landed by the time the new effect body runs), and `.on()`
+  // throws on an already-subscribed channel. A new session object with the
+  // SAME user id is exactly what a token refresh produces, so that -- not a
+  // changed user -- is the realistic trigger reproduced here.
+  it('survives a same-user session refresh without throwing, and ends with exactly one live subscription', async () => {
+    const { rerender } = render(<ThreadScreen />);
+    await waitFor(() => expect(channelsByTopic.size).toBe(1));
+
+    // A brand-new Session object, same user id -- what TOKEN_REFRESHED hands
+    // `onAuthStateChange` in lib/session.tsx.
+    useSessionMock.mockReturnValue({
+      session: { user: { id: 'me' } },
+      loading: false,
+    });
+    expect(() => rerender(<ThreadScreen />)).not.toThrow();
+
+    await waitFor(() => {
+      const live = [...channelsByTopic.values()].filter((c) => c.subscribed);
+      expect(live.length).toBe(1);
+    });
   });
 
   it('renders an announcement with its subject and a tag', async () => {

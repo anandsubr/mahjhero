@@ -55,6 +55,13 @@ type Candidate = { profile_id: string; display_name: string; meta: string };
  * `appScreens` entry, `thread` included — it is not gated to the four tabs
  * themselves.
  */
+// Monotonic, not `Date.now()`/`Math.random()`: incremented once per Realtime
+// subscription below so a topic can never be handed back to a still-live
+// channel, no matter how the clock or a PRNG behave. See the effect's own
+// comment for why a unique topic (not just the dependency-array fix beside
+// it) is required.
+let subscriptionSeq = 0;
+
 export default function ThreadScreen() {
   const { session, loading } = useSession();
   const { threadId } = useLocalSearchParams<{ threadId: string }>();
@@ -148,8 +155,23 @@ export default function ThreadScreen() {
   useEffect(() => {
     if (!session || !threadId) return;
 
+    // `supabase.channel(topic)` REUSES an existing channel by topic
+    // (RealtimeClient.channel), and `removeChannel` is async -- it awaits
+    // `channel.unsubscribe()` before deregistering the topic. A React
+    // cleanup cannot await, so if this effect re-runs with the same topic,
+    // `channel()` can hand back the OLD, still-subscribed channel, and
+    // `.on()` throws on it. `subscriptionSeq` makes every subscription's
+    // topic unique so that can never happen, regardless of how slow the
+    // teardown is: it is a monotonic counter incremented once per
+    // subscription, not `Date.now()`/`Math.random()`, so within one JS
+    // process it can never repeat and hand back a live channel -- not even
+    // under React's dev double-mount or a `threadId` change racing the old
+    // channel's teardown. `threadId` stays in the topic so a live channel
+    // is still identifiable when debugging.
+    const topic = `thread:${threadId}:${++subscriptionSeq}`;
+
     const channel = supabase
-      .channel(`thread:${threadId}`)
+      .channel(topic)
       .on(
         'postgres_changes',
         {
@@ -179,7 +201,15 @@ export default function ThreadScreen() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [session, threadId]);
+    // Keyed on `session?.user.id`, NOT `session`: lib/session.tsx hands out
+    // a fresh Session object on every onAuthStateChange, TOKEN_REFRESHED
+    // included, which fires within the hour and on web tab focus. Depending
+    // on the object would re-subscribe on every refresh for a value that
+    // only changes on a real account switch -- the same reasoning
+    // lib/use-viewer.ts and app/profile.tsx already record for their own
+    // effects.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.user.id, threadId]);
 
   const send = useCallback(async () => {
     if (sendingRef.current || !threadId) return;
