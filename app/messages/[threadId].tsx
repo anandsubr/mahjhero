@@ -313,17 +313,46 @@ export default function ThreadScreen() {
         <ActivityIndicator color={colors.accentColor} />
       ) : (
         <>
-          {canManageMembers ? (
+          <Text style={styles.heading}>{title}</Text>
+
+          {/*
+            The heading itself is plain text, not a Pressable: wrapping it
+            with accessibilityLabel="Members" (the previous shape of this
+            control) reintroduced the exact bug the last round fixed at
+            TabBar/ClubChips/ThreadRow -- react-native-web's aria-label
+            REPLACES the accessible name computed from a Pressable's
+            children rather than merging with it, and the heading is the
+            only place the thread's title appears. So the title now always
+            reaches assistive tech on its own, and this separate control
+            below composes the title back INTO its own label (the same
+            unreadSuffix-style pattern those three sites use) so a
+            screen-reader user still hears which conversation the control
+            belongs to, plus what pressing it does.
+
+            It also needed a visible affordance a sighted user could see: the
+            bare heading gave no chevron, underline, or "Members" text, so
+            leaving a group -- the whole point of the CRITICAL fix that added
+            this panel -- was reachable only by an invisible tap on the
+            title. The member count rendered as its own tappable line (the
+            same idea as this file's `replyText`/`replyingCancel` coloured
+            link text, not an invented control) both signals interactivity
+            and tells a sighted user something real before they tap it.
+          */}
+          {canManageMembers && thread ? (
             <Pressable
               onPress={() => setMembersOpen((v) => !v)}
               accessibilityRole="button"
-              accessibilityLabel="Members"
+              accessibilityLabel={`${title}, ${thread.thread_members.length} ${
+                thread.thread_members.length === 1 ? 'member' : 'members'
+              }, view members`}
+              style={styles.membersToggle}
             >
-              <Text style={styles.heading}>{title}</Text>
+              <Text style={styles.membersToggleText}>
+                {thread.thread_members.length}{' '}
+                {thread.thread_members.length === 1 ? 'member' : 'members'}
+              </Text>
             </Pressable>
-          ) : (
-            <Text style={styles.heading}>{title}</Text>
-          )}
+          ) : null}
 
           {canManageMembers && membersOpen && thread ? (
             <View style={styles.membersPanel}>
@@ -599,6 +628,18 @@ const styles = StyleSheet.create({
     fontSize: type.size.h3,
     color: colors.text,
   },
+  // Same visible-link language as `replyText`/`replyingCancel` further down
+  // this file: coloured semibold text, no chevron or underline invented.
+  // accent[700] on colors.bg (this screen's ground -- see Screen.tsx's
+  // default) is the same pairing lib/theme.test.ts already pins at 5.72:1
+  // for the unread badge/bubble/Send button, so this reuses an existing
+  // pin rather than needing a new one.
+  membersToggle: { alignSelf: 'flex-start' },
+  membersToggleText: {
+    fontFamily: type.bodySemiBold,
+    fontSize: type.size.helper,
+    color: colors.accent[700],
+  },
   scroller: { flex: 1 },
   membersPanel: {
     gap: space[2],
@@ -627,7 +668,15 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: 'transparent',
   },
-  candidateRowOn: { borderColor: colors.accentColor },
+  // accent[700], not the artboard's accentColor: colors.bg on accentColor
+  // measures 3.030:1, a 0.03 margin over the 3:1 non-text bar that
+  // lib/theme.test.ts had no pin for. Selection is also conveyed by
+  // aria-selected, so this was never a correctness bug, but a margin that
+  // thin is exactly what the existing pins exist to prevent. accent[700] on
+  // colors.bg reads 5.72:1 and is already pinned there (the same pairing
+  // this file's `mine` bubble and `send` button use), so this reuses
+  // headroom that exists rather than adding a new pin for a fresh pairing.
+  candidateRowOn: { borderColor: colors.accent[700] },
   candidateName: {
     fontFamily: type.bodySemiBold,
     fontSize: type.size.helper,

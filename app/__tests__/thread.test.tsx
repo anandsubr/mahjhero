@@ -106,6 +106,12 @@ const GROUP_THREAD = {
   ],
 };
 
+// The members control's accessible name composes the thread title, the
+// member count, and what pressing it does -- see the component's own
+// comment on why. GROUP_THREAD's title (threadTitleFor's "join first
+// names" branch) is "Sara, Peter", and it has 3 thread_members.
+const GROUP_MEMBERS_LABEL = 'Sara, Peter, 3 members, view members';
+
 const MESSAGES = [
   {
     id: 'm1',
@@ -481,14 +487,34 @@ describe('thread screen', () => {
     it('offers no Members control on a club thread', async () => {
       render(<ThreadScreen />);
       await screen.findByText('Everyone at Riverside');
+      expect(screen.queryByLabelText(/view members/i)).toBeNull();
+    });
+
+    // react-native-web's aria-label REPLACES the accessible name computed
+    // from a Pressable's children -- it does not merge with it. A test that
+    // only looks for a "Members" control (as the previous round's tests did)
+    // would pass even when the control's accessibilityLabel is the bare
+    // string "Members", which is exactly the regression: the heading is the
+    // only place the thread's title appears, so a screen-reader user who
+    // never learns the label carries the title never learns which
+    // conversation they are in. This asserts the accessible NAME itself
+    // carries the title, not merely that some control exists.
+    it("composes the thread title into the members control's accessible name", async () => {
+      fetchThread.mockResolvedValueOnce(GROUP_THREAD);
+      fetchThreadMessages.mockResolvedValueOnce([]);
+      render(<ThreadScreen />);
+      await screen.findByText('Sara, Peter');
       expect(screen.queryByLabelText('Members')).toBeNull();
+      expect(
+        await screen.findByLabelText(/^Sara, Peter,.*view members$/),
+      ).toBeTruthy();
     });
 
     it('opens a members panel listing the roster, for a group thread', async () => {
       fetchThread.mockResolvedValueOnce(GROUP_THREAD);
       fetchThreadMessages.mockResolvedValueOnce([]);
       render(<ThreadScreen />);
-      fireEvent.click(await screen.findByLabelText('Members'));
+      fireEvent.click(await screen.findByLabelText(GROUP_MEMBERS_LABEL));
       expect(await screen.findByText('You')).toBeTruthy();
       expect(screen.getByText('Sara Lindqvist')).toBeTruthy();
       expect(screen.getByText('Peter Ng')).toBeTruthy();
@@ -503,7 +529,7 @@ describe('thread screen', () => {
       fetchThread.mockResolvedValue(GROUP_THREAD);
       fetchThreadMessages.mockResolvedValueOnce([]);
       render(<ThreadScreen />);
-      fireEvent.click(await screen.findByLabelText('Members'));
+      fireEvent.click(await screen.findByLabelText(GROUP_MEMBERS_LABEL));
       fireEvent.click(await screen.findByLabelText('Add people'));
       fireEvent.click(await screen.findByLabelText('Bob Reyes'));
       fireEvent.click(screen.getByLabelText('Add'));
@@ -531,7 +557,7 @@ describe('thread screen', () => {
       fetchThread.mockResolvedValue(GROUP_THREAD);
       fetchThreadMessages.mockResolvedValueOnce([]);
       render(<ThreadScreen />);
-      fireEvent.click(await screen.findByLabelText('Members'));
+      fireEvent.click(await screen.findByLabelText(GROUP_MEMBERS_LABEL));
       fireEvent.click(await screen.findByLabelText('Add people'));
       fireEvent.click(await screen.findByLabelText('Bob Reyes'));
       const add = screen.getByLabelText('Add');
@@ -557,7 +583,7 @@ describe('thread screen', () => {
       fetchThread.mockResolvedValueOnce(GROUP_THREAD);
       fetchThreadMessages.mockResolvedValueOnce([]);
       render(<ThreadScreen />);
-      fireEvent.click(await screen.findByLabelText('Members'));
+      fireEvent.click(await screen.findByLabelText(GROUP_MEMBERS_LABEL));
       fireEvent.click(await screen.findByLabelText('Leave'));
       expect(leaveGroupThread).not.toHaveBeenCalled();
       fireEvent.click(await screen.findByLabelText('Confirm leave'));
@@ -572,7 +598,7 @@ describe('thread screen', () => {
       fetchThread.mockResolvedValueOnce(GROUP_THREAD);
       fetchThreadMessages.mockResolvedValueOnce([]);
       render(<ThreadScreen />);
-      fireEvent.click(await screen.findByLabelText('Members'));
+      fireEvent.click(await screen.findByLabelText(GROUP_MEMBERS_LABEL));
       fireEvent.click(await screen.findByLabelText('Leave'));
       fireEvent.click(await screen.findByLabelText('Confirm leave'));
       expect(
@@ -594,7 +620,7 @@ describe('thread screen', () => {
       fetchThread.mockResolvedValueOnce(GROUP_THREAD);
       fetchThreadMessages.mockResolvedValueOnce([]);
       render(<ThreadScreen />);
-      fireEvent.click(await screen.findByLabelText('Members'));
+      fireEvent.click(await screen.findByLabelText(GROUP_MEMBERS_LABEL));
       fireEvent.click(await screen.findByLabelText('Leave'));
       const confirm = await screen.findByLabelText('Confirm leave');
 

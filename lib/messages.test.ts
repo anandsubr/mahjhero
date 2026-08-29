@@ -106,9 +106,16 @@ describe('deriveSubject', () => {
     const subject = deriveSubject('😀'.repeat(130));
     expect(Array.from(subject)).toHaveLength(120);
     expect(subject.endsWith('…')).toBe(true);
-    // Every UTF-16 unit pairs up correctly -- a split surrogate would leave
-    // a lone low or high surrogate as its own "character" here.
-    expect(Array.from(subject).every((ch) => ch !== '�')).toBe(true);
+    // Splitting a surrogate pair never produces U+FFFD -- it leaves a lone
+    // \uD83D (or similar) in the string, which `ch !== '�'` can never catch
+    // no matter what `subject` holds. Check for an actual unpaired
+    // surrogate instead: a high surrogate not immediately followed by its
+    // low half, or a low surrogate not immediately preceded by its high
+    // half. A naive `.slice(0, 119)` truncation (by UTF-16 unit, not
+    // codepoint) leaves exactly this at the cut point.
+    const lonelySurrogate =
+      /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]/;
+    expect(lonelySurrogate.test(subject)).toBe(false);
   });
 });
 
