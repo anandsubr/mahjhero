@@ -16,9 +16,11 @@ import { colors, radius, type } from '../lib/theme';
 export default function DateTile({
   startsAt,
   timezone,
+  testID,
 }: {
   startsAt: string;
   timezone: string;
+  testID?: string;
 }) {
   const when = new Date(startsAt);
   // Same RangeError guard as lib/events.ts's formatEventWhen — and this tile
@@ -43,6 +45,7 @@ export default function DateTile({
   return (
     <View
       style={styles.tile}
+      testID={testID}
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
     >
