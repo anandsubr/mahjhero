@@ -66,7 +66,26 @@ export default function ThreadScreen() {
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  // `sending` above is read from the render closure, so a guard written as
+  // `if (sending) return` is blind to a second activation landing in the
+  // same tick as an earlier `setSending(true)` -- a queued tap, a
+  // screen-reader activation, a native double-tap -- since the closure still
+  // holds the old value in that window. For an ordinary message that is a
+  // duplicate line; for an announcement it is a duplicate email to the
+  // entire club, which cannot be unsent. This ref is written synchronously
+  // alongside `setSending`, so it is what actually makes the guard sound;
+  // `sending` itself keeps doing its own job of re-rendering the Send button
+  // into its disabled look. See the identical comment on `busyRef` in
+  // app/clubs/index.tsx, app/friends.tsx, and app/messages/index.tsx's
+  // `openingRef` for the same bug class.
+  const sendingRef = useRef(false);
   const scroller = useRef<ScrollView>(null);
+  // Set alongside `thread`/`error`, not derived from them: the realtime
+  // effect below subscribes regardless of whether the initial load
+  // succeeded, and its INSERT handler needs to know -- at the moment an
+  // event actually arrives -- whether the screen ever loaded, not what some
+  // earlier render's closure happened to capture.
+  const loadedRef = useRef(false);
 
   const load = useCallback(async () => {
     if (!threadId) return;
@@ -78,6 +97,7 @@ export default function ThreadScreen() {
     setMessages(rows ?? []);
     setError(detail === null || rows === null ? GENERIC_ERROR : null);
     setReady(true);
+    loadedRef.current = detail !== null;
     // Opening a thread is reading it. Without this the badge outlives the
     // act it exists to prompt.
     if (detail) void markThreadRead(threadId);
@@ -109,8 +129,12 @@ export default function ThreadScreen() {
           void fetchThreadMessages(threadId).then((rows) => {
             if (rows) setMessages(rows);
           });
-          // A conversation you are watching must never accumulate a badge.
-          void markThreadRead(threadId);
+          // A conversation you are watching must never accumulate a badge --
+          // but only once it has actually loaded. A screen whose initial
+          // fetchThread failed never showed anything to read, and marking it
+          // read anyway would clear a badge for a thread the member never
+          // saw, the same way the initial load already gates this call.
+          if (loadedRef.current) void markThreadRead(threadId);
         },
       )
       .subscribe();
@@ -121,7 +145,8 @@ export default function ThreadScreen() {
   }, [session, threadId]);
 
   const send = useCallback(async () => {
-    if (sending || !threadId) return;
+    if (sendingRef.current || !threadId) return;
+    sendingRef.current = true;
     setSending(true);
     setError(null);
     const { error: refusal } = await postMessage(
@@ -130,12 +155,15 @@ export default function ThreadScreen() {
       announce,
       replyTo?.id ?? null,
     );
-    setSending(false);
     if (refusal) {
       // Neither the draft NOR the quote is cleared. Losing what somebody
       // typed because the network failed is the worst possible response to a
       // failed send, and making them re-pick what they were answering is the
-      // second worst.
+      // second worst. Cleared on this exit path too -- a ref set and never
+      // cleared makes the composer permanently dead, which is worse than the
+      // bug it guards against.
+      sendingRef.current = false;
+      setSending(false);
       setError(refusal);
       return;
     }
@@ -145,7 +173,9 @@ export default function ThreadScreen() {
     setRecipients(null);
     setConfirming(false);
     await load();
-  }, [sending, threadId, draft, announce, replyTo, load]);
+    sendingRef.current = false;
+    setSending(false);
+  }, [threadId, draft, announce, replyTo, load]);
 
   if (loading) {
     return (
@@ -224,13 +254,30 @@ export default function ThreadScreen() {
                     <Text
                       testID="quote-stub"
                       numberOfLines={1}
-                      style={[styles.stub, mine ? styles.stubMine : null]}
+                      style={[
+                        styles.stub,
+                        m.is_announcement
+                          ? styles.stubAnnouncement
+                          : mine
+                            ? styles.stubMine
+                            : null,
+                      ]}
                     >
                       {quoteStub(m.reply_to)}
                     </Text>
                   ) : null}
 
-                  <Text style={mine ? styles.bodyMine : styles.body}>{m.body}</Text>
+                  <Text
+                    style={
+                      m.is_announcement
+                        ? styles.bodyAnnouncement
+                        : mine
+                          ? styles.bodyMine
+                          : styles.body
+                    }
+                  >
+                    {m.body}
+                  </Text>
 
                   <Pressable
                     onPress={() => setReplyTo(m)}
@@ -238,7 +285,16 @@ export default function ThreadScreen() {
                     accessibilityLabel={`Reply to ${m.profiles?.display_name ?? 'this message'}`}
                     style={styles.replyAction}
                   >
-                    <Text style={[styles.replyText, mine ? styles.stubMine : null]}>
+                    <Text
+                      style={[
+                        styles.replyText,
+                        m.is_announcement
+                          ? styles.stubAnnouncement
+                          : mine
+                            ? styles.stubMine
+                            : null,
+                      ]}
+                    >
                       Reply
                     </Text>
                   </Pressable>
@@ -314,6 +370,7 @@ export default function ThreadScreen() {
               }}
               accessibilityRole="button"
               accessibilityLabel={announce && confirming ? 'Confirm send' : 'Send'}
+              disabled={sending}
               style={styles.send}
             >
               <Text style={styles.sendText}>
@@ -385,6 +442,20 @@ const styles = StyleSheet.create({
     lineHeight: 26,
     color: colors.bg,
   },
+  // The announcement background (accent2[100]) always wins over `mine`'s in
+  // the bubble's own style array above, regardless of who sent it -- an
+  // organizer's own announcement reloads with is_announcement=true AND
+  // author_id===viewerId every single time, so `mine` cannot be what decides
+  // this text's colour. accent2[800] on accent2[100] measures 9.12:1, well
+  // past AA's 4.5:1 for this 18px regular body text -- the same token the
+  // subject line below already uses on this ground. lib/theme.test.ts pins
+  // the ratio.
+  bodyAnnouncement: {
+    fontFamily: type.bodyRegular,
+    fontSize: type.size.body,
+    lineHeight: 26,
+    color: colors.accent2[800],
+  },
   stub: {
     fontFamily: type.bodyRegular,
     fontSize: type.size.helper,
@@ -397,6 +468,11 @@ const styles = StyleSheet.create({
   // On the accent bubble the muted tone is unreadable; bg at this size is
   // the same choice the bubble body already makes.
   stubMine: { color: colors.bg, borderLeftColor: colors.bg },
+  // Same reasoning as bodyAnnouncement just above: an announcement's quote
+  // stub and its Reply label need the dark tone whenever is_announcement is
+  // true, not only when the viewer didn't send it. Reused rather than a
+  // third near-duplicate style, since both call sites want the same colour.
+  stubAnnouncement: { color: colors.accent2[800], borderLeftColor: colors.accent2[500] },
   replyAction: { alignSelf: 'flex-start', marginTop: space[1] },
   replyText: {
     fontFamily: type.bodySemiBold,

@@ -77,3 +77,18 @@ describe('unread badge text clears AA on its background', () => {
     expect(contrast(colors.bg, colors.accent[700])).toBeGreaterThanOrEqual(AA);
   });
 });
+
+// The thread screen's announcement bubble (app/messages/[threadId].tsx) put
+// its subject in accent2[800] on the bubble's accent2[100] background, but
+// the body text and quote-stub/Reply text followed `mine` instead --
+// cream (colors.bg) on accent2[100] measures 1.10:1 when the viewer is the
+// announcement's own author, which happens on every announcement its
+// author looks at. All three now share accent2[800], pinned here so a
+// future palette change cannot quietly reopen the hole.
+describe('announcement text clears AA on the announcement background', () => {
+  it('clears AA on accent2[800]', () => {
+    expect(contrast(colors.accent2[800], colors.accent2[100])).toBeGreaterThanOrEqual(
+      AA,
+    );
+  });
+});

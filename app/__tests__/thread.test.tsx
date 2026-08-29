@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ThreadScreen from '../messages/[threadId]';
 
 vi.mock('expo-router', () => ({
@@ -189,6 +189,72 @@ describe('thread screen', () => {
     render(<ThreadScreen />);
     expect(await screen.findByText('Hall is closed Friday')).toBeTruthy();
     expect(screen.getByText('Announcement')).toBeTruthy();
+  });
+
+  // The announcement background (accent2[100]) wins over the mine background
+  // in the bubble's own style array (see the comment there), but the body
+  // text colour used to be chosen from `mine` alone -- so an organizer's OWN
+  // announcement rendered bodyMine's cream (colors.bg) on the pale-green
+  // announcement background: 1.10:1, effectively invisible. This happens on
+  // EVERY announcement its author looks at, since the screen reloads after
+  // sending and the sender's own row comes back with is_announcement=true
+  // and author_id===viewerId. The fix makes is_announcement -- not mine --
+  // the text-colour signal, landing on accent2[800] (9.12:1 on accent2[100],
+  // the same token the subject line already uses on this ground).
+  it("gives an organizer's own announcement dark text, not the cream mine-bubble text", async () => {
+    fetchThreadMessages.mockResolvedValueOnce([
+      {
+        id: 'm9',
+        author_id: 'me',
+        body: 'We open again Monday.',
+        subject: 'Hall is closed Friday',
+        is_announcement: true,
+        created_at: '2026-08-25T10:00:00Z',
+        profiles: { display_name: 'You' },
+        reply_to_id: null,
+        reply_to: null,
+      },
+    ]);
+    render(<ThreadScreen />);
+    const body = await screen.findByText('We open again Monday.');
+    // getComputedStyle, not `.style`: react-native-web emits atomic CSS
+    // classes here, not inline styles -- see profile.test.tsx and
+    // Button.test.tsx for the same pattern.
+    expect(getComputedStyle(body).color).toBe('rgb(61, 71, 43)');
+  });
+
+  // send()'s guard used to read `sending` from the render closure, which is
+  // blind to a second activation dispatched before React commits the
+  // re-render from the first `setSending(true)`. For an announcement that is
+  // a duplicate email to the entire club, which cannot be unsent. Both clicks
+  // are dispatched inside one `act()` so no render lands between them --
+  // reproducing the actual race, not a sequence RTL has already serialized.
+  // A deferred promise (not a timer, not waitFor) keeps the first send
+  // pending so the second activation's outcome is deterministic.
+  it('sends only once when Send is activated twice before the first send settles', async () => {
+    let resolvePost!: (value: { id: string; error: string | null }) => void;
+    postMessage.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolvePost = resolve;
+        }),
+    );
+    render(<ThreadScreen />);
+    const input = await screen.findByLabelText('Message');
+    fireEvent.change(input, { target: { value: 'On my way' } });
+    const send = screen.getByLabelText('Send');
+
+    act(() => {
+      fireEvent.click(send);
+      fireEvent.click(send);
+    });
+
+    expect(postMessage).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolvePost({ id: 'm3', error: null });
+      await Promise.resolve();
+    });
   });
 
   it('shows an error rather than an empty thread when the load fails', async () => {
