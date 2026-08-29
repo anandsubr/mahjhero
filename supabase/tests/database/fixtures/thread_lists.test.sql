@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(11);
+select plan(12);
 
 insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-000000000001', 'alice@example.com'),
@@ -126,6 +126,22 @@ insert into public.broadcasts (id, club_id, event_id, author_id, subject, body,
    'Door code changed', 'It is 4321 from now on.', 2,
    now() - interval '1 hour');
 
+-- A club-wide broadcast: event_id null, same as the club thread it must
+-- land in. This is the row that only backfills correctly because the
+-- migration's join uses `is not distinct from` rather than `=` -- with `=`,
+-- NULL = NULL is NULL (not true), the join drops the broadcast, and this
+-- row would vanish with no error. created_at matches the door-code
+-- broadcast's `now() - interval '1 hour'` so its backfilled message also
+-- stays out of the unread counts asserted further down.
+insert into public.broadcasts (id, club_id, event_id, author_id, subject, body,
+                               recipient_count, created_at) values
+  ('b1b1b1b1-0000-0000-0000-000000000002',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   null,
+   'aaaaaaaa-0000-0000-0000-000000000001',
+   'Club potluck', 'Bring a dish next month.', 2,
+   now() - interval '1 hour');
+
 select public.backfill_broadcasts_into_threads();
 select public.backfill_broadcasts_into_threads();
 
@@ -142,6 +158,22 @@ select is(
     where m.broadcast_id = 'b1b1b1b1-0000-0000-0000-000000000001'),
   'e1e1e1e1-0000-0000-0000-000000000001'::uuid,
   'an event-targeted broadcast lands in that event''s thread, not the club''s'
+);
+
+-- Guards the `is not distinct from` in the migration's join. A plain count
+-- of messages for this broadcast_id would also catch a regression to `=`,
+-- but counting only messages whose thread has event_id is null pins down
+-- *where* it landed, not just that something backfilled -- and unlike
+-- selecting t.event_id directly (which degrades to a vacuous NULL = NULL
+-- pass when the join drops the row entirely), a count() over the filtered
+-- join always returns a row, so a dropped broadcast reads as 0, not null.
+select is(
+  (select count(*)::int from public.messages m
+     join public.message_threads t on t.id = m.thread_id
+    where m.broadcast_id = 'b1b1b1b1-0000-0000-0000-000000000002'
+      and t.event_id is null),
+  1,
+  'a club-wide broadcast (event_id null on both sides) lands in the club thread'
 );
 
 set local role authenticated;
