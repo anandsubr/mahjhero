@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { useEffect } from 'react';
 import MessagesScreen from '../messages/index';
 import type { ThreadListRow } from '../../lib/messages';
 
@@ -10,11 +11,32 @@ vi.mock('expo-router', () => ({
   Link: ({ children }: { children: React.ReactNode }) => children,
   useRouter: () => ({ push, back: vi.fn(), replace: vi.fn() }),
   usePathname: () => '/messages',
-  useFocusEffect: (cb: () => void) => cb(),
+  // The real useFocusEffect (node_modules/expo-router/build/useFocusEffect.js)
+  // wraps the callback in a React.useEffect keyed on
+  // [effect, navigation, optionalNavigation] and fires it from a `focus`
+  // listener (or once on mount when already focused) — it never re-runs
+  // just because the screen re-rendered. A bare `(cb) => cb()` mock invokes
+  // the callback on every render instead, which let load()'s own setState
+  // calls re-trigger load() and forced messages/index.tsx to grow a guard
+  // purely to survive that double-fire. Keying this on the callback's own
+  // identity is the closest a lightweight mock gets to the real semantics
+  // without wiring up navigation events: it fires on mount, and again only
+  // when the memoized callback identity actually changes. Do not simplify
+  // this back to `(cb) => cb()` — that reintroduces the per-render refire.
+  useFocusEffect: (cb: () => void) => useEffect(cb, [cb]),
 }));
 
+// A module-scoped constant, not a literal inside the hook, so the returned
+// object is the same reference on every render — matching the real
+// lib/session.tsx, where useSession() reads from Context and only gets a
+// new object when the Provider itself re-renders, not on every consumer
+// render. messages/index.tsx's useFocusEffect callback depends on
+// `[session, load]`; a fresh `session` object per render would make that
+// callback's identity churn every render too, defeating the point of the
+// honest useFocusEffect mock above.
+const SESSION = { session: { user: { id: 'me' } }, loading: false };
 vi.mock('../../lib/session', () => ({
-  useSession: () => ({ session: { user: { id: 'me' } }, loading: false }),
+  useSession: () => SESSION,
 }));
 
 const fetchMyThreads = vi.fn();
@@ -143,6 +165,34 @@ describe('messages list', () => {
       await screen.findByText('you are not a member of this club'),
     ).toBeTruthy();
     expect(push).not.toHaveBeenCalled();
+  });
+
+  // open()'s own guard reads `opening` from the render closure, which is
+  // blind to a second activation landing before that render has committed —
+  // a queued tap, a screen-reader activation, a native double-tap. Firing
+  // both clicks inside one `act()` reproduces exactly that: neither click
+  // gets a re-render in between, so both run against the same stale
+  // `opening === false` closure. See the identical guard in
+  // app/clubs/index.tsx and app/friends.tsx.
+  it('opens a club thread only once when tapped twice before openThreadForClub resolves', async () => {
+    fetchMyThreads.mockResolvedValueOnce([row({ thread_id: null })]);
+    let resolveOpen: (v: { id: string | null; error: string | null }) => void;
+    openThreadForClub.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveOpen = resolve;
+      }),
+    );
+    render(<MessagesScreen />);
+    const target = await screen.findByLabelText('Everyone at Riverside');
+
+    act(() => {
+      fireEvent.click(target);
+      fireEvent.click(target);
+    });
+
+    resolveOpen!({ id: 't1', error: null });
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/messages/t1'));
+    expect(openThreadForClub).toHaveBeenCalledTimes(1);
   });
 
   it('reaches the compose screen', async () => {

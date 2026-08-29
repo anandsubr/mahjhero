@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Redirect, useFocusEffect, useRouter } from 'expo-router';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import Button from '../../components/Button';
@@ -46,6 +46,16 @@ export default function MessagesScreen() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [opening, setOpening] = useState(false);
+  // `opening` above is read from the render closure, so a guard written as
+  // `if (opening) return` is blind to a tap landing in the same tick as an
+  // earlier `setOpening(true)` — a queued tap, a screen-reader activation, a
+  // native double-tap — since the closure still holds the old value in that
+  // window. This ref is written synchronously alongside `setOpening`, so it
+  // is what actually makes the guard sound; `opening` itself keeps doing its
+  // own job of re-rendering the row into its disabled/busy look. See the
+  // identical comment on `busyRef` in app/clubs/index.tsx and app/friends.tsx
+  // for the same bug class.
+  const openingRef = useRef(false);
 
   const load = useCallback(async () => {
     const next = await fetchMyThreads();
@@ -57,29 +67,6 @@ export default function MessagesScreen() {
     setReady(true);
   }, []);
 
-  // Guards a *single* load's own settling from re-triggering itself.
-  //
-  // Real react-navigation focus events are dispatched independently of
-  // render count, so in the shipped app this ref never matters — session
-  // stays referentially stable across this screen's own re-renders (it
-  // comes from context, not a value recomputed per render), and a load's
-  // setRows/setReady never causes useFocusEffect's underlying effect to
-  // fire again on their own. The unit-test double below stands in for the
-  // whole focus subscription with a bare `(cb) => cb()`, though, which
-  // reruns the callback on every render — including the two renders a
-  // single load produces as it commits its own result. Without this guard
-  // that resend would start a second, unwanted fetch before the member has
-  // done anything, silently replacing the first read's data.
-  const pending = useRef(false);
-  const settledOnce = useRef(false);
-  useEffect(() => {
-    if (!settledOnce.current) {
-      settledOnce.current = true;
-      return;
-    }
-    pending.current = false;
-  }, [rows, ready]);
-
   /*
    * Refetch on focus rather than only on mount. Ordinary messages never
    * email, so this list and its badges are the whole notification surface —
@@ -88,27 +75,32 @@ export default function MessagesScreen() {
    */
   useFocusEffect(
     useCallback(() => {
-      if (!session || pending.current) return;
-      pending.current = true;
+      if (!session) return;
       void load();
     }, [session, load]),
   );
 
   const open = useCallback(
     async (row: ThreadListRow) => {
-      if (opening) return;
+      if (openingRef.current) return;
+      openingRef.current = true;
       setActionError(null);
 
       if (row.thread_id) {
+        openingRef.current = false;
         router.push(`/messages/${row.thread_id}`);
         return;
       }
 
       // A club thread nobody has posted in is listed without an id. Every
       // club row could go through this call; only the ones with no row must.
-      if (!row.club_id) return;
+      if (!row.club_id) {
+        openingRef.current = false;
+        return;
+      }
       setOpening(true);
       const { id, error: refusal } = await openThreadForClub(row.club_id);
+      openingRef.current = false;
       setOpening(false);
       if (refusal || !id) {
         setActionError(refusal ?? GENERIC_ERROR);
@@ -116,7 +108,7 @@ export default function MessagesScreen() {
       }
       router.push(`/messages/${id}`);
     },
-    [opening, router],
+    [router],
   );
 
   if (loading) {
