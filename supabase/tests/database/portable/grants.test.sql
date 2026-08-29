@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(100);
+select plan(102);
 
 /*
  * Guards the privileges themselves, not the policies.
@@ -728,7 +728,9 @@ select is(
        'public.post_message(uuid, text, boolean, uuid)',
        'public.mark_thread_read(uuid)',
        'public.fetch_my_threads()',
-       'public.my_unread_counts()'
+       'public.my_unread_counts()',
+       'public.fetch_thread_messages(uuid)',
+       'public.thread_roster(uuid)'
      ]) as f
    ) expected
    where not exists (
@@ -806,7 +808,9 @@ select is(
          'public.post_message(uuid, text, boolean, uuid)',
          'public.mark_thread_read(uuid)',
          'public.fetch_my_threads()',
-         'public.my_unread_counts()'
+         'public.my_unread_counts()',
+         'public.fetch_thread_messages(uuid)',
+         'public.thread_roster(uuid)'
        ]) as f
        where to_regprocedure(f) = p.oid::regprocedure
      )),
@@ -962,6 +966,24 @@ select ok(
   has_function_privilege(
     'authenticated', 'public.fetch_my_threads()', 'EXECUTE'),
   'authenticated can execute fetch_my_threads'
+);
+
+-- The two RPCs (20260829080000) that close the profiles-RLS gap Task 10
+-- found: a plain PostgREST embed of profiles(display_name) resolves to
+-- NULL for anyone but the caller, so fetchThreadMessages and fetchThread's
+-- roster now go through these instead. Already proven reachable via
+-- Direction 1 of the bidirectional allowlist above; named here too, same
+-- treatment as post_message and fetch_my_threads, because these are the
+-- two RPCs the thread screen calls directly.
+select ok(
+  has_function_privilege(
+    'authenticated', 'public.fetch_thread_messages(uuid)', 'EXECUTE'),
+  'authenticated can execute fetch_thread_messages'
+);
+select ok(
+  has_function_privilege(
+    'authenticated', 'public.thread_roster(uuid)', 'EXECUTE'),
+  'authenticated can execute thread_roster'
 );
 
 select * from finish();

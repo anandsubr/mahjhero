@@ -65,7 +65,7 @@ export type ThreadDetail = {
  * lib/profile.ts. A column dropped here without the contract test noticing
  * is exactly the drift that suite exists to catch.
  *
- * These are plain selects rather than an RPC because the thread screen must
+ * This is a plain select rather than an RPC because the thread screen must
  * open a thread `fetch_my_threads` has already dropped from the list — a
  * finished game's thread stays readable from the game screen. RLS still
  * governs: `messages_select` and `message_threads_select` both call
@@ -85,6 +85,13 @@ export type ThreadDetail = {
  *   - `profiles!thread_members_profile_id_fkey`: thread_members carries two
  *     foreign keys into profiles — `profile_id` (who is in the group) and
  *     `added_by` (who added them). Same PGRST201 without the hint.
+ *
+ * That `profiles` embed is also self-only RLS (20260822180000): it names
+ * the caller and nobody else. fetchThread below patches the co-members'
+ * names back in from `thread_roster` (20260829080000), a security definer
+ * RPC that re-asks `can_read_thread` itself rather than going through
+ * `profiles`' policy — the same shape `club_roster` uses for a club, for
+ * the one thread kind `club_roster` cannot serve.
  */
 export const THREAD_COLUMNS =
   'id, club_id, event_id, title, clubs(name, timezone), ' +
@@ -115,19 +122,21 @@ export const THREAD_COLUMNS =
  * hint syntax that recovers it — see the task report for the full curl
  * transcript.
  *
- * fetchThreadMessages below resolves the quote with a second query instead,
- * scoped to the same thread. That second query is not a workaround so much
- * as the more defensive shape anyway: the composite foreign key guarantees
- * a reply's parent lives in the same thread, and scoping the lookup
- * explicitly by thread_id repeats that guarantee rather than trusting it
- * silently.
+ * fetchThreadMessages below does not use this select at all — it calls
+ * `fetch_thread_messages` (20260829080000), a security definer RPC that
+ * resolves the quoted parent with a plain self-join instead, the same
+ * composite-key guarantee this docstring argues for, asked once rather
+ * than through a second query. That RPC also sidesteps this select's OTHER
+ * gap: `profiles(display_name)` here is self-only RLS (20260822180000), so
+ * on a raw select of this column list a sender who is not the caller comes
+ * back with `profiles: null`. MESSAGE_COLUMNS stays exported and tested
+ * directly (lib/schema-contract.test.ts) because both findings are still
+ * true of a raw select — the RPC is the fix, not a change to what
+ * PostgREST itself can do with this list.
  */
 export const MESSAGE_COLUMNS =
   'id, author_id, body, subject, is_announcement, created_at, reply_to_id, ' +
   'profiles(display_name)';
-
-/** The columns fetchThreadMessages' second query needs for a quoted message. */
-const QUOTE_COLUMNS = 'id, body, profiles(display_name)';
 
 /** Mirrors messages.body's check constraint exactly. */
 export const BODY_MAX = 2000;
@@ -325,6 +334,9 @@ export async function fetchUnreadCounts(): Promise<
   }
 }
 
+/** One row of `thread_roster`, keyed for the merge below. */
+type RosterRow = { profile_id: string; display_name: string };
+
 export async function fetchThread(threadId: string): Promise<ThreadDetail | null> {
   try {
     const { data, error } = await supabase
@@ -336,62 +348,90 @@ export async function fetchThread(threadId: string): Promise<ThreadDetail | null
       console.error('fetchThread failed', error);
       return null;
     }
-    return data as unknown as ThreadDetail;
+    const thread = data as unknown as ThreadDetail;
+
+    // thread_members' own profiles embed is a plain select, so it inherits
+    // profiles' self-only RLS (20260822180000) and names only the caller.
+    // thread_roster is security definer and re-asks can_read_thread itself,
+    // the same shape club_roster uses for a club — the only path from one
+    // member's name to another's in a thread that has no club to hand
+    // club_roster instead. Empty for a club or game thread, whose
+    // thread_members is already empty, so the merge below is a no-op there.
+    const { data: roster, error: rosterError } = await supabase.rpc('thread_roster', {
+      target_thread: threadId,
+    });
+    if (rosterError) {
+      console.error('fetchThread failed', rosterError);
+      return null;
+    }
+    const names = new Map(
+      ((roster ?? []) as RosterRow[]).map((r) => [r.profile_id, r.display_name]),
+    );
+
+    return {
+      ...thread,
+      thread_members: thread.thread_members.map((m) => {
+        const name = names.get(m.profile_id);
+        return name ? { profile_id: m.profile_id, profiles: { display_name: name } } : m;
+      }),
+    };
   } catch (cause) {
     console.error('fetchThread failed', cause);
     return null;
   }
 }
 
+/** One row of `fetch_thread_messages`. */
+type ThreadMessageRow = {
+  id: string;
+  author_id: string;
+  author_name: string | null;
+  body: string;
+  subject: string | null;
+  is_announcement: boolean;
+  created_at: string;
+  reply_to_id: string | null;
+  reply_to_body: string | null;
+  reply_to_author: string | null;
+};
+
 export async function fetchThreadMessages(
   threadId: string,
 ): Promise<ThreadMessage[] | null> {
   try {
-    const { data, error } = await supabase
-      .from('messages')
-      .select(MESSAGE_COLUMNS)
-      .eq('thread_id', threadId)
-      .order('created_at', { ascending: true });
+    // Sender names and the quoted parent, resolved in one call.
+    // fetch_thread_messages is security definer for the same reason
+    // thread_roster is: profiles' self-only RLS would otherwise null out
+    // every sender but the caller. It also removes what used to be a
+    // second query for the quoted parent — MESSAGE_COLUMNS' own docstring
+    // records why PostgREST cannot embed reply_to at all (a composite
+    // self-reference, not an RLS problem), and the RPC resolves it with a
+    // plain self-join instead.
+    const { data, error } = await supabase.rpc('fetch_thread_messages', {
+      target_thread: threadId,
+    });
     if (error) {
       console.error('fetchThreadMessages failed', error);
       return null;
     }
-    const rows = (data ?? []) as unknown as Omit<ThreadMessage, 'reply_to'>[];
-
-    // The reply_to embed PostgREST cannot serve (see MESSAGE_COLUMNS'
-    // docstring) resolved as a second query instead, scoped to this same
-    // thread — belt-and-braces alongside the composite foreign key that
-    // already guarantees a reply's parent never lives in another thread.
-    const quotedIds = [
-      ...new Set(rows.map((r) => r.reply_to_id).filter((id): id is string => id !== null)),
-    ];
-
-    const quotedById = new Map<
-      string,
-      { id: string; body: string; profiles: { display_name: string } | null }
-    >();
-    if (quotedIds.length > 0) {
-      const { data: quoted, error: quotedError } = await supabase
-        .from('messages')
-        .select(QUOTE_COLUMNS)
-        .eq('thread_id', threadId)
-        .in('id', quotedIds);
-      if (quotedError) {
-        console.error('fetchThreadMessages failed', quotedError);
-        return null;
-      }
-      for (const q of (quoted ?? []) as unknown as {
-        id: string;
-        body: string;
-        profiles: { display_name: string } | null;
-      }[]) {
-        quotedById.set(q.id, q);
-      }
-    }
+    const rows = (data ?? []) as ThreadMessageRow[];
 
     return rows.map((r) => ({
-      ...r,
-      reply_to: r.reply_to_id ? (quotedById.get(r.reply_to_id) ?? null) : null,
+      id: r.id,
+      author_id: r.author_id,
+      body: r.body,
+      subject: r.subject,
+      is_announcement: r.is_announcement,
+      created_at: r.created_at,
+      profiles: r.author_name ? { display_name: r.author_name } : null,
+      reply_to_id: r.reply_to_id,
+      reply_to: r.reply_to_id
+        ? {
+            id: r.reply_to_id,
+            body: r.reply_to_body ?? '',
+            profiles: r.reply_to_author ? { display_name: r.reply_to_author } : null,
+          }
+        : null,
     }));
   } catch (cause) {
     console.error('fetchThreadMessages failed', cause);

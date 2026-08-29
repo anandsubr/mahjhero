@@ -2348,24 +2348,26 @@ describe.runIf(reachable || required)('messages schema contract', () => {
     expect(members.map((m) => m.profile_id).sort()).toEqual([userId, otherId].sort());
 
     /*
-     * A FINDING, pinned rather than papered over: `profiles` has been
-     * self-row-only since 20260822180000 (see that migration's own
-     * docstring -- a plain member reading a co-member's quiet hours was the
-     * defect it closed), and the fix moved co-member identity behind a
-     * SECURITY DEFINER function, `club_roster`, rather than reopening the
-     * table's RLS. THREAD_COLUMNS' `thread_members(profile_id,
-     * profiles!thread_members_profile_id_fkey(display_name))` is a plain
-     * select, so it inherits that same self-only policy: the caller's OWN
-     * row in the embed carries a name, and everyone else's carries
-     * `profiles: null`, silently, exactly the shape a co-member's
+     * A FINDING against the RAW select, still true and still worth pinning:
+     * `profiles` has been self-row-only since 20260822180000 (see that
+     * migration's own docstring -- a plain member reading a co-member's
+     * quiet hours was the defect it closed), and the fix moved co-member
+     * identity behind a SECURITY DEFINER function, `club_roster`, rather
+     * than reopening the table's RLS. THREAD_COLUMNS' `thread_members(
+     * profile_id, profiles!thread_members_profile_id_fkey(display_name))`
+     * is a plain select, so it inherits that same self-only policy: the
+     * caller's OWN row in the embed carries a name, and everyone else's
+     * carries `profiles: null`, silently, exactly the shape a co-member's
      * quiet-hours leak used to take before club_roster closed it.
      *
      * There is no club to hand a `club_roster`-style function for a GROUP
-     * thread -- that is the whole reason it has no club_id -- so closing
-     * this needs a new definer function (a `thread_roster`, by the same
-     * shape), which is a migration, out of this task's scope. Recorded here
-     * so a future "who's in this group" screen finds a failing assertion
-     * instead of a silently blank name list.
+     * thread -- that is the whole reason it has no club_id -- which is why
+     * `thread_roster` (20260829080000) exists: a security definer RPC, by
+     * the same shape, that answers the question this raw select cannot.
+     * `fetchThread` merges it in, and the next test proves that merge
+     * actually names the co-member -- this one keeps pinning what the raw
+     * embed alone still cannot do, so nobody mistakes THREAD_COLUMNS itself
+     * for the fix.
      */
     const caller = members.find((m) => m.profile_id === userId);
     expect(caller!.profiles!.display_name).toBe('Contract Poster');
@@ -2373,7 +2375,7 @@ describe.runIf(reachable || required)('messages schema contract', () => {
     expect(other!.profiles).toBeNull();
   });
 
-  it('fetchThread returns the ThreadDetail shape for both a game and a group thread', async () => {
+  it('fetchThread returns the ThreadDetail shape for both a game and a group thread, naming every member -- through thread_roster, not the self-only profiles embed', async () => {
     const game = await fetchThread(gameThreadId);
     expect(game).not.toBeNull();
     expect(game!.event_id).toBe(eventId);
@@ -2383,6 +2385,17 @@ describe.runIf(reachable || required)('messages schema contract', () => {
     expect(group).not.toBeNull();
     expect(group!.title).toBe('Contract Group');
     expect(group!.thread_members).toHaveLength(2);
+
+    // The fix: fetchThread merges thread_roster's names into thread_members,
+    // so unlike the raw THREAD_COLUMNS select above, the co-member's row is
+    // no longer `profiles: null`.
+    const caller = group!.thread_members.find((m) => m.profile_id === userId);
+    expect(caller!.profiles!.display_name).toBe('Contract Poster');
+    const other = group!.thread_members.find((m) => m.profile_id === otherId);
+    expect(
+      other!.profiles!.display_name,
+      'thread_roster should have named the co-member, closing the gap the raw select above still pins',
+    ).toBe('Contract Other');
   });
 
   /*
@@ -2443,7 +2456,7 @@ describe.runIf(reachable || required)('messages schema contract', () => {
     expect(row).not.toHaveProperty('reply_to');
   });
 
-  it('fetchThreadMessages resolves the quoted message with its own second query, scoped to the thread', async () => {
+  it('fetchThreadMessages resolves the quoted message inline, through fetch_thread_messages, not a second query', async () => {
     const messages = await fetchThreadMessages(groupThreadId);
     expect(messages).not.toBeNull();
     expect(messages!.length).toBeGreaterThanOrEqual(2);
@@ -2452,6 +2465,12 @@ describe.runIf(reachable || required)('messages schema contract', () => {
     expect(reply, 'expected the seeded reply among the thread messages').toBeDefined();
     expect(reply!.reply_to).not.toBeNull();
     expect(reply!.reply_to!.body).toBe('First message, nothing quoted');
+    // Both messages in this fixture were posted by the caller, so this only
+    // proves the RPC names a sender at all, in the right shape -- the next
+    // test proves it also names somebody who is NOT the caller, which a
+    // same-sender case cannot.
+    expect(reply!.profiles?.display_name).toBe('Contract Poster');
+    expect(reply!.reply_to!.profiles?.display_name).toBe('Contract Poster');
 
     const first = messages!.find((m) => m.id === reply!.reply_to_id);
     expect(
@@ -2469,8 +2488,15 @@ describe.runIf(reachable || required)('messages schema contract', () => {
    * RLS and would hide exactly this), then read back through the caller's
    * own session -- the only way to observe what RLS actually does, not what
    * a service-role query would suggest it does.
+   *
+   * The raw select still comes back with `profiles: null` -- that half of
+   * the test is unchanged, because MESSAGE_COLUMNS itself was never the
+   * fix. What changed is what happens next: fetchThreadMessages, called on
+   * the same caller session against the same message, names the sender
+   * anyway, because fetch_thread_messages (20260829080000) is security
+   * definer and does not go through profiles' RLS at all.
    */
-  it('MESSAGE_COLUMNS names the sender only when the sender is the caller -- profiles is self-only RLS', async () => {
+  it('the raw MESSAGE_COLUMNS embed still cannot name a co-member -- fetchThreadMessages does, through fetch_thread_messages', async () => {
     const otherClient = createClient(local.url, local.anonKey, {
       auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
     });
@@ -2512,9 +2538,22 @@ describe.runIf(reachable || required)('messages schema contract', () => {
     // that hid the co-member's name in thread_members (20260822180000) hides
     // it here too -- MESSAGE_COLUMNS' profiles embed is a plain select, so
     // it inherits the caller's own RLS, and a message from anyone but the
-    // caller carries a sender with no name. Recorded here, alongside the
-    // thread_members finding, so a chat screen relying on this column list
-    // finds a failing assertion first rather than shipping blank senders.
+    // caller carries a sender with no name on a raw select.
     expect(row.profiles).toBeNull();
+
+    // The fix: fetchThreadMessages, same caller session, same message --
+    // named anyway. This is the cross-member proof the raw-select
+    // assertion above cannot give, because fetch_thread_messages
+    // re-resolves the sender itself rather than trusting an embed that
+    // profiles' RLS will always null out for anyone but the caller.
+    const messages = await fetchThreadMessages(groupThreadId);
+    expect(messages).not.toBeNull();
+    const otherMessage = messages!.find((m) => m.id === otherMessageId);
+    expect(
+      otherMessage,
+      "expected the other member's message among the thread messages",
+    ).toBeDefined();
+    expect(otherMessage!.author_id).toBe(otherId);
+    expect(otherMessage!.profiles?.display_name).toBe('Contract Other');
   });
 });

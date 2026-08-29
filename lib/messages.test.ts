@@ -1,15 +1,29 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const rpcMock = vi.fn();
+// fetchThread's first query -- `from('message_threads').select(THREAD_COLUMNS)
+// .eq('id', ...).single()`. Modelled as the real chain, the same reasoning
+// lib/broadcasts.test.ts gives: a test exercising this should fail on a
+// wrong VALUE, not on a TypeError from a missing chain method.
+const singleMock = vi.fn();
 
 vi.mock('./supabase', () => ({
-  supabase: { rpc: (...args: unknown[]) => rpcMock(...args) },
+  supabase: {
+    rpc: (...args: unknown[]) => rpcMock(...args),
+    from: vi.fn(() => ({
+      select: vi.fn(() => ({
+        eq: vi.fn(() => ({ single: singleMock })),
+      })),
+    })),
+  },
 }));
 
 import { GENERIC_ERROR } from './constants';
 import {
   createGroupThread,
   deriveSubject,
+  fetchThread,
+  fetchThreadMessages,
   fetchMyThreads,
   kindLabel,
   messagePreview,
@@ -18,6 +32,7 @@ import {
   sectionThreads,
   sortThreads,
   unreadLabel,
+  type ThreadDetail,
   type ThreadListRow,
 } from './messages';
 
@@ -213,6 +228,165 @@ describe('fetchMyThreads', () => {
   it('never rejects', async () => {
     rpcMock.mockRejectedValueOnce(new Error('offline'));
     await expect(fetchMyThreads()).resolves.toBeNull();
+  });
+});
+
+describe('fetchThreadMessages', () => {
+  beforeEach(() => rpcMock.mockReset());
+
+  // The fix, at the unit level: fetch_thread_messages (20260829080000) is
+  // security definer, so it names a sender who is not the caller -- what a
+  // raw `profiles(display_name)` embed cannot do, per MESSAGE_COLUMNS'
+  // docstring. It also resolves the quoted parent inline, so there is no
+  // second RPC call to assert here the way the old second-query shape had.
+  it('maps sender names and the quoted parent from one RPC call', async () => {
+    rpcMock.mockResolvedValueOnce({
+      data: [
+        {
+          id: 'm1',
+          author_id: 'u1',
+          author_name: 'Alice Ng',
+          body: 'Anyone free Tuesday?',
+          subject: null,
+          is_announcement: false,
+          created_at: '2026-08-25T10:00:00Z',
+          reply_to_id: null,
+          reply_to_body: null,
+          reply_to_author: null,
+        },
+        {
+          id: 'm2',
+          author_id: 'u2',
+          author_name: 'Carol Chen',
+          body: 'Yes, I am in.',
+          subject: null,
+          is_announcement: false,
+          created_at: '2026-08-25T10:01:00Z',
+          reply_to_id: 'm1',
+          reply_to_body: 'Anyone free Tuesday?',
+          reply_to_author: 'Alice Ng',
+        },
+      ],
+      error: null,
+    });
+
+    await expect(fetchThreadMessages('t1')).resolves.toEqual([
+      {
+        id: 'm1',
+        author_id: 'u1',
+        body: 'Anyone free Tuesday?',
+        subject: null,
+        is_announcement: false,
+        created_at: '2026-08-25T10:00:00Z',
+        profiles: { display_name: 'Alice Ng' },
+        reply_to_id: null,
+        reply_to: null,
+      },
+      {
+        id: 'm2',
+        author_id: 'u2',
+        body: 'Yes, I am in.',
+        subject: null,
+        is_announcement: false,
+        created_at: '2026-08-25T10:01:00Z',
+        profiles: { display_name: 'Carol Chen' },
+        reply_to_id: 'm1',
+        reply_to: { id: 'm1', body: 'Anyone free Tuesday?', profiles: { display_name: 'Alice Ng' } },
+      },
+    ]);
+    expect(rpcMock).toHaveBeenCalledWith('fetch_thread_messages', { target_thread: 't1' });
+  });
+
+  it('resolves null on failure rather than rejecting', async () => {
+    rpcMock.mockResolvedValueOnce({ data: null, error: { message: 'boom' } });
+    await expect(fetchThreadMessages('t1')).resolves.toBeNull();
+  });
+
+  it('never rejects', async () => {
+    rpcMock.mockRejectedValueOnce(new Error('offline'));
+    await expect(fetchThreadMessages('t1')).resolves.toBeNull();
+  });
+});
+
+describe('fetchThread', () => {
+  beforeEach(() => {
+    rpcMock.mockReset();
+    singleMock.mockReset();
+  });
+
+  function thread(over: Partial<ThreadDetail> = {}): ThreadDetail {
+    return {
+      id: 't1',
+      club_id: null,
+      event_id: null,
+      title: 'Cross-club Group',
+      clubs: null,
+      events: null,
+      thread_members: [
+        { profile_id: 'caller', profiles: { display_name: 'Caller' } },
+        { profile_id: 'other', profiles: null },
+      ],
+      ...over,
+    };
+  }
+
+  // The fix, at the unit level: thread_members' own profiles embed names
+  // only the caller (profiles is self-only RLS, 20260822180000), so
+  // fetchThread patches every other member's name back in from
+  // thread_roster (20260829080000) -- a security definer RPC, gated the
+  // same way club_roster is, for the one thread kind club_roster cannot
+  // serve.
+  it('merges thread_roster names into thread_members, including a co-member', async () => {
+    singleMock.mockResolvedValueOnce({ data: thread(), error: null });
+    rpcMock.mockResolvedValueOnce({
+      data: [
+        { profile_id: 'caller', display_name: 'Caller' },
+        { profile_id: 'other', display_name: 'Other Member' },
+      ],
+      error: null,
+    });
+
+    await expect(fetchThread('t1')).resolves.toEqual(
+      thread({
+        thread_members: [
+          { profile_id: 'caller', profiles: { display_name: 'Caller' } },
+          { profile_id: 'other', profiles: { display_name: 'Other Member' } },
+        ],
+      }),
+    );
+    expect(rpcMock).toHaveBeenCalledWith('thread_roster', { target_thread: 't1' });
+  });
+
+  // thread_roster answers empty for a club or game thread -- their
+  // membership is derived, never materialised in thread_members -- so the
+  // merge is a no-op and the (already empty) list passes through unchanged.
+  it('leaves an empty thread_members list alone for a club or game thread', async () => {
+    singleMock.mockResolvedValueOnce({
+      data: thread({ club_id: 'c1', thread_members: [] }),
+      error: null,
+    });
+    rpcMock.mockResolvedValueOnce({ data: [], error: null });
+
+    await expect(fetchThread('t1')).resolves.toEqual(
+      thread({ club_id: 'c1', thread_members: [] }),
+    );
+  });
+
+  it('resolves null when the thread query fails', async () => {
+    singleMock.mockResolvedValueOnce({ data: null, error: { message: 'boom' } });
+    await expect(fetchThread('t1')).resolves.toBeNull();
+    expect(rpcMock).not.toHaveBeenCalled();
+  });
+
+  it('resolves null when thread_roster fails', async () => {
+    singleMock.mockResolvedValueOnce({ data: thread(), error: null });
+    rpcMock.mockResolvedValueOnce({ data: null, error: { message: 'boom' } });
+    await expect(fetchThread('t1')).resolves.toBeNull();
+  });
+
+  it('never rejects', async () => {
+    singleMock.mockRejectedValueOnce(new Error('offline'));
+    await expect(fetchThread('t1')).resolves.toBeNull();
   });
 });
 
