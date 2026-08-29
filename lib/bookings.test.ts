@@ -546,6 +546,51 @@ describe('BOOKING_REFUSALS (self-audit against the migrations)', () => {
     // per the note above.
     'you are not in this conversation':
       'raised by add_to_group_thread — lib/messages.ts (Task 5, not yet created) is the module responsible, and by design relays error.message rather than mapping through a refusal table',
+
+    // Raised by post_message (20260829040000_post_message.sql) when
+    // can_post_thread refuses the caller — a stranger to a club/game thread,
+    // or a non-member of a group. The compose screen only ever renders on a
+    // conversation already opened through can_read_thread, which is at least
+    // as strict, so a caller hitting this is malicious or buggy. lib/messages.ts
+    // owns it, per the note above.
+    'you cannot post in this conversation':
+      'raised by post_message — lib/messages.ts (Task 5, not yet created) is the module responsible, and by design relays error.message rather than mapping through a refusal table',
+    // Raised by post_message when the trimmed body is empty. The composer's
+    // send control is disabled on an empty/whitespace-only draft, so a
+    // caller hitting this is malicious or buggy. lib/messages.ts owns it.
+    'write something first':
+      'raised by post_message — lib/messages.ts (Task 5, not yet created) is the module responsible, and by design relays error.message rather than mapping through a refusal table',
+    // Raised by post_message when the trimmed body exceeds 2000 characters.
+    // The composer enforces the same bound client-side, so a caller hitting
+    // this is malicious or buggy. lib/messages.ts owns it.
+    'that message is too long':
+      'raised by post_message — lib/messages.ts (Task 5, not yet created) is the module responsible, and by design relays error.message rather than mapping through a refusal table',
+    // Raised by post_message when p_reply_to points at a message outside the
+    // target thread — the composite foreign key on messages already makes
+    // this unstateable, so this is a readable-words wrapper around a 23503
+    // that no reachable client path can trigger with a genuine reply-to id.
+    // lib/messages.ts owns it.
+    'you can only reply to a message in this conversation':
+      'raised by post_message — lib/messages.ts (Task 5, not yet created) is the module responsible, and by design relays error.message rather than mapping through a refusal table',
+    // Raised by post_message when p_announce is true on a group thread
+    // (club_id is null). The announce control only ever renders on a club
+    // thread, so a caller hitting this is malicious or buggy. lib/messages.ts
+    // owns it.
+    'a group has no roster to announce to':
+      'raised by post_message — lib/messages.ts (Task 5, not yet created) is the module responsible, and by design relays error.message rather than mapping through a refusal table',
+    // Raised by post_message when an announcement's derived subject (the
+    // body's first line, control characters stripped) is empty after
+    // trimming — reachable only when the first line is pure control
+    // characters, since the earlier empty-body check already refuses a
+    // blank body. lib/messages.ts owns it.
+    'an announcement needs a first line to use as its subject':
+      'raised by post_message — lib/messages.ts (Task 5, not yet created) is the module responsible, and by design relays error.message rather than mapping through a refusal table',
+    // Raised by mark_thread_read when can_read_thread refuses the caller.
+    // The read-watermark call only ever fires from a thread screen the
+    // caller already opened via can_read_thread, so a caller hitting this is
+    // malicious or buggy. lib/messages.ts owns it.
+    'you cannot read this conversation':
+      'raised by mark_thread_read — lib/messages.ts (Task 5, not yet created) is the module responsible, and by design relays error.message rather than mapping through a refusal table',
   };
 
   function distinctRaisedMessages(): string[] {

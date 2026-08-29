@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(14);
+select plan(25);
 
 -- Alice hosts Riverside. Bob has a confirmed seat. Dave is a member with no
 -- seat. Erin is a stranger.
@@ -226,6 +226,128 @@ select lives_ok(
     end
   $x$$test$,
   'the last member out deletes the thread'
+);
+
+-- Posting.
+set local request.jwt.claims =
+  '{"sub": "dddddddd-0000-0000-0000-000000000004", "role": "authenticated"}';
+
+select lives_ok(
+  $$select public.post_message(
+      public.open_thread_for_club('c1c1c1c1-0000-0000-0000-000000000001'),
+      'Anyone free Tuesday?')$$,
+  'any active club member posts in the club thread'
+);
+
+select throws_ok(
+  $$select public.post_message(
+      public.open_thread_for_club('c1c1c1c1-0000-0000-0000-000000000001'),
+      '   ')$$,
+  '22023',
+  null,
+  'an empty message is refused before it reaches the check constraint'
+);
+
+-- Announcements are organizers only, and only where there is a roster.
+select throws_ok(
+  $$select public.post_message(
+      public.open_thread_for_club('c1c1c1c1-0000-0000-0000-000000000001'),
+      'Hear ye', true)$$,
+  '42501',
+  null,
+  'an ordinary member cannot announce'
+);
+
+set local request.jwt.claims =
+  '{"sub": "aaaaaaaa-0000-0000-0000-000000000001", "role": "authenticated"}';
+
+select lives_ok(
+  $$select public.post_message(
+      public.open_thread_for_club('c1c1c1c1-0000-0000-0000-000000000001'),
+      E'Hall is closed Friday\nUse the side door until further notice.', true)$$,
+  'an organizer announces'
+);
+
+-- The subject is the body's first line, and it is what the email carries.
+select is(
+  (select subject from public.broadcasts
+    order by created_at desc limit 1),
+  'Hall is closed Friday',
+  'the announcement subject is derived from the body first line'
+);
+
+-- One outbox row per recipient, the author excluded. This is the existing
+-- broadcast fan-out, reused rather than reimplemented.
+select is(
+  (select recipient_count from public.broadcasts
+    order by created_at desc limit 1),
+  2,
+  'the fan-out reached every member but the author'
+);
+
+select is(
+  (select count(*)::int from public.messages
+    where is_announcement and broadcast_id is not null),
+  1,
+  'the message and the broadcast it mailed are tied together'
+);
+
+-- A group has no roster to announce to.
+select throws_ok(
+  $$select public.post_message(
+      (select id from public.message_threads where title = 'Tuesday four' limit 1),
+      'Hear ye', true)$$,
+  '22023',
+  null,
+  'a group cannot be announced to'
+);
+
+-- Quote-reply.
+set local request.jwt.claims =
+  '{"sub": "dddddddd-0000-0000-0000-000000000004", "role": "authenticated"}';
+
+select lives_ok(
+  $test$do $x$
+    declare t uuid; parent uuid;
+    begin
+      t := public.open_thread_for_club('c1c1c1c1-0000-0000-0000-000000000001');
+      select id into parent from public.messages
+        where thread_id = t order by created_at limit 1;
+      perform public.post_message(t, 'Yes, I am free.', false, parent);
+    end
+  $x$$test$,
+  'a reply quotes an earlier message in the same thread'
+);
+
+-- Something must actually exist in the OTHER thread, or the subquery below
+-- is null, reply_to_id is null, and the insert succeeds for the wrong
+-- reason. Bob is in 'Tuesday four'; Dave is not.
+set local request.jwt.claims =
+  '{"sub": "bbbbbbbb-0000-0000-0000-000000000002", "role": "authenticated"}';
+
+select lives_ok(
+  $$select public.post_message(
+      (select id from public.message_threads where title = 'Tuesday four' limit 1),
+      'Group business, not the club''s.')$$,
+  'a group member posts in the group thread'
+);
+
+-- The composite foreign key already makes the cross-thread quote
+-- unstateable; post_message turns the 23503 into words a member can read,
+-- which is what this asserts.
+set local request.jwt.claims =
+  '{"sub": "dddddddd-0000-0000-0000-000000000004", "role": "authenticated"}';
+
+select throws_ok(
+  $$select public.post_message(
+      public.open_thread_for_club('c1c1c1c1-0000-0000-0000-000000000001'),
+      'quoting elsewhere', false,
+      (select m.id from public.messages m
+         join public.message_threads t on t.id = m.thread_id
+        where t.title = 'Tuesday four' limit 1))$$,
+  '22023',
+  null,
+  'a reply cannot quote a message from another conversation'
 );
 
 select * from finish();
