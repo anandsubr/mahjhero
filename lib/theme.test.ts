@@ -78,6 +78,22 @@ describe('unread badge text clears AA on its background', () => {
   });
 });
 
+// The badge's own shape — accent[700] — sits on colors.surface, the tab
+// bar's ground and the club chips' ground. That pairing is not text, so AA's
+// 4.5:1 does not govern it; it is a filled shape against its background, so
+// WCAG 1.4.11 non-text contrast applies, which sets 3:1. Measured at 5.08:1,
+// comfortably clear. Pinned here so a future palette change that lets the
+// badge fade into the bar fails a test instead of shipping invisible.
+const NON_TEXT = 3;
+
+describe('unread badge shape clears non-text contrast against its ground', () => {
+  it('clears WCAG 1.4.11 (3:1) on surface', () => {
+    expect(contrast(colors.accent[700], colors.surface)).toBeGreaterThanOrEqual(
+      NON_TEXT,
+    );
+  });
+});
+
 // The thread screen's announcement bubble (app/messages/[threadId].tsx) put
 // its subject in accent2[800] on the bubble's accent2[100] background, but
 // the body text and quote-stub/Reply text followed `mine` instead --
