@@ -64,6 +64,14 @@ describe('field labels clear AA on both grounds', () => {
 // fails AA at this weight (16px bold, below the 14pt-bold large-text
 // threshold); accent[700] fixed it at 5.72:1. Pinned here so a future
 // palette change that reopens the hole fails a test instead of shipping.
+//
+// The thread screen (app/messages/[threadId].tsx) hit the same 3.03:1
+// failure twice more — the viewer's own bubble and the Send button both put
+// `colors.bg` text on what would have been `accentColor` (18px regular body
+// text there, needing AA's 4.5:1, not the 3:1 large-text allowance) — and
+// took the same accent[700] fix. Same pair, so this one assertion already
+// guards all three call sites; a regression here fails for the badge, the
+// bubble, and the button at once.
 describe('unread badge text clears AA on its background', () => {
   it('clears AA on accent[700]', () => {
     expect(contrast(colors.bg, colors.accent[700])).toBeGreaterThanOrEqual(AA);
