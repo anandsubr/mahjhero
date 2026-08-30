@@ -455,23 +455,37 @@ describe('BOOKING_REFUSALS (self-audit against the migrations)', () => {
 
     // Raised by broadcast_recipient_count and send_broadcast
     // (20260826030000_broadcasts.sql) when the event id passed does not
-    // belong to the club id passed. The compose screen only ever offers
-    // events that belong to the club being messaged, so a caller hitting
-    // this is malicious or buggy, not a member doing something reasonable
-    // — the same shape as 'duplicate player' / 'nothing to decline' above.
-    // Unlike those, though, it is not this module's call to make: neither
-    // function is called from lib/bookings.ts, and the module that DOES
-    // call them — lib/broadcasts.ts (not yet created; Task 12 of
-    // docs/superpowers/plans/2026-08-23-notifications-and-comms.md) — is
-    // designed to relay `error.message` from these two RPCs verbatim
-    // rather than mapping through a refusal table (see that task's
-    // `sendBroadcast`, which returns `error.message` directly and only
-    // falls back to GENERIC_ERROR on a thrown/network failure). So this
-    // message reaching a client is the plan's own intended behaviour, not
-    // a gap — same as Category 2/3 above, this module is not the one
-    // responsible for it either way.
+    // belong to the club id passed. Neither function is called from
+    // lib/bookings.ts. Task 15 absorbed the broadcast compose/history
+    // screens into the message threads: lib/broadcasts.ts's
+    // countBroadcastRecipients still calls broadcast_recipient_count, but
+    // swallows every error to null rather than relaying `error.message`
+    // (deliberately — see its own docstring), and send_broadcast itself
+    // has no remaining client caller now that lib/broadcasts.ts's
+    // sendBroadcast was removed in favour of lib/messages.ts's
+    // postMessage. So this message is raised in the schema but currently
+    // unreachable through any live client path — this module is not the
+    // one responsible for it either way.
     'event does not belong to this club':
-      'raised by broadcast_recipient_count/send_broadcast — lib/broadcasts.ts (Task 12, not yet created) is the module responsible, and by design relays error.message rather than mapping through a refusal table',
+      'raised by broadcast_recipient_count/send_broadcast — lib/broadcasts.ts’s countBroadcastRecipients calls broadcast_recipient_count but swallows the error to null, and send_broadcast has no remaining caller since Task 15 removed sendBroadcast',
+
+    // Raised by add_friend (20260828010000_friend_mutations.sql) when the
+    // target is the caller or when they do not share a club. The compose
+    // screen only ever offers people who share a club with the caller, and a
+    // member cannot tap an "Add" control that points to themselves — so a
+    // caller hitting these is malicious or buggy, not a member doing
+    // something reasonable. Unlike booking refusals, though, it is not this
+    // module's call to make: add_friend is not called from lib/bookings.ts,
+    // and the module that DOES call it — lib/friends.ts — is designed to
+    // relay `error.message` from add_friend verbatim rather than mapping
+    // through a refusal table (see addFriend's docstring, which records this
+    // deliberately). So these messages reaching a member are the plan's own
+    // intended behaviour, not a gap — same as the broadcasts entry above,
+    // this module is not the one responsible for it either way.
+    'you cannot add yourself':
+      'raised by add_friend — lib/friends.ts is the module responsible, and by design relays error.message rather than mapping through a refusal table',
+    'you can only add someone from one of your clubs':
+      'raised by add_friend — lib/friends.ts is the module responsible, and by design relays error.message rather than mapping through a refusal table',
 
     // series_occurrence_dates is revoked from public/anon/authenticated
     // (20260822197000, restated 20260823000000) and called only from inside
@@ -482,6 +496,97 @@ describe('BOOKING_REFUSALS (self-audit against the migrations)', () => {
     // against a future enum member, matching 'unrecognized stage: %' above.
     'series_occurrence_dates: unhandled frequency %':
       'only reachable from an internal, non-granted function (series_occurrence_dates); frequency is a Postgres enum so every current value is handled',
+
+    // Raised by open_thread_for_event (20260829020000_open_threads.sql) both
+    // when the event does not exist and when the caller has no confirmed or
+    // waitlisted seat and is not a club organizer. The two cases are
+    // deliberately given the same message and errcode: distinguishing "no
+    // such game" from "not your game" would let the event id be used to
+    // probe which events exist. Neither function nor module is called from
+    // lib/bookings.ts, and the module that DOES call it — lib/messages.ts
+    // (Task 5, not yet created) — is designed to relay `error.message` from
+    // this RPC verbatim rather than mapping through a refusal table, the
+    // same shape as the broadcasts and add_friend entries above.
+    'you are not part of this game':
+      'raised by open_thread_for_event — lib/messages.ts (Task 5, not yet created) is the module responsible, and by design relays error.message rather than mapping through a refusal table',
+
+    // Raised by create_group_thread (20260829030000_group_threads.sql) when
+    // p_members, after dropping the caller and nulls, is empty. The picker
+    // that builds p_members never lets a caller submit with nobody chosen,
+    // so a caller hitting this is maligned input, not a member doing
+    // something reasonable — same shape as 'duplicate player' above. But it
+    // is not this module's call to make: create_group_thread is not called
+    // from lib/bookings.ts, and lib/messages.ts (Task 5, not yet created) is
+    // designed to relay error.message from these RPCs verbatim rather than
+    // mapping through a refusal table, the same as every other messages.ts
+    // entry in this allowlist.
+    'pick somebody to message':
+      'raised by create_group_thread — lib/messages.ts (Task 5, not yet created) is the module responsible, and by design relays error.message rather than mapping through a refusal table',
+    // Raised by create_group_thread and add_to_group_thread when a member
+    // being added is neither a friend nor a club-mate of the caller. The
+    // picker only ever offers people can_reach already allows, so a caller
+    // hitting this is malicious or buggy. lib/messages.ts owns it, per the
+    // note above.
+    'you can only message people from your clubs or your friends':
+      'raised by create_group_thread/add_to_group_thread — lib/messages.ts (Task 5, not yet created) is the module responsible, and by design relays error.message rather than mapping through a refusal table',
+    // Raised by add_to_group_thread when the target thread is a club or
+    // game thread rather than a group. The UI only ever offers "add people"
+    // on a group thread screen, so a caller hitting this is malicious or
+    // buggy. lib/messages.ts owns it, per the note above.
+    'only a group has people to add':
+      'raised by add_to_group_thread — lib/messages.ts (Task 5, not yet created) is the module responsible, and by design relays error.message rather than mapping through a refusal table',
+    // Raised by add_to_group_thread when the caller is not themselves a
+    // member of the target group. The "add people" control only ever
+    // renders inside a group thread the caller is already reading, so a
+    // caller hitting this is malicious or buggy. lib/messages.ts owns it,
+    // per the note above.
+    'you are not in this conversation':
+      'raised by add_to_group_thread — lib/messages.ts (Task 5, not yet created) is the module responsible, and by design relays error.message rather than mapping through a refusal table',
+
+    // Raised by post_message (20260829040000_post_message.sql) when
+    // can_post_thread refuses the caller — a stranger to a club/game thread,
+    // or a non-member of a group. The compose screen only ever renders on a
+    // conversation already opened through can_read_thread, which is at least
+    // as strict, so a caller hitting this is malicious or buggy. lib/messages.ts
+    // owns it, per the note above.
+    'you cannot post in this conversation':
+      'raised by post_message — lib/messages.ts (Task 5, not yet created) is the module responsible, and by design relays error.message rather than mapping through a refusal table',
+    // Raised by post_message when the trimmed body is empty. The composer's
+    // send control is disabled on an empty/whitespace-only draft, so a
+    // caller hitting this is malicious or buggy. lib/messages.ts owns it.
+    'write something first':
+      'raised by post_message — lib/messages.ts (Task 5, not yet created) is the module responsible, and by design relays error.message rather than mapping through a refusal table',
+    // Raised by post_message when the trimmed body exceeds 2000 characters.
+    // The composer enforces the same bound client-side, so a caller hitting
+    // this is malicious or buggy. lib/messages.ts owns it.
+    'that message is too long':
+      'raised by post_message — lib/messages.ts (Task 5, not yet created) is the module responsible, and by design relays error.message rather than mapping through a refusal table',
+    // Raised by post_message when p_reply_to points at a message outside the
+    // target thread — the composite foreign key on messages already makes
+    // this unstateable, so this is a readable-words wrapper around a 23503
+    // that no reachable client path can trigger with a genuine reply-to id.
+    // lib/messages.ts owns it.
+    'you can only reply to a message in this conversation':
+      'raised by post_message — lib/messages.ts (Task 5, not yet created) is the module responsible, and by design relays error.message rather than mapping through a refusal table',
+    // Raised by post_message when p_announce is true on a group thread
+    // (club_id is null). The announce control only ever renders on a club
+    // thread, so a caller hitting this is malicious or buggy. lib/messages.ts
+    // owns it.
+    'a group has no roster to announce to':
+      'raised by post_message — lib/messages.ts (Task 5, not yet created) is the module responsible, and by design relays error.message rather than mapping through a refusal table',
+    // Raised by post_message when an announcement's derived subject (the
+    // body's first line, control characters stripped) is empty after
+    // trimming — reachable only when the first line is pure control
+    // characters, since the earlier empty-body check already refuses a
+    // blank body. lib/messages.ts owns it.
+    'an announcement needs a first line to use as its subject':
+      'raised by post_message — lib/messages.ts (Task 5, not yet created) is the module responsible, and by design relays error.message rather than mapping through a refusal table',
+    // Raised by mark_thread_read when can_read_thread refuses the caller.
+    // The read-watermark call only ever fires from a thread screen the
+    // caller already opened via can_read_thread, so a caller hitting this is
+    // malicious or buggy. lib/messages.ts owns it.
+    'you cannot read this conversation':
+      'raised by mark_thread_read — lib/messages.ts (Task 5, not yet created) is the module responsible, and by design relays error.message rather than mapping through a refusal table',
   };
 
   function distinctRaisedMessages(): string[] {

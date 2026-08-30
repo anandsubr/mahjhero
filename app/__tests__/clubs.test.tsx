@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ClubsScreen from '../clubs/index';
@@ -43,14 +44,24 @@ vi.mock('expo-router', () => ({
   useRouter: () => ({ push, replace }),
   usePathname: () => pathname,
   useLocalSearchParams: () => searchParams,
+  // Wrapped in a real `useEffect` keyed on the callback's identity, not
+  // called inline on every render: `(cb) => cb()` fires on every render,
+  // which the real hook never does, and would refire `useUnreadCounts`'s
+  // fetch (now pulled in by TabBar) on every state update it causes.
+  useFocusEffect: (cb: () => void | (() => void)) => {
+    useEffect(cb, [cb]);
+  },
 }));
 
-const useSessionMock = vi.fn(
-  (): { session: { user: { id: string } } | null; loading: boolean } => ({
-    session: { user: { id: 'test-user' } },
-    loading: false,
-  }),
-);
+// Module-scoped constant, not the fresh object per call this used to be:
+// TabBar's badge now reads `useSession` too (via `useUnreadCounts`), and a
+// fresh object there breaks the referential stability its
+// `useCallback([session])` depends on, refiring the fetch on every render.
+const SESSION: { session: { user: { id: string } } | null; loading: boolean } = {
+  session: { user: { id: 'test-user' } },
+  loading: false,
+};
+const useSessionMock = vi.fn(() => SESSION);
 
 vi.mock('../../lib/session', () => ({
   useSession: () => useSessionMock(),
@@ -113,6 +124,19 @@ vi.mock('../../lib/bookings', async (importOriginal) => {
 vi.mock('../../lib/profile', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../lib/profile')>();
   return { ...actual, fetchProfile: (...args: unknown[]) => fetchProfile(...args) };
+});
+
+// TabBar (carried by every screen in this file) and, on the dashboard,
+// ClubChips both now call `useUnreadCounts`, which reaches `fetchUnreadCounts`.
+// `unreadLabel` stays real — UnreadBadge calls it, and it is the pure helper
+// covered by lib/messages.test.ts.
+const fetchUnreadCounts = vi.fn(async () => []);
+vi.mock('../../lib/messages', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/messages')>();
+  return {
+    ...actual,
+    fetchUnreadCounts: () => fetchUnreadCounts(),
+  };
 });
 
 const CLUB = {
@@ -893,6 +917,13 @@ describe('dashboard artboard', () => {
 import ImportRosterScreen from '../clubs/[id]/import';
 
 describe('roster import', () => {
+  // This screen's own route is /clubs/club-1/import, not the Club tab's own
+  // /clubs -- same distinction the club detail and venues describe blocks
+  // draw for their own routes.
+  beforeEach(() => {
+    pathname = '/clubs/club-1/import';
+  });
+
   it('reports skipped rows instead of dropping them silently', async () => {
     render(<ImportRosterScreen />);
     const field = screen.getByLabelText('Roster CSV');
@@ -914,6 +945,33 @@ describe('roster import', () => {
     fireEvent.click(screen.getByText('Check the file'));
     expect(await screen.findByText(/1 person ready$/)).toBeTruthy();
     expect(screen.getByText('Doe, Jane')).toBeTruthy();
+  });
+
+  // TabBar navigates with router.replace off an entry route that is itself
+  // a Redirect, so the history stack is typically one deep -- a state
+  // without the bar strands a host with no way out but relaunching the app.
+  // See clubs.test.tsx's other describe blocks for the identical rationale.
+  describe('screen chrome', () => {
+    it('carries the tab bar', async () => {
+      render(<ImportRosterScreen />);
+      expect(await screen.findByRole('button', { name: 'Club' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Messages' })).toBeTruthy();
+    });
+
+    it('carries the tab bar while the session is still loading', () => {
+      useSessionMock.mockReturnValueOnce({ session: null, loading: true });
+      render(<ImportRosterScreen />);
+      expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
+    });
+
+    // Goes to /clubs/club-1, a specific club -- a different destination
+    // from the Club tab's own /clubs -- so it stays, the same reasoning
+    // venues.test.tsx's "Back to the club" documents for itself.
+    it('keeps its back link to the club, a different destination from the Club tab', async () => {
+      render(<ImportRosterScreen />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Back to the club' }));
+      expect(push).toHaveBeenCalledWith('/clubs/club-1');
+    });
   });
 });
 
@@ -1019,6 +1077,22 @@ describe('club detail screen', () => {
     // No dash anywhere on the roster, for Ben (not set) or anyone else --
     // the mutation this guards against is treating "not set" as "mixed".
     expect(screen.queryByTestId('pip-dash')).toBeNull();
+  });
+
+  // This button used to push to a compose screen that emailed the whole
+  // roster; it now opens an in-app thread with the "Also email everyone"
+  // toggle off by default. "Message members" was left over from the old
+  // behaviour, and an organizer's muscle memory would read it as "this
+  // emails the club" — which it no longer does.
+  it('offers to open the club thread, not the old email-flavoured label', async () => {
+    fetchRoster.mockResolvedValue([
+      { profile_id: 'test-user', role: 'host', display_name: 'Ada', skill_level: null },
+    ]);
+    render(<ClubDetailScreen />);
+    expect(
+      await screen.findByRole('button', { name: 'Open the club thread' }),
+    ).toBeTruthy();
+    expect(screen.queryByText('Message members')).toBeNull();
   });
 
   // TabBar navigates with router.replace off an entry route that is itself a

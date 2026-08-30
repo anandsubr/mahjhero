@@ -89,6 +89,26 @@ describe('ClubChips', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Riverside Mah Jongg' }));
     expect(onSelect).toHaveBeenCalledWith('club-1');
   });
+
+  // UnreadBadge's own <Text> never reaches assistive tech: this Pressable's
+  // accessibilityLabel emits aria-label on react-native-web, which REPLACES
+  // the accessible name computed from children (the badge included) rather
+  // than merging with it. The count has to be composed into the chip's own
+  // label for a screen-reader user to ever hear it.
+  it('composes the unread count into the chip’s accessible name', () => {
+    render(
+      <ClubChips
+        chips={CHIPS}
+        selected="club-1"
+        onSelect={() => {}}
+        unreadByClub={{ 'club-1': 4 }}
+      />,
+    );
+    expect(
+      screen.getByRole('button', { name: 'Riverside Mah Jongg, 4 unread' }),
+    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'All clubs' })).toBeTruthy();
+  });
 });
 
 import DashboardHeader from '../DashboardHeader';

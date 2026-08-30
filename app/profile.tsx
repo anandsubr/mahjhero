@@ -199,9 +199,6 @@ export default function ProfileScreen() {
         {saved ? 'Saved' : 'Save'}
       </Button>
 
-      {/* The design also shows a "Friends" card here, but that feature does
-          not exist yet — omitted rather than linking somewhere with nothing
-          behind it. */}
       <Card style={styles.settingsCard}>
         <View style={styles.settingsRow}>
           <Text style={styles.settingsLabel}>Notifications</Text>
@@ -210,6 +207,16 @@ export default function ProfileScreen() {
           </Link>
         </View>
         <Text style={styles.help}>Push and email, plus quiet hours</Text>
+      </Card>
+
+      <Card style={styles.settingsCard}>
+        <View style={styles.settingsRow}>
+          <Text style={styles.settingsLabel}>Friends</Text>
+          <Link href="/friends" style={styles.editLink}>
+            <Text style={styles.editLinkText}>Manage</Text>
+          </Link>
+        </View>
+        <Text style={styles.help}>The people you can hold seats with</Text>
       </Card>
 
       <Button

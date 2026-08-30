@@ -1,5 +1,5 @@
 import { Link, Redirect, useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Platform,
@@ -31,6 +31,7 @@ import {
   formatEventWhen,
 } from '../../../lib/events';
 import type { ClubEvent } from '../../../lib/events';
+import { openThreadForClub } from '../../../lib/messages';
 import { useSession } from '../../../lib/session';
 import { colors, space, type } from '../../../lib/theme';
 import { useViewerInitials } from '../../../lib/use-viewer';
@@ -59,6 +60,12 @@ export default function ClubDetailScreen() {
   const [eventsFailed, setEventsFailed] = useState(false);
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Written synchronously and cleared on every exit path, the same shape
+  // app/clubs/index.tsx uses for runBookingAction: `busy` state alone is
+  // read from the render closure, so a guard written as `if (busy) return`
+  // is blind to a second tap landing before React has re-rendered with the
+  // disabled button -- this repo has shipped that exact bug five times.
+  const messageBusyRef = useRef(false);
 
   useEffect(() => {
     if (!userId || !id) return;
@@ -165,6 +172,19 @@ export default function ClubDetailScreen() {
     setInviteUrl(`${window.location.origin}/join/${token}`);
   }
 
+  async function onMessageMembers() {
+    if (!id || messageBusyRef.current) return;
+    messageBusyRef.current = true;
+    setError(null);
+    const { id: threadId, error: threadError } = await openThreadForClub(id);
+    messageBusyRef.current = false;
+    if (threadError || !threadId) {
+      setError(threadError ?? GENERIC_ERROR);
+      return;
+    }
+    router.push(`/messages/${threadId}`);
+  }
+
   return (
     <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="club" />}>
       <DashboardHeader
@@ -260,23 +280,18 @@ export default function ClubDetailScreen() {
       ) : null}
 
       {mayInvite ? (
+        // "Message members" -- this button's label before it stopped
+        // pushing to a compose screen that emailed the roster -- is
+        // muscle-memory copy for an action that no longer emails anybody.
+        // Ordinary messages never email; only the thread screen's own
+        // "Also email everyone" toggle does, and it defaults off. Naming
+        // the destination rather than the old verb keeps the label honest.
         <Button
           variant="secondary"
-          onPress={() => router.push(`/clubs/${id}/broadcast`)}
-          accessibilityLabel="Message members"
+          onPress={onMessageMembers}
+          accessibilityLabel="Open the club thread"
         >
-          Message members
-        </Button>
-      ) : null}
-
-      {mayInvite ? (
-        <Button
-          variant="ghost"
-          big={false}
-          onPress={() => router.push(`/clubs/${id}/broadcasts`)}
-          accessibilityLabel="See sent messages"
-        >
-          Sent messages
+          Open the club thread
         </Button>
       ) : null}
 

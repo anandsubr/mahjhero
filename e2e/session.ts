@@ -363,8 +363,10 @@ export async function seedClubWithEvent(profileId: string): Promise<{
   /** A table one short of a fourth, inside the 48-hour call window, for
    * the `event needs a fourth` baseline. */
   needsAFourthEventId: string;
-  /** One broadcast already sent to Riverside, for the `broadcast history`
-   * baseline. */
+  /** One broadcast already sent to Riverside. The `broadcast history`
+   * baseline that read this row was retired in Task 15 — the row is left
+   * in place as harmless fixture data exercising the `broadcasts` table,
+   * which lib/schema-contract.test.ts and the Edge Function still read. */
   broadcastId: string;
   /** Check-in required, window open at the frozen clock, one person per
    * door-screen render group — for the `check-in door` baseline. */
@@ -434,10 +436,10 @@ export async function seedClubWithEvent(profileId: string): Promise<{
     );
   }
 
-  // One broadcast already sent, so `broadcast history` has a real row to
-  // screenshot rather than the empty state. event_id null — the
-  // whole-roster case — since nothing about that baseline needs the
-  // event-scoped variant.
+  // One broadcast already sent. This used to give `broadcast history` a
+  // real row to screenshot rather than the empty state; that baseline is
+  // gone (Task 15), but the row is kept as harmless fixture data. event_id
+  // null — the whole-roster case.
   const broadcast = need<{ id: string }>(
     'broadcast insert',
     await admin
@@ -995,6 +997,385 @@ export async function seedClubWithEvent(profileId: string): Promise<{
     broadcastId,
     checkInEventId,
   };
+}
+
+/**
+ * Seeds one club-thread message authored by somebody OTHER than the
+ * signed-in member, for the one baseline that has to picture the unread
+ * badge (Task 16 shipped it on the Messages tab and the dashboard's club
+ * chips; nothing had ever screenshotted it — see the visual suite's own
+ * comment on `messages badge at …`).
+ *
+ * Deliberately NOT folded into `seedClubWithEvent`: that function runs from
+ * the shared `beforeEach` in `e2e/visual.spec.ts`'s "with a seeded club"
+ * block, so anything it seeds lands in EVERY test there, including the
+ * `clubs-populated` and `club-detail` baselines this task does not touch. A
+ * standalone function called from just the one new test keeps this addition
+ * as narrow as the picture it exists to take.
+ *
+ * A message the viewer sent themselves is never unread —
+ * `fetch_my_threads`' own unread lateral join filters on
+ * `m.author_id <> auth.uid()` — so this mints a fresh filler profile as the
+ * author, the same way `seedFillerProfile` above does for a seat, rather
+ * than reusing the signed-in member's own id.
+ *
+ * Writes the `message_threads` and `messages` rows directly, the same
+ * service-role, no-RPC pattern `seatBooking` uses and for the same reason:
+ * service_role carries no JWT, so `post_message`'s own `auth.uid()` checks
+ * have nothing to authenticate against. No `thread_members` row is needed —
+ * a club thread's membership is derived from `club_members`, never
+ * materialised (20260829000000's own docstring).
+ */
+export async function seedUnreadClubMessage(
+  clubId: string,
+  suffix: string,
+): Promise<void> {
+  const admin = adminClient('seed unread message');
+
+  const need = <T>(what: string, result: { data: unknown; error: unknown }): T => {
+    if (result.error || result.data == null) {
+      throw new Error(`seedUnreadClubMessage: ${what} failed: ${JSON.stringify(result.error)}`);
+    }
+    return result.data as T;
+  };
+
+  const authorId = await seedFillerProfile(admin, 'Nadia Farouk', 'unread-author', suffix);
+
+  const thread = need<{ id: string }>(
+    'unread club thread insert',
+    await admin
+      .from('message_threads')
+      .insert({
+        club_id: clubId,
+        event_id: null,
+        created_by: authorId,
+        last_message_at: new Date().toISOString(),
+      })
+      .select('id')
+      .single(),
+  );
+
+  const { error: messageError } = await admin.from('messages').insert({
+    thread_id: thread.id,
+    author_id: authorId,
+    body: 'Reminder: bring your own set this week if you can!',
+  });
+  if (messageError) {
+    throw new Error(
+      `seedUnreadClubMessage: message insert failed: ${JSON.stringify(messageError)}`,
+    );
+  }
+}
+
+/**
+ * Seeds a POPULATED messages list: a club thread, a game thread and a
+ * direct thread, each carrying one message -- the minimum spread needed to
+ * picture the flat-list restyle's pinned-clubs-first ordering
+ * (`orderThreadsForList`, lib/messages.ts) and three of ThreadRow's four
+ * avatar treatments in one screen (club, game, direct; group is the one
+ * kind still unpictured after this task -- see docs/testing.md's "Known
+ * visual gaps"). Nothing prior to Task 17 ever screenshotted this screen
+ * with a row in it: every other `messages-*` baseline is the EMPTY state,
+ * and the agent that did the restyle had to write a throwaway spec, look at
+ * it, and delete it.
+ *
+ * Distinct from `seedUnreadClubMessage` just above, which exists for a
+ * narrower job -- pin the unread badge on the DASHBOARD (TabBar's tab and
+ * ClubChips' chip), seeding exactly one club row for that. This seeds three
+ * kinds at once for the messages LIST itself, so it is its own function
+ * rather than a parallel setup path or a change to that one's signature.
+ * The game thread rides the event `seedClubWithEvent` already seeded
+ * (`eventId`) rather than minting a second one: the signed-in member is
+ * already that club's host, and `can_read_thread`'s game branch
+ * (20260829010000_thread_predicates.sql) admits any organizer regardless of
+ * a booking, so no extra fixture is needed to make it readable.
+ *
+ * Every author is a FRESH filler profile, never the signed-in member --
+ * same reasoning as `seedUnreadClubMessage`'s own comment: a message you
+ * sent yourself is never unread (`fetch_my_threads`' lateral join filters
+ * on `author_id <> auth.uid()`), and a viewer-authored preview line reads
+ * like a diary entry ("Wei Chen: ...") rather than a conversation.
+ *
+ * Every timestamp is fixed relative to the suite's frozen clock
+ * (`page.clock.setFixedTime`, set in `e2e/visual.spec.ts` before this ever
+ * runs) rather than `new Date()`, and on the same calendar day as it,
+ * strictly before it -- not merely because a real-wall-clock timestamp
+ * rotates the baseline (the reason every fixture above pins its own
+ * instants), but because `relativeTimestamp` (lib/messages.ts) renders
+ * relative to the PAGE's clock. A message dated after the frozen "now" the
+ * page reads would print as a date in that "now"'s own future, which is a
+ * baseline of a bug that does not otherwise exist.
+ *
+ * The three messages land in newest-first order among themselves --
+ * direct (15:15), then game (14:00) -- so `orderThreadsForList`'s split
+ * has something to actually order (club pinned first regardless of
+ * recency, then the rest newest-active-first), and the direct thread's
+ * `thread_members.joined_at` is set BEFORE its message's timestamp, so
+ * that row also comes back unread -- the one baseline in this suite that
+ * pictures ThreadRow's own inline `UnreadBadge` sitting next to its
+ * timestamp, not just the dashboard's copies of it.
+ */
+export async function seedPopulatedMessagesList(
+  clubId: string,
+  eventId: string,
+  viewerId: string,
+  suffix: string,
+): Promise<void> {
+  const admin = adminClient('seed populated messages list');
+
+  const need = <T>(what: string, result: { data: unknown; error: unknown }): T => {
+    if (result.error || result.data == null) {
+      throw new Error(
+        `seedPopulatedMessagesList: ${what} failed: ${JSON.stringify(result.error)}`,
+      );
+    }
+    return result.data as T;
+  };
+
+  const [clubAuthor, gameAuthor, directPartner] = await Promise.all([
+    seedFillerProfile(admin, 'Grace Liu', 'msg-club', suffix),
+    seedFillerProfile(admin, 'Felix Turner', 'msg-game', suffix),
+    seedFillerProfile(admin, 'Yusuf Ahmed', 'msg-direct', suffix),
+  ]);
+
+  // Club: message_threads_one_per_club's own partial unique index (club_id
+  // where event_id is null) is what makes this the only club thread this
+  // club can ever get, seeded or otherwise.
+  const clubThread = need<{ id: string }>(
+    'club thread insert',
+    await admin
+      .from('message_threads')
+      .insert({
+        club_id: clubId,
+        event_id: null,
+        created_by: clubAuthor,
+        last_message_at: '2026-08-22T15:30:00Z',
+      })
+      .select('id')
+      .single(),
+  );
+  const { error: clubMessageError } = await admin.from('messages').insert({
+    thread_id: clubThread.id,
+    author_id: clubAuthor,
+    body: 'Reminder: bring exact change for the raffle this week!',
+    created_at: '2026-08-22T15:30:00Z',
+  });
+  if (clubMessageError) {
+    throw new Error(
+      `seedPopulatedMessagesList: club message insert failed: ${JSON.stringify(clubMessageError)}`,
+    );
+  }
+
+  // Game: club_id must equal the event's own club -- message_threads'
+  // (event_id, club_id) composite foreign key makes any other pairing
+  // unstateable, the same guard bookings and broadcasts carry.
+  const gameThread = need<{ id: string }>(
+    'game thread insert',
+    await admin
+      .from('message_threads')
+      .insert({
+        club_id: clubId,
+        event_id: eventId,
+        created_by: gameAuthor,
+        last_message_at: '2026-08-22T14:00:00Z',
+      })
+      .select('id')
+      .single(),
+  );
+  const { error: gameMessageError } = await admin.from('messages').insert({
+    thread_id: gameThread.id,
+    author_id: gameAuthor,
+    body: 'Save me a seat at Table 1 if there is room!',
+    created_at: '2026-08-22T14:00:00Z',
+  });
+  if (gameMessageError) {
+    throw new Error(
+      `seedPopulatedMessagesList: game message insert failed: ${JSON.stringify(gameMessageError)}`,
+    );
+  }
+
+  // Direct: a group of two (20260829000000_message_threads.sql's own
+  // docstring -- "A direct message is not a kind. It is a group of two.") --
+  // no club_id, no event_id, membership lives in thread_members instead of
+  // being derived.
+  const directThread = need<{ id: string }>(
+    'direct thread insert',
+    await admin
+      .from('message_threads')
+      .insert({
+        club_id: null,
+        event_id: null,
+        title: null,
+        created_by: directPartner,
+        last_message_at: '2026-08-22T15:15:00Z',
+      })
+      .select('id')
+      .single(),
+  );
+  const { error: membersError } = await admin.from('thread_members').insert([
+    {
+      thread_id: directThread.id,
+      profile_id: viewerId,
+      added_by: directPartner,
+      joined_at: '2026-08-22T13:00:00Z',
+    },
+    {
+      thread_id: directThread.id,
+      profile_id: directPartner,
+      added_by: directPartner,
+      joined_at: '2026-08-22T13:00:00Z',
+    },
+  ]);
+  if (membersError) {
+    throw new Error(
+      `seedPopulatedMessagesList: thread members insert failed: ${JSON.stringify(membersError)}`,
+    );
+  }
+  const { error: directMessageError } = await admin.from('messages').insert({
+    thread_id: directThread.id,
+    author_id: directPartner,
+    body: 'Looking forward to Tuesday -- see you there!',
+    created_at: '2026-08-22T15:15:00Z',
+  });
+  if (directMessageError) {
+    throw new Error(
+      `seedPopulatedMessagesList: direct message insert failed: ${JSON.stringify(directMessageError)}`,
+    );
+  }
+}
+
+/**
+ * Seeds a POPULATED thread -- four messages in one club thread, so the
+ * thread screen's own bubble treatments (`app/messages/[threadId].tsx`) have
+ * something to picture. Every OTHER `thread-*` baseline in this suite is the
+ * EMPTY thread: nothing has ever screenshotted an actual message, let alone
+ * the viewer's OWN bubble, somebody else's, or an announcement's, which is
+ * exactly the "amateurish" the bubbles were flagged for -- guarded by
+ * nothing since nobody could see them.
+ *
+ * Distinct from `seedPopulatedMessagesList` just above, which seeds THREE
+ * different THREADS (club, game, direct) with one message each to picture
+ * the messages LIST's row treatments. This seeds ONE thread with FOUR
+ * messages to picture the thread SCREEN's own bubble treatments instead --
+ * different job, own function, rather than overloading that one's signature.
+ *
+ * The four messages cover every bubble treatment this screen renders:
+ *
+ *   1. a FILLER author's ordinary message ("theirs" -- attributed, muted)
+ *   2. the VIEWER's own reply ("mine" -- accent-filled, unattributed)
+ *   3. a SECOND filler's ANNOUNCEMENT (the accent2 tag/subject treatment)
+ *   4. a THIRD filler's ordinary message, so the announcement is not the
+ *      last bubble in the thread either
+ *
+ * Every filler is a FRESH profile, the same reasoning `seedUnreadClubMessage`
+ * and `seedPopulatedMessagesList` both give: a message the viewer sent
+ * themselves proves nothing about how somebody ELSE's bubble renders, and
+ * three distinct authors (not one, reused) prove the "theirs" author-name
+ * treatment actually varies per sender rather than being hardcoded.
+ *
+ * Timestamps are fixed, on the same calendar day as and strictly before the
+ * suite's frozen clock (`page.clock.setFixedTime`, `e2e/visual.spec.ts`),
+ * for the identical reason `seedPopulatedMessagesList`'s own comment gives:
+ * a real-wall-clock timestamp rotates the baseline, and `relativeTimestamp`
+ * renders relative to the PAGE's clock, not the seed's.
+ */
+export async function seedPopulatedThread(
+  clubId: string,
+  viewerId: string,
+  suffix: string,
+): Promise<{ threadId: string }> {
+  const admin = adminClient('seed populated thread');
+
+  const need = <T>(what: string, result: { data: unknown; error: unknown }): T => {
+    if (result.error || result.data == null) {
+      throw new Error(`seedPopulatedThread: ${what} failed: ${JSON.stringify(result.error)}`);
+    }
+    return result.data as T;
+  };
+
+  const [askAuthor, announceAuthor, thanksAuthor] = await Promise.all([
+    seedFillerProfile(admin, 'Priya Shah', 'thread-ask', suffix),
+    seedFillerProfile(admin, 'Wanda Cole', 'thread-announce', suffix),
+    seedFillerProfile(admin, 'Yusuf Ahmed', 'thread-thanks', suffix),
+  ]);
+
+  // message_threads_one_per_club's own partial unique index (club_id where
+  // event_id is null) is what makes this the only club thread this club can
+  // ever get -- same reasoning seedPopulatedMessagesList's own club-thread
+  // insert records.
+  const thread = need<{ id: string }>(
+    'club thread insert',
+    await admin
+      .from('message_threads')
+      .insert({
+        club_id: clubId,
+        event_id: null,
+        created_by: askAuthor,
+        last_message_at: '2026-08-22T14:15:00Z',
+      })
+      .select('id')
+      .single(),
+  );
+
+  // Four SEPARATE inserts, not one array insert -- a single `.insert([...])`
+  // call with heterogeneous row shapes sends the UNION of every object's
+  // keys as the bulk statement's column list, and PostgREST fills a row that
+  // omits one of those keys with an explicit NULL rather than letting the
+  // column's own DEFAULT apply. `is_announcement boolean not null default
+  // false` then rejects the three plain messages outright, since only the
+  // announcement row supplies that key. `seedPopulatedMessagesList` above
+  // avoids this the same way, one insert per row.
+  const { error: askError } = await admin.from('messages').insert({
+    thread_id: thread.id,
+    author_id: askAuthor,
+    body: 'Are we still on for Tuesday’s game?',
+    created_at: '2026-08-22T14:00:00Z',
+  });
+  if (askError) {
+    throw new Error(
+      `seedPopulatedThread: ask message insert failed: ${JSON.stringify(askError)}`,
+    );
+  }
+
+  const { error: replyError } = await admin.from('messages').insert({
+    thread_id: thread.id,
+    author_id: viewerId,
+    body: 'Yes! I will bring extra tiles.',
+    created_at: '2026-08-22T14:05:00Z',
+  });
+  if (replyError) {
+    throw new Error(
+      `seedPopulatedThread: viewer reply insert failed: ${JSON.stringify(replyError)}`,
+    );
+  }
+
+  const { error: announceError } = await admin.from('messages').insert({
+    thread_id: thread.id,
+    author_id: announceAuthor,
+    subject: 'Hall closed this week',
+    body: 'Hall closed this week\nWe will meet at the community center instead.',
+    is_announcement: true,
+    created_at: '2026-08-22T14:10:00Z',
+  });
+  if (announceError) {
+    throw new Error(
+      `seedPopulatedThread: announcement insert failed: ${JSON.stringify(announceError)}`,
+    );
+  }
+
+  const { error: thanksError } = await admin.from('messages').insert({
+    thread_id: thread.id,
+    author_id: thanksAuthor,
+    body: 'Thanks for letting us know!',
+    created_at: '2026-08-22T14:15:00Z',
+  });
+  if (thanksError) {
+    throw new Error(
+      `seedPopulatedThread: thanks message insert failed: ${JSON.stringify(thanksError)}`,
+    );
+  }
+
+  return { threadId: thread.id };
 }
 
 /**

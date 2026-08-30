@@ -181,7 +181,7 @@ export default function VenuesScreen() {
     <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="club" />}>
       {/* Generic label, not club.name: the kicker right below already names
           the club, so repeating it here would read as a mistake rather than
-          confirmation. Matches import.tsx and broadcasts.tsx. */}
+          confirmation. Matches import.tsx. */}
       <Button
         variant="ghost"
         big={false}

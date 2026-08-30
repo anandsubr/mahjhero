@@ -1,5 +1,12 @@
 import { expect, test, type Page } from '@playwright/test';
-import { mintSession, seedClubWithEvent, storageKeyFor } from './session';
+import {
+  mintSession,
+  seedClubWithEvent,
+  seedPopulatedMessagesList,
+  seedPopulatedThread,
+  seedUnreadClubMessage,
+  storageKeyFor,
+} from './session';
 
 // The LOCAL stack — the same project the bundle was built against in
 // playwright.config.ts. Deliberately not EXPO_PUBLIC_SUPABASE_URL, which
@@ -56,6 +63,21 @@ async function settle(page: Page) {
  * `Screen` renders as a plain View and vertically centres) are not resized at
  * all, so their baselines stay at true device dimensions.
  *
+ * The amount grown is the scroller's OVERFLOW — scrollHeight minus its own
+ * clientHeight — not its scrollHeight outright. components/Screen.tsx renders
+ * the bottom tab bar as a flex SIBLING of the scroller (`tabShellBody` holds
+ * the scroller, `tabBarColumn` holds the bar), not inside it, so on any
+ * tab-bar screen the scroller's clientHeight is already short by the bar's
+ * height. Growing the viewport to scrollHeight outright reproduces that same
+ * shortfall one level up and clips the last of the content — exactly what
+ * happened to the committed profile-mobile baseline, which came out missing
+ * its Sign out button. Adding the overflow to the CURRENT viewport height
+ * instead accounts for whatever space is already spoken for outside the
+ * scroller, whatever it is, so it isn't tied to the tab bar specifically. For
+ * a screen with nothing outside the scroller, clientHeight already equals the
+ * viewport height, so this yields the same number the old content-height
+ * check did — those baselines do not move.
+ *
  * A baseline's height is therefore content-dependent. That is intentional:
  * if a screen grows or shrinks, Playwright reports a size mismatch, which is
  * a diff, which is the point.
@@ -63,20 +85,37 @@ async function settle(page: Page) {
 async function captureScreen(page: Page, vp: Viewport, name: string) {
   await settle(page);
 
-  // Measure only after fonts have landed — text reflow changes the height.
-  const needed = await page.evaluate((selector) => {
-    const scroller = document.querySelector(selector);
-    return Math.max(
-      scroller ? scroller.scrollHeight : 0,
-      document.documentElement.scrollHeight,
-    );
-  }, SCROLLER);
+  // Grow-and-resettle can itself introduce a little more overflow (a taller
+  // window can reflow text), so repeat the measurement until it settles.
+  // Bounded to 3 iterations to prevent hanging. An assertion after the loop
+  // fails loudly if a screen never settles, ensuring a test failure instead
+  // of a truncated PNG baseline on first generation.
+  let overflow = 0;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    // Measure only after fonts have landed — text reflow changes the height.
+    overflow = await page.evaluate((selector) => {
+      const scroller = document.querySelector(selector);
+      const scrollerOverflow = scroller
+        ? scroller.scrollHeight - scroller.clientHeight
+        : 0;
+      const docOverflow =
+        document.documentElement.scrollHeight -
+        document.documentElement.clientHeight;
+      return Math.max(scrollerOverflow, docOverflow, 0);
+    }, SCROLLER);
 
-  if (needed > vp.height) {
-    await page.setViewportSize({ width: vp.width, height: Math.ceil(needed) });
+    if (overflow <= 0) break;
+
+    const vpNow = page.viewportSize() ?? vp;
+    await page.setViewportSize({
+      width: vp.width,
+      height: vpNow.height + Math.ceil(overflow),
+    });
     // Re-settle: the resize triggers a relayout and a fresh paint.
     await settle(page);
   }
+
+  expect(overflow <= 0, `Screen "${name}" never stopped overflowing (overflow: ${overflow}px)`).toBe(true);
 
   await expect(page).toHaveScreenshot(name);
 }
@@ -140,9 +179,25 @@ test.describe('signed in', () => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/messages');
       await expect(
-        page.getByText('Club messages are on the way.'),
+        page.getByText('No conversations yet. Start one with New.'),
       ).toBeVisible();
       await captureScreen(page, vp, `messages-${vp.name}.png`);
+    });
+
+    // The EMPTY state: this block's user belongs to no club, so there are
+    // neither friends nor anybody to add. Anchored on the intro copy rather
+    // than the "Friends" heading — not because of a same-page collision like
+    // the `messages` and `clubs` tests above (this page navigates fully, so
+    // Profile isn't rendered, and app/friends.tsx has exactly one "Friends"
+    // string and no tab bar), but because the intro copy is simply the more
+    // specific anchor for this screen's empty state.
+    test(`friends at ${vp.name}`, async ({ page }) => {
+      await page.setViewportSize({ width: vp.width, height: vp.height });
+      await page.goto('/friends');
+      await expect(
+        page.getByText('These are the people you can hold seats with'),
+      ).toBeVisible();
+      await captureScreen(page, vp, `friends-${vp.name}.png`);
     });
 
     // The EMPTY state, and it stays that way: this block's user belongs to no
@@ -285,6 +340,153 @@ test.describe('signed in', () => {
         // needing to disambiguate the two cards.
         await expect(page.getByText('2 tables').first()).toBeVisible();
         await captureScreen(page, vp, `club-detail-${vp.name}.png`);
+      });
+
+      test(`new message at ${vp.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        await page.goto('/messages/new');
+        await expect(page.getByText('Send to')).toBeVisible();
+        await captureScreen(page, vp, `message-new-${vp.name}.png`);
+      });
+
+      test(`club thread at ${vp.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        await page.goto('/messages');
+        // Through the row, not a guessed id: thread ids are generated and
+        // the club thread has none at all until it is opened. Named exactly
+        // rather than a loose pattern on the club's own name — Task 15's
+        // booking-state fixtures (e2e/session.ts) seed a SECOND club,
+        // "Thursday Casuals", so this list carries two club-thread rows and
+        // a loose pattern is a strict-mode hard failure now, the same
+        // "Your clubs" trap this file's other comments record. The row's
+        // title is the club's bare name now, not "Everyone at <club>" — see
+        // lib/messages.ts's `threadTitleFor` for why.
+        await page.getByRole('button', { name: 'Riverside Mah Jongg' }).click();
+        // `exact: true` — the brief's own bare `getByLabel('Message')` is
+        // ALSO a substring match on this screen's own "< Messages" back
+        // link (accessibilityLabel="Messages", app/messages/[threadId].tsx),
+        // a same-page collision on top of the multi-club one above.
+        await expect(page.getByLabel('Message', { exact: true })).toBeVisible();
+        await captureScreen(page, vp, `thread-${vp.name}.png`);
+      });
+
+      // The POPULATED list, pictured for the first time. Every other
+      // `messages-*` baseline in this suite is the EMPTY state
+      // ("No conversations yet") -- the flat-list restyle (row shape,
+      // avatar column per kind, hairline dividers, truncation, timestamp
+      // and badge placement) shipped guarded by nothing but a throwaway
+      // spec the restyling agent wrote, looked at, and deleted.
+      // `seedPopulatedMessagesList` (e2e/session.ts) seeds a club thread, a
+      // game thread and a direct thread -- three of ThreadRow's four
+      // avatar treatments -- each authored by a filler profile so the
+      // preview lines read as a real conversation, never the viewer's own.
+      test(`messages populated at ${vp.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        await seedPopulatedMessagesList(
+          seeded.clubId,
+          seeded.eventId,
+          userId,
+          userId.slice(0, 8),
+        );
+        await page.goto('/messages');
+        // The club row, pinned first by lib/messages.ts's
+        // `orderThreadsForList`. Same anchor the `club thread at …` test
+        // above uses -- `getByRole`'s `name` option is a substring match,
+        // which is what keeps this robust regardless of whether the row's
+        // composed accessibilityLabel (`unreadSuffix`, lib/messages.ts)
+        // carries a ", N unread" tail.
+        await expect(
+          page.getByRole('button', { name: 'Riverside Mah Jongg' }),
+        ).toBeVisible();
+        // The game thread's own title -- unique to this fixture on this
+        // screen (no other row's title or subtitle contains it) -- proves a
+        // NON-club row survived the club pin, not just the club one. This
+        // is exactly the assertion this task exists to add: a future
+        // regression that empties the list fails loudly here instead of
+        // quietly matching the empty-state baseline above.
+        await expect(page.getByText('Tuesday night mahjong')).toBeVisible();
+        await captureScreen(page, vp, `messages-populated-${vp.name}.png`);
+      });
+
+      // The thread screen's own bubbles, pictured for the first time. Every
+      // OTHER `thread-*` baseline in this suite (the `club thread at …` test
+      // above) is the EMPTY thread — nothing has ever screenshotted an
+      // actual message, so the bubble treatments themselves (an ordinary
+      // "theirs" bubble, the viewer's own "mine" bubble, and an
+      // announcement) were guarded by nothing.
+      // `seedPopulatedThread` (e2e/session.ts) seeds one club thread with
+      // four messages: a filler's ordinary message, the viewer's own reply,
+      // a second filler's announcement, and a third filler's ordinary
+      // message after it — every bubble treatment this screen renders, in
+      // one thread.
+      test(`thread populated at ${vp.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        const { threadId } = await seedPopulatedThread(
+          seeded.clubId,
+          userId,
+          userId.slice(0, 8),
+        );
+        await page.goto(`/messages/${threadId}`);
+        // A known body from each side of the conversation -- the viewer's
+        // own reply and the announcement's subject -- so a regression that
+        // empties the thread (or drops the announcement) fails loudly here
+        // rather than quietly matching the empty-thread baseline above.
+        await expect(page.getByText('Yes! I will bring extra tiles.')).toBeVisible();
+        // `exact: true` -- the announcement's own body starts with the same
+        // words as its subject line ("Hall closed this week" is both the
+        // subject AND the body's first line, by design: deriveSubject takes
+        // the body's first line), so a loose match resolves to both the bare
+        // subject <Text> and the multi-line body <Text> and Playwright's
+        // strict mode turns that into a hard failure.
+        await expect(
+          page.getByText('Hall closed this week', { exact: true }),
+        ).toBeVisible();
+        await captureScreen(page, vp, `thread-populated-${vp.name}.png`);
+      });
+
+      // The unread badge, pictured for the first time. Task 16 shipped it on
+      // the Messages tab and on the dashboard's club chips (components/TabBar.tsx,
+      // components/ClubChips.tsx), and every OTHER baseline in this suite is
+      // shot with a freshly-seeded user who has nothing unread — UnreadBadge
+      // (components/UnreadBadge.tsx) returns null at count 0, so all 32
+      // pre-existing baselines came back byte-identical whether the badge
+      // code was there or not. Its real rendering — whether the pill clips
+      // the icon, overflows the tab, or collides with the label — was
+      // guarded by nothing.
+      //
+      // `seedUnreadClubMessage` (e2e/session.ts) posts as a FRESH filler
+      // profile, never the signed-in member: a message you sent yourself is
+      // never unread (fetch_my_threads' own lateral join filters on
+      // `author_id <> auth.uid()`), so seeding it as the viewer would prove
+      // nothing. The dashboard is the one screen that renders both badge
+      // sites at once — TabBar's own Messages tab and ClubChips' Riverside
+      // chip — so one capture pictures both.
+      test(`messages badge at ${vp.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        await seedUnreadClubMessage(seeded.clubId, userId.slice(0, 8));
+        await page.goto('/clubs');
+        // ClubChips and TabBar compose the unread count straight into their
+        // accessibilityLabel now (components/ClubChips.tsx,
+        // components/TabBar.tsx) rather than leaving it on UnreadBadge's own
+        // nested <Text> — react-native-web's aria-label REPLACES the
+        // accessible name computed from children, it does not merge with
+        // it, so the count never reached assistive tech any other way. That
+        // also settles the trap this comment used to record: the club LIST
+        // card below (line ~549) shares "Riverside Mah Jongg" with the chip,
+        // but only the chip carries a badge, so its composed name is unique
+        // on its own — `.first()` stays only as a defensive belt.
+        const clubChip = page
+          .getByRole('button', { name: 'Riverside Mah Jongg, 1 unread', exact: true })
+          .first();
+        await expect(clubChip.getByText('1', { exact: true })).toBeVisible();
+        // The Messages tab's own badge, scoped to its button for the same
+        // reason — TabBar.tsx renders it inside the "Messages" Pressable.
+        const messagesTab = page.getByRole('button', {
+          name: 'Messages, 1 unread',
+          exact: true,
+        });
+        await expect(messagesTab.getByText('1', { exact: true })).toBeVisible();
+        await captureScreen(page, vp, `messages-badge-${vp.name}.png`);
       });
 
       test(`event detail at ${vp.name}`, async ({ page }) => {
@@ -484,30 +686,6 @@ test.describe('signed in', () => {
         await expect(page.getByText('Last seat')).toBeVisible();
         await expect(page.getByText('Call for a 4th now')).toBeVisible();
         await captureScreen(page, vp, `event-needs-a-fourth-${vp.name}.png`);
-      });
-
-      // Anchored on the recipient count, not the heading. The count is
-      // fetched after mount (app/clubs/[id]/broadcast.tsx's useEffect), so a
-      // screenshot taken on first paint would catch "Working out who this
-      // reaches…" and the baseline would be a race. The regex matches both
-      // the singular and plural copy — Riverside's only active member here
-      // is the signed-in host themselves, so `countBroadcastRecipients`
-      // (which excludes the caller) resolves to 0, and "This goes to 0
-      // members, by email." is the real, correctly-loaded state, not a
-      // stand-in for a failure.
-      test(`broadcast compose at ${vp.name}`, async ({ page }) => {
-        await page.setViewportSize({ width: vp.width, height: vp.height });
-        await page.goto(`/clubs/${seeded.clubId}/broadcast`);
-        await expect(page.getByText(/goes to \d+ member/)).toBeVisible();
-        await captureScreen(page, vp, `broadcast-compose-${vp.name}.png`);
-      });
-
-      // 'Doors at seven' is the seeded broadcast's subject (e2e/session.ts).
-      test(`broadcast history at ${vp.name}`, async ({ page }) => {
-        await page.setViewportSize({ width: vp.width, height: vp.height });
-        await page.goto(`/clubs/${seeded.clubId}/broadcasts`);
-        await expect(page.getByText('Doors at seven')).toBeVisible();
-        await captureScreen(page, vp, `broadcast-history-${vp.name}.png`);
       });
 
       // The organizer's door screen (Task 15). `seeded.checkInEventId`

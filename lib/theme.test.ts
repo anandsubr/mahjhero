@@ -58,3 +58,106 @@ describe('field labels clear AA on both grounds', () => {
     expect(contrast(colors.textLabel, colors.surface)).toBeGreaterThanOrEqual(AA);
   });
 });
+
+// UnreadBadge is the only signal an ordinary message produces — ordinary
+// messages never email. `colors.bg` on `accentColor` measured 3.03:1, which
+// fails AA at this weight (16px bold, below the 14pt-bold large-text
+// threshold); accent[700] fixed it at 5.72:1. Pinned here so a future
+// palette change that reopens the hole fails a test instead of shipping.
+//
+// The thread screen (app/messages/[threadId].tsx) hit the same 3.03:1
+// failure twice more — the viewer's own bubble and the Send button both put
+// `colors.bg` text on what would have been `accentColor` (18px regular body
+// text there, needing AA's 4.5:1, not the 3:1 large-text allowance) — and
+// took the same accent[700] fix. Same pair, so this one assertion already
+// guards all three call sites; a regression here fails for the badge, the
+// bubble, and the button at once.
+describe('unread badge text clears AA on its background', () => {
+  it('clears AA on accent[700]', () => {
+    expect(contrast(colors.bg, colors.accent[700])).toBeGreaterThanOrEqual(AA);
+  });
+});
+
+// The thread screen's Send button, ARMED for a two-step announcement
+// confirmation (app/messages/[threadId].tsx's `sendArmed`), swaps its fill
+// from accent[700] (pinned just above) to accent2[700] -- the same family
+// this screen already uses everywhere else for "this involves email" (the
+// announcement Tag, the announcement bubble, MailIcon's default colour) --
+// so the SendIcon glyph (colors.bg) needs its own pin against this new
+// ground. Measured at 5.43:1, clearing AA (this is a 22px SVG glyph, not
+// text, so only the 3:1 non-text bar strictly applies, but it clears the
+// higher bar too).
+describe('armed send button clears AA on its background', () => {
+  it('clears AA on accent2[700]', () => {
+    expect(contrast(colors.bg, colors.accent2[700])).toBeGreaterThanOrEqual(AA);
+  });
+});
+
+// The badge's own shape — accent[700] — sits on colors.surface, the tab
+// bar's ground and the club chips' ground. That pairing is not text, so AA's
+// 4.5:1 does not govern it; it is a filled shape against its background, so
+// WCAG 1.4.11 non-text contrast applies, which sets 3:1. Measured at 5.08:1,
+// comfortably clear. Pinned here so a future palette change that lets the
+// badge fade into the bar fails a test instead of shipping invisible.
+const NON_TEXT = 3;
+
+describe('unread badge shape clears non-text contrast against its ground', () => {
+  it('clears WCAG 1.4.11 (3:1) on surface', () => {
+    expect(contrast(colors.accent[700], colors.surface)).toBeGreaterThanOrEqual(
+      NON_TEXT,
+    );
+  });
+});
+
+// The thread screen's announcement bubble (app/messages/[threadId].tsx) put
+// its subject in accent2[800] on the bubble's accent2[100] background, but
+// the body text and quote-stub/Reply text followed `mine` instead --
+// cream (colors.bg) on accent2[100] measures 1.10:1 when the viewer is the
+// announcement's own author, which happens on every announcement its
+// author looks at. All three now share accent2[800], pinned here so a
+// future palette change cannot quietly reopen the hole.
+describe('announcement text clears AA on the announcement background', () => {
+  it('clears AA on accent2[800]', () => {
+    expect(contrast(colors.accent2[800], colors.accent2[100])).toBeGreaterThanOrEqual(
+      AA,
+    );
+  });
+});
+
+// components/ThreadRow.tsx's flat messages list gives every kind a uniform
+// circular avatar, distinguished by fill: club and game share the accent
+// family, direct and group the accent2 family, a shade apart within each
+// pair. All four put `colors.bg` (cream) glyph/initials on a saturated fill.
+//
+// club and direct render INITIALS -- real text -- so they need AA's 4.5:1,
+// not the 3:1 non-text allowance; accent[700] was already pinned above (the
+// unread badge's own colour) at 5.72:1, reused rather than re-pinned. game
+// and group render an SVG glyph instead (CalendarIcon / PeopleIcon), which
+// WCAG 1.4.11 governs at 3:1, not 4.5:1 -- but both measure comfortably past
+// even the higher bar, so there was no reason to pick a paler shade just
+// because the rule allowed it.
+//
+// The thread screen used to also put a per-message timestamp inside the
+// mine bubble, in accent[200] on accent[700] (5.49:1) -- pinned here for
+// exactly that pairing. The redesign to iOS Messages' centred separator
+// (app/messages/[threadId].tsx) removed the per-bubble timestamp entirely,
+// and accent[200] is not drawn on accent[700] anywhere else in the app
+// (accent[200] elsewhere is only ever a BACKGROUND -- Tag, Button,
+// ErrorBanner -- never text on accent[700]), so the pin went with it rather
+// than staying as an assertion for a colour combination nothing renders.
+// The separator's own text reuses `colors.textMuted` on `colors.bg`,
+// already pinned above ("muted text clears AA on both grounds").
+
+describe('thread row avatars clear contrast on their own fill', () => {
+  it('clears AA on accent2[700] (direct avatar initials)', () => {
+    expect(contrast(colors.bg, colors.accent2[700])).toBeGreaterThanOrEqual(AA);
+  });
+
+  it('clears WCAG 1.4.11 (3:1) on accent[600] (game avatar glyph)', () => {
+    expect(contrast(colors.bg, colors.accent[600])).toBeGreaterThanOrEqual(NON_TEXT);
+  });
+
+  it('clears WCAG 1.4.11 (3:1) on accent2[600] (group avatar glyph)', () => {
+    expect(contrast(colors.bg, colors.accent2[600])).toBeGreaterThanOrEqual(NON_TEXT);
+  });
+});

@@ -1,5 +1,7 @@
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import UnreadBadge from './UnreadBadge';
 import type { Chip } from '../lib/dashboard';
+import { unreadSuffix } from '../lib/messages';
 import { colors, radius, space, type } from '../lib/theme';
 
 /**
@@ -14,10 +16,12 @@ export default function ClubChips({
   chips,
   selected,
   onSelect,
+  unreadByClub,
 }: {
   chips: Chip[];
   selected: string;
   onSelect: (id: string) => void;
+  unreadByClub?: Record<string, number>;
 }) {
   return (
     <ScrollView
@@ -27,17 +31,24 @@ export default function ClubChips({
     >
       {chips.map((chip) => {
         const active = chip.id === selected;
+        const count = unreadByClub?.[chip.id] ?? 0;
         return (
           <Pressable
             key={chip.id}
             onPress={() => onSelect(chip.id)}
             accessibilityRole="button"
-            accessibilityLabel={chip.label}
+            // The count is composed in here rather than left on
+            // UnreadBadge's own <Text>: react-native-web's aria-label
+            // REPLACES the accessible name computed from a Pressable's
+            // children, it does not merge with it, so the badge nested
+            // below would otherwise never reach assistive tech.
+            accessibilityLabel={`${chip.label}${unreadSuffix(count)}`}
             aria-selected={active}
             style={styles.chip}
           >
             {active ? <View style={styles.dot} /> : null}
             <Text style={styles.label}>{chip.label}</Text>
+            <UnreadBadge count={count} />
           </Pressable>
         );
       })}

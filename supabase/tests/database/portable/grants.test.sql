@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(77);
+select plan(102);
 
 /*
  * Guards the privileges themselves, not the policies.
@@ -714,7 +714,23 @@ select is(
        'public.send_broadcast(uuid, uuid, text, text)',
        'public.record_attendance(uuid, uuid, public.attendance_state, timestamptz)',
        'public.clear_attendance(uuid, uuid)',
-       'public.event_attendance(uuid)'
+       'public.event_attendance(uuid)',
+       'public.add_friend(uuid)',
+       'public.remove_friend(uuid)',
+       'public.fetch_friends()',
+       'public.fetch_addable_people()',
+       'public.can_read_thread(uuid)',
+       'public.open_thread_for_club(uuid)',
+       'public.open_thread_for_event(uuid)',
+       'public.create_group_thread(text, uuid[])',
+       'public.add_to_group_thread(uuid, uuid[])',
+       'public.leave_group_thread(uuid)',
+       'public.post_message(uuid, text, boolean, uuid)',
+       'public.mark_thread_read(uuid)',
+       'public.fetch_my_threads()',
+       'public.my_unread_counts()',
+       'public.fetch_thread_messages(uuid)',
+       'public.thread_roster(uuid)'
      ]) as f
    ) expected
    where not exists (
@@ -778,12 +794,196 @@ select is(
          'public.send_broadcast(uuid, uuid, text, text)',
          'public.record_attendance(uuid, uuid, public.attendance_state, timestamptz)',
          'public.clear_attendance(uuid, uuid)',
-         'public.event_attendance(uuid)'
+         'public.event_attendance(uuid)',
+         'public.add_friend(uuid)',
+         'public.remove_friend(uuid)',
+         'public.fetch_friends()',
+         'public.fetch_addable_people()',
+         'public.can_read_thread(uuid)',
+         'public.open_thread_for_club(uuid)',
+         'public.open_thread_for_event(uuid)',
+         'public.create_group_thread(text, uuid[])',
+         'public.add_to_group_thread(uuid, uuid[])',
+         'public.leave_group_thread(uuid)',
+         'public.post_message(uuid, text, boolean, uuid)',
+         'public.mark_thread_read(uuid)',
+         'public.fetch_my_threads()',
+         'public.my_unread_counts()',
+         'public.fetch_thread_messages(uuid)',
+         'public.thread_roster(uuid)'
        ]) as f
        where to_regprocedure(f) = p.oid::regprocedure
      )),
   '',
   'no UNEXPECTED function is reachable by authenticated'
+);
+
+-- ---------------------------------------------------------------------
+-- Friends (20260828000000, 20260828010000).
+-- ---------------------------------------------------------------------
+
+select ok(
+  not has_table_privilege('authenticated', 'public.friendships', 'TRUNCATE'),
+  'authenticated cannot TRUNCATE friendships'
+);
+
+-- Edges are written only by add_friend/remove_friend. Direct DML here would
+-- let a client write an edge for somebody else's profile_id, which the
+-- select policy would then hide from the person it was written about.
+select ok(
+  not has_table_privilege('authenticated', 'public.friendships', 'INSERT'),
+  'authenticated cannot INSERT a friendship directly'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.friendships', 'DELETE'),
+  'authenticated cannot DELETE a friendship directly'
+);
+select ok(
+  has_table_privilege('authenticated', 'public.friendships', 'SELECT'),
+  'authenticated can SELECT friendships, scoped by the own-rows policy'
+);
+
+-- can_reach is internal. This assertion is the one that catches Supabase's
+-- hosted bootstrap grant, which `revoke … from public` does not clear and
+-- which the local stack never creates.
+select ok(
+  not has_function_privilege(
+    'authenticated', 'public.can_reach(uuid, uuid)', 'EXECUTE'),
+  'can_reach is revoked from authenticated'
+);
+
+select ok(
+  has_function_privilege('authenticated', 'public.add_friend(uuid)', 'EXECUTE'),
+  'authenticated can execute add_friend'
+);
+select ok(
+  has_function_privilege('authenticated', 'public.fetch_friends()', 'EXECUTE'),
+  'authenticated can execute fetch_friends'
+);
+select ok(
+  not has_function_privilege('anon', 'public.add_friend(uuid)', 'EXECUTE'),
+  'anon cannot execute add_friend'
+);
+
+-- ---------------------------------------------------------------------
+-- Messages (20260829000000, 20260829010000).
+-- ---------------------------------------------------------------------
+
+-- TRUNCATE is not subject to RLS, so a bare `revoke all ... grant select`
+-- (20260829000000) leaves every one of these four tables open to it unless
+-- revoked explicitly. Same reasoning as every TRUNCATE block above.
+select ok(
+  not has_table_privilege('authenticated', 'public.message_threads', 'TRUNCATE'),
+  'authenticated cannot TRUNCATE message_threads'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.thread_members', 'TRUNCATE'),
+  'authenticated cannot TRUNCATE thread_members'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.messages', 'TRUNCATE'),
+  'authenticated cannot TRUNCATE messages'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.thread_reads', 'TRUNCATE'),
+  'authenticated cannot TRUNCATE thread_reads'
+);
+
+-- No messaging table takes direct DML. A client that could INSERT into
+-- messages could forge an author_id, and the select policy would then show
+-- it to the thread as somebody else's words. thread_reads is written only
+-- through mark_thread_read, so a direct UPDATE would let a member move their
+-- own read marker without the can_read_thread check that RPC applies.
+select ok(
+  not has_table_privilege('authenticated', 'public.messages', 'INSERT'),
+  'authenticated cannot INSERT a message directly'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.thread_members', 'INSERT'),
+  'authenticated cannot add themselves to a thread directly'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.message_threads', 'INSERT'),
+  'authenticated cannot create a thread directly'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.thread_reads', 'UPDATE'),
+  'authenticated cannot move their own read marker directly'
+);
+
+-- can_read_thread is invoked directly inside the USING clause of the
+-- select policies on message_threads/thread_members/messages, and that
+-- invocation runs under the querying role's own EXECUTE privilege, not
+-- the table owner's — SECURITY DEFINER only changes whose privileges
+-- apply inside the function body, not who may call it. It needs the same
+-- grant is_booking_group_member has above, or every plain `select` an
+-- authenticated client issues against those tables fails outright.
+select ok(
+  has_function_privilege(
+    'authenticated', 'public.can_read_thread(uuid)', 'EXECUTE'),
+  'authenticated can execute can_read_thread'
+);
+select ok(
+  not has_function_privilege(
+    'anon', 'public.can_read_thread(uuid)', 'EXECUTE'),
+  'anon cannot execute can_read_thread'
+);
+
+-- can_post_thread and is_club_organizer_of are not referenced by any
+-- policy — every write goes through an RPC — so both stay fully internal.
+select ok(
+  not has_function_privilege(
+    'authenticated', 'public.can_post_thread(uuid)', 'EXECUTE'),
+  'can_post_thread is revoked from authenticated'
+);
+select ok(
+  not has_function_privilege(
+    'authenticated', 'public.is_club_organizer_of(uuid, uuid)', 'EXECUTE'),
+  'is_club_organizer_of is revoked from authenticated'
+);
+
+-- backfill_broadcasts_into_threads (20260829060000) is a one-shot data
+-- migration: the migration calls it once at creation time, and the
+-- thread_lists fixture calls it again as the table owner to exercise it.
+-- Neither caller is a client session, so it stays fully internal, the same
+-- as can_post_thread and is_club_organizer_of above.
+select ok(
+  not has_function_privilege(
+    'authenticated', 'public.backfill_broadcasts_into_threads()', 'EXECUTE'),
+  'backfill_broadcasts_into_threads is revoked from authenticated'
+);
+
+-- The client's actual API. Already proven reachable via Direction 1 of the
+-- bidirectional allowlist above, but named here too — the same treatment
+-- commit_booking and event_seating get — because these are the two RPCs the
+-- compose and inbox screens call directly.
+select ok(
+  has_function_privilege(
+    'authenticated', 'public.post_message(uuid, text, boolean, uuid)', 'EXECUTE'),
+  'authenticated can execute post_message'
+);
+select ok(
+  has_function_privilege(
+    'authenticated', 'public.fetch_my_threads()', 'EXECUTE'),
+  'authenticated can execute fetch_my_threads'
+);
+
+-- The two RPCs (20260829080000) that close the profiles-RLS gap Task 10
+-- found: a plain PostgREST embed of profiles(display_name) resolves to
+-- NULL for anyone but the caller, so fetchThreadMessages and fetchThread's
+-- roster now go through these instead. Already proven reachable via
+-- Direction 1 of the bidirectional allowlist above; named here too, same
+-- treatment as post_message and fetch_my_threads, because these are the
+-- two RPCs the thread screen calls directly.
+select ok(
+  has_function_privilege(
+    'authenticated', 'public.fetch_thread_messages(uuid)', 'EXECUTE'),
+  'authenticated can execute fetch_thread_messages'
+);
+select ok(
+  has_function_privilege(
+    'authenticated', 'public.thread_roster(uuid)', 'EXECUTE'),
+  'authenticated can execute thread_roster'
 );
 
 select * from finish();

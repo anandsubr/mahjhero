@@ -1,18 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// The read path is `from(...).select(...).eq(...).order(...)`; the two
-// writes are `rpc(...)`. Modelled as the real chains so a test is
-// exercising the behaviour and not a TypeError on a missing method.
-const orderAfterEq = vi.fn();
+// countBroadcastRecipients's path is `rpc(...)`. Modelled as the real call
+// so a test is exercising the behaviour and not a TypeError on a missing
+// method.
 const rpc = vi.fn();
 
 vi.mock('./supabase', () => ({
   supabase: {
-    from: vi.fn(() => ({
-      select: vi.fn(() => ({
-        eq: vi.fn(() => ({ order: orderAfterEq })),
-      })),
-    })),
     // Referenced through an indirection, not as a bare value: vi.mock's
     // factory runs when './supabase' first resolves, which happens before
     // this file's own `const rpc = vi.fn()` executes (import statements
@@ -24,19 +18,14 @@ vi.mock('./supabase', () => ({
   },
 }));
 
-import { GENERIC_ERROR } from './constants';
 import {
   countBroadcastRecipients,
-  fetchBroadcasts,
   isValidBroadcast,
-  sendBroadcast,
   BODY_MAX,
   SUBJECT_MAX,
 } from './broadcasts';
 
 beforeEach(() => {
-  orderAfterEq.mockReset();
-  orderAfterEq.mockRejectedValue(new Error('network down'));
   rpc.mockReset();
   rpc.mockRejectedValue(new Error('network down'));
 });
@@ -80,7 +69,7 @@ describe('isValidBroadcast', () => {
   // U+0080-U+009F, which a bad Windows-1252 round-trip can paste into a
   // subject. Before this widened the pattern, a subject like this one
   // passed this check and hit the database's constraint anyway, and
-  // because sendBroadcast relays `error.message` verbatim, the host would
+  // because the write path relays `error.message` verbatim, the host would
   // have seen a raw `violates check constraint "broadcasts_subject_check1"`
   // instead of a refusal caught here first.
   it('rejects a subject carrying a C1 control character (U+0080-U+009F)', () => {
@@ -92,11 +81,11 @@ describe('isValidBroadcast', () => {
     expect(isValidBroadcast('Doors at\u009fseven', 'Body')).toBe(false);
   });
 
-  // sendBroadcast sends subject.trim(), and trim() strips \t \n \v \f \r —
-  // all inside the control-character pattern's range. A subject with only
-  // a leading/trailing newline trims away to something the database would
-  // accept outright, so the client must accept it too rather than refusing
-  // a host for no reason.
+  // A subject is trimmed before it is sent, and trim() strips
+  // \t \n \v \f \r — all inside the control-character pattern's range. A
+  // subject with only a leading/trailing newline trims away to something
+  // the database would accept outright, so the client must accept it too
+  // rather than refusing a host for no reason.
   it('accepts a subject with a leading or trailing newline', () => {
     expect(isValidBroadcast('Doors at seven\n', 'Body')).toBe(true);
     expect(isValidBroadcast('\nDoors at seven', 'Body')).toBe(true);
@@ -107,31 +96,6 @@ describe('isValidBroadcast', () => {
   // (and this client-side mirror of it) exists for.
   it('rejects a subject carrying an interior newline even though it survives trimming', () => {
     expect(isValidBroadcast('Doors\nat seven', 'Body')).toBe(false);
-  });
-});
-
-describe('fetchBroadcasts', () => {
-  it('returns the club history newest first', async () => {
-    orderAfterEq.mockResolvedValue({
-      data: [{ id: 'b1', club_id: 'c1', event_id: null, subject: 'Hi',
-               body: 'There', recipient_count: 4,
-               created_at: '2026-09-01T10:00:00Z' }],
-      error: null,
-    });
-    const result = await fetchBroadcasts('c1');
-    expect(result).toHaveLength(1);
-    expect(orderAfterEq).toHaveBeenCalledWith('created_at', { ascending: false });
-  });
-
-  // Never rejects: the history screen awaits this directly and an escaping
-  // rejection would strand it on a spinner.
-  it('resolves null when the read fails', async () => {
-    orderAfterEq.mockResolvedValue({ data: null, error: { message: 'denied' } });
-    await expect(fetchBroadcasts('c1')).resolves.toBeNull();
-  });
-
-  it('resolves null when the network is gone', async () => {
-    await expect(fetchBroadcasts('c1')).resolves.toBeNull();
   });
 });
 
@@ -161,40 +125,5 @@ describe('countBroadcastRecipients', () => {
   it('resolves null on an explicit RPC-level failure', async () => {
     rpc.mockResolvedValue({ data: 5, error: { message: 'denied' } });
     await expect(countBroadcastRecipients('c1', null)).resolves.toBeNull();
-  });
-});
-
-describe('sendBroadcast', () => {
-  it('returns the new broadcast id', async () => {
-    rpc.mockResolvedValue({ data: 'b-new', error: null });
-    await expect(
-      sendBroadcast('c1', null, 'Doors at seven', 'Side entrance is locked.'),
-    ).resolves.toEqual({ id: 'b-new', error: null });
-    // Supabase RPC binds parameters by name, so a rename here (e.g.
-    // target_club -> club_id) would sail through this suite's other
-    // assertions and only fail at runtime. These names come from
-    // supabase/migrations/20260826030000_broadcasts.sql's
-    // send_broadcast(target_club uuid, target_event uuid, p_subject text,
-    // p_body text) signature, not from what this module happens to write.
-    expect(rpc).toHaveBeenCalledWith('send_broadcast', {
-      target_club: 'c1',
-      target_event: null,
-      p_subject: 'Doors at seven',
-      p_body: 'Side entrance is locked.',
-    });
-  });
-
-  // A refusal from assert_club_organizer must reach the member as words,
-  // not as a silent no-op that looks like it worked.
-  it('surfaces a refusal', async () => {
-    rpc.mockResolvedValue({ data: null, error: { message: 'not an organizer' } });
-    const result = await sendBroadcast('c1', null, 'Subject', 'Body');
-    expect(result.id).toBeNull();
-    expect(result.error).toBe('not an organizer');
-  });
-
-  it('reports a generic failure rather than rejecting', async () => {
-    const result = await sendBroadcast('c1', null, 'Subject', 'Body');
-    expect(result).toEqual({ id: null, error: GENERIC_ERROR });
   });
 });
