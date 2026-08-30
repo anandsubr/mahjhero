@@ -27,6 +27,7 @@ import {
   fetchThread,
   fetchThreadMessages,
   fetchMyThreads,
+  groupSeparatorLabel,
   kindLabel,
   leaveGroupThread,
   messagePreview,
@@ -37,6 +38,7 @@ import {
   rowSubtitle,
   rowTitle,
   sortThreads,
+  startsNewGroup,
   threadKindFor,
   threadTitleFor,
   unreadLabel,
@@ -625,6 +627,94 @@ describe('relativeTimestamp', () => {
 
   it('shows the date for anything older than a week', () => {
     expect(relativeTimestamp('2026-08-01T09:05:00Z', now)).toBe('1 Aug');
+  });
+});
+
+// The thread screen's per-bubble timestamp is gone (iOS Messages shows no
+// time inside a bubble at all) -- in its place, a centred separator line
+// appears above the first message of a new "group". `startsNewGroup`
+// decides the boundary, pure and unit-tested here rather than inline in the
+// screen, so the rule can be reasoned about without rendering anything.
+describe('startsNewGroup', () => {
+  it('is true for the first message in a thread', () => {
+    expect(startsNewGroup('2026-08-27T09:00:00Z', null)).toBe(true);
+  });
+
+  it('is false for a message minutes after the previous one, same day', () => {
+    expect(
+      startsNewGroup('2026-08-27T09:05:00Z', '2026-08-27T09:00:00Z'),
+    ).toBe(false);
+  });
+
+  // The gap threshold itself: roughly an hour, the iOS Messages rule of
+  // thumb. Anything under it, same calendar day, stays one group.
+  it('is false for a same-day gap just under the threshold', () => {
+    expect(
+      startsNewGroup('2026-08-27T09:59:59Z', '2026-08-27T09:00:00Z'),
+    ).toBe(false);
+  });
+
+  it('is true for a same-day gap at or over the threshold', () => {
+    expect(
+      startsNewGroup('2026-08-27T10:00:00Z', '2026-08-27T09:00:00Z'),
+    ).toBe(true);
+  });
+
+  // A new calendar day starts a new group even when the clock gap is tiny --
+  // 03:58Z/04:02Z straddle midnight in America/New_York (this suite's TZ),
+  // four minutes apart but on different local days.
+  it('is true across a calendar-day boundary regardless of how small the gap is', () => {
+    expect(
+      startsNewGroup('2026-08-24T04:02:00Z', '2026-08-24T03:58:00Z'),
+    ).toBe(true);
+  });
+
+  it('is true when either timestamp fails to parse', () => {
+    expect(startsNewGroup('not-a-date', '2026-08-27T09:00:00Z')).toBe(true);
+    expect(startsNewGroup('2026-08-27T09:00:00Z', 'not-a-date')).toBe(true);
+  });
+});
+
+// The separator's own label -- the only place a time appears now that the
+// per-bubble timestamp is gone, so it needs day context `relativeTimestamp`
+// deliberately omits (that formatter is built for the LIST rows' bare
+// "today" time). Mirrors `relativeTimestamp`'s and `formatEventWhen`'s
+// (lib/events.ts) house style: 'en-GB', short weekday, hour12 lowercase
+// am/pm.
+describe('groupSeparatorLabel', () => {
+  const now = new Date('2026-08-27T12:00:00Z');
+
+  it('reads "Today" plus the time for a message sent today', () => {
+    expect(groupSeparatorLabel('2026-08-27T09:05:00Z', now)).toBe('Today 5:05 am');
+  });
+
+  it('reads "Yesterday" plus the time for a message sent the day before', () => {
+    expect(groupSeparatorLabel('2026-08-26T09:05:00Z', now)).toBe(
+      'Yesterday 5:05 am',
+    );
+  });
+
+  it('reads a bare weekday plus the time for a message within the week', () => {
+    expect(groupSeparatorLabel('2026-08-24T09:05:00Z', now)).toBe('Mon 5:05 am');
+  });
+
+  it('reads the full date plus the time for anything older than a week', () => {
+    expect(groupSeparatorLabel('2026-08-01T09:05:00Z', now)).toBe(
+      'Sat 1 Aug, 5:05 am',
+    );
+  });
+
+  // A year boundary: the date alone ("1 Aug") would misdescribe a message
+  // from a different year as if it were recent, so the year joins the date
+  // whenever it differs from `now`'s.
+  it('adds the year when the message is from a different year than now', () => {
+    expect(groupSeparatorLabel('2025-08-01T09:05:00Z', now)).toBe(
+      'Fri, 1 Aug 2025, 5:05 am',
+    );
+  });
+
+  it('is empty for a timestamp that fails to parse', () => {
+    expect(groupSeparatorLabel('not-a-date', now)).toBe('');
   });
 });
 

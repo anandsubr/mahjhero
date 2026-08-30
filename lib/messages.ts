@@ -323,6 +323,111 @@ export function relativeTimestamp(iso: string | null, now: Date = new Date()): s
   return new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' }).format(when);
 }
 
+/**
+ * The gap, in milliseconds, beyond which two consecutive messages in a
+ * thread start a new "group" -- iOS Messages' own rough rule of thumb, and
+ * roughly what this app follows too. An hour is long enough that the seeded
+ * fixture's messages (e2e/session.ts's `seedPopulatedThread`, minutes apart)
+ * stay one group with one separator, and short enough that a genuine gap in
+ * the conversation -- somebody replying after lunch, or the next morning --
+ * still gets its own marker rather than reading as one unbroken exchange.
+ */
+export const GROUP_GAP_MS = 60 * 60 * 1000;
+
+/**
+ * Whether the message at `createdAt` starts a new group -- and so gets a
+ * centred separator above it (app/messages/[threadId].tsx) -- relative to
+ * the message immediately before it, `previousCreatedAt` (null for the
+ * thread's first message, which always starts a group).
+ *
+ * Pure and exported so the boundary can be reasoned about, and tested,
+ * without rendering anything -- the same reason `eventStatusLine`
+ * (lib/events.ts) is exported rather than inlined into a screen.
+ *
+ * Two independent triggers, either one sufficient:
+ *   - the calendar day differs (checked with `toDateString`, the viewer's
+ *     own local day -- the same frame `relativeTimestamp` above already
+ *     reads a message's time in, not the club's), so a two-minute gap that
+ *     straddles midnight still gets a marker; and
+ *   - the gap is at least `GROUP_GAP_MS`, even on the same calendar day.
+ *
+ * A timestamp that fails to parse is treated as starting a new group --
+ * the safe default, since there is nothing sound to compare it against, and
+ * `groupSeparatorLabel` below degrades an unparseable instant to an empty
+ * label rather than throwing.
+ */
+export function startsNewGroup(
+  createdAt: string,
+  previousCreatedAt: string | null,
+): boolean {
+  if (!previousCreatedAt) return true;
+  const current = new Date(createdAt);
+  const previous = new Date(previousCreatedAt);
+  if (Number.isNaN(current.getTime()) || Number.isNaN(previous.getTime())) {
+    return true;
+  }
+  if (current.toDateString() !== previous.toDateString()) return true;
+  return current.getTime() - previous.getTime() >= GROUP_GAP_MS;
+}
+
+/**
+ * The centred separator's own label -- the only place a time appears now
+ * that the per-bubble timestamp is gone (app/messages/[threadId].tsx). Needs
+ * day context `relativeTimestamp` above deliberately does not carry: that
+ * formatter is built for the LIST rows, which already sit next to a row
+ * whose subtitle and preview supply context, and a bare "10:00 am" is
+ * enough there. A separator between groups is the ONLY place time appears on
+ * this screen now, so it has to say which day too.
+ *
+ * Same house style `relativeTimestamp` and `formatEventWhen` (lib/events.ts)
+ * already use -- 'en-GB', hour12 lowercase am/pm, short weekday -- so this
+ * does not introduce a fourth date voice into an app that already has two
+ * establishing one.
+ *
+ *   - Today / Yesterday, plus the time.
+ *   - Within the week (but not yesterday): a bare short weekday, plus the
+ *     time -- the same 7-day window `relativeTimestamp` uses for its own
+ *     weekday-only bucket.
+ *   - Beyond a week: the short weekday, day and month, plus the time --
+ *     Intl's own comma between weekday and day/month ("Thu, 27 Aug") only
+ *     appears once `year` joins the options below, which is also why the
+ *     no-year case reads "Thu 27 Aug" without one.
+ *   - A different year than `now`'s: the year joins the date, since "1 Aug"
+ *     alone would misdescribe a message from a year-old thread as recent.
+ *
+ * `now` defaults to the real clock and is only ever overridden by a test --
+ * the same contract `relativeTimestamp` already carries.
+ */
+export function groupSeparatorLabel(iso: string, now: Date = new Date()): string {
+  const when = new Date(iso);
+  if (Number.isNaN(when.getTime())) return '';
+
+  const time = new Intl.DateTimeFormat('en-GB', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }).format(when);
+
+  const dayStart = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const diffDays = Math.round((dayStart(now) - dayStart(when)) / 86_400_000);
+
+  if (diffDays === 0) return `Today ${time}`;
+  if (diffDays === 1) return `Yesterday ${time}`;
+  if (diffDays > 1 && diffDays < 7) {
+    const weekday = new Intl.DateTimeFormat('en-GB', { weekday: 'short' }).format(when);
+    return `${weekday} ${time}`;
+  }
+
+  const dateOptions: Intl.DateTimeFormatOptions = {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  };
+  if (when.getFullYear() !== now.getFullYear()) dateOptions.year = 'numeric';
+  const datePart = new Intl.DateTimeFormat('en-GB', dateOptions).format(when);
+  return `${datePart}, ${time}`;
+}
+
 export function unreadLabel(n: number): string {
   return n > 99 ? '99+' : String(n);
 }

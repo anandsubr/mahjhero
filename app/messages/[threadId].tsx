@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import {
   ActivityIndicator,
@@ -23,11 +23,12 @@ import {
   announcementBody,
   fetchThread,
   fetchThreadMessages,
+  groupSeparatorLabel,
   leaveGroupThread,
   markThreadRead,
   postMessage,
   quoteStub,
-  relativeTimestamp,
+  startsNewGroup,
   threadKindFor,
   threadTitleFor,
   type ThreadDetail,
@@ -587,7 +588,7 @@ export default function ThreadScreen() {
               </View>
             ) : null}
 
-            {messages.map((m) => {
+            {messages.map((m, i) => {
               const mine = m.author_id === viewerId;
               // An announcement's subject IS the body's first line
               // (deriveSubject's own contract) -- so printing `m.body`
@@ -599,6 +600,12 @@ export default function ThreadScreen() {
               const displayBody = m.is_announcement
                 ? announcementBody(m.subject, m.body)
                 : m.body;
+              // iOS Messages carries no time inside a bubble at all -- time
+              // lives here instead, in a centred separator above the first
+              // message of a new group (lib/messages.ts's `startsNewGroup`),
+              // not repeated on every bubble the way this screen used to.
+              const previous = i > 0 ? messages[i - 1] : null;
+              const newGroup = startsNewGroup(m.created_at, previous?.created_at ?? null);
               return (
                 // A long press on the bubble picks it as the reply target --
                 // the iOS/WhatsApp convention the owner chose over a
@@ -610,104 +617,101 @@ export default function ThreadScreen() {
                 // keyboard users. `tabIndex={-1}` and no `accessibilityRole`
                 // keep this outer wrapper out of the tab order and off the
                 // accessibility tree as anything other than a plain
-                // container -- the bubble's own text (author, body, quote,
-                // timestamp) is what a screen reader should read here, not a
-                // second "button" stop that does nothing on a single
-                // activation.
-                <Pressable
-                  key={m.id}
-                  testID={`bubble-${m.id}`}
-                  onLongPress={() => setReplyTo(m)}
-                  tabIndex={-1}
-                  style={[
-                    styles.bubble,
-                    mine ? styles.mine : styles.theirs,
-                    m.is_announcement ? styles.announcement : null,
-                  ]}
-                >
-                  {!mine && !m.is_announcement ? (
-                    <Text style={styles.author}>
-                      {m.profiles?.display_name ?? ''}
+                // container -- the bubble's own text (author, body, quote)
+                // is what a screen reader should read here, not a second
+                // "button" stop that does nothing on a single activation.
+                // Time is no longer part of that text at all -- see the
+                // separator above, the only place it appears now.
+                <Fragment key={m.id}>
+                  {newGroup ? (
+                    <Text style={styles.separator}>
+                      {groupSeparatorLabel(m.created_at)}
                     </Text>
                   ) : null}
-                  {m.is_announcement ? (
-                    <View style={styles.announcementHead}>
-                      <Tag variant="accent2">Announcement</Tag>
-                      {m.subject ? (
-                        <Text style={styles.subject}>{m.subject}</Text>
-                      ) : null}
-                    </View>
-                  ) : null}
-
-                  {/*
-                    Rendered from `reply_to`, not from `reply_to_id`. The key
-                    is `on delete set null`, so a reply can outlive what it
-                    answered — and an empty quote box is worse than none.
-                  */}
-                  {m.reply_to ? (
-                    <Text
-                      testID="quote-stub"
-                      numberOfLines={1}
-                      style={[
-                        styles.stub,
-                        m.is_announcement
-                          ? styles.stubAnnouncement
-                          : mine
-                            ? styles.stubMine
-                            : null,
-                      ]}
-                    >
-                      {quoteStub(m.reply_to)}
-                    </Text>
-                  ) : null}
-
-                  {displayBody ? (
-                    <Text
-                      style={
-                        m.is_announcement
-                          ? styles.bodyAnnouncement
-                          : mine
-                            ? styles.bodyMine
-                            : styles.body
-                      }
-                    >
-                      {displayBody}
-                    </Text>
-                  ) : null}
-
-                  <Text
-                    style={
-                      m.is_announcement
-                        ? styles.timestampAnnouncement
-                        : mine
-                          ? styles.timestampMine
-                          : styles.timestampTheirs
-                    }
-                  >
-                    {relativeTimestamp(m.created_at)}
-                  </Text>
-
-                  {/*
-                    The accessible, always-reachable twin of the long press
-                    above: same action, same accessible name the visible
-                    "Reply" link used to carry, just no longer painted on
-                    screen. No children — accessibilityLabel is this
-                    control's ONLY name, so there is nothing for it to
-                    compose with (the "compose, don't replace" rule that
-                    matters at the members-toggle heading above does not
-                    apply here, since there is no children-derived name to
-                    step on). Visually hidden via a true 1x1 clip rather
-                    than opacity, which some accessibility trees exclude —
-                    this stays clipped, not transparent, so it still reads
-                    to screen readers and is still reachable by Tab.
-                  */}
                   <Pressable
-                    onPress={() => setReplyTo(m)}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Reply to ${m.profiles?.display_name ?? 'this message'}`}
-                    style={styles.replyAction}
-                  />
-                </Pressable>
+                    testID={`bubble-${m.id}`}
+                    onLongPress={() => setReplyTo(m)}
+                    tabIndex={-1}
+                    style={[
+                      styles.bubble,
+                      mine ? styles.mine : styles.theirs,
+                      m.is_announcement ? styles.announcement : null,
+                    ]}
+                  >
+                    {!mine && !m.is_announcement ? (
+                      <Text style={styles.author}>
+                        {m.profiles?.display_name ?? ''}
+                      </Text>
+                    ) : null}
+                    {m.is_announcement ? (
+                      <View style={styles.announcementHead}>
+                        <Tag variant="accent2">Announcement</Tag>
+                        {m.subject ? (
+                          <Text style={styles.subject}>{m.subject}</Text>
+                        ) : null}
+                      </View>
+                    ) : null}
+
+                    {/*
+                      Rendered from `reply_to`, not from `reply_to_id`. The
+                      key is `on delete set null`, so a reply can outlive
+                      what it answered — and an empty quote box is worse
+                      than none.
+                    */}
+                    {m.reply_to ? (
+                      <Text
+                        testID="quote-stub"
+                        numberOfLines={1}
+                        style={[
+                          styles.stub,
+                          m.is_announcement
+                            ? styles.stubAnnouncement
+                            : mine
+                              ? styles.stubMine
+                              : null,
+                        ]}
+                      >
+                        {quoteStub(m.reply_to)}
+                      </Text>
+                    ) : null}
+
+                    {displayBody ? (
+                      <Text
+                        style={
+                          m.is_announcement
+                            ? styles.bodyAnnouncement
+                            : mine
+                              ? styles.bodyMine
+                              : styles.body
+                        }
+                      >
+                        {displayBody}
+                      </Text>
+                    ) : null}
+
+                    {/*
+                      The accessible, always-reachable twin of the long
+                      press above: same action, same accessible name the
+                      visible "Reply" link used to carry, just no longer
+                      painted on screen. No children — accessibilityLabel is
+                      this control's ONLY name, so there is nothing for it
+                      to compose with (the "compose, don't replace" rule
+                      that matters at the members-toggle heading above does
+                      not apply here, since there is no children-derived
+                      name to step on). Visually hidden via a true 1x1 clip
+                      rather than opacity, which some accessibility trees
+                      exclude — this stays clipped, not transparent, so it
+                      still reads to screen readers and is still reachable
+                      by Tab.
+                    */}
+                    <Pressable
+                      onPress={() => setReplyTo(m)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Reply to ${m.profiles?.display_name ?? 'this message'}`}
+                      style={styles.replyAction}
+                    />
+                  </Pressable>
+                </Fragment>
               );
             })}
           </ScrollView>
@@ -996,41 +1000,24 @@ const styles = StyleSheet.create({
   // true, not only when the viewer didn't send it. Reused rather than a
   // third near-duplicate style, since both call sites want the same colour.
   stubAnnouncement: { color: colors.accent2[800], borderLeftColor: colors.accent2[500] },
-  // The timestamp, inside the bubble rather than beside it so it never
-  // fights the message for its own line, and small (`type.size.helper`,
-  // this app's one sanctioned exception below its 18pt body minimum) and
-  // muted rather than matching the body's own weight. Each ground gets its
-  // own colour rather than one value doing both jobs -- see lib/theme.test.ts
-  // for why a single token cannot clear AA on both the tan `surface` ground
-  // and the dark `accent[700]` one.
-  timestampTheirs: {
+  // The iOS Messages convention this screen now follows: no time inside any
+  // bubble (the three `timestamp*` styles this replaced each put it in a
+  // bubble's own corner, on that bubble's own ground -- gone along with the
+  // per-bubble render). Instead, a single centred line sits between groups
+  // of messages, small (`type.size.helper`, this app's one sanctioned
+  // exception below its 18pt body minimum) and muted so it recedes rather
+  // than competing with the bubbles either side of it. It always sits on
+  // `colors.bg` -- the screen's own page background, never a bubble's --
+  // so one colour suffices where the old per-bubble version needed three:
+  // `colors.textMuted` reads 5.15:1 there, already pinned in
+  // lib/theme.test.ts for exactly this ground.
+  separator: {
     fontFamily: type.bodyRegular,
     fontSize: type.size.helper,
     color: colors.textMuted,
-    alignSelf: 'flex-end',
-    marginTop: space[1],
-  },
-  // accent[200]: a step down from this bubble's own `bodyMine` cream
-  // (colors.bg) so the time visibly recedes from the message rather than
-  // reading at the same weight, while still clearing AA at 5.49:1 on
-  // accent[700] (pinned in lib/theme.test.ts).
-  timestampMine: {
-    fontFamily: type.bodyRegular,
-    fontSize: type.size.helper,
-    color: colors.accent[200],
-    alignSelf: 'flex-end',
-    marginTop: space[1],
-  },
-  // Same token the subject/body/quote-stub on this background already use
-  // (accent2[800] on accent2[100], 9.12:1, pinned in lib/theme.test.ts) --
-  // reused rather than a fourth colour for the one ground that already has
-  // an established answer.
-  timestampAnnouncement: {
-    fontFamily: type.bodyRegular,
-    fontSize: type.size.helper,
-    color: colors.accent2[800],
-    alignSelf: 'flex-end',
-    marginTop: space[1],
+    textAlign: 'center',
+    marginTop: space[3],
+    marginBottom: space[2],
   },
   // The accessible twin of the long press above: a true 1x1, clipped (not
   // merely transparent) so it is never part of what a sighted user sees,

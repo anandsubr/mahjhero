@@ -136,24 +136,17 @@ describe('announcement text clears AA on the announcement background', () => {
 // WCAG 1.4.11 governs at 3:1, not 4.5:1 -- but both measure comfortably past
 // even the higher bar, so there was no reason to pick a paler shade just
 // because the rule allowed it.
-// The thread screen's per-message timestamp (app/messages/[threadId].tsx)
-// needs to read as small and muted on BOTH bubble grounds, which the
-// bubble's own body-text colours cannot do double duty for: `colors.bg` is
-// already the mine-bubble's own body text colour (bodyMine), so reusing it
-// for the timestamp would make the time read at the same weight as the
-// message rather than receding from it, and `colors.textMuted` (the
-// incoming-bubble timestamp's own colour, already pinned above) measures
-// only 1.11:1 on accent[700] -- nowhere close to AA. accent[200], the pale
-// peach a step down from the mine bubble's own cream body text, reads
-// 5.49:1 on accent[700] and is visibly a different (muted) tone from
-// `colors.bg`'s full-strength cream, so the incoming and mine timestamps
-// end up as two distinct tokens rather than one value pressed into two
-// jobs.
-describe('mine-bubble timestamp clears AA on its background', () => {
-  it('clears AA on accent[700]', () => {
-    expect(contrast(colors.accent[200], colors.accent[700])).toBeGreaterThanOrEqual(AA);
-  });
-});
+//
+// The thread screen used to also put a per-message timestamp inside the
+// mine bubble, in accent[200] on accent[700] (5.49:1) -- pinned here for
+// exactly that pairing. The redesign to iOS Messages' centred separator
+// (app/messages/[threadId].tsx) removed the per-bubble timestamp entirely,
+// and accent[200] is not drawn on accent[700] anywhere else in the app
+// (accent[200] elsewhere is only ever a BACKGROUND -- Tag, Button,
+// ErrorBanner -- never text on accent[700]), so the pin went with it rather
+// than staying as an assertion for a colour combination nothing renders.
+// The separator's own text reuses `colors.textMuted` on `colors.bg`,
+// already pinned above ("muted text clears AA on both grounds").
 
 describe('thread row avatars clear contrast on their own fill', () => {
   it('clears AA on accent2[700] (direct avatar initials)', () => {

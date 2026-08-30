@@ -1,8 +1,8 @@
 import { useEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import ThreadScreen from '../messages/[threadId]';
-import { relativeTimestamp } from '../../lib/messages';
+import { groupSeparatorLabel } from '../../lib/messages';
 
 // Hoisted rather than a fresh `vi.fn()` per `useRouter()` call: a factory
 // returning brand-new mocks on every render would make `expect(replace)
@@ -271,7 +271,7 @@ describe('thread screen', () => {
   });
 
   // A couple of the tests below fake the clock (either to hold a long-press
-  // timer still, or to pin `relativeTimestamp`'s `now`) -- a test that fails
+  // timer still, or to pin `groupSeparatorLabel`'s `now`) -- a test that fails
   // partway through and never reaches its own `vi.useRealTimers()` must not
   // leave fake timers active for every test that runs after it. Harmless to
   // call when timers are already real.
@@ -792,29 +792,103 @@ describe('thread screen', () => {
     expect(style.borderBottomLeftRadius).toBe('28px');
   });
 
-  // `created_at` used to be referenced nowhere on this screen -- no chat
-  // interface ships without a time on each message. `relativeTimestamp`
-  // (already this app's one formatter for it, reused rather than a second
-  // one) is called with the real clock, exactly as the component itself
-  // does; faking only `Date` (not the timer queue findByText's own polling
-  // needs) pins `now` so the expectation is deterministic regardless of what
-  // day this suite actually runs on.
-  it('shows a relative timestamp on every message, muted on its own bubble ground', async () => {
-    vi.useFakeTimers({ toFake: ['Date'] });
-    vi.setSystemTime(new Date('2026-08-25T20:00:00Z'));
-
+  // iOS Messages puts no time inside a bubble at all -- the per-bubble
+  // timestamp this screen used to render (in the incoming bubble's own
+  // corner, the mine bubble's, and the announcement's) is gone. Time now
+  // lives only in the centred separator between groups, covered below.
+  it('shows no time inside an ordinary or mine bubble', async () => {
     render(<ThreadScreen />);
-    const theirsTime = await screen.findByText(relativeTimestamp(MESSAGES[0].created_at));
-    const mineTime = screen.getByText(relativeTimestamp(MESSAGES[1].created_at));
-    expect(theirsTime).toBeTruthy();
-    expect(mineTime).toBeTruthy();
+    const theirs = await screen.findByTestId('bubble-m1');
+    const mine = screen.getByTestId('bubble-m2');
+    const timePattern = /\d{1,2}:\d{2}\s?(am|pm)/i;
+    expect(within(theirs).queryByText(timePattern)).toBeNull();
+    expect(within(mine).queryByText(timePattern)).toBeNull();
+  });
 
-    // Two distinct tokens, not one value doing both jobs -- lib/theme.test.ts
-    // pins why a single colour cannot clear AA on both the tan `surface`
-    // ground (textMuted, already pinned) and the dark `accent[700]` one
-    // (accent[200], newly pinned there).
-    expect(getComputedStyle(theirsTime).color).toBe('rgb(103, 97, 88)');
-    expect(getComputedStyle(mineTime).color).toBe('rgb(255, 225, 208)');
+  it('shows no time inside an announcement bubble', async () => {
+    fetchThreadMessages.mockResolvedValueOnce([
+      {
+        id: 'm9',
+        author_id: 'other',
+        body: 'Hall is closed Friday\nUse the side door.',
+        subject: 'Hall is closed Friday',
+        is_announcement: true,
+        created_at: '2026-08-25T10:00:00Z',
+        profiles: { display_name: 'Alice Ng' },
+        reply_to_id: null,
+        reply_to: null,
+      },
+    ]);
+    render(<ThreadScreen />);
+    const announcement = await screen.findByTestId('bubble-m9');
+    expect(
+      within(announcement).queryByText(/\d{1,2}:\d{2}\s?(am|pm)/i),
+    ).toBeNull();
+  });
+
+  // MESSAGES' two rows are 5 minutes apart on the same day, well under the
+  // grouping threshold -- so the group they form gets exactly one separator,
+  // above the FIRST message, not one per message and not one before the
+  // second. `groupSeparatorLabel` (already this app's one formatter for the
+  // separator's text, reused rather than re-deriving it here) is called with
+  // the real clock, exactly as the component itself does; faking only `Date`
+  // pins `now` so the expectation is deterministic regardless of what day
+  // this suite actually runs on.
+  describe('group separators', () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-08-25T20:00:00Z'));
+    });
+
+    it('shows one separator above the first message and none before the second, same-group message', async () => {
+      render(<ThreadScreen />);
+      await screen.findByText('We are one short for Tuesday.');
+      expect(
+        screen.getByText(groupSeparatorLabel(MESSAGES[0].created_at)),
+      ).toBeTruthy();
+      expect(
+        screen.queryByText(groupSeparatorLabel(MESSAGES[1].created_at)),
+      ).toBeNull();
+    });
+
+    // A third message an hour-plus after the second starts a new group of
+    // its own -- a second separator appears, distinct from the first.
+    it('adds a second separator once the gap crosses the threshold', async () => {
+      fetchThreadMessages.mockResolvedValueOnce([
+        ...MESSAGES,
+        {
+          id: 'm5',
+          author_id: 'other',
+          body: 'Still there?',
+          subject: null,
+          is_announcement: false,
+          created_at: '2026-08-25T11:30:00Z',
+          profiles: { display_name: 'Sara Lindqvist' },
+          reply_to_id: null,
+          reply_to: null,
+        },
+      ]);
+      render(<ThreadScreen />);
+      await screen.findByText('Still there?');
+      expect(
+        screen.getByText(groupSeparatorLabel(MESSAGES[0].created_at)),
+      ).toBeTruthy();
+      expect(
+        screen.getByText(groupSeparatorLabel('2026-08-25T11:30:00Z')),
+      ).toBeTruthy();
+    });
+
+    // Centred and muted -- `colors.textMuted` on `colors.bg`, the same
+    // already-pinned 5.15:1 pairing lib/theme.test.ts holds for helper text
+    // on the page background, reused rather than a new pin for a fresh one.
+    it('centres the separator text in the already-pinned muted colour', async () => {
+      render(<ThreadScreen />);
+      const separator = await screen.findByText(
+        groupSeparatorLabel(MESSAGES[0].created_at),
+      );
+      expect(getComputedStyle(separator).color).toBe('rgb(103, 97, 88)');
+      expect(getComputedStyle(separator).textAlign).toBe('center');
+    });
   });
 
   // `leave_group_thread` and `add_to_group_thread` shipped fully wired
