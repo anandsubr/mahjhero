@@ -1247,7 +1247,11 @@ Expected: FAIL on the third assertion — `have: 4, want: 2`. The club branch st
 
 - [ ] **Step 3: Write the migration**
 
-Create `supabase/migrations/20260830030000_board_unread.sql`. It is a `create or replace` of `fetch_my_threads` with the same signature; copy `20260829050000_thread_lists.sql`'s body verbatim and replace **only** the final `u` lateral join with the version below.
+Create `supabase/migrations/20260830030000_board_unread.sql`. It is a `create or replace` of `fetch_my_threads` with the same signature.
+
+⚠️ **Copy the body from `20260829090000_club_thread_title.sql`, NOT from `20260829050000_thread_lists.sql`.** `…050000` created the function, but `…090000` later did its own `create or replace` on it, dropping the `'Everyone at ' || ` prefix from the club title. Copying the older body would silently reintroduce that prefix and break `thread_lists.test.sql`, which asserts it is gone. **Before copying, `grep -l "create or replace function public.fetch_my_threads" supabase/migrations/*.sql` and take the LAST match** — the same check applies to any future `create or replace` in this codebase.
+
+Copy that body verbatim and replace **only** the final `u` lateral join with the version below.
 
 ```sql
 /*
@@ -1284,8 +1288,9 @@ stable
 security definer
 set search_path = public
 as $$
-  -- ⟨copy the entire body of 20260829050000_thread_lists.sql's
-  --  fetch_my_threads here, unchanged, down to and including the
+  -- ⟨copy the entire body of the LATEST create-or-replace of
+  --  fetch_my_threads — currently 20260829090000_club_thread_title.sql,
+  --  NOT 20260829050000 — unchanged, down to and including the
   --  `left join lateral (...) g on v.kind = 'group'` join⟩
 
   left join lateral (
