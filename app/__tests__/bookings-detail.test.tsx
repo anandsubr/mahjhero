@@ -1,17 +1,32 @@
+import { useEffect } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 const push = vi.fn();
+const replace = vi.fn();
 
 const searchParams: Record<string, string> = { id: 'club-1', eventId: 'event-1' };
+
+// This screen's own route, never TabBar's own /clubs -- the Club tab stays
+// live here the same way it does on the club detail and venues screens (see
+// clubs.test.tsx's and venues.test.tsx's identical comment).
+const pathname = '/clubs/club-1/events/event-1';
 
 vi.mock('expo-router', () => ({
   Redirect: ({ href }: { href: string }) => (
     <div data-testid="redirect" data-href={href} />
   ),
   Link: ({ children }: { children: React.ReactNode }) => children,
-  useRouter: () => ({ push }),
+  useRouter: () => ({ push, replace }),
+  usePathname: () => pathname,
   useLocalSearchParams: () => searchParams,
+  // Wrapped in a real `useEffect` keyed on the callback's identity, not
+  // called inline on every render -- see venues.test.tsx's identical
+  // comment: `(cb) => cb()` would refire `useUnreadCounts`'s fetch (now
+  // pulled in by TabBar) on every state update it causes.
+  useFocusEffect: (cb: () => void | (() => void)) => {
+    useEffect(cb, [cb]);
+  },
 }));
 
 const useSessionMock = vi.fn(
@@ -93,6 +108,18 @@ vi.mock('../../lib/attendance', async (importOriginal) => {
   return {
     ...actual,
     fetchMyCheckIn: (...args: unknown[]) => fetchMyCheckIn(...args),
+  };
+});
+
+// TabBar (now carried by this screen) calls `useUnreadCounts`, which reaches
+// `fetchUnreadCounts` -- `openThreadForEvent` stays real via the spread (the
+// "Open the game thread" button is never clicked in this file).
+const fetchUnreadCounts = vi.fn(async () => []);
+vi.mock('../../lib/messages', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/messages')>();
+  return {
+    ...actual,
+    fetchUnreadCounts: () => fetchUnreadCounts(),
   };
 });
 

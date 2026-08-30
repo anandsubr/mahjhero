@@ -5,6 +5,7 @@ import Button from '../../../components/Button';
 import Card from '../../../components/Card';
 import ErrorBanner from '../../../components/ErrorBanner';
 import Screen from '../../../components/Screen';
+import TabBar from '../../../components/TabBar';
 import TextField from '../../../components/TextField';
 import { ChevronLeftIcon } from '../../../components/icons';
 import { MAX_ROSTER_ROWS, importRoster, parseRoster } from '../../../lib/clubs';
@@ -23,9 +24,16 @@ export default function ImportRosterScreen() {
   const [error, setError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
 
+  // Every state below carries the tab bar, the same rule
+  // app/clubs/[id]/index.tsx and app/clubs/[id]/venues.tsx already follow:
+  // TabBar navigates with router.replace off an entry route that is itself
+  // a <Redirect>, so the history stack is typically one deep, and a state
+  // with no bar strands a host with no way out but relaunching the app. The
+  // <Redirect> branch below is the deliberate exception -- it renders
+  // nothing, and a signed-out visitor belongs at sign-in, not in a tab bar.
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered}>
+      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="club" />}>
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
     );
@@ -54,7 +62,15 @@ export default function ImportRosterScreen() {
   }
 
   return (
-    <Screen scroll contentStyle={styles.container}>
+    <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="club" />}>
+      {/*
+        Kept, not dropped: this goes to /clubs/${id}, a specific club, which
+        is a different destination from the Club tab's own /clubs (see
+        app/clubs/[id]/venues.tsx's identical "Back to the club" button for
+        the same reasoning, and app/clubs/[id]/index.tsx for the contrasting
+        case where a back link WAS dropped because its destination and the
+        tab's were the same place).
+      */}
       <Button
         variant="ghost"
         icon={<ChevronLeftIcon color={colors.accentColor} />}

@@ -917,6 +917,13 @@ describe('dashboard artboard', () => {
 import ImportRosterScreen from '../clubs/[id]/import';
 
 describe('roster import', () => {
+  // This screen's own route is /clubs/club-1/import, not the Club tab's own
+  // /clubs -- same distinction the club detail and venues describe blocks
+  // draw for their own routes.
+  beforeEach(() => {
+    pathname = '/clubs/club-1/import';
+  });
+
   it('reports skipped rows instead of dropping them silently', async () => {
     render(<ImportRosterScreen />);
     const field = screen.getByLabelText('Roster CSV');
@@ -938,6 +945,33 @@ describe('roster import', () => {
     fireEvent.click(screen.getByText('Check the file'));
     expect(await screen.findByText(/1 person ready$/)).toBeTruthy();
     expect(screen.getByText('Doe, Jane')).toBeTruthy();
+  });
+
+  // TabBar navigates with router.replace off an entry route that is itself
+  // a Redirect, so the history stack is typically one deep -- a state
+  // without the bar strands a host with no way out but relaunching the app.
+  // See clubs.test.tsx's other describe blocks for the identical rationale.
+  describe('screen chrome', () => {
+    it('carries the tab bar', async () => {
+      render(<ImportRosterScreen />);
+      expect(await screen.findByRole('button', { name: 'Club' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Messages' })).toBeTruthy();
+    });
+
+    it('carries the tab bar while the session is still loading', () => {
+      useSessionMock.mockReturnValueOnce({ session: null, loading: true });
+      render(<ImportRosterScreen />);
+      expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
+    });
+
+    // Goes to /clubs/club-1, a specific club -- a different destination
+    // from the Club tab's own /clubs -- so it stays, the same reasoning
+    // venues.test.tsx's "Back to the club" documents for itself.
+    it('keeps its back link to the club, a different destination from the Club tab', async () => {
+      render(<ImportRosterScreen />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Back to the club' }));
+      expect(push).toHaveBeenCalledWith('/clubs/club-1');
+    });
   });
 });
 

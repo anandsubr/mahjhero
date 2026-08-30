@@ -1,13 +1,30 @@
+import { useEffect } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
 const searchParams: Record<string, string> = { id: 'club-1', eventId: 'event-1' };
+const push = vi.fn();
+const replace = vi.fn();
+
+// This screen's own route, never TabBar's own /clubs -- the Club tab stays
+// live here the same way it does on the club detail and venues screens (see
+// clubs.test.tsx's and venues.test.tsx's identical comment).
+const pathname = '/clubs/club-1/events/event-1/check-in';
 
 vi.mock('expo-router', () => ({
   Redirect: ({ href }: { href: string }) => (
     <div data-testid="redirect" data-href={href} />
   ),
+  useRouter: () => ({ push, replace }),
+  usePathname: () => pathname,
   useLocalSearchParams: () => searchParams,
+  // Wrapped in a real `useEffect` keyed on the callback's identity, not
+  // called inline on every render -- see venues.test.tsx's identical
+  // comment: `(cb) => cb()` would refire `useUnreadCounts`'s fetch (now
+  // pulled in by TabBar) on every state update it causes.
+  useFocusEffect: (cb: () => void | (() => void)) => {
+    useEffect(cb, [cb]);
+  },
 }));
 
 const useSessionMock = vi.fn(
@@ -57,6 +74,17 @@ vi.mock('../../lib/attendance', async (importOriginal) => {
     fetchEventAttendance: (...args: unknown[]) => fetchEventAttendance(...args),
     recordAttendance: (...args: unknown[]) => recordAttendance(...args),
     clearAttendance: (...args: unknown[]) => clearAttendance(...args),
+  };
+});
+
+// TabBar (now carried by this screen) calls `useUnreadCounts`, which reaches
+// `fetchUnreadCounts`.
+const fetchUnreadCounts = vi.fn(async () => []);
+vi.mock('../../lib/messages', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/messages')>();
+  return {
+    ...actual,
+    fetchUnreadCounts: () => fetchUnreadCounts(),
   };
 });
 
@@ -111,6 +139,38 @@ beforeEach(() => {
   fetchEventAttendance.mockResolvedValue([]);
   recordAttendance.mockResolvedValue({ error: null });
   clearAttendance.mockResolvedValue({ error: null });
+});
+
+// TabBar navigates with router.replace off an entry route that is itself a
+// Redirect, so the history stack is typically one deep -- a state without
+// the bar strands a host with no way out but relaunching the app. See
+// clubs.test.tsx's and venues.test.tsx's identical rationale. This screen
+// draws no back link of its own, so there is nothing to check for
+// redundancy here.
+describe('screen chrome', () => {
+  it('carries the tab bar once ready', async () => {
+    render(<CheckInScreen />);
+    expect(await screen.findByRole('button', { name: 'Club' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Messages' })).toBeTruthy();
+  });
+
+  it('carries the tab bar while the event is still loading', () => {
+    fetchEvent.mockReturnValueOnce(new Promise(() => {}));
+    fetchRoster.mockReturnValueOnce(new Promise(() => {}));
+    render(<CheckInScreen />);
+    expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
+  });
+
+  it('carries the tab bar when the viewer is not an organizer', async () => {
+    fetchRoster.mockResolvedValue([
+      { profile_id: 'test-user', role: 'member' as const, display_name: 'Ada', skill_level: null },
+    ]);
+    render(<CheckInScreen />);
+    expect(
+      await screen.findByText('You are not an organizer of this club.'),
+    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
+  });
 });
 
 it('summarises the room above the tables', async () => {

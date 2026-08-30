@@ -1,17 +1,32 @@
+import { useEffect } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 
 const push = vi.fn();
+const replace = vi.fn();
 
 const searchParams: Record<string, string> = { id: 'club-1', eventId: 'event-1' };
+
+// This screen's own route, never TabBar's own /clubs -- the Club tab stays
+// live here the same way it does on the club detail and venues screens (see
+// clubs.test.tsx's and venues.test.tsx's identical comment).
+const pathname = '/clubs/club-1/events/event-1';
 
 vi.mock('expo-router', () => ({
   Redirect: ({ href }: { href: string }) => (
     <div data-testid="redirect" data-href={href} />
   ),
   Link: ({ children }: { children: React.ReactNode }) => children,
-  useRouter: () => ({ push }),
+  useRouter: () => ({ push, replace }),
+  usePathname: () => pathname,
   useLocalSearchParams: () => searchParams,
+  // Wrapped in a real `useEffect` keyed on the callback's identity, not
+  // called inline on every render -- see venues.test.tsx's identical
+  // comment: `(cb) => cb()` would refire `useUnreadCounts`'s fetch (now
+  // pulled in by TabBar) on every state update it causes.
+  useFocusEffect: (cb: () => void | (() => void)) => {
+    useEffect(cb, [cb]);
+  },
 }));
 
 const useSessionMock = vi.fn(
@@ -112,6 +127,18 @@ vi.mock('../../lib/attendance', async (importOriginal) => {
     fetchMyCheckIn: (...args: unknown[]) => fetchMyCheckIn(...args),
     recordAttendance: (...args: unknown[]) => recordAttendance(...args),
     clearAttendance: (...args: unknown[]) => clearAttendance(...args),
+  };
+});
+
+// TabBar (now carried by this screen) calls `useUnreadCounts`, which reaches
+// `fetchUnreadCounts` -- `openThreadForEvent` (used by the "Open the game
+// thread" button, never clicked in this file) stays real via the spread.
+const fetchUnreadCounts = vi.fn(async () => []);
+vi.mock('../../lib/messages', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/messages')>();
+  return {
+    ...actual,
+    fetchUnreadCounts: () => fetchUnreadCounts(),
   };
 });
 
@@ -230,6 +257,44 @@ describe('essential data missing', () => {
     expect(
       await screen.findByText('That game could not be loaded.'),
     ).toBeTruthy();
+  });
+});
+
+// TabBar navigates with router.replace off an entry route that is itself a
+// Redirect, so the history stack is typically one deep -- a state without
+// the bar strands a member with no way out but relaunching the app. See
+// clubs.test.tsx's and venues.test.tsx's identical rationale.
+describe('screen chrome', () => {
+  it('carries the tab bar once ready', async () => {
+    render(<EventScreen />);
+    expect(await screen.findByRole('button', { name: 'Club' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Messages' })).toBeTruthy();
+  });
+
+  it('carries the tab bar while the event is still loading', () => {
+    fetchClub.mockReturnValueOnce(new Promise(() => {}));
+    fetchEvent.mockReturnValueOnce(new Promise(() => {}));
+    render(<EventScreen />);
+    expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
+  });
+
+  it('carries the tab bar when the event cannot be loaded', async () => {
+    fetchEvent.mockResolvedValue(null);
+    render(<EventScreen />);
+    expect(
+      await screen.findByText('That game could not be loaded.'),
+    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
+  });
+
+  // This screen's own back link goes to /clubs/club-1 -- a specific club,
+  // not the Club tab's own /clubs -- so it is a genuinely different
+  // destination and stays, the same reasoning venues.test.tsx documents for
+  // its own "Back to the club" button.
+  it('keeps its back link to the club, a different destination from the Club tab', async () => {
+    render(<EventScreen />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Back to the club' }));
+    expect(push).toHaveBeenCalledWith('/clubs/club-1');
   });
 });
 

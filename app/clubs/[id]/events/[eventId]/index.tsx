@@ -8,6 +8,7 @@ import CheckInControl from '../../../../../components/CheckInControl';
 import ErrorBanner from '../../../../../components/ErrorBanner';
 import Screen from '../../../../../components/Screen';
 import Tag from '../../../../../components/Tag';
+import TabBar from '../../../../../components/TabBar';
 import TableCard from '../../../../../components/TableCard';
 import TierPicker from '../../../../../components/TierPicker';
 import WaitlistPanel from '../../../../../components/WaitlistPanel';
@@ -288,9 +289,16 @@ export default function EventScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clubId, eventId, session]);
 
+  // Every state below carries the tab bar, the same rule
+  // app/clubs/[id]/index.tsx and app/clubs/[id]/venues.tsx already follow:
+  // TabBar navigates with router.replace off an entry route that is itself
+  // a <Redirect>, so the history stack is typically one deep, and a state
+  // with no bar strands a member with no way out but relaunching the app.
+  // The <Redirect> branch below is the deliberate exception -- it renders
+  // nothing, and a signed-out visitor belongs at sign-in, not in a tab bar.
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered}>
+      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="club" />}>
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
     );
@@ -307,7 +315,7 @@ export default function EventScreen() {
 
   if (!ready) {
     return (
-      <Screen center contentStyle={styles.centered}>
+      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="club" />}>
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
     );
@@ -315,7 +323,7 @@ export default function EventScreen() {
 
   if (!club || !event) {
     return (
-      <Screen contentStyle={styles.container}>
+      <Screen contentStyle={styles.container} tabBar={<TabBar active="club" />}>
         <ErrorBanner message="That game could not be loaded." />
       </Screen>
     );
@@ -647,7 +655,15 @@ export default function EventScreen() {
   }
 
   return (
-    <Screen scroll contentStyle={styles.container}>
+    <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="club" />}>
+      {/*
+        Kept, not dropped: this goes to /clubs/${clubId}, a specific club,
+        which is a different destination from the Club tab's own /clubs (see
+        app/clubs/[id]/venues.tsx's identical "Back to the club" button, and
+        app/clubs/[id]/index.tsx for the contrasting case where a back link
+        WAS dropped because its destination and the tab's were the same
+        place).
+      */}
       <Button
         variant="ghost"
         big={false}

@@ -6,6 +6,7 @@ import Card from '../../../../../components/Card';
 import CheckInControl from '../../../../../components/CheckInControl';
 import ErrorBanner from '../../../../../components/ErrorBanner';
 import Screen from '../../../../../components/Screen';
+import TabBar from '../../../../../components/TabBar';
 import {
   attendanceSummary,
   checkInOpen,
@@ -363,9 +364,17 @@ export default function CheckInScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clubId, eventId, session]);
 
+  // Every state below carries the tab bar, the same rule
+  // app/clubs/[id]/index.tsx and app/clubs/[id]/venues.tsx already follow:
+  // TabBar navigates with router.replace off an entry route that is itself
+  // a <Redirect>, so the history stack is typically one deep, and a state
+  // with no bar strands an organizer with no way out but relaunching the
+  // app. The <Redirect> branch below is the deliberate exception -- it
+  // renders nothing, and a signed-out visitor belongs at sign-in, not in a
+  // tab bar.
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered}>
+      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="club" />}>
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
     );
@@ -379,7 +388,7 @@ export default function CheckInScreen() {
 
   if (!ready) {
     return (
-      <Screen center contentStyle={styles.centered}>
+      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="club" />}>
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
     );
@@ -387,7 +396,7 @@ export default function CheckInScreen() {
 
   if (!isOrganizer) {
     return (
-      <Screen contentStyle={styles.container}>
+      <Screen contentStyle={styles.container} tabBar={<TabBar active="club" />}>
         <ErrorBanner message="You are not an organizer of this club." />
       </Screen>
     );
@@ -550,7 +559,7 @@ export default function CheckInScreen() {
   }
 
   return (
-    <Screen scroll contentStyle={styles.container}>
+    <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="club" />}>
       <Text style={styles.heading}>Check-in</Text>
 
       {error ? <ErrorBanner message={error} /> : null}
