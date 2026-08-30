@@ -261,7 +261,7 @@ describe('thread screen', () => {
 
   it('shows the thread title and every message', async () => {
     render(<ThreadScreen />);
-    expect(await screen.findByText('Everyone at Riverside')).toBeTruthy();
+    expect(await screen.findByText('Riverside')).toBeTruthy();
     expect(screen.getByText('We are one short for Tuesday.')).toBeTruthy();
     expect(screen.getByText('I can take the seat.')).toBeTruthy();
   });
@@ -290,6 +290,79 @@ describe('thread screen', () => {
       expect(postMessage).toHaveBeenCalledWith('t1', 'On my way', false, null),
     );
     await waitFor(() => expect((input as HTMLInputElement).value).toBe(''));
+  });
+
+  // The artboard's composer is a 58×58 circular icon button beside a
+  // 58-tall input -- matched heights, one shape. We shipped a text "Send"
+  // pill with horizontal padding next to a multiline input whose rendered
+  // height exceeded 58, so the two halves never lined up. Asserted on the
+  // literal CSS `width`/`height`/`borderRadius` rather than a real layout
+  // measurement (jsdom does not lay pages out) -- these are properties this
+  // component sets directly, not ones a browser would need to compute.
+  it('renders Send as a 58×58 circular icon button, not a text pill', async () => {
+    render(<ThreadScreen />);
+    const send = await screen.findByLabelText('Send');
+    // No "Send" text node left inside it -- an icon button has no label to
+    // change into "Confirm" the way the old text pill did.
+    expect(screen.queryByText('Send')).toBeNull();
+    const style = getComputedStyle(send);
+    expect(style.width).toBe('58px');
+    expect(style.height).toBe('58px');
+    // Not `style.borderRadius` -- react-native-web emits the four longhand
+    // corner properties, and jsdom's `getComputedStyle` does not synthesize
+    // the shorthand back up from them (it reads back as '').
+    expect(style.borderTopLeftRadius).toBe('999px');
+  });
+
+  // The input's resting height must match the button's -- not merely claim
+  // to via `minHeight`, which is exactly what let a react-native-web
+  // `<textarea>`'s own intrinsic rows push the box taller than 58 in the
+  // first place. The fix sets an explicit `height`, which (unlike
+  // `minHeight`) is a literal value `getComputedStyle` can read back even
+  // without jsdom performing real layout.
+  it("matches the composer input's resting height to the send button's", async () => {
+    render(<ThreadScreen />);
+    const input = await screen.findByLabelText('Message');
+    expect(getComputedStyle(input).height).toBe('58px');
+  });
+
+  // An icon button has no text to swap to "Confirm" the way the old pill
+  // did, so the armed (two-step-confirm) state needs its own visible,
+  // non-text signal. The button's fill switches from the ordinary Send
+  // colour to the same accent2 family the rest of this screen already uses
+  // for "this involves email" (the announcement tag, the mail icon, the
+  // announcement bubble) -- not merely announced to assistive tech via the
+  // 'Confirm send' accessible name, which was already there.
+  it('gives the armed Send button a visually distinct fill, not only a different accessible name', async () => {
+    render(<ThreadScreen />);
+    fireEvent.change(await screen.findByLabelText('Message'), {
+      target: { value: 'Hall is closed Friday' },
+    });
+    fireEvent.click(screen.getByLabelText('Also email everyone'));
+    const send = await screen.findByLabelText('Send');
+    const restingFill = getComputedStyle(send).backgroundColor;
+
+    fireEvent.click(send);
+    const armed = await screen.findByLabelText('Confirm send');
+    expect(getComputedStyle(armed).backgroundColor).not.toBe(restingFill);
+  });
+
+  // The note above the composer already discloses what an announcement will
+  // do; once armed it should also say so -- the second tap's consequence,
+  // not just its existence -- so the confirmation isn't carried by colour
+  // alone.
+  it("states the armed condition in the composer's note once Send is tapped", async () => {
+    render(<ThreadScreen />);
+    fireEvent.change(await screen.findByLabelText('Message'), {
+      target: { value: 'Hall is closed Friday' },
+    });
+    fireEvent.click(screen.getByLabelText('Also email everyone'));
+    await screen.findByText('Emails 14 members, subject: Hall is closed Friday');
+
+    fireEvent.click(screen.getByLabelText('Send'));
+    expect(
+      await screen.findByText('Tap Send again to email 14 members, subject: Hall is closed Friday'),
+    ).toBeTruthy();
   });
 
   it('keeps the text and shows the refusal when the send fails', async () => {
@@ -452,6 +525,30 @@ describe('thread screen', () => {
     fetchThread.mockResolvedValueOnce(null);
     render(<ThreadScreen />);
     expect(await screen.findByText(/Could not reach MahjHero/)).toBeTruthy();
+  });
+
+  // A club thread with no messages used to render an enormous blank region
+  // between the title and the composer -- the dashed-border empty card this
+  // app already uses (app/messages/index.tsx, app/friends.tsx) instead of
+  // silence.
+  it('shows an empty state, not a blank scroller, for a club thread with no messages', async () => {
+    fetchThreadMessages.mockResolvedValueOnce([]);
+    render(<ThreadScreen />);
+    expect(
+      await screen.findByText('No messages yet. Post the first one below.'),
+    ).toBeTruthy();
+  });
+
+  // A group/direct thread has no club to post "the first one" into, so it
+  // gets the generic copy rather than a bespoke line for every kind -- cheap
+  // where it's cheap (club), generic everywhere else.
+  it('shows generic empty copy for a non-club thread with no messages', async () => {
+    fetchThread.mockResolvedValueOnce(GROUP_THREAD);
+    fetchThreadMessages.mockResolvedValueOnce([]);
+    render(<ThreadScreen />);
+    expect(
+      await screen.findByText('No messages yet. Say hello to start the conversation.'),
+    ).toBeTruthy();
   });
 
   // An announcement mails people and cannot be unsent. The count comes from
@@ -623,7 +720,7 @@ describe('thread screen', () => {
     // thread.club_id === null) gets the Members affordance at all.
     it('offers no Members control on a club thread', async () => {
       render(<ThreadScreen />);
-      await screen.findByText('Everyone at Riverside');
+      await screen.findByText('Riverside');
       expect(screen.queryByLabelText(/view members/i)).toBeNull();
     });
 
@@ -780,7 +877,7 @@ describe('thread screen', () => {
   // with no bar would be a dead end on native short of relaunching the app.
   it('carries the tab bar with Messages marked', async () => {
     render(<ThreadScreen />);
-    await screen.findByText('Everyone at Riverside');
+    await screen.findByText('Riverside');
     expect(
       screen.getByRole('button', { name: 'Messages' }).getAttribute('aria-selected'),
     ).toBe('true');
@@ -808,7 +905,7 @@ describe('thread screen', () => {
   // `queryByRole(..., { name: 'Messages' })` check silently.
   it('no longer draws its own back link', async () => {
     render(<ThreadScreen />);
-    await screen.findByText('Everyone at Riverside');
+    await screen.findByText('Riverside');
     expect(screen.getAllByRole('button', { name: 'Messages' })).toHaveLength(1);
   });
 });

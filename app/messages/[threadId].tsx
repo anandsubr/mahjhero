@@ -15,6 +15,7 @@ import Screen from '../../components/Screen';
 import TabBar from '../../components/TabBar';
 import Tag from '../../components/Tag';
 import Toggle from '../../components/Toggle';
+import { SendIcon } from '../../components/icons';
 import { countBroadcastRecipients } from '../../lib/broadcasts';
 import { GENERIC_ERROR } from '../../lib/constants';
 import { fetchAddablePeople, fetchFriends } from '../../lib/friends';
@@ -64,6 +65,17 @@ type Candidate = { profile_id: string; display_name: string; meta: string };
 // it) is required.
 let subscriptionSeq = 0;
 
+// The artboard's `.bigin` height (`min-height: 58px`), and this screen's own
+// Send button -- a 58x58 circle beside a 58-tall input, matched heights, one
+// shape. Named once so the input's resting/grown heights and the button's
+// own size are visibly the same number rather than two literals that could
+// drift apart.
+const COMPOSER_HEIGHT = 58;
+// How tall a long draft may grow the input before it scrolls internally
+// instead. Unchanged from the pre-existing behaviour this screen already
+// had; only how it's enforced changes (see `handleDraftSize` below).
+const DRAFT_MAX_HEIGHT = 140;
+
 export default function ThreadScreen() {
   const { session, loading } = useSession();
   const { threadId } = useLocalSearchParams<{ threadId: string }>();
@@ -74,6 +86,17 @@ export default function ThreadScreen() {
   const [messages, setMessages] = useState<ThreadMessage[]>([]);
   const [ready, setReady] = useState(false);
   const [draft, setDraft] = useState('');
+  // The composer input's own rendered height, MEASURED rather than trusted
+  // from `minHeight` -- trusting `minHeight` is exactly what let a
+  // react-native-web multiline `TextInput` (a `<textarea>` under the hood,
+  // with its own intrinsic row height) render taller than the 58px Send
+  // button beside it. `onContentSizeChange` below reports the textarea's
+  // real `scrollHeight` on every keystroke (react-native-web's own
+  // implementation reads it directly off the host node), which already
+  // includes this input's padding — so clamping THAT number, not a CSS
+  // hint, is what keeps the box between the resting 58px height and
+  // `DRAFT_MAX_HEIGHT` for a long draft.
+  const [inputHeight, setInputHeight] = useState(COMPOSER_HEIGHT);
   const [announce, setAnnounce] = useState(false);
   // The message being answered, held whole rather than as an id so the
   // composer can show its stub without hunting back through `messages`.
@@ -313,6 +336,20 @@ export default function ThreadScreen() {
     router.replace('/messages');
   }, [threadId, router]);
 
+  // `contentSize.height` is react-native-web's own name for the textarea's
+  // `scrollHeight` -- the real rendered height of the padding + text inside
+  // it, not a guess. Clamped to [COMPOSER_HEIGHT, DRAFT_MAX_HEIGHT] so an
+  // empty or one-line draft rests at the Send button's own height and a long
+  // one grows only up to the existing cap, same as before.
+  const handleDraftSize = useCallback(
+    (e: { nativeEvent: { contentSize: { height: number } } }) => {
+      setInputHeight(
+        Math.min(DRAFT_MAX_HEIGHT, Math.max(COMPOSER_HEIGHT, e.nativeEvent.contentSize.height)),
+      );
+    },
+    [],
+  );
+
   if (loading) {
     return (
       <Screen center contentStyle={styles.centered} tabBar={<TabBar active="messages" />}>
@@ -332,6 +369,17 @@ export default function ThreadScreen() {
   // a club or game thread's membership is derived (club_members / bookings),
   // never stored in thread_members, so there is nothing here to manage.
   const canManageMembers = thread !== null && thread.club_id === null;
+  // A CLUB thread specifically (not a game, which also carries club_id) --
+  // the one kind the empty state below can cheaply say something specific
+  // about ("post the first one"). Every other kind gets the generic copy
+  // rather than bespoke text per kind, which is not cheap: a game thread
+  // would need its own event-aware line, a group/direct its own.
+  const isClubThread = Boolean(thread?.club_id) && !thread?.event_id;
+  // Whether the NEXT tap on Send actually mails people. An icon button has
+  // no text to swap to "Confirm" the way the old pill did, so this drives
+  // both the button's own fill (below) and the note above it -- a colour
+  // change alone would only be visible, not explained.
+  const armed = announce && confirming;
 
   return (
     <Screen contentStyle={styles.container} tabBar={<TabBar active="messages" />}>
@@ -473,11 +521,41 @@ export default function ThreadScreen() {
 
           <ScrollView
             ref={scroller}
+            // The same test-only handle components/Screen.tsx's own
+            // `scroll` ScrollView carries — see its docstring. This screen
+            // never passes `scroll` to <Screen> (the message list needs its
+            // OWN independent scroller, not the page's), so nothing else on
+            // this screen renders that testID; e2e/visual.spec.ts's
+            // `captureScreen` finds THIS ScrollView instead and grows the
+            // viewport to fit every message rather than screenshotting
+            // whatever `scrollToEnd` below left on screen.
+            testID="screen-scroll"
             style={styles.scroller}
             onContentSizeChange={() =>
               scroller.current?.scrollToEnd({ animated: false })
             }
           >
+            {/*
+              A club or group thread with nothing posted yet used to render
+              as an enormous blank region between the title and the composer
+              -- the same dashed-border empty card app/messages/index.tsx and
+              app/friends.tsx already use for "nothing here yet", rather than
+              silence. Only the club case gets bespoke copy (`isClubThread`
+              above); every other kind gets the generic line, since writing a
+              correct bespoke line for a game thread (which would want its
+              own date-aware copy) or a group/direct is not cheap the way the
+              club one is.
+            */}
+            {messages.length === 0 ? (
+              <View style={styles.emptyCard}>
+                <Text style={styles.emptyText}>
+                  {isClubThread
+                    ? 'No messages yet. Post the first one below.'
+                    : 'No messages yet. Say hello to start the conversation.'}
+                </Text>
+              </View>
+            ) : null}
+
             {messages.map((m) => {
               const mine = m.author_id === viewerId;
               return (
@@ -585,9 +663,21 @@ export default function ThreadScreen() {
 
           {announce && draft.trim() ? (
             <Text style={styles.announceNote}>
+              {/*
+                Once armed, the note states the CONDITION the second tap
+                fires, not just that an email will happen -- the same
+                information the plain-text "Confirm" pill used to carry by
+                simply appearing, now that an icon button has no text to
+                change. The subject and recipient count are unchanged from
+                the unarmed copy; only the "tap again" framing is new.
+              */}
               {recipients === null
-                ? `Emails the club with the subject: ${deriveSubject(draft.trim())}`
-                : `Emails ${recipients} ${recipients === 1 ? 'member' : 'members'}, subject: ${deriveSubject(draft.trim())}`}
+                ? armed
+                  ? `Tap Send again to email the club, subject: ${deriveSubject(draft.trim())}`
+                  : `Emails the club with the subject: ${deriveSubject(draft.trim())}`
+                : armed
+                  ? `Tap Send again to email ${recipients} ${recipients === 1 ? 'member' : 'members'}, subject: ${deriveSubject(draft.trim())}`
+                  : `Emails ${recipients} ${recipients === 1 ? 'member' : 'members'}, subject: ${deriveSubject(draft.trim())}`}
             </Text>
           ) : null}
 
@@ -608,12 +698,26 @@ export default function ThreadScreen() {
 
           <View style={styles.composer}>
             <TextInput
-              style={styles.input}
+              style={[styles.input, { height: inputHeight }]}
               value={draft}
               onChangeText={setDraft}
+              onContentSizeChange={handleDraftSize}
               placeholder="Message"
               accessibilityLabel="Message"
               multiline
+              // Without this, react-native-web's own default (no `rows`/
+              // `numberOfLines` given) leaves the underlying `<textarea>`'s
+              // `rows` attribute unset, and an unset `<textarea rows>`
+              // renders 2 browser-default rows -- taller than the 58px
+              // resting height this screen needs to match the Send button,
+              // before a single character has even been typed.
+              // `numberOfLines`, not the newer `rows` prop react-native-web
+              // also accepts: `rows` is not in @types/react-native's
+              // `TextInputProps` at all, and `numberOfLines` is the same
+              // prop TextField.tsx already uses for this exact job.
+              // `handleDraftSize` still grows the box from here for a long
+              // draft.
+              numberOfLines={1}
             />
             <Pressable
               onPress={() => {
@@ -627,13 +731,11 @@ export default function ThreadScreen() {
                 void send();
               }}
               accessibilityRole="button"
-              accessibilityLabel={announce && confirming ? 'Confirm send' : 'Send'}
+              accessibilityLabel={armed ? 'Confirm send' : 'Send'}
               disabled={sending}
-              style={styles.send}
+              style={[styles.send, armed ? styles.sendArmed : null]}
             >
-              <Text style={styles.sendText}>
-                {announce && confirming ? 'Confirm' : 'Send'}
-              </Text>
+              <SendIcon />
             </Pressable>
           </View>
         </>
@@ -663,6 +765,22 @@ const styles = StyleSheet.create({
     color: colors.accent[700],
   },
   scroller: { flex: 1 },
+  // The same dashed-border empty card app/messages/index.tsx and
+  // app/friends.tsx already use, reused rather than a third near-identical
+  // pair of styles.
+  emptyCard: {
+    padding: space[4],
+    borderRadius: radius.card,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    borderColor: colors.neutral[400],
+  },
+  emptyText: {
+    fontFamily: type.bodyRegular,
+    fontSize: type.size.helper,
+    lineHeight: 24,
+    color: colors.textMuted,
+  },
   membersPanel: {
     gap: space[2],
     backgroundColor: colors.surface,
@@ -822,31 +940,51 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
   },
   composer: { flexDirection: 'row', alignItems: 'flex-end', gap: space[2] },
+  // Height is NOT set here -- it's driven by `inputHeight` state at the call
+  // site (see `handleDraftSize`'s own comment), because `minHeight` alone is
+  // exactly what let this box render taller than the 58px Send button beside
+  // it: react-native-web's multiline `TextInput` is a `<textarea>`, which
+  // has its own intrinsic row height independent of `minHeight`.
+  //
+  // `paddingVertical: 17` and `lineHeight: 24` are deliberately literal, not
+  // pulled from the `space`/`type` scales: their SUM has to land on exactly
+  // `COMPOSER_HEIGHT` (58) for the placeholder/first line to sit centred at
+  // rest. A `<textarea>` does not centre its own content vertically the way
+  // a plain `<input>` does (this is the artboard's `<input class="input
+  // bigin">`, singular-line, not a growing textarea) — the only way to get
+  // that centred look out of one is to leave no slack: equal top/bottom
+  // padding plus a line-height that together exactly fill the box, so there
+  // is no extra space left over for the text to be top-aligned within.
   input: {
     flex: 1,
-    minHeight: 58,
-    maxHeight: 140,
     borderRadius: radius.lg,
     backgroundColor: colors.surface,
     paddingHorizontal: space[4],
-    paddingVertical: space[3],
+    paddingVertical: 17,
+    lineHeight: 24,
     fontFamily: type.bodyRegular,
     fontSize: type.size.body,
     color: colors.text,
   },
-  // Same accent[700] fix as the `mine` bubble above: this button's label is
-  // colors.bg on what was accentColor (3.03:1, fails AA at 18px regular).
+  // The artboard's 58x58 circular icon button -- accent[700], not
+  // accentColor: colors.bg on accentColor measures 3.03:1 and fails AA at
+  // this size; accent[700] reads 5.72:1 (already pinned in
+  // lib/theme.test.ts for this exact bubble/button pairing).
   send: {
-    minHeight: 58,
-    paddingHorizontal: space[5],
+    width: COMPOSER_HEIGHT,
+    height: COMPOSER_HEIGHT,
     borderRadius: radius.pill,
     backgroundColor: colors.accent[700],
     alignItems: 'center',
     justifyContent: 'center',
   },
-  sendText: {
-    fontFamily: type.heading,
-    fontSize: type.size.body,
-    color: colors.bg,
-  },
+  // The armed (two-step-confirm) state's visible signal. An icon button has
+  // no text to swap to "Confirm" the way the old text pill did, so the fill
+  // switches to the SAME accent2 family this screen already uses everywhere
+  // else to mean "this involves email" -- the announcement Tag, the
+  // announcement bubble, MailIcon's own default colour -- rather than
+  // inventing a fourth colour for the same idea. colors.bg on accent2[700]
+  // measures 5.43:1, clearing AA; pinned in lib/theme.test.ts alongside the
+  // resting-state pairing above.
+  sendArmed: { backgroundColor: colors.accent2[700] },
 });

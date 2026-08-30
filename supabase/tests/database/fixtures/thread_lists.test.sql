@@ -75,9 +75,9 @@ set local role authenticated;
 set local request.jwt.claims =
   '{"sub": "bbbbbbbb-0000-0000-0000-000000000002", "role": "authenticated"}';
 
--- A club thread with no messages is still listed, with a null id: the
--- artboard always shows "Everyone at <club>", and the client calls
--- open_thread_for_club on tap.
+-- A club thread with no messages is still listed, with a null id: every
+-- active membership gets a club thread row whether it has ever been opened
+-- or not, and the client calls open_thread_for_club on tap.
 select is(
   (select count(*)::int from public.fetch_my_threads()),
   1,
@@ -88,9 +88,11 @@ select is(
   null,
   'and it carries no thread id yet'
 );
+-- Just the club's name, not "Everyone at <club>" -- 20260829090000's own
+-- comment records why.
 select is(
   (select title from public.fetch_my_threads()),
-  'Everyone at Riverside',
+  'Riverside',
   'and it is named after its club'
 );
 

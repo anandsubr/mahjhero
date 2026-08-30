@@ -78,6 +78,21 @@ describe('unread badge text clears AA on its background', () => {
   });
 });
 
+// The thread screen's Send button, ARMED for a two-step announcement
+// confirmation (app/messages/[threadId].tsx's `sendArmed`), swaps its fill
+// from accent[700] (pinned just above) to accent2[700] -- the same family
+// this screen already uses everywhere else for "this involves email" (the
+// announcement Tag, the announcement bubble, MailIcon's default colour) --
+// so the SendIcon glyph (colors.bg) needs its own pin against this new
+// ground. Measured at 5.43:1, clearing AA (this is a 22px SVG glyph, not
+// text, so only the 3:1 non-text bar strictly applies, but it clears the
+// higher bar too).
+describe('armed send button clears AA on its background', () => {
+  it('clears AA on accent2[700]', () => {
+    expect(contrast(colors.bg, colors.accent2[700])).toBeGreaterThanOrEqual(AA);
+  });
+});
+
 // The badge's own shape — accent[700] — sits on colors.surface, the tab
 // bar's ground and the club chips' ground. That pairing is not text, so AA's
 // 4.5:1 does not govern it; it is a filled shape against its background, so

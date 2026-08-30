@@ -47,7 +47,7 @@ function row(over: Partial<ThreadListRow> = {}): ThreadListRow {
   return {
     thread_id: 't1',
     kind: 'club',
-    title: 'Everyone at Riverside',
+    title: 'Riverside',
     club_id: 'c1',
     club_name: 'Riverside',
     member_count: 42,
@@ -182,6 +182,24 @@ describe('threadTitleFor', () => {
     expect(threadTitleFor(thread(), 'me')).toBe('Sara Lindqvist');
   });
 
+  // The owner's call: the artboard renders 'Everyone at ' + club.short from
+  // a short name this app's clubs table has no column for, so substituting
+  // the full name wrapped to two lines in the header and truncated in the
+  // list ("Everyone at Riverside Mah Jongg"). A club thread's title is just
+  // the club's own name instead -- one place this is decided, so the list
+  // (fetch_my_threads' SQL) and the header (this function) cannot drift.
+  it('names a club thread after its club, with no "Everyone at" prefix', () => {
+    expect(
+      threadTitleFor(
+        thread({
+          club_id: 'c1',
+          clubs: { name: 'Riverside Mah Jongg', timezone: 'America/New_York' },
+        }),
+        'me',
+      ),
+    ).toBe('Riverside Mah Jongg');
+  });
+
   // profiles.display_name is `text not null default ''`, so a counterpart
   // who never set a name comes back as '' -- not null -- and `??` does not
   // catch an empty string. This is the direct-thread half of the same hole
@@ -250,9 +268,7 @@ describe('rowTitle', () => {
   });
 
   it('uses the title when there is one', () => {
-    expect(rowTitle(row({ title: 'Everyone at Riverside', kind: 'club' }))).toBe(
-      'Everyone at Riverside',
-    );
+    expect(rowTitle(row({ title: 'Riverside', kind: 'club' }))).toBe('Riverside');
   });
 });
 
@@ -422,10 +438,10 @@ describe('orderThreadsForList', () => {
 });
 
 describe('rowSubtitle', () => {
-  // A club row's title already reads "Everyone at <club>" (rowTitle /
-  // fetch_my_threads), so joining the club name onto the subtitle too says
-  // it twice while both lines fight for width at narrow viewports. The kind
-  // label alone still tells the member what this line is.
+  // A club row's title already IS the club's name (rowTitle / fetch_my_threads),
+  // so joining the club name onto the subtitle too says it twice while both
+  // lines fight for width at narrow viewports. The kind label alone still
+  // tells the member what this line is.
   it('drops the club name for a club row since the title already carries it', () => {
     expect(rowSubtitle(row({ kind: 'club', club_name: 'Riverside' }))).toBe('Announcement');
   });

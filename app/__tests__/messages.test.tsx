@@ -64,7 +64,7 @@ function row(over: Partial<ThreadListRow> = {}): ThreadListRow {
   return {
     thread_id: 't1',
     kind: 'club',
-    title: 'Everyone at Riverside',
+    title: 'Riverside',
     club_id: 'c1',
     club_name: 'Riverside',
     member_count: 42,
@@ -113,10 +113,10 @@ describe('messages list', () => {
   it('lists the club thread first, then everything else newest first', async () => {
     render(<MessagesScreen />);
     const titles = await screen.findAllByText(
-      /Everyone at Riverside|Tuesday Night|Bob Reyes/,
+      /^Riverside$|Tuesday Night|Bob Reyes/,
     );
     expect(titles.map((n) => n.textContent)).toEqual([
-      'Everyone at Riverside',
+      'Riverside',
       'Tuesday Night',
       'Bob Reyes',
     ]);
@@ -127,7 +127,7 @@ describe('messages list', () => {
   // to choose between.
   it('carries no Recent/By club sort control', async () => {
     render(<MessagesScreen />);
-    await screen.findByText('Everyone at Riverside');
+    await screen.findByText('Riverside');
     expect(screen.queryByText('Recent')).toBeNull();
     expect(screen.queryByText('By club')).toBeNull();
   });
@@ -154,7 +154,7 @@ describe('messages list', () => {
       row({ thread_id: null, last_message_at: null, last_body: null, last_author: null }),
     ]);
     render(<MessagesScreen />);
-    fireEvent.click(await screen.findByLabelText('Everyone at Riverside'));
+    fireEvent.click(await screen.findByLabelText('Riverside'));
     await waitFor(() => expect(openThreadForClub).toHaveBeenCalledWith('c1'));
     await waitFor(() => expect(push).toHaveBeenCalledWith('/messages/t1'));
   });
@@ -173,7 +173,7 @@ describe('messages list', () => {
       error: 'you are not a member of this club',
     });
     render(<MessagesScreen />);
-    fireEvent.click(await screen.findByLabelText('Everyone at Riverside'));
+    fireEvent.click(await screen.findByLabelText('Riverside'));
     expect(
       await screen.findByText('you are not a member of this club'),
     ).toBeTruthy();
@@ -196,7 +196,7 @@ describe('messages list', () => {
       }),
     );
     render(<MessagesScreen />);
-    const target = await screen.findByLabelText('Everyone at Riverside');
+    const target = await screen.findByLabelText('Riverside');
 
     act(() => {
       fireEvent.click(target);

@@ -8,10 +8,10 @@ export type ThreadKind = 'club' | 'game' | 'group' | 'direct';
  * One `fetch_my_threads` row.
  *
  * `thread_id` is null for a club thread nobody has opened yet — the row is
- * still listed, because the artboard always shows "Everyone at <club>", and
- * the client calls `openThreadForClub(club_id)` on tap. Every caller
- * navigates that way, existing row or not, so there is one path rather than
- * two.
+ * still listed regardless, because every active membership gets a club
+ * thread row whether it has ever been opened or not, and the client calls
+ * `openThreadForClub(club_id)` on tap. Every caller navigates that way,
+ * existing row or not, so there is one path rather than two.
  */
 export type ThreadListRow = {
   thread_id: string | null;
@@ -366,7 +366,16 @@ export function orderThreadsForList(rows: ThreadListRow[]): ThreadListRow[] {
  */
 export function threadTitleFor(thread: ThreadDetail, viewerId: string): string {
   if (thread.event_id) return thread.events?.title ?? 'Game';
-  if (thread.club_id) return `Everyone at ${thread.clubs?.name ?? ''}`;
+  // The owner's call, made knowingly: the artboard renders
+  // `'Everyone at ' + club.short` from a SHORT name its fixture carries
+  // (`short: 'Riverside'`) that this app's `clubs` table has no column for.
+  // Substituting the full name produced "Everyone at Riverside Mah Jongg" --
+  // which wraps to two lines in this header and truncates in the list. A
+  // club thread's title is just the club's own name instead, computed here
+  // AND in fetch_my_threads' SQL (supabase/migrations/
+  // 20260829090000_club_thread_title.sql) -- the same value from both
+  // places is what keeps the list and this header from drifting apart.
+  if (thread.club_id) return thread.clubs?.name ?? '';
 
   if (thread.title && thread.title.trim()) return thread.title.trim();
   const others = thread.thread_members.filter((m) => m.profile_id !== viewerId);

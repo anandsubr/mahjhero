@@ -3,6 +3,7 @@ import {
   mintSession,
   seedClubWithEvent,
   seedPopulatedMessagesList,
+  seedPopulatedThread,
   seedUnreadClubMessage,
   storageKeyFor,
 } from './session';
@@ -353,14 +354,14 @@ test.describe('signed in', () => {
         await page.goto('/messages');
         // Through the row, not a guessed id: thread ids are generated and
         // the club thread has none at all until it is opened. Named exactly
-        // rather than the brief's bare `/^Everyone at /` — Task 15's
+        // rather than a loose pattern on the club's own name — Task 15's
         // booking-state fixtures (e2e/session.ts) seed a SECOND club,
         // "Thursday Casuals", so this list carries two club-thread rows and
-        // the loose pattern is a strict-mode hard failure now, the same
-        // "Your clubs" trap this file's other comments record.
-        await page
-          .getByRole('button', { name: 'Everyone at Riverside Mah Jongg' })
-          .click();
+        // a loose pattern is a strict-mode hard failure now, the same
+        // "Your clubs" trap this file's other comments record. The row's
+        // title is the club's bare name now, not "Everyone at <club>" — see
+        // lib/messages.ts's `threadTitleFor` for why.
+        await page.getByRole('button', { name: 'Riverside Mah Jongg' }).click();
         // `exact: true` — the brief's own bare `getByLabel('Message')` is
         // ALSO a substring match on this screen's own "< Messages" back
         // link (accessibilityLabel="Messages", app/messages/[threadId].tsx),
@@ -395,7 +396,7 @@ test.describe('signed in', () => {
         // composed accessibilityLabel (`unreadSuffix`, lib/messages.ts)
         // carries a ", N unread" tail.
         await expect(
-          page.getByRole('button', { name: 'Everyone at Riverside Mah Jongg' }),
+          page.getByRole('button', { name: 'Riverside Mah Jongg' }),
         ).toBeVisible();
         // The game thread's own title -- unique to this fixture on this
         // screen (no other row's title or subtitle contains it) -- proves a
@@ -405,6 +406,42 @@ test.describe('signed in', () => {
         // quietly matching the empty-state baseline above.
         await expect(page.getByText('Tuesday night mahjong')).toBeVisible();
         await captureScreen(page, vp, `messages-populated-${vp.name}.png`);
+      });
+
+      // The thread screen's own bubbles, pictured for the first time. Every
+      // OTHER `thread-*` baseline in this suite (the `club thread at …` test
+      // above) is the EMPTY thread — nothing has ever screenshotted an
+      // actual message, so the bubble treatments themselves (an ordinary
+      // "theirs" bubble, the viewer's own "mine" bubble, and an
+      // announcement) were guarded by nothing.
+      // `seedPopulatedThread` (e2e/session.ts) seeds one club thread with
+      // four messages: a filler's ordinary message, the viewer's own reply,
+      // a second filler's announcement, and a third filler's ordinary
+      // message after it — every bubble treatment this screen renders, in
+      // one thread.
+      test(`thread populated at ${vp.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        const { threadId } = await seedPopulatedThread(
+          seeded.clubId,
+          userId,
+          userId.slice(0, 8),
+        );
+        await page.goto(`/messages/${threadId}`);
+        // A known body from each side of the conversation -- the viewer's
+        // own reply and the announcement's subject -- so a regression that
+        // empties the thread (or drops the announcement) fails loudly here
+        // rather than quietly matching the empty-thread baseline above.
+        await expect(page.getByText('Yes! I will bring extra tiles.')).toBeVisible();
+        // `exact: true` -- the announcement's own body starts with the same
+        // words as its subject line ("Hall closed this week" is both the
+        // subject AND the body's first line, by design: deriveSubject takes
+        // the body's first line), so a loose match resolves to both the bare
+        // subject <Text> and the multi-line body <Text> and Playwright's
+        // strict mode turns that into a hard failure.
+        await expect(
+          page.getByText('Hall closed this week', { exact: true }),
+        ).toBeVisible();
+        await captureScreen(page, vp, `thread-populated-${vp.name}.png`);
       });
 
       // The unread badge, pictured for the first time. Task 16 shipped it on

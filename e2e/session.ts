@@ -1245,6 +1245,140 @@ export async function seedPopulatedMessagesList(
 }
 
 /**
+ * Seeds a POPULATED thread -- four messages in one club thread, so the
+ * thread screen's own bubble treatments (`app/messages/[threadId].tsx`) have
+ * something to picture. Every OTHER `thread-*` baseline in this suite is the
+ * EMPTY thread: nothing has ever screenshotted an actual message, let alone
+ * the viewer's OWN bubble, somebody else's, or an announcement's, which is
+ * exactly the "amateurish" the bubbles were flagged for -- guarded by
+ * nothing since nobody could see them.
+ *
+ * Distinct from `seedPopulatedMessagesList` just above, which seeds THREE
+ * different THREADS (club, game, direct) with one message each to picture
+ * the messages LIST's row treatments. This seeds ONE thread with FOUR
+ * messages to picture the thread SCREEN's own bubble treatments instead --
+ * different job, own function, rather than overloading that one's signature.
+ *
+ * The four messages cover every bubble treatment this screen renders:
+ *
+ *   1. a FILLER author's ordinary message ("theirs" -- attributed, muted)
+ *   2. the VIEWER's own reply ("mine" -- accent-filled, unattributed)
+ *   3. a SECOND filler's ANNOUNCEMENT (the accent2 tag/subject treatment)
+ *   4. a THIRD filler's ordinary message, so the announcement is not the
+ *      last bubble in the thread either
+ *
+ * Every filler is a FRESH profile, the same reasoning `seedUnreadClubMessage`
+ * and `seedPopulatedMessagesList` both give: a message the viewer sent
+ * themselves proves nothing about how somebody ELSE's bubble renders, and
+ * three distinct authors (not one, reused) prove the "theirs" author-name
+ * treatment actually varies per sender rather than being hardcoded.
+ *
+ * Timestamps are fixed, on the same calendar day as and strictly before the
+ * suite's frozen clock (`page.clock.setFixedTime`, `e2e/visual.spec.ts`),
+ * for the identical reason `seedPopulatedMessagesList`'s own comment gives:
+ * a real-wall-clock timestamp rotates the baseline, and `relativeTimestamp`
+ * renders relative to the PAGE's clock, not the seed's.
+ */
+export async function seedPopulatedThread(
+  clubId: string,
+  viewerId: string,
+  suffix: string,
+): Promise<{ threadId: string }> {
+  const admin = adminClient('seed populated thread');
+
+  const need = <T>(what: string, result: { data: unknown; error: unknown }): T => {
+    if (result.error || result.data == null) {
+      throw new Error(`seedPopulatedThread: ${what} failed: ${JSON.stringify(result.error)}`);
+    }
+    return result.data as T;
+  };
+
+  const [askAuthor, announceAuthor, thanksAuthor] = await Promise.all([
+    seedFillerProfile(admin, 'Priya Shah', 'thread-ask', suffix),
+    seedFillerProfile(admin, 'Wanda Cole', 'thread-announce', suffix),
+    seedFillerProfile(admin, 'Yusuf Ahmed', 'thread-thanks', suffix),
+  ]);
+
+  // message_threads_one_per_club's own partial unique index (club_id where
+  // event_id is null) is what makes this the only club thread this club can
+  // ever get -- same reasoning seedPopulatedMessagesList's own club-thread
+  // insert records.
+  const thread = need<{ id: string }>(
+    'club thread insert',
+    await admin
+      .from('message_threads')
+      .insert({
+        club_id: clubId,
+        event_id: null,
+        created_by: askAuthor,
+        last_message_at: '2026-08-22T14:15:00Z',
+      })
+      .select('id')
+      .single(),
+  );
+
+  // Four SEPARATE inserts, not one array insert -- a single `.insert([...])`
+  // call with heterogeneous row shapes sends the UNION of every object's
+  // keys as the bulk statement's column list, and PostgREST fills a row that
+  // omits one of those keys with an explicit NULL rather than letting the
+  // column's own DEFAULT apply. `is_announcement boolean not null default
+  // false` then rejects the three plain messages outright, since only the
+  // announcement row supplies that key. `seedPopulatedMessagesList` above
+  // avoids this the same way, one insert per row.
+  const { error: askError } = await admin.from('messages').insert({
+    thread_id: thread.id,
+    author_id: askAuthor,
+    body: 'Are we still on for Tuesday’s game?',
+    created_at: '2026-08-22T14:00:00Z',
+  });
+  if (askError) {
+    throw new Error(
+      `seedPopulatedThread: ask message insert failed: ${JSON.stringify(askError)}`,
+    );
+  }
+
+  const { error: replyError } = await admin.from('messages').insert({
+    thread_id: thread.id,
+    author_id: viewerId,
+    body: 'Yes! I will bring extra tiles.',
+    created_at: '2026-08-22T14:05:00Z',
+  });
+  if (replyError) {
+    throw new Error(
+      `seedPopulatedThread: viewer reply insert failed: ${JSON.stringify(replyError)}`,
+    );
+  }
+
+  const { error: announceError } = await admin.from('messages').insert({
+    thread_id: thread.id,
+    author_id: announceAuthor,
+    subject: 'Hall closed this week',
+    body: 'Hall closed this week\nWe will meet at the community center instead.',
+    is_announcement: true,
+    created_at: '2026-08-22T14:10:00Z',
+  });
+  if (announceError) {
+    throw new Error(
+      `seedPopulatedThread: announcement insert failed: ${JSON.stringify(announceError)}`,
+    );
+  }
+
+  const { error: thanksError } = await admin.from('messages').insert({
+    thread_id: thread.id,
+    author_id: thanksAuthor,
+    body: 'Thanks for letting us know!',
+    created_at: '2026-08-22T14:15:00Z',
+  });
+  if (thanksError) {
+    throw new Error(
+      `seedPopulatedThread: thanks message insert failed: ${JSON.stringify(thanksError)}`,
+    );
+  }
+
+  return { threadId: thread.id };
+}
+
+/**
  * The localStorage key supabase-js persists its session under, derived from
  * the project ref in the URL. Keep in step with the client's own convention:
  * see `defaultStorageKey` in `node_modules/@supabase/supabase-js/src/SupabaseClient.ts`

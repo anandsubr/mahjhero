@@ -93,3 +93,17 @@ export function BellIcon({ size = 24, color = colors.text }: { size?: number; co
     </Svg>
   );
 }
+
+/**
+ * The thread composer's Send glyph -- a paper plane, matching the `1C
+ * thread` artboard's icon-only circular Send button exactly (same two paths,
+ * same 22x22/24-viewBox proportions the artboard's SVG uses).
+ */
+export function SendIcon({ size = 22, color = colors.bg }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.75} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z" />
+      <Path d="m21.854 2.147-10.94 10.939" />
+    </Svg>
+  );
+}

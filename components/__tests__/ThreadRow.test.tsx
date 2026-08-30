@@ -8,7 +8,7 @@ function row(over: Partial<ThreadListRow> = {}): ThreadListRow {
   return {
     thread_id: 't1',
     kind: 'club',
-    title: 'Everyone at Riverside',
+    title: 'Riverside',
     club_id: 'c1',
     club_name: 'Riverside',
     member_count: 42,
@@ -46,13 +46,13 @@ describe('UnreadBadge', () => {
 describe('ThreadRow', () => {
   it('shows the title, the club and kind line, and the preview', () => {
     render(<ThreadRow row={row()} onPress={vi.fn()} />);
-    expect(screen.getByText('Everyone at Riverside')).toBeTruthy();
+    expect(screen.getByText('Riverside')).toBeTruthy();
     expect(screen.getByText('Alice Ng: See you Tuesday')).toBeTruthy();
   });
 
-  // The title already reads "Everyone at Riverside" for a club row, so the
-  // subtitle beneath it should not say the club's name again -- just what
-  // the title doesn't already carry (the kind label).
+  // The title already IS the club's name ("Riverside") for a club row, so
+  // the subtitle beneath it should not say the club's name again -- just
+  // what the title doesn't already carry (the kind label).
   it('does not repeat the club name in a club row’s subtitle', () => {
     render(<ThreadRow row={row()} onPress={vi.fn()} />);
     expect(screen.getByText('Announcement')).toBeTruthy();
@@ -137,7 +137,7 @@ describe('ThreadRow', () => {
   it('reports a press', () => {
     const onPress = vi.fn();
     render(<ThreadRow row={row()} onPress={onPress} />);
-    fireEvent.click(screen.getByLabelText('Everyone at Riverside'));
+    fireEvent.click(screen.getByLabelText('Riverside'));
     expect(onPress).toHaveBeenCalled();
   });
 
@@ -178,12 +178,12 @@ describe('ThreadRow', () => {
   // this same label instead.
   it('composes the unread count into the accessible name', () => {
     render(<ThreadRow row={row({ unread: 4 })} onPress={vi.fn()} />);
-    expect(screen.getByLabelText('Everyone at Riverside, 4 unread')).toBeTruthy();
+    expect(screen.getByLabelText('Riverside, 4 unread')).toBeTruthy();
   });
 
   it('carries no unread suffix when nothing is unread', () => {
     render(<ThreadRow row={row({ unread: 0 })} onPress={vi.fn()} />);
-    expect(screen.getByLabelText('Everyone at Riverside')).toBeTruthy();
+    expect(screen.getByLabelText('Riverside')).toBeTruthy();
   });
 
   // The trailing timestamp, in the viewer's own local time -- this suite
@@ -229,7 +229,7 @@ describe('ThreadRow', () => {
       <ThreadRow row={row({ last_message_at: '2026-08-25T10:00:00Z' })} onPress={vi.fn()} />,
     );
     const titleRow = screen.getByTestId('thread-title-row');
-    expect(within(titleRow).getByText('Everyone at Riverside')).toBeTruthy();
+    expect(within(titleRow).getByText('Riverside')).toBeTruthy();
     expect(within(titleRow).getByTestId('thread-timestamp')).toBeTruthy();
   });
 
