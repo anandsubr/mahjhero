@@ -576,6 +576,15 @@ describe('BOOKING_REFUSALS (self-audit against the migrations)', () => {
     // buggy. lib/messages.ts owns it and relays it verbatim.
     'you can only reply to a post in this conversation':
       'raised by post_message — lib/messages.ts is the module responsible, and by design relays error.message rather than mapping through a refusal table',
+    // Raised by post_message when p_reply_to names a message that lives
+    // under a different post than p_root on a club board — including when
+    // p_root is null, since the message being posted is itself about to
+    // become a new post and so has no "same post" a quote could match. The
+    // board only ever offers Reply-with-quote inside the post the reader
+    // has open, so a caller hitting this is malicious or buggy.
+    // lib/messages.ts owns it.
+    'you can only quote a message from the same post':
+      'raised by post_message — lib/messages.ts is the module responsible, and by design relays error.message rather than mapping through a refusal table',
     // Raised by post_message when p_root is passed on a game or group
     // thread, neither of which is a board. The composer only passes a root
     // from the club post screen, so a caller hitting this is malicious or

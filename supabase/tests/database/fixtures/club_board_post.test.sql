@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(9);
+select plan(14);
 
 -- Alice hosts Riverside. Bob is a plain member. Both are in the club thread.
 insert into auth.users (id, email) values
@@ -115,6 +115,60 @@ select throws_ok(
   '22023',
   'only a new post can be an announcement',
   'an announcement is always a root'
+);
+
+-- A second post on the same board, so a cross-post quote is stateable to
+-- test against.
+select lives_ok(
+  $$ select public.post_message('11111111-0000-0000-0000-000000000001',
+       'Second post') $$,
+  'Alice can start a second post'
+);
+
+reset role;
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub":"bbbbbbbb-0000-0000-0000-000000000002","role":"authenticated"}';
+
+-- A quote is scoped to its own post, not just its thread: replying into
+-- post A while quoting a message that lives under post B is refused even
+-- though both messages are in the same thread.
+select throws_ok(
+  $$ select public.post_message('11111111-0000-0000-0000-000000000001',
+       'crossing posts',
+       false,
+       (select id from public.messages where body = 'Second post'),
+       (select id from public.messages where body = 'Anyone free Thursday?')) $$,
+  '22023',
+  'you can only quote a message from the same post',
+  'a reply cannot quote a message from a different post'
+);
+
+-- Quoting a message that already lives under the same post — here, a
+-- sibling reply rather than the root itself — is fine.
+select lives_ok(
+  $$ select public.post_message('11111111-0000-0000-0000-000000000001',
+       'agreed',
+       false,
+       (select id from public.messages where body = 'I am'),
+       (select id from public.messages where body = 'Anyone free Thursday?')) $$,
+  'a reply can quote a message under the same post'
+);
+
+-- Outside a board, a quote is not scoped to any post — the flat thread
+-- path used by game and group conversations is untouched.
+select lives_ok(
+  $$ select public.post_message('33333333-0000-0000-0000-000000000003',
+       'first in the group thread') $$,
+  'a member can post in a flat group thread'
+);
+
+select lives_ok(
+  $$ select public.post_message('33333333-0000-0000-0000-000000000003',
+       'quoting in a flat thread',
+       false,
+       (select id from public.messages where body = 'first in the group thread')) $$,
+  'a quote is legal anywhere in a flat thread'
 );
 
 select * from finish();

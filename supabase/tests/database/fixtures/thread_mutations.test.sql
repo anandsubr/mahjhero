@@ -302,7 +302,10 @@ select throws_ok(
   'a group cannot be announced to'
 );
 
--- Quote-reply.
+-- Quote-reply. The club thread is a board (20260830000000), so a message
+-- that quotes an earlier one must also name it as p_root — otherwise the
+-- reply would itself be posted as a new, unrelated root that happens to
+-- quote a different post (20260830011000_quote_stays_in_post.sql).
 set local request.jwt.claims =
   '{"sub": "dddddddd-0000-0000-0000-000000000004", "role": "authenticated"}';
 
@@ -313,10 +316,10 @@ select lives_ok(
       t := public.open_thread_for_club('c1c1c1c1-0000-0000-0000-000000000001');
       select id into parent from public.messages
         where thread_id = t order by created_at limit 1;
-      perform public.post_message(t, 'Yes, I am free.', false, parent);
+      perform public.post_message(t, 'Yes, I am free.', false, parent, parent);
     end
   $x$$test$,
-  'a reply quotes an earlier message in the same thread'
+  'a reply quotes the post it belongs to'
 );
 
 -- Something must actually exist in the OTHER thread, or the subquery below
