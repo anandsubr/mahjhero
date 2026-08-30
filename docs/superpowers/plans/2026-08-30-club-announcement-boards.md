@@ -1367,9 +1367,23 @@ select ok(
   'authenticated cannot TRUNCATE archived_messages'
 );
 
--- Every surviving club-thread message is either a root or hangs off one.
--- After the migration there are no free-floating non-announcement messages
--- left in any club thread.
+/*
+ * ⚠️ READ THIS BEFORE TRUSTING THE NEXT TWO ASSERTIONS.
+ *
+ * Every fixture in this suite runs in a transaction that ROLLS BACK, so the
+ * local `messages` table is EMPTY when the archive migration runs against
+ * it. Both assertions below therefore count zero rows out of zero rows and
+ * pass VACUOUSLY. They are a regression tripwire for a future migration
+ * that reintroduces free-floating club chat — not evidence that the archive
+ * transformed anything correctly.
+ *
+ * The archive's real verification is Task 13 Step 6: the hosted push,
+ * performed under the owner's eye, where `select count(*) from
+ * archived_messages` is checked against what left `messages`. That gap is
+ * accepted deliberately (see the plan's pre-flight adjudications); do not
+ * "fix" it by weakening these assertions further or by claiming coverage
+ * they do not have.
+ */
 select is(
   (select count(*)::int
      from public.messages m
@@ -1378,10 +1392,12 @@ select is(
       and m.root_id is null
       and not m.is_announcement),
   0,
-  'no free-floating club chat survives the archive'
+  'tripwire: no free-floating club chat exists in any club thread (vacuous locally — see the note above)'
 );
 
--- Counters agree with reality for every root the migration rebuilt.
+-- Also vacuous on an empty local table, and kept for the same tripwire
+-- reason: a future migration that writes reply_count without writing the
+-- replies would trip it the moment any fixture seeds a root.
 select is(
   (select count(*)::int
      from public.messages a
@@ -1389,7 +1405,7 @@ select is(
       and a.reply_count <> (select count(*)::int from public.messages r
                              where r.root_id = a.id)),
   0,
-  'every root''s reply_count matches its actual replies'
+  'tripwire: every root''s reply_count matches its actual replies (vacuous locally — see the note above)'
 );
 
 select * from finish();
@@ -1534,7 +1550,9 @@ update public.message_threads t
 npx supabase db reset --local && npm run test:db
 ```
 
-Expected: PASS — `club_board_archive.test.sql` 5/5. Note the local database is seeded only by fixtures, each of which rolls back, so the migration runs against an empty `messages` table locally; its correctness against real rows is proved by the invariant assertions plus the hosted push in Task 13.
+Expected: PASS — `club_board_archive.test.sql` 5/5.
+
+**Do not read that 5/5 as coverage of the archive.** Only three of the five assertions test anything locally (the table exists, is unreadable, is untruncatable). The two invariant assertions pass vacuously against an empty `messages` table and are tripwires for future migrations, which the fixture says in its own comment. The archive's correctness against real rows is established at Task 13 Step 6 and nowhere else. This is an accepted gap, decided before execution began.
 
 - [ ] **Step 5: Commit**
 
@@ -3125,7 +3143,9 @@ git commit -m "feat(messages): open a post and reply inside it"
 - Create: `app/__tests__/club-post-new.test.tsx`
 
 **Interfaces:**
-- Consumes: `postMessage`, `deriveSubject`, `BODY_MAX` (`lib/messages.ts`); `countBroadcastRecipients` (`lib/broadcasts.ts`); `isClubOrganizer` or the equivalent role check `lib/clubs.ts` already exports — check it before writing, and reuse it rather than adding a second way to ask.
+- Consumes: `postMessage`, `deriveSubject`, `BODY_MAX` (`lib/messages.ts`); `countBroadcastRecipients` (`lib/broadcasts.ts`); the club-organizer check `lib/clubs.ts` already exports — find it before writing, reuse it, and do not add a second way to ask or a new RPC.
+
+**No test seam.** The screen takes no prop that exists for tests. `canAnnounce` is derived from the club role through the `lib/clubs.ts` boundary, and the test mocks that boundary — the same way every other screen test in this repo mocks its lib. The app's real path is then the path under test, which is the branch most likely to break.
 - Produces: route `/messages/club/new?threadId=…&clubId=…`.
 
 **This closes the capability gap.** `docs/messaging.md` records that composing an announcement is currently **unreachable** — the organizer toggle was removed pending a friendlier design, and until this lands there is no way to email a club from the app, where before the messaging branch there was. `countBroadcastRecipients` gets its consumer back here.
@@ -3148,13 +3168,22 @@ vi.mock('../../lib/broadcasts', () => ({
   countBroadcastRecipients: vi.fn().mockResolvedValue(12),
 }));
 
+// Mock whatever lib/clubs.ts actually exports for "is this viewer an
+// organizer of this club" — find the real name before writing this block
+// and use it. `viewerIsOrganizer` below is a placeholder for that name.
+vi.mock('../../lib/clubs', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/clubs')>()),
+  viewerIsOrganizer: vi.fn(),
+}));
+
 describe('composing a post', () => {
   beforeEach(() => {
     vi.mocked(postMessage).mockResolvedValue({ id: 'p1', error: null });
   });
 
   it('posts a plain post as a root', async () => {
-    render(<NewPostScreen organizer={false} />);
+    vi.mocked(viewerIsOrganizer).mockResolvedValue(false);
+    render(<NewPostScreen />);
     fireEvent.changeText(screen.getByLabelText('Post'), 'Anyone free Thursday?');
     fireEvent.press(screen.getByLabelText('Post it'));
     await waitFor(() =>
@@ -3164,25 +3193,32 @@ describe('composing a post', () => {
     );
   });
 
-  it('hides the Announcement toggle from a plain member', () => {
-    render(<NewPostScreen organizer={false} />);
+  it('hides the Announcement toggle from a plain member', async () => {
+    vi.mocked(viewerIsOrganizer).mockResolvedValue(false);
+    render(<NewPostScreen />);
+    await waitFor(() => expect(screen.getByLabelText('Post')).toBeTruthy());
     expect(screen.queryByLabelText(/Also email/)).toBeNull();
   });
 
-  it('offers an organizer the Announcement toggle', () => {
-    render(<NewPostScreen organizer />);
-    expect(screen.getByLabelText(/Also email/)).toBeTruthy();
+  it('offers an organizer the Announcement toggle', async () => {
+    vi.mocked(viewerIsOrganizer).mockResolvedValue(true);
+    render(<NewPostScreen />);
+    await waitFor(() => expect(screen.getByLabelText(/Also email/)).toBeTruthy());
   });
 
   it('shows the organizer the subject their email will carry', async () => {
-    render(<NewPostScreen organizer />);
+    vi.mocked(viewerIsOrganizer).mockResolvedValue(true);
+    render(<NewPostScreen />);
+    await waitFor(() => expect(screen.getByLabelText(/Also email/)).toBeTruthy());
     fireEvent.changeText(screen.getByLabelText('Post'), 'Doors at seven\nBring cash');
     fireEvent.press(screen.getByLabelText(/Also email/));
     await waitFor(() => expect(screen.getByText(/Doors at seven/)).toBeTruthy());
   });
 
   it('announces when the toggle is on', async () => {
-    render(<NewPostScreen organizer />);
+    vi.mocked(viewerIsOrganizer).mockResolvedValue(true);
+    render(<NewPostScreen />);
+    await waitFor(() => expect(screen.getByLabelText(/Also email/)).toBeTruthy());
     fireEvent.changeText(screen.getByLabelText('Post'), 'Doors at seven');
     fireEvent.press(screen.getByLabelText(/Also email/));
     fireEvent.press(screen.getByLabelText('Post it'));
@@ -3195,7 +3231,7 @@ describe('composing a post', () => {
 });
 ```
 
-The `organizer` prop exists so the test can drive both branches without mocking a club-role RPC; the screen derives its default from the club role when the prop is omitted.
+There is no `organizer` prop. Both branches are driven by mocking the club-role boundary, so the derivation the app actually runs is the derivation under test.
 
 - [ ] **Step 2: Run it to verify it fails**
 
@@ -3223,11 +3259,6 @@ import { BODY_MAX, deriveSubject, postMessage } from '../../../lib/messages';
 import { useSession } from '../../../lib/session';
 import { colors, space, type } from '../../../lib/theme';
 
-type Props = {
-  /** Test seam. Omitted in the app, where the club role decides. */
-  organizer?: boolean;
-};
-
 /**
  * Start a post.
  *
@@ -3246,7 +3277,7 @@ type Props = {
  * is disclosed rather than invented silently. deriveSubject must agree with
  * post_message's SQL character for character.
  */
-export default function NewPostScreen({ organizer }: Props) {
+export default function NewPostScreen() {
   const { session, loading } = useSession();
   const { threadId, clubId } = useLocalSearchParams<{
     threadId: string;
@@ -3260,8 +3291,15 @@ export default function NewPostScreen({ organizer }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
+  // Derived from the club role through the lib/clubs.ts boundary — the one
+  // way this app asks whether somebody is an organizer. No second way, no
+  // new RPC, and no prop that exists only so a test can skip the lookup.
+  const [canAnnounce, setCanAnnounce] = useState(false);
 
-  const canAnnounce = organizer ?? false;
+  useEffect(() => {
+    if (!clubId) return;
+    void viewerIsOrganizer(clubId).then((yes) => setCanAnnounce(yes === true));
+  }, [clubId]);
 
   useEffect(() => {
     if (!announce || !clubId) return;
@@ -3358,7 +3396,7 @@ const styles = StyleSheet.create({
 
 Check `components/Toggle.tsx`, `components/NoticeBanner.tsx` and `components/Button.tsx` for their real prop names before writing, and match them. Check `countBroadcastRecipients`'s real signature in `lib/broadcasts.ts` — it takes the club and event the RPC `broadcast_recipient_count(uuid, uuid)` expects.
 
-When `organizer` is omitted, derive it from the caller's club role using whatever `lib/clubs.ts` already exports for "is this viewer an organizer of this club" — do not add a second way to ask, and do not add a new RPC.
+`viewerIsOrganizer` above is a PLACEHOLDER for whatever `lib/clubs.ts` actually exports for "is this viewer an organizer of this club" — find the real export and use its real name and signature in both the screen and the test. Do not add a second way to ask, and do not add a new RPC. If no such export exists, the smallest honest addition is one to `lib/clubs.ts` wrapping the role the club screen already reads — not a new database function.
 
 - [ ] **Step 4: Pass `clubId` from the board**
 
