@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(102);
+select plan(104);
 
 /*
  * Guards the privileges themselves, not the policies.
@@ -887,6 +887,14 @@ select ok(
 select ok(
   not has_table_privilege('authenticated', 'public.thread_reads', 'TRUNCATE'),
   'authenticated cannot TRUNCATE thread_reads'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.post_reads', 'TRUNCATE'),
+  'authenticated cannot TRUNCATE post_reads'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.post_reads', 'UPDATE'),
+  'authenticated cannot UPDATE post_reads directly'
 );
 
 -- No messaging table takes direct DML. A client that could INSERT into
