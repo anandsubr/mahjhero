@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ThreadScreen from '../messages/[threadId]';
+import { relativeTimestamp } from '../../lib/messages';
 
 // Hoisted rather than a fresh `vi.fn()` per `useRouter()` call: a factory
 // returning brand-new mocks on every render would make `expect(replace)
@@ -259,6 +260,15 @@ describe('thread screen', () => {
     ]);
   });
 
+  // A couple of the tests below fake the clock (either to hold a long-press
+  // timer still, or to pin `relativeTimestamp`'s `now`) -- a test that fails
+  // partway through and never reaches its own `vi.useRealTimers()` must not
+  // leave fake timers active for every test that runs after it. Harmless to
+  // call when timers are already real.
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('shows the thread title and every message', async () => {
     render(<ThreadScreen />);
     expect(await screen.findByText('Riverside')).toBeTruthy();
@@ -453,6 +463,60 @@ describe('thread screen', () => {
     render(<ThreadScreen />);
     expect(await screen.findByText('Hall is closed Friday')).toBeTruthy();
     expect(screen.getByText('Announcement')).toBeTruthy();
+  });
+
+  // The screenshot the owner flagged shows "Hall closed this week" printed
+  // TWICE -- once as the bold subject, once again as the body's own first
+  // line -- because deriveSubject's stored subject IS the body's opening
+  // line, character for character. The fix is in what this screen prints,
+  // not in deriveSubject (which still has to store and mail the real
+  // subject): the duplicated line should appear exactly once.
+  it('does not repeat the subject as the body when they are the same line', async () => {
+    fetchThreadMessages.mockResolvedValueOnce([
+      {
+        id: 'm9',
+        author_id: 'other',
+        body: 'Hall closed this week\nWe will meet at the community center instead.',
+        subject: 'Hall closed this week',
+        is_announcement: true,
+        created_at: '2026-08-25T10:00:00Z',
+        profiles: { display_name: 'Alice Ng' },
+        reply_to_id: null,
+        reply_to: null,
+      },
+    ]);
+    render(<ThreadScreen />);
+    // One node carries this text -- the subject -- not a second, identical
+    // line repeating it as the body.
+    expect(await screen.findAllByText('Hall closed this week')).toHaveLength(1);
+    expect(
+      screen.getByText('We will meet at the community center instead.'),
+    ).toBeTruthy();
+  });
+
+  // The inverse: a body whose first line genuinely differs from the subject
+  // is not a duplicate, and must keep showing in full underneath it.
+  it('still shows the body in full when its first line is not the subject', async () => {
+    fetchThreadMessages.mockResolvedValueOnce([
+      {
+        id: 'm9',
+        author_id: 'other',
+        body: 'Please note the new schedule below.\nSaturday games move to 10am.',
+        subject: 'Hall closed this week',
+        is_announcement: true,
+        created_at: '2026-08-25T10:00:00Z',
+        profiles: { display_name: 'Alice Ng' },
+        reply_to_id: null,
+        reply_to: null,
+      },
+    ]);
+    render(<ThreadScreen />);
+    expect(await screen.findByText('Hall closed this week')).toBeTruthy();
+    expect(
+      screen.getByText(
+        'Please note the new schedule below. Saturday games move to 10am.',
+      ),
+    ).toBeTruthy();
   });
 
   // The announcement background (accent2[100]) wins over the mine background
@@ -707,6 +771,134 @@ describe('thread screen', () => {
       await screen.findByText('Answering something that no longer exists.'),
     ).toBeTruthy();
     expect(screen.queryByTestId('quote-stub')).toBeNull();
+  });
+
+  // The owner's fix for the loudest thing on the old screen: a permanent
+  // orange "Reply" link on every single bubble. The iOS/WhatsApp convention
+  // replaces it with a long press on the bubble itself -- no visible control
+  // survives, and the same reply-target selection the old link performed
+  // fires from holding the bubble down instead.
+  it('picks the reply target with a long press on the bubble, with no visible Reply control on screen', async () => {
+    render(<ThreadScreen />);
+    const bubble = await screen.findByTestId('bubble-m1');
+    // The loudest thing about the old screen: gone. Nothing on screen reads
+    // "Reply" any more, visibly or otherwise as plain text content.
+    expect(screen.queryByText('Reply')).toBeNull();
+
+    // A held press: mousedown, hold past the long-press delay, mouseup --
+    // react-native-web's own responder system schedules onLongPress off of
+    // real DOM mousedown/touchstart, listened for at the document level, so
+    // fireEvent.mouseDown here is a faithful stand-in for a real touch/mouse
+    // hold. Fake timers hold the clock still across the delay rather than
+    // waiting ~500ms of real test time; the state update from the timer's
+    // callback is wrapped in act() so React commits it before the
+    // assertions below run.
+    vi.useFakeTimers();
+    act(() => {
+      fireEvent.mouseDown(bubble);
+      vi.advanceTimersByTime(600);
+    });
+    fireEvent.mouseUp(bubble);
+    vi.useRealTimers();
+
+    // The identical stub the old "Reply" link produced -- only how it gets
+    // picked has changed.
+    expect(
+      await screen.findByText('Sara Lindqvist: We are one short for Tuesday.'),
+    ).toBeTruthy();
+  });
+
+  // Discoverability is the accepted cost of moving off a visible control --
+  // but assistive-technology users cannot long-press meaningfully, so the
+  // action must stay reachable another way. Each bubble keeps a real,
+  // always-present control with the exact accessible name the old visible
+  // link carried; it is only painted off-screen (a true 1x1 clip, not
+  // aria-hidden/display:none, which would also remove it from screen
+  // readers). A plain click -- what a screen reader's "activate" gesture or
+  // a keyboard Enter on a focused element both amount to -- still reaches
+  // it.
+  it('keeps a real, accessibly-named reply control reachable without a long press', async () => {
+    render(<ThreadScreen />);
+    const replyControl = await screen.findByLabelText('Reply to Sara Lindqvist');
+    fireEvent.click(replyControl);
+    expect(
+      await screen.findByText('Sara Lindqvist: We are one short for Tuesday.'),
+    ).toBeTruthy();
+  });
+
+  // The design specifies an asymmetric, tail-clipped corner on the person
+  // bubbles -- `22px 22px 22px 8px` for an incoming message, mirrored to
+  // `22px 22px 8px 22px` for your own -- so they read as speech rather than
+  // plain rounded boxes. Asserted on the literal longhand corner properties
+  // react-native-web emits (jsdom does not synthesize the `border-radius`
+  // shorthand back up from them), the same pattern the Send button's own
+  // corner test above already uses.
+  it('gives incoming and outgoing bubbles an asymmetric, tail-clipped corner', async () => {
+    render(<ThreadScreen />);
+    await screen.findByText('We are one short for Tuesday.');
+    const theirs = getComputedStyle(screen.getByTestId('bubble-m1'));
+    expect(theirs.borderTopLeftRadius).toBe('28px');
+    expect(theirs.borderTopRightRadius).toBe('28px');
+    expect(theirs.borderBottomRightRadius).toBe('28px');
+    expect(theirs.borderBottomLeftRadius).toBe('8px');
+
+    const mine = getComputedStyle(screen.getByTestId('bubble-m2'));
+    expect(mine.borderTopLeftRadius).toBe('28px');
+    expect(mine.borderTopRightRadius).toBe('28px');
+    expect(mine.borderBottomRightRadius).toBe('8px');
+    expect(mine.borderBottomLeftRadius).toBe('28px');
+  });
+
+  // The announcement bubble is full-width and addressed to everyone -- there
+  // is no side for a tail to point from, so unlike the two person bubbles
+  // just above it stays symmetric on all four corners rather than picking a
+  // side to mis-tail.
+  it('keeps the announcement bubble symmetric, not tailed like a person bubble', async () => {
+    fetchThreadMessages.mockResolvedValueOnce([
+      {
+        id: 'm9',
+        author_id: 'other',
+        body: 'Hall is closed Friday\nUse the side door.',
+        subject: 'Hall is closed Friday',
+        is_announcement: true,
+        created_at: '2026-08-25T10:00:00Z',
+        profiles: { display_name: 'Alice Ng' },
+        reply_to_id: null,
+        reply_to: null,
+      },
+    ]);
+    render(<ThreadScreen />);
+    await screen.findByText('Announcement');
+    const style = getComputedStyle(screen.getByTestId('bubble-m9'));
+    expect(style.borderTopLeftRadius).toBe('28px');
+    expect(style.borderTopRightRadius).toBe('28px');
+    expect(style.borderBottomRightRadius).toBe('28px');
+    expect(style.borderBottomLeftRadius).toBe('28px');
+  });
+
+  // `created_at` used to be referenced nowhere on this screen -- no chat
+  // interface ships without a time on each message. `relativeTimestamp`
+  // (already this app's one formatter for it, reused rather than a second
+  // one) is called with the real clock, exactly as the component itself
+  // does; faking only `Date` (not the timer queue findByText's own polling
+  // needs) pins `now` so the expectation is deterministic regardless of what
+  // day this suite actually runs on.
+  it('shows a relative timestamp on every message, muted on its own bubble ground', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-08-25T20:00:00Z'));
+
+    render(<ThreadScreen />);
+    const theirsTime = await screen.findByText(relativeTimestamp(MESSAGES[0].created_at));
+    const mineTime = screen.getByText(relativeTimestamp(MESSAGES[1].created_at));
+    expect(theirsTime).toBeTruthy();
+    expect(mineTime).toBeTruthy();
+
+    // Two distinct tokens, not one value doing both jobs -- lib/theme.test.ts
+    // pins why a single colour cannot clear AA on both the tan `surface`
+    // ground (textMuted, already pinned) and the dark `accent[700]` one
+    // (accent[200], newly pinned there).
+    expect(getComputedStyle(theirsTime).color).toBe('rgb(103, 97, 88)');
+    expect(getComputedStyle(mineTime).color).toBe('rgb(255, 225, 208)');
   });
 
   // `leave_group_thread` and `add_to_group_thread` shipped fully wired

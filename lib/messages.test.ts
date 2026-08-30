@@ -21,6 +21,7 @@ vi.mock('./supabase', () => ({
 import { GENERIC_ERROR } from './constants';
 import {
   addToGroupThread,
+  announcementBody,
   createGroupThread,
   deriveSubject,
   fetchThread,
@@ -118,6 +119,62 @@ describe('deriveSubject', () => {
     const lonelySurrogate =
       /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?:[^\uD800-\uDBFF]|^)[\uDC00-\uDFFF]/;
     expect(lonelySurrogate.test(subject)).toBe(false);
+  });
+});
+
+describe('announcementBody', () => {
+  // deriveSubject takes the body's own first line as the subject, so a
+  // single-line-then-body announcement stores a subject that IS the body's
+  // opening line, character for character. Rendering both the subject and
+  // the full body says the same thing twice on screen. The fix is in the
+  // rendering, not the derivation -- the subject genuinely is stored and
+  // mailed as-is; only what the bubble prints changes.
+  it('drops the first line when it repeats the subject', () => {
+    expect(
+      announcementBody(
+        'Hall closed this week',
+        'Hall closed this week\nWe will meet at the community center instead.',
+      ),
+    ).toBe('We will meet at the community center instead.');
+  });
+
+  // The comparison must survive whitespace differences -- deriveSubject
+  // trims the subject it stores, so a body whose first line carries
+  // different leading/trailing space (or internal double-spacing) from the
+  // stored subject is still the same duplicate in substance.
+  it('still treats it as a duplicate across whitespace differences', () => {
+    expect(
+      announcementBody(
+        'Hall  closed   this week',
+        '  Hall closed this week  \nSee you there.',
+      ),
+    ).toBe('See you there.');
+  });
+
+  // A body whose first line genuinely differs from the subject (an
+  // organizer who wrote a proper subject line separate from the opening
+  // sentence) must keep showing in full -- this is not a duplicate.
+  it('keeps the body in full when the first line is not the subject', () => {
+    expect(announcementBody('Hall is closed Friday', 'We open again Monday.')).toBe(
+      'We open again Monday.',
+    );
+  });
+
+  // A single-line announcement whose one line IS the subject has nothing
+  // left to show once the duplicate is dropped -- an empty string, not a
+  // lone leftover newline, so the caller can render nothing rather than a
+  // blank gap.
+  it('is empty when the body is only the subject, nothing more', () => {
+    expect(announcementBody('Hall closed this week', 'Hall closed this week')).toBe('');
+  });
+
+  // A null subject (deriveSubject can produce one for a body with no
+  // usable first line) can never legitimately match a real body line --
+  // the body always renders in full.
+  it('never drops anything when there is no subject to compare against', () => {
+    expect(announcementBody(null, 'Hall closed this week\nSee you there.')).toBe(
+      'Hall closed this week\nSee you there.',
+    );
   });
 });
 

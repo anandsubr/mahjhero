@@ -21,6 +21,7 @@ import { GENERIC_ERROR } from '../../lib/constants';
 import { fetchAddablePeople, fetchFriends } from '../../lib/friends';
 import {
   addToGroupThread,
+  announcementBody,
   deriveSubject,
   fetchThread,
   fetchThreadMessages,
@@ -28,6 +29,7 @@ import {
   markThreadRead,
   postMessage,
   quoteStub,
+  relativeTimestamp,
   threadTitleFor,
   type ThreadDetail,
   type ThreadMessage,
@@ -558,9 +560,36 @@ export default function ThreadScreen() {
 
             {messages.map((m) => {
               const mine = m.author_id === viewerId;
+              // An announcement's subject IS the body's first line
+              // (deriveSubject's own contract) -- so printing `m.body`
+              // verbatim under a subject that already said it once repeats
+              // it. The derivation stays untouched (post_message must still
+              // store and mail the real subject); only what this bubble
+              // prints drops the duplicate. A body whose first line
+              // genuinely differs from the subject is untouched.
+              const displayBody = m.is_announcement
+                ? announcementBody(m.subject, m.body)
+                : m.body;
               return (
-                <View
+                // A long press on the bubble picks it as the reply target --
+                // the iOS/WhatsApp convention the owner chose over a
+                // permanent "Reply" link on every message (the loudest thing
+                // on the old screen). `onLongPress` is the touch/mouse path;
+                // it is not reachable by assistive tech, which cannot
+                // long-press meaningfully, so a second, always-present
+                // control below carries the identical action for AT and
+                // keyboard users. `tabIndex={-1}` and no `accessibilityRole`
+                // keep this outer wrapper out of the tab order and off the
+                // accessibility tree as anything other than a plain
+                // container -- the bubble's own text (author, body, quote,
+                // timestamp) is what a screen reader should read here, not a
+                // second "button" stop that does nothing on a single
+                // activation.
+                <Pressable
                   key={m.id}
+                  testID={`bubble-${m.id}`}
+                  onLongPress={() => setReplyTo(m)}
+                  tabIndex={-1}
                   style={[
                     styles.bubble,
                     mine ? styles.mine : styles.theirs,
@@ -603,38 +632,53 @@ export default function ThreadScreen() {
                     </Text>
                   ) : null}
 
+                  {displayBody ? (
+                    <Text
+                      style={
+                        m.is_announcement
+                          ? styles.bodyAnnouncement
+                          : mine
+                            ? styles.bodyMine
+                            : styles.body
+                      }
+                    >
+                      {displayBody}
+                    </Text>
+                  ) : null}
+
                   <Text
                     style={
                       m.is_announcement
-                        ? styles.bodyAnnouncement
+                        ? styles.timestampAnnouncement
                         : mine
-                          ? styles.bodyMine
-                          : styles.body
+                          ? styles.timestampMine
+                          : styles.timestampTheirs
                     }
                   >
-                    {m.body}
+                    {relativeTimestamp(m.created_at)}
                   </Text>
 
+                  {/*
+                    The accessible, always-reachable twin of the long press
+                    above: same action, same accessible name the visible
+                    "Reply" link used to carry, just no longer painted on
+                    screen. No children — accessibilityLabel is this
+                    control's ONLY name, so there is nothing for it to
+                    compose with (the "compose, don't replace" rule that
+                    matters at the members-toggle heading above does not
+                    apply here, since there is no children-derived name to
+                    step on). Visually hidden via a true 1x1 clip rather
+                    than opacity, which some accessibility trees exclude —
+                    this stays clipped, not transparent, so it still reads
+                    to screen readers and is still reachable by Tab.
+                  */}
                   <Pressable
                     onPress={() => setReplyTo(m)}
                     accessibilityRole="button"
                     accessibilityLabel={`Reply to ${m.profiles?.display_name ?? 'this message'}`}
                     style={styles.replyAction}
-                  >
-                    <Text
-                      style={[
-                        styles.replyText,
-                        m.is_announcement
-                          ? styles.stubAnnouncement
-                          : mine
-                            ? styles.stubMine
-                            : null,
-                      ]}
-                    >
-                      Reply
-                    </Text>
-                  </Pressable>
-                </View>
+                  />
+                </Pressable>
               );
             })}
           </ScrollView>
@@ -827,25 +871,63 @@ const styles = StyleSheet.create({
     fontSize: type.size.helper,
     color: colors.textMuted,
   },
+  // No `borderRadius` here any more -- a single uniform value on every
+  // bubble is exactly what made the design's speech bubbles read as plain
+  // rounded boxes. The design specifies asymmetric corners with one corner
+  // clipped down to a tight radius to act as a tail, pointing toward
+  // whichever edge the bubble is anchored to; `theirs`/`mine` below each set
+  // all four corners individually (React Native has no border-radius
+  // shorthand that takes four values) so the tail lands on the correct
+  // corner for which side the bubble is on.
   bubble: {
     maxWidth: '78%',
-    borderRadius: radius.lg,
     paddingVertical: space[3],
     paddingHorizontal: space[4],
     marginBottom: space[2],
   },
-  theirs: { alignSelf: 'flex-start', backgroundColor: colors.surface },
+  // Tail at bottom-left (radius.sm, 8px) -- the corner nearest the author's
+  // name and the left edge this bubble is anchored to.
+  theirs: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
+    borderBottomRightRadius: radius.lg,
+    borderBottomLeftRadius: radius.sm,
+  },
   // accent[700], not the artboard's accentColor: colors.bg on accentColor
   // measures 3.03:1, and this bubble's body text is 18px regular — needing
   // AA's 4.5:1, not the 3:1 large-text allowance (which needs 24px regular
   // or 18.66px actual-bold, neither of which this is). It fails. accent[700]
   // reads 5.72:1 against colors.bg and clears AA — same failure, same fix,
   // as components/UnreadBadge.tsx's pill.
-  mine: { alignSelf: 'flex-end', backgroundColor: colors.accent[700] },
+  //
+  // Tail at bottom-right (radius.sm) -- the mirror of `theirs`, anchored to
+  // the right edge this bubble sits against.
+  mine: {
+    alignSelf: 'flex-end',
+    backgroundColor: colors.accent[700],
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
+    borderBottomRightRadius: radius.sm,
+    borderBottomLeftRadius: radius.lg,
+  },
+  // Deliberately NOT tailed, unlike `theirs`/`mine` above: a tail reads as
+  // "this came from the person on this side," and an announcement is
+  // full-width, addressed to everyone, with no side to point from -- more a
+  // notice card than a person's speech. All four corners stay at the same
+  // radius (overriding whichever of `theirs`/`mine` happened to combine with
+  // this in the bubble's own style array, since this entry is always last)
+  // so the announcement reads as its own, structurally different kind of
+  // bubble rather than a mis-tailed chat bubble.
   announcement: {
     alignSelf: 'stretch',
     maxWidth: '100%',
     backgroundColor: colors.accent2[100],
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
+    borderBottomRightRadius: radius.lg,
+    borderBottomLeftRadius: radius.lg,
   },
   announcementHead: { gap: space[2], marginBottom: space[2] },
   subject: {
@@ -901,11 +983,53 @@ const styles = StyleSheet.create({
   // true, not only when the viewer didn't send it. Reused rather than a
   // third near-duplicate style, since both call sites want the same colour.
   stubAnnouncement: { color: colors.accent2[800], borderLeftColor: colors.accent2[500] },
-  replyAction: { alignSelf: 'flex-start', marginTop: space[1] },
-  replyText: {
-    fontFamily: type.bodySemiBold,
+  // The timestamp, inside the bubble rather than beside it so it never
+  // fights the message for its own line, and small (`type.size.helper`,
+  // this app's one sanctioned exception below its 18pt body minimum) and
+  // muted rather than matching the body's own weight. Each ground gets its
+  // own colour rather than one value doing both jobs -- see lib/theme.test.ts
+  // for why a single token cannot clear AA on both the tan `surface` ground
+  // and the dark `accent[700]` one.
+  timestampTheirs: {
+    fontFamily: type.bodyRegular,
     fontSize: type.size.helper,
-    color: colors.accent[700],
+    color: colors.textMuted,
+    alignSelf: 'flex-end',
+    marginTop: space[1],
+  },
+  // accent[200]: a step down from this bubble's own `bodyMine` cream
+  // (colors.bg) so the time visibly recedes from the message rather than
+  // reading at the same weight, while still clearing AA at 5.49:1 on
+  // accent[700] (pinned in lib/theme.test.ts).
+  timestampMine: {
+    fontFamily: type.bodyRegular,
+    fontSize: type.size.helper,
+    color: colors.accent[200],
+    alignSelf: 'flex-end',
+    marginTop: space[1],
+  },
+  // Same token the subject/body/quote-stub on this background already use
+  // (accent2[800] on accent2[100], 9.12:1, pinned in lib/theme.test.ts) --
+  // reused rather than a fourth colour for the one ground that already has
+  // an established answer.
+  timestampAnnouncement: {
+    fontFamily: type.bodyRegular,
+    fontSize: type.size.helper,
+    color: colors.accent2[800],
+    alignSelf: 'flex-end',
+    marginTop: space[1],
+  },
+  // The accessible twin of the long press above: a true 1x1, clipped (not
+  // merely transparent) so it is never part of what a sighted user sees,
+  // while staying in the accessibility tree and the Tab order -- the
+  // standard visually-hidden-but-reachable shape, not `display: none` /
+  // `visibility: hidden` / `aria-hidden`, all three of which would also
+  // remove it from screen readers, defeating the reason it exists.
+  replyAction: {
+    position: 'absolute',
+    width: 1,
+    height: 1,
+    overflow: 'hidden',
   },
   replyingRow: {
     flexDirection: 'row',

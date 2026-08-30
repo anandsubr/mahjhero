@@ -207,6 +207,42 @@ export function deriveSubject(body: string): string {
   return cleaned;
 }
 
+/**
+ * The announcement bubble's body, with a leading line dropped when it only
+ * repeats the subject.
+ *
+ * `deriveSubject` takes the body's own first line as the subject -- so for a
+ * single-line-then-body announcement, the stored subject IS the body's
+ * opening line, character for character. Rendering the subject above the
+ * bubble AND the untouched body below it says the same thing twice. The fix
+ * belongs here, in what the screen prints, not in `deriveSubject`: the
+ * subject genuinely is the email's subject line and must keep being derived
+ * and stored exactly as it is; this function only decides what the BODY
+ * shows once that subject already said its opening line once.
+ *
+ * The comparison is whitespace-normalized (collapsed internal runs, trimmed
+ * ends) rather than exact, the same normalization `quoteStub` and
+ * `messagePreview` already use -- `deriveSubject` trims what it stores, so a
+ * body whose first line differs from the stored subject only in leading/
+ * trailing space is still the same duplicate in substance.
+ *
+ * A body whose first line genuinely differs from the subject (an organizer
+ * who wrote a real subject separate from their opening sentence) is
+ * returned untouched -- this function only ever drops a line that repeats
+ * the subject, never anything else. A single-line body that IS the subject
+ * comes back as `''`, not a lone leftover newline, so the caller can render
+ * nothing rather than an empty gap where the body used to be.
+ */
+export function announcementBody(subject: string | null, body: string): string {
+  if (subject == null) return body;
+  const normalize = (s: string) => s.replace(/\s+/g, ' ').trim();
+  const normalizedSubject = normalize(subject);
+  if (!normalizedSubject) return body;
+  const lines = body.split('\n');
+  if (normalize(lines[0] ?? '') !== normalizedSubject) return body;
+  return lines.slice(1).join('\n');
+}
+
 /** The artboard's "club - kind" line. */
 export function kindLabel(kind: ThreadKind): string {
   if (kind === 'club') return 'Announcement';
