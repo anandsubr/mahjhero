@@ -70,24 +70,35 @@ export default function ThreadRow({
       <Avatar row={row} title={title} />
 
       <View style={styles.body}>
-        <Text style={styles.title} numberOfLines={1}>
-          {title}
-        </Text>
+        {/*
+          iOS Messages, the reference this row is modelled on, puts the
+          timestamp on the TITLE's own line, right-aligned, rather than in a
+          separate full-height column -- a fixed-width column steals the
+          same ~90px from every line (title, subtitle, preview) instead of
+          only the one line that actually needs to make room for it. The
+          title flexes and truncates; the timestamp and (when present) the
+          unread badge take only the width they need and never truncate.
+          The subtitle and preview below run the row's full width.
+        */}
+        <View testID="thread-title-row" style={styles.titleRow}>
+          <Text style={styles.title} numberOfLines={1}>
+            {title}
+          </Text>
+          <View style={styles.trailing}>
+            {when ? (
+              <Text testID="thread-timestamp" style={styles.timestamp}>
+                {when}
+              </Text>
+            ) : null}
+            <UnreadBadge count={row.unread} />
+          </View>
+        </View>
         <Text style={styles.subtitle} numberOfLines={1}>
           {rowSubtitle(row)}
         </Text>
         <Text style={styles.preview} numberOfLines={1}>
           {messagePreview(row)}
         </Text>
-      </View>
-
-      <View style={styles.trailing}>
-        {when ? (
-          <Text testID="thread-timestamp" style={styles.timestamp}>
-            {when}
-          </Text>
-        ) : null}
-        <UnreadBadge count={row.unread} />
       </View>
 
       {showDivider ? <View testID="thread-divider" style={styles.divider} /> : null}
@@ -157,7 +168,12 @@ const styles = StyleSheet.create({
     color: colors.bg,
   },
   body: { flex: 1, minWidth: 0 },
+  // The title's own line: title flexes and truncates, the trailing group
+  // (timestamp + badge) takes only the width it needs alongside it.
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
   title: {
+    flex: 1,
+    minWidth: 0,
     fontFamily: type.bodyBold,
     fontSize: type.size.body,
     color: colors.text,
@@ -174,7 +190,9 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     marginTop: 1,
   },
-  trailing: { flexShrink: 0, alignItems: 'flex-end', gap: space[1] },
+  // Never truncates -- it shrinks to its own natural width instead of the
+  // title's, so it stays fully readable while the title gives up the room.
+  trailing: { flexDirection: 'row', alignItems: 'center', flexShrink: 0, gap: space[1] },
   timestamp: {
     fontFamily: type.bodyRegular,
     fontSize: type.size.helper,

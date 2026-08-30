@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, fireEvent, screen } from '@testing-library/react';
+import { render, fireEvent, screen, within } from '@testing-library/react';
 import ThreadRow from '../ThreadRow';
 import UnreadBadge from '../UnreadBadge';
 import type { ThreadListRow } from '../../lib/messages';
@@ -47,8 +47,16 @@ describe('ThreadRow', () => {
   it('shows the title, the club and kind line, and the preview', () => {
     render(<ThreadRow row={row()} onPress={vi.fn()} />);
     expect(screen.getByText('Everyone at Riverside')).toBeTruthy();
-    expect(screen.getByText('Riverside · Announcement')).toBeTruthy();
     expect(screen.getByText('Alice Ng: See you Tuesday')).toBeTruthy();
+  });
+
+  // The title already reads "Everyone at Riverside" for a club row, so the
+  // subtitle beneath it should not say the club's name again -- just what
+  // the title doesn't already carry (the kind label).
+  it('does not repeat the club name in a club row’s subtitle', () => {
+    render(<ThreadRow row={row()} onPress={vi.fn()} />);
+    expect(screen.getByText('Announcement')).toBeTruthy();
+    expect(screen.queryByText('Riverside · Announcement')).toBeNull();
   });
 
   // A group or direct has no club, so the subtitle is the kind alone rather
@@ -208,5 +216,38 @@ describe('ThreadRow', () => {
   it('omits the divider when told this is the last row', () => {
     render(<ThreadRow row={row()} onPress={vi.fn()} showDivider={false} />);
     expect(screen.queryByTestId('thread-divider')).toBeNull();
+  });
+
+  // iOS Messages, the reference this row is modelled on, puts the timestamp
+  // on the TITLE's line, right-aligned, rather than in a full-height
+  // trailing column that steals width from every line of text. Asserted by
+  // DOM containment (the title and the timestamp share one row container)
+  // rather than by pixel position, since react-native-web atomises styles
+  // into classes that a plain style-object comparison can't read.
+  it('puts the timestamp on the title’s line rather than a separate column', () => {
+    render(
+      <ThreadRow row={row({ last_message_at: '2026-08-25T10:00:00Z' })} onPress={vi.fn()} />,
+    );
+    const titleRow = screen.getByTestId('thread-title-row');
+    expect(within(titleRow).getByText('Everyone at Riverside')).toBeTruthy();
+    expect(within(titleRow).getByTestId('thread-timestamp')).toBeTruthy();
+  });
+
+  // The subtitle and preview run the FULL row width beneath the title line
+  // -- they must not be nested inside the title/timestamp row, or they'd
+  // inherit its cramped width instead of the whole row's.
+  it('keeps the subtitle and preview out of the title row, spanning the full width', () => {
+    render(<ThreadRow row={row()} onPress={vi.fn()} />);
+    const titleRow = screen.getByTestId('thread-title-row');
+    expect(within(titleRow).queryByText('Announcement')).toBeNull();
+    expect(within(titleRow).queryByText('Alice Ng: See you Tuesday')).toBeNull();
+  });
+
+  // The unread badge reads best right beside the timestamp, at a glance,
+  // rather than stranded on a lower line with nothing else in its row.
+  it('places the unread badge on the title’s line, beside the timestamp', () => {
+    render(<ThreadRow row={row({ unread: 4 })} onPress={vi.fn()} />);
+    const titleRow = screen.getByTestId('thread-title-row');
+    expect(within(titleRow).getByText('4')).toBeTruthy();
   });
 });

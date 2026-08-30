@@ -422,10 +422,12 @@ describe('orderThreadsForList', () => {
 });
 
 describe('rowSubtitle', () => {
-  it('joins the club and the kind label', () => {
-    expect(rowSubtitle(row({ kind: 'club', club_name: 'Riverside' }))).toBe(
-      'Riverside · Announcement',
-    );
+  // A club row's title already reads "Everyone at <club>" (rowTitle /
+  // fetch_my_threads), so joining the club name onto the subtitle too says
+  // it twice while both lines fight for width at narrow viewports. The kind
+  // label alone still tells the member what this line is.
+  it('drops the club name for a club row since the title already carries it', () => {
+    expect(rowSubtitle(row({ kind: 'club', club_name: 'Riverside' }))).toBe('Announcement');
   });
 
   it('is just the kind label when there is no club', () => {

@@ -218,7 +218,7 @@ export function kindLabel(kind: ThreadKind): string {
 /**
  * The row's muted subtitle line, above the message preview.
  *
- * Every kind but game reads "<club> · <kind>" (or bare "<kind>" with no
+ * Game and group/direct read "<club> · <kind>" (or bare "<kind>" with no
  * club -- a group or direct has none). A game thread has no date tile in the
  * flat list (components/DateTile.tsx is 52x70 and does not fit a circular
  * avatar row, and uniform rows are the point of this treatment), so its
@@ -226,12 +226,18 @@ export function kindLabel(kind: ThreadKind): string {
  * formatEventWhen -- the one function that renders an event's instant in the
  * CLUB's timezone rather than the device's, so this must not grow a second
  * date formatter.
+ *
+ * A club row is the exception: `rowTitle` already renders it as "Everyone
+ * at <club>", so joining the club's name on here too would say it twice
+ * while both lines fight for width at narrow viewports. The kind label
+ * alone ("Announcement") is all this line adds.
  */
 export function rowSubtitle(row: ThreadListRow): string {
   if (row.kind === 'game' && row.event_starts_at) {
     const when = formatEventWhen(row.event_starts_at, row.event_timezone ?? 'UTC');
     return row.club_name ? `${row.club_name} · ${when}` : when;
   }
+  if (row.kind === 'club') return kindLabel(row.kind);
   return row.club_name ? `${row.club_name} · ${kindLabel(row.kind)}` : kindLabel(row.kind);
 }
 
