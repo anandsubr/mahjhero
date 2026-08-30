@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
-import SegmentedControl from '../SegmentedControl';
+import { render, fireEvent, screen } from '@testing-library/react';
 import ThreadRow from '../ThreadRow';
 import UnreadBadge from '../UnreadBadge';
 import type { ThreadListRow } from '../../lib/messages';
@@ -44,33 +43,6 @@ describe('UnreadBadge', () => {
   });
 });
 
-describe('SegmentedControl', () => {
-  const options = [
-    { key: 'recent', label: 'Recent' },
-    { key: 'club', label: 'By club' },
-  ];
-
-  it('marks the selected option and reports a change', () => {
-    const onChange = vi.fn();
-    render(
-      <SegmentedControl options={options} value="recent" onChange={onChange} />,
-    );
-    expect(screen.getByText('Recent').closest('[aria-selected="true"]')).toBeTruthy();
-    fireEvent.click(screen.getByText('By club'));
-    expect(onChange).toHaveBeenCalledWith('club');
-  });
-
-  // Tapping the option you are already on must not churn the list.
-  it('stays quiet when the selected option is tapped again', () => {
-    const onChange = vi.fn();
-    render(
-      <SegmentedControl options={options} value="recent" onChange={onChange} />,
-    );
-    fireEvent.click(screen.getByText('Recent'));
-    expect(onChange).not.toHaveBeenCalled();
-  });
-});
-
 describe('ThreadRow', () => {
   it('shows the title, the club and kind line, and the preview', () => {
     render(<ThreadRow row={row()} onPress={vi.fn()} />);
@@ -79,7 +51,7 @@ describe('ThreadRow', () => {
     expect(screen.getByText('Alice Ng: See you Tuesday')).toBeTruthy();
   });
 
-  // A group or direct has no club, so the kicker is the kind alone rather
+  // A group or direct has no club, so the subtitle is the kind alone rather
   // than a stray separator.
   it('drops the separator when there is no club', () => {
     render(
@@ -98,24 +70,60 @@ describe('ThreadRow', () => {
     expect(screen.getByText('4')).toBeTruthy();
   });
 
-  // The date tile is what makes a game thread readable as a game at a
-  // glance, and it is the existing component rather than a second 52x70
-  // tile drawn here.
-  it('shows a date tile for a game thread and not for a club thread', () => {
-    const { rerender } = render(
+  // Flat, uniform circular avatars replace the old card + DateTile
+  // treatment. A club row's avatar carries the club's own initials.
+  it('shows the club’s initials in the avatar for a club thread', () => {
+    render(<ThreadRow row={row()} onPress={vi.fn()} />);
+    const avatar = screen.getByTestId('thread-avatar-club');
+    expect(avatar.textContent).toBe('R');
+  });
+
+  // A direct row's avatar carries the OTHER person's initials -- the row's
+  // own title, since fetch_my_threads names a direct thread after its other
+  // member.
+  it('shows the other person’s initials in the avatar for a direct thread', () => {
+    render(
+      <ThreadRow
+        row={row({ kind: 'direct', club_id: null, club_name: null, title: 'Bob Reyes' })}
+        onPress={vi.fn()}
+      />,
+    );
+    const avatar = screen.getByTestId('thread-avatar-direct');
+    expect(avatar.textContent).toBe('BR');
+  });
+
+  // A group has no single person to show initials for, so it gets a people
+  // glyph instead -- no initials text in that avatar.
+  it('shows a people glyph rather than initials for a group thread', () => {
+    render(
+      <ThreadRow
+        row={row({ kind: 'group', club_id: null, club_name: null, title: 'Weekend crew' })}
+        onPress={vi.fn()}
+      />,
+    );
+    const avatar = screen.getByTestId('thread-avatar-group');
+    expect(avatar.textContent).toBe('');
+  });
+
+  // The date tile (components/DateTile.tsx, 52x70) does not fit a circular
+  // avatar row, so a game thread gets a calendar glyph avatar instead, and
+  // its date moves into the subtitle line via formatEventWhen.
+  it('shows a calendar glyph and the formatted date in the subtitle for a game thread', () => {
+    render(
       <ThreadRow
         row={row({
           kind: 'game',
           title: 'Tuesday Night',
           event_id: 'e1',
           event_starts_at: '2026-08-27T22:00:00Z',
+          event_timezone: 'America/New_York',
         })}
         onPress={vi.fn()}
       />,
     );
-    expect(screen.getByTestId('thread-date-tile')).toBeTruthy();
-    rerender(<ThreadRow row={row()} onPress={vi.fn()} />);
+    expect(screen.getByTestId('thread-avatar-game')).toBeTruthy();
     expect(screen.queryByTestId('thread-date-tile')).toBeNull();
+    expect(screen.getByText(/Riverside · .*6:00 pm/)).toBeTruthy();
   });
 
   it('reports a press', () => {
@@ -138,7 +146,7 @@ describe('ThreadRow', () => {
       />,
     );
     // "Group" legitimately appears twice here -- once as the fallback
-    // title, once as the kicker's kind label (club_name is null too) -- so
+    // title, once as the subtitle's kind label (club_name is null too) -- so
     // this asserts there IS a title rather than a blank one, not that the
     // two happen to differ.
     expect(screen.getAllByText('Group')).toHaveLength(2);
@@ -168,5 +176,37 @@ describe('ThreadRow', () => {
   it('carries no unread suffix when nothing is unread', () => {
     render(<ThreadRow row={row({ unread: 0 })} onPress={vi.fn()} />);
     expect(screen.getByLabelText('Everyone at Riverside')).toBeTruthy();
+  });
+
+  // The trailing timestamp, in the viewer's own local time -- this suite
+  // runs under TZ=America/New_York (package.json's `test` script).
+  it('shows a relative timestamp for a thread with a last message', () => {
+    render(
+      <ThreadRow row={row({ last_message_at: '2026-08-01T09:05:00Z' })} onPress={vi.fn()} />,
+    );
+    expect(screen.getByText('1 Aug')).toBeTruthy();
+  });
+
+  // A club thread nobody has posted in has no last_message_at, so the
+  // trailing column carries no timestamp at all rather than a misleading one.
+  it('shows no timestamp for a thread nobody has posted in', () => {
+    render(<ThreadRow row={row({ last_message_at: null })} onPress={vi.fn()} />);
+    expect(screen.queryByTestId('thread-timestamp')).toBeNull();
+  });
+
+  // The hairline divider is inset to start at the text column, not the
+  // screen edge -- react-native-web atomises StyleSheet.create into CSS
+  // classes, so this must read the computed style rather than element.style.
+  it('insets the divider past the avatar rather than running it to the screen edge', () => {
+    render(<ThreadRow row={row()} onPress={vi.fn()} />);
+    const divider = screen.getByTestId('thread-divider');
+    expect(parseFloat(getComputedStyle(divider).left)).toBeGreaterThan(0);
+  });
+
+  // The list's last row passes showDivider={false} so the hairline does not
+  // trail the final row.
+  it('omits the divider when told this is the last row', () => {
+    render(<ThreadRow row={row()} onPress={vi.fn()} showDivider={false} />);
+    expect(screen.queryByTestId('thread-divider')).toBeNull();
   });
 });

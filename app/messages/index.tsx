@@ -4,32 +4,26 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import Button from '../../components/Button';
 import ErrorBanner from '../../components/ErrorBanner';
 import Screen from '../../components/Screen';
-import SegmentedControl from '../../components/SegmentedControl';
 import TabBar from '../../components/TabBar';
 import ThreadRow from '../../components/ThreadRow';
-import UnreadBadge from '../../components/UnreadBadge';
 import { GENERIC_ERROR } from '../../lib/constants';
 import {
   fetchMyThreads,
   openThreadForClub,
-  sectionThreads,
-  sortThreads,
+  orderThreadsForList,
   type ThreadListRow,
 } from '../../lib/messages';
 import { useSession } from '../../lib/session';
 import { colors, radius, space, type } from '../../lib/theme';
 
-const SORTS = [
-  { key: 'recent', label: 'Recent' },
-  { key: 'club', label: 'By club' },
-];
-
 /**
- * The `1C messages` artboard, plus the one thing the design does not have:
- * a Recent | By club sort. The artboard's list inherits the dashboard's club
- * scope instead, which works there because the dashboard has chips — and
- * putting a second chip row here alongside a sort would be two organizing
- * controls on one list.
+ * The `1C messages` artboard, restyled flat -- iOS Messages, not the
+ * artboard's `class="card"` rows -- and with the Recent | By club sort this
+ * screen used to carry removed entirely. That sort existed to do two jobs:
+ * "By club" grouped, "Recent" floated active conversations up. Pinning club
+ * threads at the top of the one list (lib/messages.ts's
+ * `orderThreadsForList`) does both at once, which is what makes a second
+ * organizing control on top of it redundant rather than merely unused.
  */
 export default function MessagesScreen() {
   const { session, loading } = useSession();
@@ -37,7 +31,6 @@ export default function MessagesScreen() {
 
   const [rows, setRows] = useState<ThreadListRow[] | null>(null);
   const [ready, setReady] = useState(false);
-  const [sort, setSort] = useState('recent');
   // Split from `actionError` below, the same way clubs/index.tsx keeps
   // `loadFailed` apart from `actionError` — a background refetch that lands
   // while a thread is opening must not clear the refusal that tap just
@@ -120,8 +113,7 @@ export default function MessagesScreen() {
   }
   if (!session) return <Redirect href="/sign-in" />;
 
-  const list = rows ?? [];
-  const sections = sort === 'club' ? sectionThreads(list) : null;
+  const ordered = orderThreadsForList(rows ?? []);
   // actionError first: it names what the member just tapped, which is more
   // useful in the moment than a standing load failure.
   const error = actionError ?? loadError;
@@ -143,42 +135,27 @@ export default function MessagesScreen() {
         </Button>
       </View>
 
-      <SegmentedControl options={SORTS} value={sort} onChange={setSort} />
-
       {error ? <ErrorBanner message={error} /> : null}
 
       {!ready ? (
         <ActivityIndicator color={colors.accentColor} />
-      ) : rows !== null && list.length === 0 ? (
+      ) : rows !== null && ordered.length === 0 ? (
         <View style={styles.emptyCard}>
           <Text style={styles.emptyText}>
             No conversations yet. Start one with New.
           </Text>
         </View>
-      ) : sections ? (
-        sections.map((section) => (
-          <View key={section.clubId ?? 'people'} style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>{section.title}</Text>
-              <UnreadBadge count={section.unread} />
-            </View>
-            {section.rows.map((row) => (
-              <ThreadRow
-                key={row.thread_id ?? `club:${row.club_id}`}
-                row={row}
-                onPress={() => void open(row)}
-              />
-            ))}
-          </View>
-        ))
       ) : (
-        sortThreads(list).map((row) => (
-          <ThreadRow
-            key={row.thread_id ?? `club:${row.club_id}`}
-            row={row}
-            onPress={() => void open(row)}
-          />
-        ))
+        <View style={styles.list}>
+          {ordered.map((row, index) => (
+            <ThreadRow
+              key={row.thread_id ?? `club:${row.club_id}`}
+              row={row}
+              onPress={() => void open(row)}
+              showDivider={index < ordered.length - 1}
+            />
+          ))}
+        </View>
       )}
     </Screen>
   );
@@ -198,18 +175,9 @@ const styles = StyleSheet.create({
     fontSize: type.size.h2,
     color: colors.text,
   },
-  section: { gap: space[3] },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: space[3],
-  },
-  sectionTitle: {
-    fontFamily: type.bodyBold,
-    fontSize: type.size.body,
-    color: colors.text,
-  },
+  // No gap: components/ThreadRow.tsx's own hairline divider is what
+  // separates rows now, not space between cards.
+  list: {},
   emptyCard: {
     padding: space[4],
     borderRadius: radius.card,

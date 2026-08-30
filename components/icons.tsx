@@ -56,6 +56,35 @@ export function PersonIcon({ size = 24, color = colors.text }: { size?: number; 
   );
 }
 
+/**
+ * Two overlapping heads -- a group thread's avatar glyph. Distinct from
+ * PersonIcon (a direct thread's glyph is the other member's initials, not
+ * this) so a group still reads as "more than one person" at a glance in the
+ * messages list's otherwise-uniform circular avatars.
+ */
+export function PeopleIcon({ size = 24, color = colors.text }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.75} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+      <Circle cx={9} cy={7} r={4} />
+      <Path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+      <Path d="M16 3.13a4 4 0 0 1 0 7.75" />
+    </Svg>
+  );
+}
+
+/** A game thread's avatar glyph, in the messages list -- see ThreadRow.tsx. */
+export function CalendarIcon({ size = 24, color = colors.text }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.75} strokeLinecap="round" strokeLinejoin="round">
+      <Rect x={3} y={4} width={18} height={18} rx={2} />
+      <Path d="M16 2v4" />
+      <Path d="M8 2v4" />
+      <Path d="M3 10h18" />
+    </Svg>
+  );
+}
+
 export function BellIcon({ size = 24, color = colors.text }: { size?: number; color?: string }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.75} strokeLinecap="round" strokeLinejoin="round">

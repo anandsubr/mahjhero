@@ -108,3 +108,29 @@ describe('announcement text clears AA on the announcement background', () => {
     );
   });
 });
+
+// components/ThreadRow.tsx's flat messages list gives every kind a uniform
+// circular avatar, distinguished by fill: club and game share the accent
+// family, direct and group the accent2 family, a shade apart within each
+// pair. All four put `colors.bg` (cream) glyph/initials on a saturated fill.
+//
+// club and direct render INITIALS -- real text -- so they need AA's 4.5:1,
+// not the 3:1 non-text allowance; accent[700] was already pinned above (the
+// unread badge's own colour) at 5.72:1, reused rather than re-pinned. game
+// and group render an SVG glyph instead (CalendarIcon / PeopleIcon), which
+// WCAG 1.4.11 governs at 3:1, not 4.5:1 -- but both measure comfortably past
+// even the higher bar, so there was no reason to pick a paler shade just
+// because the rule allowed it.
+describe('thread row avatars clear contrast on their own fill', () => {
+  it('clears AA on accent2[700] (direct avatar initials)', () => {
+    expect(contrast(colors.bg, colors.accent2[700])).toBeGreaterThanOrEqual(AA);
+  });
+
+  it('clears WCAG 1.4.11 (3:1) on accent[600] (game avatar glyph)', () => {
+    expect(contrast(colors.bg, colors.accent[600])).toBeGreaterThanOrEqual(NON_TEXT);
+  });
+
+  it('clears WCAG 1.4.11 (3:1) on accent2[600] (group avatar glyph)', () => {
+    expect(contrast(colors.bg, colors.accent2[600])).toBeGreaterThanOrEqual(NON_TEXT);
+  });
+});

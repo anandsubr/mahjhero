@@ -1,4 +1,5 @@
 import { GENERIC_ERROR } from './constants';
+import { formatEventWhen } from './events';
 import { supabase } from './supabase';
 
 export type ThreadKind = 'club' | 'game' | 'group' | 'direct';
@@ -215,6 +216,26 @@ export function kindLabel(kind: ThreadKind): string {
 }
 
 /**
+ * The row's muted subtitle line, above the message preview.
+ *
+ * Every kind but game reads "<club> · <kind>" (or bare "<kind>" with no
+ * club -- a group or direct has none). A game thread has no date tile in the
+ * flat list (components/DateTile.tsx is 52x70 and does not fit a circular
+ * avatar row, and uniform rows are the point of this treatment), so its
+ * date moves in here instead: "<club> · <when it starts>", through
+ * formatEventWhen -- the one function that renders an event's instant in the
+ * CLUB's timezone rather than the device's, so this must not grow a second
+ * date formatter.
+ */
+export function rowSubtitle(row: ThreadListRow): string {
+  if (row.kind === 'game' && row.event_starts_at) {
+    const when = formatEventWhen(row.event_starts_at, row.event_timezone ?? 'UTC');
+    return row.club_name ? `${row.club_name} · ${when}` : when;
+  }
+  return row.club_name ? `${row.club_name} · ${kindLabel(row.kind)}` : kindLabel(row.kind);
+}
+
+/**
  * The row's one-line preview. Newlines are collapsed here rather than left
  * to `numberOfLines`, which clips at the first break — so a message that
  * begins with one would render an empty preview.
@@ -224,6 +245,40 @@ export function messagePreview(row: ThreadListRow): string {
   const body = row.last_body.replace(/\s+/g, ' ').trim();
   if (!row.last_author) return body;
   return `${row.last_author}: ${body}`;
+}
+
+/**
+ * The row's trailing timestamp, in the viewer's own local time -- not the
+ * club's. Unlike `formatEventWhen` (which renders a GAME'S instant in the
+ * club's timezone, because every member must see the same start time
+ * regardless of where they are sitting), an ordinary message's send time is
+ * about when the VIEWER read it, so their own device clock is the right
+ * frame for it. Deliberately a different rule from `formatEventWhen`, not an
+ * oversight of it.
+ *
+ * Empty for a club thread nobody has posted in yet (`last_message_at` is
+ * null), so the row's trailing column shows nothing rather than a
+ * misleading date. `now` defaults to the real clock and is only ever
+ * overridden by a test.
+ */
+export function relativeTimestamp(iso: string | null, now: Date = new Date()): string {
+  if (!iso) return '';
+  const when = new Date(iso);
+  if (Number.isNaN(when.getTime())) return '';
+
+  if (when.toDateString() === now.toDateString()) {
+    return new Intl.DateTimeFormat('en-GB', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    }).format(when);
+  }
+
+  const diffDays = Math.floor((now.getTime() - when.getTime()) / 86_400_000);
+  if (diffDays >= 0 && diffDays < 7) {
+    return new Intl.DateTimeFormat('en-GB', { weekday: 'short' }).format(when);
+  }
+  return new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' }).format(when);
 }
 
 export function unreadLabel(n: number): string {
@@ -276,60 +331,24 @@ export function sortThreads(rows: ThreadListRow[]): ThreadListRow[] {
   });
 }
 
-export type ThreadSection = {
-  title: string;
-  /** Null for the pinned People section, which spans clubs by definition. */
-  clubId: string | null;
-  unread: number;
-  rows: ThreadListRow[];
-};
-
 /**
- * The By club view: one People section pinned above the clubs, then a
- * section per club with its club thread first and its games after, soonest
- * first.
+ * The messages screen's one and only order, replacing the old "Recent | By
+ * club" choice. Club threads first -- there is exactly one per club the
+ * member belongs to, and `fetch_my_threads` always lists it, empty or not --
+ * then everything else (game, group and direct) interleaved, newest first.
  *
- * People is pinned rather than filed under a club because a group's club is
- * not a stable fact. Deriving one from the member set would move a group
- * between sections the moment somebody from another club is added.
+ * Sorting the whole list by recency FIRST and then partitioning by kind
+ * (rather than filtering first and sorting each half separately) keeps the
+ * partition stable: a club band still reads newest-active-club-first among
+ * itself, for free, from the one sort. Pinning clubs at the top is what
+ * makes a separate sort control redundant -- it already does the grouping
+ * "By club" did and the recency "Recent" did, in the one list.
  */
-export function sectionThreads(rows: ThreadListRow[]): ThreadSection[] {
-  const people = rows.filter((r) => r.club_id === null);
-  const byClub = new Map<string, ThreadListRow[]>();
-
-  for (const r of rows) {
-    if (r.club_id === null) continue;
-    const existing = byClub.get(r.club_id);
-    if (existing) existing.push(r);
-    else byClub.set(r.club_id, [r]);
-  }
-
-  const sections: ThreadSection[] = [];
-
-  if (people.length > 0) {
-    sections.push({
-      title: 'People',
-      clubId: null,
-      unread: people.reduce((n, r) => n + r.unread, 0),
-      rows: sortThreads(people),
-    });
-  }
-
-  const clubSections = [...byClub.entries()].map(([clubId, clubRows]) => ({
-    title: clubRows[0].club_name ?? '',
-    clubId,
-    unread: clubRows.reduce((n, r) => n + r.unread, 0),
-    rows: [...clubRows].sort((a, b) => {
-      // The club thread always heads its own section.
-      if (a.kind === 'club') return -1;
-      if (b.kind === 'club') return 1;
-      // Then games, soonest first — a list about what happens next.
-      return (a.event_starts_at ?? '') < (b.event_starts_at ?? '') ? -1 : 1;
-    }),
-  }));
-
-  clubSections.sort((a, b) => a.title.localeCompare(b.title));
-  return [...sections, ...clubSections];
+export function orderThreadsForList(rows: ThreadListRow[]): ThreadListRow[] {
+  const sorted = sortThreads(rows);
+  const clubs = sorted.filter((r) => r.kind === 'club');
+  const rest = sorted.filter((r) => r.kind !== 'club');
+  return [...clubs, ...rest];
 }
 
 /**

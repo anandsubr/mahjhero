@@ -105,23 +105,31 @@ describe('messages list', () => {
     openThreadForClub.mockResolvedValue({ id: 't1', error: null });
   });
 
-  it('lists every thread, newest first, under Recent', async () => {
+  // The club thread heads the list regardless of recency -- GAME's own
+  // last_message_at (Aug 26) is newer than the club thread's (Aug 25), and
+  // it still sorts second. Pinning clubs at the top is what makes the old
+  // "Recent | By club" sort control redundant: it already does the grouping
+  // "By club" did and the recency "Recent" did, in the one order.
+  it('lists the club thread first, then everything else newest first', async () => {
     render(<MessagesScreen />);
     const titles = await screen.findAllByText(
       /Everyone at Riverside|Tuesday Night|Bob Reyes/,
     );
     expect(titles.map((n) => n.textContent)).toEqual([
-      'Tuesday Night',
       'Everyone at Riverside',
+      'Tuesday Night',
       'Bob Reyes',
     ]);
   });
 
-  it('groups under club headers with People pinned first when sorted By club', async () => {
+  // The sort control this screen used to carry is gone entirely -- pinning
+  // clubs at the top does both jobs it did, so there is nothing left for it
+  // to choose between.
+  it('carries no Recent/By club sort control', async () => {
     render(<MessagesScreen />);
-    fireEvent.click(await screen.findByText('By club'));
-    const headers = await screen.findAllByText(/^People$|^Riverside$/);
-    expect(headers.map((n) => n.textContent)).toEqual(['People', 'Riverside']);
+    await screen.findByText('Everyone at Riverside');
+    expect(screen.queryByText('Recent')).toBeNull();
+    expect(screen.queryByText('By club')).toBeNull();
   });
 
   // "we could not ask" and "you have no conversations" are different claims,

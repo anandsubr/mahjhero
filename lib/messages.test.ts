@@ -29,10 +29,12 @@ import {
   kindLabel,
   leaveGroupThread,
   messagePreview,
+  orderThreadsForList,
   postMessage,
   quoteStub,
+  relativeTimestamp,
+  rowSubtitle,
   rowTitle,
-  sectionThreads,
   sortThreads,
   threadTitleFor,
   unreadLabel,
@@ -342,49 +344,159 @@ describe('sortThreads', () => {
   });
 });
 
-describe('sectionThreads', () => {
-  const clubThread = row({ thread_id: 'a', kind: 'club', club_name: 'Riverside' });
-  const gameThread = row({
-    thread_id: 'b',
-    kind: 'game',
-    club_name: 'Riverside',
-    event_starts_at: '2026-08-27T18:00:00Z',
-  });
-  const direct = row({
-    thread_id: 'c',
-    kind: 'direct',
-    club_id: null,
-    club_name: null,
-    title: 'Bob Reyes',
-  });
-
-  // Groups and directs are pinned above the clubs rather than filed under
-  // one. A group's club is not a stable fact -- deriving it from the member
-  // set would move the group between sections the moment somebody from
-  // another club is added.
-  it('pins People above the clubs', () => {
-    const sections = sectionThreads([clubThread, gameThread, direct]);
-    expect(sections[0].title).toBe('People');
-    expect(sections[0].rows.map((r) => r.thread_id)).toEqual(['c']);
-    expect(sections[1].title).toBe('Riverside');
+describe('orderThreadsForList', () => {
+  // Replaces the old "Recent | By club" choice with the one order the
+  // messages screen now uses: clubs first, then everything else newest
+  // first. Pinning clubs at the top does both jobs the sort control used to
+  // -- grouping ("By club") and floating active conversations up
+  // ("Recent") -- so a member never sees a non-club thread ahead of a club
+  // one, no matter how old the club thread is.
+  it('puts every club thread ahead of every non-club thread, regardless of recency', () => {
+    const staleClub = row({
+      thread_id: 'club-old',
+      kind: 'club',
+      last_message_at: '2020-01-01T00:00:00Z',
+    });
+    const freshDirect = row({
+      thread_id: 'direct-new',
+      kind: 'direct',
+      club_id: null,
+      club_name: null,
+      last_message_at: '2026-08-28T00:00:00Z',
+    });
+    expect(
+      orderThreadsForList([freshDirect, staleClub]).map((r) => r.thread_id),
+    ).toEqual(['club-old', 'direct-new']);
   });
 
-  it('puts the club thread before its games', () => {
-    const sections = sectionThreads([gameThread, clubThread]);
-    expect(sections[0].rows.map((r) => r.thread_id)).toEqual(['a', 'b']);
+  // Within the second band, newest last_message_at first and never-posted
+  // (null) last -- sortThreads' own rule, reused rather than reimplemented.
+  it('orders the non-club band newest first, nulls last', () => {
+    const game = row({
+      thread_id: 'game',
+      kind: 'game',
+      club_id: null,
+      club_name: null,
+      last_message_at: '2026-08-20T00:00:00Z',
+    });
+    const group = row({
+      thread_id: 'group',
+      kind: 'group',
+      club_id: null,
+      club_name: null,
+      last_message_at: '2026-08-27T00:00:00Z',
+    });
+    const neverPosted = row({
+      thread_id: 'direct-never',
+      kind: 'direct',
+      club_id: null,
+      club_name: null,
+      last_message_at: null,
+    });
+    expect(
+      orderThreadsForList([game, neverPosted, group]).map((r) => r.thread_id),
+    ).toEqual(['group', 'game', 'direct-never']);
   });
 
-  it('omits People entirely when there are no groups or directs', () => {
-    const sections = sectionThreads([clubThread]);
-    expect(sections.map((s) => s.title)).toEqual(['Riverside']);
+  // Club threads are always listed (one per club, empty or not), and among
+  // themselves they still read newest-active-first -- a side effect of
+  // sorting the whole list by recency before partitioning by kind, not a
+  // second sort.
+  it('keeps club threads newest first among themselves too', () => {
+    const quietClub = row({
+      thread_id: 'club-quiet',
+      kind: 'club',
+      club_id: 'c1',
+      last_message_at: null,
+    });
+    const activeClub = row({
+      thread_id: 'club-active',
+      kind: 'club',
+      club_id: 'c2',
+      last_message_at: '2026-08-27T00:00:00Z',
+    });
+    expect(
+      orderThreadsForList([quietClub, activeClub]).map((r) => r.thread_id),
+    ).toEqual(['club-active', 'club-quiet']);
+  });
+});
+
+describe('rowSubtitle', () => {
+  it('joins the club and the kind label', () => {
+    expect(rowSubtitle(row({ kind: 'club', club_name: 'Riverside' }))).toBe(
+      'Riverside · Announcement',
+    );
   });
 
-  it('carries each section total unread', () => {
-    const sections = sectionThreads([
-      { ...clubThread, unread: 2 },
-      { ...gameThread, unread: 3 },
-    ]);
-    expect(sections[0].unread).toBe(5);
+  it('is just the kind label when there is no club', () => {
+    expect(
+      rowSubtitle(row({ kind: 'direct', club_id: null, club_name: null })),
+    ).toBe('Direct');
+  });
+
+  // The flat list drops the game row's date tile (components/DateTile.tsx
+  // does not fit a circular-avatar row), so the date moves in here instead,
+  // through formatEventWhen -- the same function the dashboard and the
+  // event screen use, rendered in the club's own timezone.
+  it('carries a game thread’s formatted date instead of the kind label', () => {
+    expect(
+      rowSubtitle(
+        row({
+          kind: 'game',
+          club_name: 'Riverside',
+          event_starts_at: '2026-09-08T02:00:00Z',
+          event_timezone: 'America/New_York',
+        }),
+      ),
+    ).toBe('Riverside · Mon 7 Sept, 10:00 pm');
+  });
+
+  it('is just the date when a game thread somehow has no club', () => {
+    expect(
+      rowSubtitle(
+        row({
+          kind: 'game',
+          club_id: null,
+          club_name: null,
+          event_starts_at: '2026-09-08T02:00:00Z',
+          event_timezone: 'America/New_York',
+        }),
+      ),
+    ).toBe('Mon 7 Sept, 10:00 pm');
+  });
+
+  // A game row with no starts_at (should not happen, but ThreadListRow
+  // types it as nullable) falls back to the ordinary kind label rather than
+  // rendering an empty date.
+  it('falls back to the kind label when a game thread has no start time', () => {
+    expect(
+      rowSubtitle(row({ kind: 'game', club_name: 'Riverside', event_starts_at: null })),
+    ).toBe('Riverside · Game');
+  });
+});
+
+describe('relativeTimestamp', () => {
+  const now = new Date('2026-08-27T12:00:00Z');
+
+  it('is empty for a thread nobody has posted in', () => {
+    expect(relativeTimestamp(null, now)).toBe('');
+  });
+
+  // Deliberately the VIEWER's local time (this suite runs under
+  // TZ=America/New_York, per package.json's `test` script), not the club's
+  // -- unlike formatEventWhen, which is always club-local because a game
+  // has one real start time every member must agree on. An ordinary
+  // message has no such shared instant to agree on.
+  it('shows the time for a message sent today', () => {
+    expect(relativeTimestamp('2026-08-27T09:05:00Z', now)).toBe('5:05 am');
+  });
+
+  it('shows the weekday for a message from earlier this week', () => {
+    expect(relativeTimestamp('2026-08-24T09:05:00Z', now)).toBe('Mon');
+  });
+
+  it('shows the date for anything older than a week', () => {
+    expect(relativeTimestamp('2026-08-01T09:05:00Z', now)).toBe('1 Aug');
   });
 });
 
