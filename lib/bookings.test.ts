@@ -616,6 +616,12 @@ describe('BOOKING_REFUSALS (self-audit against the migrations)', () => {
     // malicious or buggy. lib/messages.ts owns it.
     'you cannot read this conversation':
       'raised by mark_thread_read — lib/messages.ts (Task 5, not yet created) is the module responsible, and by design relays error.message rather than mapping through a refusal table',
+    // Raised by fetch_post_messages and mark_post_read when the id names no
+    // root — a deleted post, or a reply id. Deliberately the same words for
+    // both cases: distinguishing them would let a caller probe for message
+    // ids. Reachable only by following a stale link. lib/messages.ts owns it.
+    'that post is no longer here':
+      'raised by fetch_post_messages and mark_post_read — lib/messages.ts is the module responsible, and by design relays error.message rather than mapping through a refusal table',
   };
 
   function distinctRaisedMessages(): string[] {

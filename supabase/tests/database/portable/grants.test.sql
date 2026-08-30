@@ -730,7 +730,10 @@ select is(
        'public.fetch_my_threads()',
        'public.my_unread_counts()',
        'public.fetch_thread_messages(uuid)',
-       'public.thread_roster(uuid)'
+       'public.thread_roster(uuid)',
+       'public.fetch_club_posts(uuid, integer, timestamp with time zone)',
+       'public.fetch_post_messages(uuid)',
+       'public.mark_post_read(uuid)'
      ]) as f
    ) expected
    where not exists (
@@ -810,7 +813,10 @@ select is(
          'public.fetch_my_threads()',
          'public.my_unread_counts()',
          'public.fetch_thread_messages(uuid)',
-         'public.thread_roster(uuid)'
+         'public.thread_roster(uuid)',
+         'public.fetch_club_posts(uuid, integer, timestamp with time zone)',
+         'public.fetch_post_messages(uuid)',
+         'public.mark_post_read(uuid)'
        ]) as f
        where to_regprocedure(f) = p.oid::regprocedure
      )),
