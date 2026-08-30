@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -47,14 +48,40 @@ vi.mock('expo-router', () => ({
   ),
   Link: ({ children }: { children: React.ReactNode }) => children,
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  // TabBar's own Club tab route: ClubsScreen here IS /clubs, so its
+  // highlighted Club button stays the documented no-op.
+  usePathname: () => '/clubs',
+  // Wrapped in a real `useEffect` keyed on the callback's identity, not
+  // called inline on every render: `(cb) => cb()` fires on every render,
+  // which the real hook never does, and would refire `useUnreadCounts`'s
+  // fetch (now pulled in by TabBar) on every state update it causes.
+  useFocusEffect: (cb: () => void | (() => void)) => {
+    useEffect(cb, [cb]);
+  },
 }));
 
+// Module-scoped constant, not a fresh object per render: TabBar's badge now
+// reads `useSession` too (via `useUnreadCounts`), and a fresh object here
+// breaks the referential stability its `useCallback([session])` depends on,
+// refiring the fetch on every render.
+const SESSION = { session: { user: { id: 'me' } }, loading: false };
 vi.mock('../../lib/session', () => ({
-  useSession: () => ({
-    session: { user: { id: 'me' } },
-    loading: false,
-  }),
+  useSession: () => SESSION,
 }));
+
+// TabBar (carried by ClubsScreen, which this file renders) now calls
+// `useUnreadCounts`, which reaches `fetchUnreadCounts`.
+// Spread `actual` rather than replacing the module outright: TabBar (carried
+// by this screen) now also calls `unreadSuffix`, a pure helper covered by
+// lib/messages.test.ts -- only `fetchUnreadCounts` needs to be a
+// controllable double here.
+vi.mock('../../lib/messages', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/messages')>();
+  return {
+    ...actual,
+    fetchUnreadCounts: vi.fn(async () => []),
+  };
+});
 
 const fetchMyClubs = vi.fn();
 
@@ -64,6 +91,19 @@ vi.mock('../../lib/clubs', async (importOriginal) => {
     ...actual,
     fetchMyClubs: (...args: unknown[]) => fetchMyClubs(...args),
   };
+});
+
+const fetchProfile = vi.fn();
+
+// The dashboard reads the member's display name for the header avatar. With
+// lib/profile left unmocked, every test in this file fired a real request at
+// the placeholder Supabase env — caught and swallowed by `fetchProfile`, so
+// nothing failed, but a unit test has no business on the network. Same
+// partial-mock shape as the modules above, and exactly ONE `vi.mock` for this
+// specifier: two are both hoisted and only one survives.
+vi.mock('../../lib/profile', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/profile')>();
+  return { ...actual, fetchProfile: (...args: unknown[]) => fetchProfile(...args) };
 });
 
 import ClubsScreen from '../clubs/index';
@@ -114,8 +154,13 @@ beforeEach(() => {
   recordAttendance.mockReset();
   clearAttendance.mockReset();
   fetchMyClubs.mockReset();
+  fetchProfile.mockReset();
   fetchMyUpcomingBookings.mockResolvedValue([]);
   fetchMyClubs.mockResolvedValue([]);
+  // No display name set, which is what the header's avatar falls back to a
+  // person glyph for — the state every test here was already implicitly in
+  // when the real call failed.
+  fetchProfile.mockResolvedValue(null);
   recordAttendance.mockResolvedValue({ error: null });
   clearAttendance.mockResolvedValue({ error: null });
   // Every fixture's `starts_at` is a fixed calendar timestamp
@@ -136,10 +181,16 @@ afterEach(() => {
 });
 
 describe('Your games', () => {
-  it('is absent when the member holds no seats', async () => {
+  // Task 8 made the "Your games" title unconditional: the dashboard's
+  // section is always there, with a dashed empty card under it when nothing
+  // is coming up. So the thing that must be absent when the member holds no
+  // seats is a *row*, not the heading — asserting on the heading now only
+  // tests that a title exists, which is not what this ever cared about.
+  it('offers the empty state, not a row, when the member holds no seats', async () => {
     render(<ClubsScreen />);
     await waitFor(() => expect(fetchMyUpcomingBookings).toHaveBeenCalled());
-    expect(screen.queryByText('Your games')).toBeNull();
+    expect(await screen.findByText('Nothing else coming up.')).toBeTruthy();
+    expect(screen.queryByText('Tuesday game')).toBeNull();
   });
 
   it('lists a seat with when, where and which table', async () => {
@@ -147,7 +198,10 @@ describe('Your games', () => {
     render(<ClubsScreen />);
     expect(await screen.findByText('Tuesday game')).toBeTruthy();
     expect(screen.getByText('Table 2')).toBeTruthy();
-    expect(screen.getByText("St Mary's Hall")).toBeTruthy();
+    // Task 8's row puts the formatted time and the venue on one meta line
+    // separated by a middle dot, so the venue is no longer an element of its
+    // own and an exact-string query cannot find it.
+    expect(screen.getByText(/St Mary's Hall/)).toBeTruthy();
   });
 
   it('says who booked a seat for you, and offers a way out', async () => {
@@ -259,7 +313,13 @@ describe('Your games', () => {
     render(<ClubsScreen />);
     // The clubs are the point of this screen. A failed secondary fetch
     // says so quietly and gets out of the way.
-    expect(await screen.findByText('Your clubs')).toBeTruthy();
+    //
+    // "Your clubs" is on the Task 8 dashboard twice — the header's kicker
+    // above the scope name, and the club-list section title — hence
+    // findAllByText. The club list's own empty-state copy is the assertion
+    // that actually proves the clubs half was not blanked.
+    expect((await screen.findAllByText('Your clubs')).length).toBeGreaterThan(0);
+    expect(screen.getByText(/not in a club yet/i)).toBeTruthy();
     expect(screen.getByText('Could not load your games.')).toBeTruthy();
   });
 
@@ -351,8 +411,10 @@ describe('Your games', () => {
       }),
     ]);
     render(<ClubsScreen />);
-    expect(await screen.findByText('Tue 25 Aug, 6:30 pm')).toBeTruthy();
-    expect(await screen.findByText('Wed 26 Aug, 7:30 am')).toBeTruthy();
+    // Regex, not exact: each row's meta line is "<when> · <venue>" since
+    // Task 8, so the formatted time is a substring of its element's text.
+    expect(await screen.findByText(/Tue 25 Aug, 6:30 pm/)).toBeTruthy();
+    expect(await screen.findByText(/Wed 26 Aug, 7:30 am/)).toBeTruthy();
   });
 });
 

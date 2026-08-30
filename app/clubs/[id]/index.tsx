@@ -1,5 +1,5 @@
 import { Link, Redirect, useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Platform,
@@ -10,11 +10,12 @@ import {
 } from 'react-native';
 import Button from '../../../components/Button';
 import Card from '../../../components/Card';
+import DashboardHeader from '../../../components/DashboardHeader';
 import ErrorBanner from '../../../components/ErrorBanner';
 import Screen from '../../../components/Screen';
 import SkillLevelPips from '../../../components/SkillLevelPips';
 import Tag from '../../../components/Tag';
-import { ChevronLeftIcon } from '../../../components/icons';
+import TabBar from '../../../components/TabBar';
 import {
   canInvite,
   createInvite,
@@ -30,8 +31,10 @@ import {
   formatEventWhen,
 } from '../../../lib/events';
 import type { ClubEvent } from '../../../lib/events';
+import { openThreadForClub } from '../../../lib/messages';
 import { useSession } from '../../../lib/session';
 import { colors, space, type } from '../../../lib/theme';
+import { useViewerInitials } from '../../../lib/use-viewer';
 
 export default function ClubDetailScreen() {
   const { id, imported } = useLocalSearchParams<{
@@ -41,6 +44,7 @@ export default function ClubDetailScreen() {
   const { session, loading } = useSession();
   const userId = session?.user.id;
   const router = useRouter();
+  const initials = useViewerInitials();
 
   const [club, setClub] = useState<Club | null>(null);
   const [roster, setRoster] = useState<ClubMember[]>([]);
@@ -56,6 +60,12 @@ export default function ClubDetailScreen() {
   const [eventsFailed, setEventsFailed] = useState(false);
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Written synchronously and cleared on every exit path, the same shape
+  // app/clubs/index.tsx uses for runBookingAction: `busy` state alone is
+  // read from the render closure, so a guard written as `if (busy) return`
+  // is blind to a second tap landing before React has re-rendered with the
+  // disabled button -- this repo has shipped that exact bug five times.
+  const messageBusyRef = useRef(false);
 
   useEffect(() => {
     if (!userId || !id) return;
@@ -87,7 +97,11 @@ export default function ClubDetailScreen() {
 
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered}>
+      <Screen
+        center
+        contentStyle={styles.centered}
+        tabBar={<TabBar active="club" />}
+      >
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
     );
@@ -97,7 +111,11 @@ export default function ClubDetailScreen() {
 
   if (!ready) {
     return (
-      <Screen center contentStyle={styles.centered}>
+      <Screen
+        center
+        contentStyle={styles.centered}
+        tabBar={<TabBar active="club" />}
+      >
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
     );
@@ -105,7 +123,7 @@ export default function ClubDetailScreen() {
 
   if (loadFailed || !club) {
     return (
-      <Screen contentStyle={styles.container}>
+      <Screen contentStyle={styles.container} tabBar={<TabBar active="club" />}>
         <ErrorBanner message={GENERIC_ERROR} />
       </Screen>
     );
@@ -154,23 +172,28 @@ export default function ClubDetailScreen() {
     setInviteUrl(`${window.location.origin}/join/${token}`);
   }
 
-  return (
-    <Screen scroll contentStyle={styles.container}>
-      <Button
-        variant="ghost"
-        big={false}
-        icon={<ChevronLeftIcon color={colors.accentColor} />}
-        onPress={() => router.push('/clubs')}
-        accessibilityLabel="Back to your clubs"
-        style={styles.backButton}
-      >
-        Clubs
-      </Button>
+  async function onMessageMembers() {
+    if (!id || messageBusyRef.current) return;
+    messageBusyRef.current = true;
+    setError(null);
+    const { id: threadId, error: threadError } = await openThreadForClub(id);
+    messageBusyRef.current = false;
+    if (threadError || !threadId) {
+      setError(threadError ?? GENERIC_ERROR);
+      return;
+    }
+    router.push(`/messages/${threadId}`);
+  }
 
-      <Text style={styles.heading}>{club.name}</Text>
-      {club.rhythm.length > 0 ? (
-        <Text style={styles.help}>{club.rhythm}</Text>
-      ) : null}
+  return (
+    <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="club" />}>
+      <DashboardHeader
+        kicker="Your club"
+        name={club.name}
+        meta={club.rhythm}
+        initials={initials}
+        onPressAvatar={() => router.push('/profile')}
+      />
 
       <Text style={styles.sectionTitle}>Upcoming</Text>
 
@@ -257,23 +280,18 @@ export default function ClubDetailScreen() {
       ) : null}
 
       {mayInvite ? (
+        // "Message members" -- this button's label before it stopped
+        // pushing to a compose screen that emailed the roster -- is
+        // muscle-memory copy for an action that no longer emails anybody.
+        // Ordinary messages never email; only the thread screen's own
+        // "Also email everyone" toggle does, and it defaults off. Naming
+        // the destination rather than the old verb keeps the label honest.
         <Button
           variant="secondary"
-          onPress={() => router.push(`/clubs/${id}/broadcast`)}
-          accessibilityLabel="Message members"
+          onPress={onMessageMembers}
+          accessibilityLabel="Open the club thread"
         >
-          Message members
-        </Button>
-      ) : null}
-
-      {mayInvite ? (
-        <Button
-          variant="ghost"
-          big={false}
-          onPress={() => router.push(`/clubs/${id}/broadcasts`)}
-          accessibilityLabel="See sent messages"
-        >
-          Sent messages
+          Open the club thread
         </Button>
       ) : null}
 
@@ -412,14 +430,6 @@ const styles = StyleSheet.create({
   },
   centered: {
     alignItems: 'center',
-  },
-  backButton: {
-    alignSelf: 'flex-start',
-  },
-  heading: {
-    fontFamily: type.heading,
-    fontSize: type.size.h2,
-    color: colors.text,
   },
   sectionTitle: {
     fontFamily: type.bodyBold,

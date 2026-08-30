@@ -23,6 +23,12 @@ type ScreenProps = {
    * full-bleed wrapper this component provides.
    */
   contentStyle?: StyleProp<ViewStyle>;
+  /**
+   * The app's bottom tab bar, for the four screens that are tabs. Rendered
+   * outside the scroller: inside, it would scroll off the bottom of a long
+   * dashboard, which is exactly where it is most needed.
+   */
+  tabBar?: ReactNode;
 };
 
 /**
@@ -45,29 +51,26 @@ export default function Screen({
   center = false,
   background = colors.bg,
   contentStyle,
+  tabBar,
 }: ScreenProps) {
   const content = <View style={[styles.content, contentStyle]}>{children}</View>;
 
-  if (scroll) {
-    return (
-      <ScrollView
-        // Test-only handle, no behaviour attached. On web this renders as
-        // `data-testid`, which e2e/visual.spec.ts uses to measure how tall
-        // this scroller's content actually is: react-native-web scrolls an
-        // inner `overflow: auto` div rather than the document, so the page
-        // itself never grows and a screenshot would otherwise stop at the
-        // fold. See "Why the visual suite resizes the viewport" in
-        // docs/testing.md.
-        testID="screen-scroll"
-        style={[styles.fill, { backgroundColor: background }]}
-        contentContainerStyle={center ? styles.scrollCenter : null}
-      >
-        {content}
-      </ScrollView>
-    );
-  }
-
-  return (
+  const body = scroll ? (
+    <ScrollView
+      // Test-only handle, no behaviour attached. On web this renders as
+      // `data-testid`, which e2e/visual.spec.ts uses to measure how tall
+      // this scroller's content actually is: react-native-web scrolls an
+      // inner `overflow: auto` div rather than the document, so the page
+      // itself never grows and a screenshot would otherwise stop at the
+      // fold. See "Why the visual suite resizes the viewport" in
+      // docs/testing.md.
+      testID="screen-scroll"
+      style={[styles.fill, { backgroundColor: background }]}
+      contentContainerStyle={center ? styles.scrollCenter : null}
+    >
+      {content}
+    </ScrollView>
+  ) : (
     <View
       style={[
         styles.fill,
@@ -76,6 +79,21 @@ export default function Screen({
       ]}
     >
       {content}
+    </View>
+  );
+
+  if (!tabBar) return body;
+
+  return (
+    <View style={[styles.fill, { backgroundColor: background }]}>
+      <View style={styles.tabShellBody}>{body}</View>
+      {/*
+        The bar is capped and centred like the content column rather than
+        running full-bleed. On a desktop browser — a first-class case here,
+        since club invite links open the web build — a 1400px-wide tab bar
+        under a 440px column reads as a different app's chrome.
+      */}
+      <View style={styles.tabBarColumn}>{tabBar}</View>
     </View>
   );
 }
@@ -93,6 +111,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   content: {
+    width: '100%',
+    maxWidth: layout.contentMaxWidth,
+    alignSelf: 'center',
+  },
+  tabShellBody: {
+    flex: 1,
+    minHeight: 0,
+  },
+  tabBarColumn: {
     width: '100%',
     maxWidth: layout.contentMaxWidth,
     alignSelf: 'center',

@@ -97,7 +97,7 @@ describe('Index, across the loading transition', () => {
     });
   });
 
-  it('sends a member who resolves signed-out to sign in without reading storage', async () => {
+  it('sends a member who resolves signed-out to the welcome screen without reading storage', async () => {
     useSessionMock.mockReturnValue({ session: null, loading: true });
     const { rerender } = render(<Index />);
 
@@ -106,7 +106,7 @@ describe('Index, across the loading transition', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('redirect').getAttribute('data-href')).toBe(
-        '/sign-in',
+        '/welcome',
       );
     });
     expect(getItem).not.toHaveBeenCalled();

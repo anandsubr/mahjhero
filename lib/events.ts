@@ -265,6 +265,12 @@ export function formatEventWhen(
   timezone: string,
   locale?: string,
 ): string {
+  const when = new Date(startsAt);
+  // Intl.DateTimeFormat.format throws RangeError on an Invalid Date. Every
+  // caller is rendering a list, so one malformed row used to blank the whole
+  // list — and the dashboard, the club screen and the event screen all call
+  // this. Degrading the one row is the proportionate failure.
+  if (Number.isNaN(when.getTime())) return 'Date unavailable';
   return new Intl.DateTimeFormat(locale ?? 'en-GB', {
     weekday: 'short',
     day: 'numeric',
@@ -273,7 +279,7 @@ export function formatEventWhen(
     minute: '2-digit',
     hour12: true,
     timeZone: timezone,
-  }).format(new Date(startsAt));
+  }).format(when);
 }
 
 /** The rhythm, in words a host would use rather than enum values. */
@@ -303,12 +309,18 @@ export function frequencyLabel(
  * TimeField/TIME_PATTERN's 00-23 range would then reject outright.
  */
 export function eventStartTimeInZone(startsAt: string, timezone: string): string {
+  const when = new Date(startsAt);
+  // Same RangeError guard as formatEventWhen. Empty rather than a
+  // plausible-looking "00:00": this fills a TimeField on the edit screen,
+  // and a midnight the member never chose is a wrong answer they might save
+  // over the real one. An empty field says "unknown" honestly.
+  if (Number.isNaN(when.getTime())) return '';
   const parts = new Intl.DateTimeFormat('en-GB', {
     hour: '2-digit',
     minute: '2-digit',
     hourCycle: 'h23',
     timeZone: timezone,
-  }).formatToParts(new Date(startsAt));
+  }).formatToParts(when);
   const hour = parts.find((p) => p.type === 'hour')?.value ?? '00';
   const minute = parts.find((p) => p.type === 'minute')?.value ?? '00';
   return `${hour}:${minute}`;

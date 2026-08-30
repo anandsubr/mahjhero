@@ -5,6 +5,7 @@ import Button from '../components/Button';
 import Card from '../components/Card';
 import ErrorBanner from '../components/ErrorBanner';
 import Screen from '../components/Screen';
+import TabBar from '../components/TabBar';
 import TimeField from '../components/TimeField';
 import Toggle from '../components/Toggle';
 import { ChevronLeftIcon } from '../components/icons';
@@ -65,9 +66,21 @@ export default function NotificationSettings() {
     };
   }, [userId]);
 
+  // Every early return below carries the tab bar, exactly as
+  // app/clubs/index.tsx does in all of its states. The back chevron that
+  // rescues this screen lives in the main render, far below these guards, and
+  // TabBar navigates with `router.replace` off an entry route that is itself
+  // a `<Redirect>` — so the history stack is typically one deep. A member
+  // whose `fetchPreferences` failed would otherwise be left staring at
+  // "Something went wrong" with no bar, no back link, and on native no way
+  // out short of relaunching the app — the same dead end this screen's back
+  // chevron was added to close in the first place.
+  //
+  // The `<Redirect>` below is the deliberate exception: it renders nothing
+  // and a signed-out member belongs at sign-in, not in a tab bar.
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered}>
+      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="alerts" />}>
         <ActivityIndicator />
       </Screen>
     );
@@ -77,7 +90,7 @@ export default function NotificationSettings() {
 
   if (!ready) {
     return (
-      <Screen center contentStyle={styles.centered}>
+      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="alerts" />}>
         <ActivityIndicator />
       </Screen>
     );
@@ -85,7 +98,7 @@ export default function NotificationSettings() {
 
   if (!prefs) {
     return (
-      <Screen center contentStyle={styles.centered}>
+      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="alerts" />}>
         <Text style={styles.error}>{GENERIC_ERROR}</Text>
       </Screen>
     );
@@ -141,7 +154,7 @@ export default function NotificationSettings() {
   }
 
   return (
-    <Screen scroll contentStyle={styles.container}>
+    <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="alerts" />}>
       {/* Without this the screen was a dead end on native: nothing else on
           it navigates away, so a member who opened it had no way off short
           of the OS back gesture (web) or force-quitting (there is no

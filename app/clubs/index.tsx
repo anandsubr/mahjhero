@@ -1,11 +1,19 @@
 import { Link, Redirect, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
 import CheckInControl from '../../components/CheckInControl';
+import ClubChips from '../../components/ClubChips';
+import DashboardHeader from '../../components/DashboardHeader';
+import DateTile from '../../components/DateTile';
 import ErrorBanner from '../../components/ErrorBanner';
+import NeedAFourthCard from '../../components/NeedAFourthCard';
+import NoticeBanner from '../../components/NoticeBanner';
 import Screen from '../../components/Screen';
+import Skeleton from '../../components/Skeleton';
+import TabBar from '../../components/TabBar';
+import Tag from '../../components/Tag';
 import {
   checkInOpen,
   clearAttendance,
@@ -15,19 +23,57 @@ import {
 import {
   acceptPromotionOffer,
   cancelBooking,
+  commitBooking,
   declineBooking,
   declinePromotionOffer,
   fetchMyUpcomingBookings,
   offerCountdown,
   waitlistLabel,
 } from '../../lib/bookings';
-import type { MyBooking } from '../../lib/bookings';
+import type { BookingOutcome, MyBooking } from '../../lib/bookings';
 import { fetchMyClubs } from '../../lib/clubs';
 import type { Club } from '../../lib/clubs';
 import { GENERIC_ERROR } from '../../lib/constants';
-import { formatEventWhen } from '../../lib/events';
+import {
+  ALL_CLUBS,
+  buildChips,
+  buildDashboardRows,
+  headerScope,
+  inScope,
+  needAFourthAlerts,
+} from '../../lib/dashboard';
+import type { DashboardRow, FourthAlert } from '../../lib/dashboard';
+import { fetchUpcomingEvents, formatEventWhen } from '../../lib/events';
+import type { ClubEvent } from '../../lib/events';
 import { useSession } from '../../lib/session';
-import { colors, space, type } from '../../lib/theme';
+import { colors, radius, space, type } from '../../lib/theme';
+import { useUnreadCounts } from '../../lib/use-unread';
+import { useViewerInitials } from '../../lib/use-viewer';
+
+/**
+ * The waitlist half of a `commit_booking` outcome, worded as the event screen
+ * words it (`waitlistLabel`) and naming the game it is about. A waitlisted
+ * outcome can carry a null `waitlist_position` — the same "waiting, position
+ * unknown" case the row's own seat status already words as "Waiting for a
+ * seat".
+ *
+ * `description` is not optional. The seated notice has always named its game
+ * ("You're in — Thu 4 Sep, 7:00 pm — Club Night") while this one said only
+ * "2nd on the waitlist", which on a dashboard listing several games named
+ * none of them. Requiring the argument is what stops the two halves drifting
+ * apart again.
+ */
+function waitlistNotice(
+  result: BookingOutcome | null,
+  description: string,
+): string | null {
+  if (!result || result.outcome !== 'waitlisted') return null;
+  const position =
+    result.waitlist_position !== null
+      ? waitlistLabel(result.waitlist_position)
+      : 'Waiting for a seat';
+  return `${position} — ${description}`;
+}
 
 export default function ClubsScreen() {
   const { session, loading } = useSession();
@@ -43,17 +89,72 @@ export default function ClubsScreen() {
   // app/clubs/[id]/index.tsx's `eventsFailed`.
   const [bookings, setBookings] = useState<MyBooking[] | null>(null);
   const [bookingsFailed, setBookingsFailed] = useState(false);
-  const [actionBusy, setActionBusy] = useState(false);
+  // One flag for every booking write — take, join, decline, accept-offer,
+  // decline-offer, leave-waitlist — held across the write AND its reload,
+  // not just the write. These used to be two independent flags (`takeBusy`
+  // and `actionBusy`), so a decline could start while a join was still in
+  // flight and the two reloadAfterBooking calls would race to set `events`
+  // and `bookings`, with the loser's stale read winning. Merging them into
+  // one flag closed that write-vs-write window, but an earlier version of
+  // this fix released the flag right after the write's own await — before
+  // `await reloadAfterBooking()` — which left a write-vs-reload window open
+  // instead: `reloadAfterBooking` is the half that actually writes `events`
+  // and `bookings`, so a decline's reload could still land after a later
+  // join's reload and overwrite it with a snapshot taken before the join
+  // existed. The flag now stays true until that reload finishes too.
+  //
+  // `checkInBusy` stays separate on purpose: the check-in control writes
+  // optimistically, for one person, and deliberately does not wait on the
+  // server — gating it on the same flag would make a two-state toggle feel
+  // like a form submission.
+  const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [checkInBusy, setCheckInBusy] = useState(false);
+  // `busy` above is read from the render closure, so a guard written as
+  // `if (busy) return` is blind to a tap landing in the same tick as an
+  // earlier `setBusy(true)` — a queued tap, a screen reader activation, a
+  // native double-tap — since the closure still holds the old value in that
+  // window. And once the re-render does land, `Pressable`'s own `disabled`
+  // prop already swallows the press, so the state check adds nothing there
+  // either. This ref is written synchronously alongside `setBusy`, so it is
+  // what actually makes the guard sound; `busy` itself keeps doing its own
+  // job of re-rendering the buttons into their disabled look.
+  const busyRef = useRef(false);
+
+  const [events, setEvents] = useState<ClubEvent[]>([]);
+  const [selected, setSelected] = useState<string>(ALL_CLUBS);
+  const [notice, setNotice] = useState<string | null>(null);
+  const initials = useViewerInitials();
+  const { byClub: unreadByClub } = useUnreadCounts();
+
+  // Every write below awaits the network and then calls setState. Nothing
+  // checked the screen was still mounted, so navigating away mid-write —
+  // now a single tap, since the rows opened up — set state on an unmounted
+  // component. Set to true on mount rather than relying on the initial
+  // value: under StrictMode the effect runs, cleans up, and runs again, and
+  // a ref initialised once would stay false through the second mount.
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!userId) return;
     let cancelled = false;
-    fetchMyClubs().then((result) => {
+    fetchMyClubs().then(async (result) => {
       if (cancelled) return;
-      if (result === null) setLoadFailed(true);
-      else setClubs(result);
+      if (result === null) {
+        setLoadFailed(true);
+        setReady(true);
+        return;
+      }
+      setClubs(result);
+      const perClub = await fetchEventsForClubs(result);
+      if (cancelled) return;
+      setEvents(perClub);
       setReady(true);
     });
     fetchMyUpcomingBookings().then((result) => {
@@ -69,8 +170,26 @@ export default function ClubsScreen() {
     };
   }, [userId]);
 
+  // One read per club. Chatty by design for now — collapsing these into a
+  // single RPC is deferred item 8 in the spec, and wants the screen's shape
+  // to settle first. Failures degrade to "no open games" rather than
+  // blanking the screen: the member's own bookings are the load-bearing
+  // half and they came from a different call.
+  //
+  // Shared by the mount effect and by the refresh after a successful take or
+  // join, so the two paths cannot drift. Returns rather than setting state
+  // itself: the mount path has to drop a result that arrived after its effect
+  // was cancelled, which a self-setting helper could not see.
+  async function fetchEventsForClubs(list: Club[]): Promise<ClubEvent[]> {
+    const perClub = await Promise.all(
+      list.map((club) => fetchUpcomingEvents(club.id)),
+    );
+    return perClub.filter((events): events is ClubEvent[] => events !== null).flat();
+  }
+
   async function reloadBookings() {
     const result = await fetchMyUpcomingBookings();
+    if (!mounted.current) return;
     if (result === null) setBookingsFailed(true);
     else {
       setBookings(result);
@@ -81,16 +200,34 @@ export default function ClubsScreen() {
   // Same shape as the event screen's own `run` helper: render the data
   // layer's refusal verbatim (never a generic "check your connection"),
   // and only reload once the write actually succeeded.
+  //
+  // `reloadAfterBooking`, not `reloadBookings`: every action routed through
+  // here — decline, leave-waitlist, accept-offer, decline-offer — changes the
+  // seats on the event too, and the alerts and joinable rows are derived from
+  // `events`. Reloading only the bookings left a member who had just left a
+  // waitlist still counted as `waitlisted` by `viewerIsIn`, so the seat they
+  // had freed produced neither a Join row nor a "Need a 4th" card until the
+  // screen remounted. The notice goes with it for the same reason: a standing
+  // "2nd on the waitlist" banner describes a waitlist spot this action may
+  // have just given up.
   async function runBookingAction(action: () => Promise<{ error: string | null }>) {
-    setActionBusy(true);
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
     setActionError(null);
+    setNotice(null);
     const { error } = await action();
-    setActionBusy(false);
+    if (!mounted.current) return;
     if (error) {
+      busyRef.current = false;
+      setBusy(false);
       setActionError(error);
       return;
     }
-    await reloadBookings();
+    await reloadAfterBooking();
+    if (!mounted.current) return;
+    busyRef.current = false;
+    setBusy(false);
   }
 
   function handleDecline(booking: MyBooking) {
@@ -142,6 +279,7 @@ export default function ClubsScreen() {
       next === null
         ? await clearAttendance({ eventId: booking.event_id, profileId })
         : await recordAttendance({ eventId: booking.event_id, profileId, state: next });
+    if (!mounted.current) return;
     setCheckInBusy(false);
     if (error) {
       setBookings((prev) =>
@@ -153,9 +291,96 @@ export default function ClubsScreen() {
     }
   }
 
+  // Both halves of the screen move after a successful booking write, so both
+  // are re-read. The alerts and the joinable rows are derived from `events`,
+  // not from `bookings`: reloading only the bookings left the need-a-fourth
+  // card the member had just acted on still on screen, with a live "I'm in"
+  // button whose only possible outcome was the
+  // `bookings_one_active_per_person_idx` refusal.
+  async function reloadAfterBooking() {
+    const [, freshEvents] = await Promise.all([
+      reloadBookings(),
+      fetchEventsForClubs(clubs ?? []),
+    ]);
+    if (!mounted.current) return;
+    setEvents(freshEvents);
+  }
+
+  // Taking the advertised seat: `preferredTableId` is the very table the
+  // alert counted as one short, so the member lands with the three people
+  // they were shown rather than wherever the server happens to have room.
+  async function takeSeat(alert: FourthAlert) {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    setActionError(null);
+    // Any standing confirmation describes an earlier action. Leaving it up
+    // while this one runs — or after it fails — makes a claim the screen can
+    // no longer stand behind.
+    setNotice(null);
+    const { result, error } = await commitBooking({
+      eventId: alert.eventId,
+      players: [userId ?? ''],
+      preferredTableId: alert.tableId,
+      allowSplit: false,
+    });
+    if (!mounted.current) return;
+    if (error) {
+      busyRef.current = false;
+      setBusy(false);
+      setActionError(error);
+      return;
+    }
+    // Told from this attempt's own result, the way the event screen's
+    // `bookSeat` already does it: this card advertises ONE seat to every
+    // eligible member at once, so `commit_booking` answering `error: null`
+    // with `outcome: 'waitlisted'` — someone else got there first — is an
+    // ordinary outcome, not a rare race, and must not be reported as
+    // "You're in".
+    setNotice(waitlistNotice(result, alert.text) ?? `You're in — ${alert.text}.`);
+    await reloadAfterBooking();
+    if (!mounted.current) return;
+    busyRef.current = false;
+    setBusy(false);
+  }
+
+  // The same call with no table preference. A seated join raises no notice —
+  // the row flipping from Join to Seated is its own confirmation — but a
+  // waitlisted one still has to say so, for the same reason as above:
+  // nothing else on the screen would tell the member the game filled up
+  // between the render and the tap.
+  async function joinGame(row: DashboardRow) {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    setActionError(null);
+    setNotice(null);
+    const { result, error } = await commitBooking({
+      eventId: row.eventId,
+      players: [userId ?? ''],
+      preferredTableId: null,
+      allowSplit: false,
+    });
+    if (!mounted.current) return;
+    if (error) {
+      busyRef.current = false;
+      setBusy(false);
+      setActionError(error);
+      return;
+    }
+    // Built the way the alert builds its own `text`, so both notices read
+    // alike whichever button raised them.
+    const description = `${formatEventWhen(row.startsAt, row.timezone)} — ${row.title}`;
+    setNotice(waitlistNotice(result, description));
+    await reloadAfterBooking();
+    if (!mounted.current) return;
+    busyRef.current = false;
+    setBusy(false);
+  }
+
   if (loading) {
     return (
-      <Screen>
+      <Screen tabBar={<TabBar active="club" />}>
         <View style={styles.centered}>
           <ActivityIndicator color={colors.accentColor} />
         </View>
@@ -167,9 +392,11 @@ export default function ClubsScreen() {
 
   if (!ready) {
     return (
-      <Screen>
-        <View style={styles.centered}>
-          <ActivityIndicator color={colors.accentColor} />
+      <Screen contentStyle={styles.container} tabBar={<TabBar active="club" />}>
+        <View style={styles.list}>
+          <Skeleton />
+          <Skeleton delay={150} />
+          <Skeleton delay={300} />
         </View>
       </Screen>
     );
@@ -177,7 +404,7 @@ export default function ClubsScreen() {
 
   if (loadFailed) {
     return (
-      <Screen contentStyle={styles.container}>
+      <Screen contentStyle={styles.container} tabBar={<TabBar active="club" />}>
         <Text style={styles.heading}>Your clubs</Text>
         <ErrorBanner message={GENERIC_ERROR} />
       </Screen>
@@ -185,39 +412,109 @@ export default function ClubsScreen() {
   }
 
   const list = clubs ?? [];
-  const myGames = bookings ?? [];
-  const showGamesSection = bookingsFailed || myGames.length > 0;
+  const chips = buildChips(list);
+  const scope = headerScope(list, selected);
+  const rows = buildDashboardRows({
+    bookings: bookings ?? [],
+    events,
+    clubs: list,
+    userId: userId ?? '',
+  }).filter((row) => inScope(row.clubId, selected));
+  const alerts = needAFourthAlerts({
+    events,
+    clubs: list,
+    userId: userId ?? '',
+  }).filter((alert) => inScope(alert.clubId, selected));
+
+  // Which club "Host a table" should create the game in — derived from the
+  // clubs themselves, NOT from the chip state. The chip row only renders
+  // above one club, so a one-club member's `selected` stays ALL_CLUBS
+  // forever; gating the button on `selected !== ALL_CLUBS` hid it from
+  // exactly the member most likely to want it, leaving them a dashed
+  // "Nothing else coming up." box with no action at all. With several clubs
+  // and no chip picked the target genuinely is ambiguous, so no button is
+  // drawn rather than one that guesses.
+  const hostClubId =
+    selected !== ALL_CLUBS ? selected : list.length === 1 ? list[0].id : null;
 
   return (
-    <Screen scroll contentStyle={styles.container}>
-      {showGamesSection ? (
-        <View style={styles.gamesSection}>
-          <Text style={styles.heading}>Your games</Text>
+    <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="club" />}>
+      <DashboardHeader
+        kicker={scope.kicker}
+        name={scope.name}
+        meta={scope.meta}
+        initials={initials}
+        onPressAvatar={() => router.push('/profile')}
+      />
 
-          {actionError ? <ErrorBanner message={actionError} /> : null}
-
-          {bookingsFailed ? (
-            <Text style={styles.help}>Could not load your games.</Text>
-          ) : (
-            myGames.map((booking) => (
-              <BookingCard
-                key={booking.booking_id}
-                booking={booking}
-                youId={userId}
-                busy={actionBusy}
-                checkInBusy={checkInBusy}
-                onDecline={handleDecline}
-                onAcceptOffer={handleAcceptOffer}
-                onDeclineOffer={handleDeclineOffer}
-                onLeaveWaitlist={handleLeaveWaitlist}
-                onCheckIn={handleCheckIn}
-              />
-            ))
-          )}
-        </View>
+      {list.length > 1 ? (
+        <ClubChips
+          chips={chips}
+          selected={selected}
+          unreadByClub={unreadByClub}
+          // A confirmation raised for a game at one club is not an answer to
+          // "show me a different club" — the notice would otherwise sit above
+          // content it has nothing to do with.
+          onSelect={(id) => {
+            setSelected(id);
+            setNotice(null);
+          }}
+        />
       ) : null}
 
-      <Text style={styles.heading}>Your clubs</Text>
+      {notice ? (
+        <NoticeBanner message={notice} onDismiss={() => setNotice(null)} />
+      ) : null}
+
+      {actionError ? <ErrorBanner message={actionError} /> : null}
+
+      {alerts.map((alert) => (
+        <NeedAFourthCard
+          key={`${alert.eventId}:${alert.tableId}`}
+          clubName={alert.clubName}
+          text={alert.text}
+          busy={busy}
+          onTake={() => void takeSeat(alert)}
+        />
+      ))}
+
+      <Text style={styles.sectionTitle}>Your games</Text>
+
+      {bookingsFailed ? (
+        <Text style={styles.help}>Could not load your games.</Text>
+      ) : rows.length === 0 ? (
+        <View style={styles.emptyCard}>
+          <Text style={styles.help}>Nothing else coming up.</Text>
+          {hostClubId ? (
+            <Button
+              variant="secondary"
+              big={false}
+              onPress={() => router.push(`/clubs/${hostClubId}/events/new`)}
+              accessibilityLabel="Host a table"
+            >
+              Host a table
+            </Button>
+          ) : null}
+        </View>
+      ) : (
+        rows.map((row) => (
+          <GameRow
+            key={row.eventId}
+            row={row}
+            youId={userId}
+            busy={busy}
+            checkInBusy={checkInBusy}
+            onJoin={joinGame}
+            onDecline={handleDecline}
+            onAcceptOffer={handleAcceptOffer}
+            onDeclineOffer={handleDeclineOffer}
+            onLeaveWaitlist={handleLeaveWaitlist}
+            onCheckIn={handleCheckIn}
+          />
+        ))
+      )}
+
+      <Text style={styles.sectionTitle}>Your clubs</Text>
 
       {list.length === 0 ? (
         <View style={styles.list}>
@@ -245,7 +542,9 @@ export default function ClubsScreen() {
             // receives Link's injected handler and accessibility props;
             // Card nests inside purely for its visual styling. See the
             // Task 4 report for the full writeup of this deviation from the
-            // brief's literal composition.
+            // brief's literal composition. See the GameRow Link comment
+            // below for what this same `asChild` merge actually renders on
+            // the web — it isn't repeated here.
             <Link key={club.id} href={`/clubs/${club.id}`} asChild>
               <Pressable accessibilityRole="button" accessibilityLabel={club.name}>
                 <Card>
@@ -266,22 +565,133 @@ export default function ClubsScreen() {
           </Button>
         </View>
       )}
-
-      <Link href="/profile" style={styles.linkRow}>
-        <Text style={styles.link}>Your profile</Text>
-      </Link>
     </Screen>
   );
 }
 
 /**
- * One row of "Your games". Each booking carries its own action, in
- * priority order: a live offer (accept/decline, with its countdown) beats
- * a seat someone else booked for you (decline), which beats a self-held
- * waitlist spot (leave the waitlist). An ordinary confirmed seat you
- * booked yourself has nothing to press.
+ * One row of "Your games": the artboard's date tile, the club and title, and
+ * a single right-hand affordance — Join for an open game the member is not in
+ * yet, "Seated" for one they hold.
+ *
+ * A joinable row carries no booking, so none of the seat-management controls
+ * apply to it; everything they need lives in `BookingSeatControls` below,
+ * rendered only when `row.booking` is there.
  */
-function BookingCard({
+function GameRow({
+  row,
+  youId,
+  busy,
+  checkInBusy,
+  onJoin,
+  onDecline,
+  onAcceptOffer,
+  onDeclineOffer,
+  onLeaveWaitlist,
+  onCheckIn,
+}: {
+  row: DashboardRow;
+  youId: string | undefined;
+  busy: boolean;
+  checkInBusy: boolean;
+  onJoin: (row: DashboardRow) => void;
+  onDecline: (booking: MyBooking) => void;
+  onAcceptOffer: (booking: MyBooking) => void;
+  onDeclineOffer: (booking: MyBooking) => void;
+  onLeaveWaitlist: (booking: MyBooking) => void;
+  onCheckIn: (booking: MyBooking, next: AttendanceState | null) => void;
+}) {
+  const booking = row.booking;
+
+  return (
+    <Card>
+      <View style={styles.gameRow}>
+        {/*
+          Pressable rather than the Card itself, and the trailing controls
+          left outside it: a row can carry a Join button, a Seated tag, offer
+          accept/decline, leave-waitlist and a check-in control, and a
+          card-wide press target would sit under all of them. Pressable
+          rather than Card for the `asChild` reason this file documents at
+          length for the club cards below — Card neither declares
+          accessibility props nor spreads unrecognised ones onto its View, so
+          cloning onto it drops the handler Link injects.
+
+          Worth recording once, here, what that `asChild` merge actually
+          produces on the web: it does not wrap this Pressable in an <a> the
+          way the JSX nesting implies. useLinkToPathProps merges `href`,
+          `onPress`, and a raw `role: 'link'` straight onto the child through
+          a Radix Slot, and react-native-web's propsToAriaRole resolves that
+          injected `role` ahead of this element's own `accessibilityRole`.
+          With `href` present, View also switches its host element to <a>.
+          So the web build ends up rendering one `<a href role="link">`, not
+          the `<div role="button">` the `accessibilityRole` below might
+          suggest — that prop is what the native accessibility tree sees,
+          not the DOM the browser actually gets.
+        */}
+        <Link href={`/clubs/${row.clubId}/events/${row.eventId}`} asChild>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Open ${row.title}`}
+            style={styles.gameOpen}
+          >
+            <DateTile startsAt={row.startsAt} timezone={row.timezone} />
+            <View style={styles.gameBody}>
+              <Text style={styles.gameKicker}>{row.clubName}</Text>
+              <Text style={styles.gameTitle}>{row.title}</Text>
+              <Text style={styles.help}>
+                {formatEventWhen(row.startsAt, row.timezone)}
+                {' · '}
+                {row.venueName}
+              </Text>
+            </View>
+          </Pressable>
+        </Link>
+        {booking === null ? (
+          <Button
+            variant="secondary"
+            big={false}
+            disabled={busy}
+            onPress={() => onJoin(row)}
+            accessibilityLabel={`Join ${row.title}`}
+            style={styles.gameAction}
+          >
+            Join
+          </Button>
+        ) : booking.status === 'confirmed' ? (
+          <Tag variant="accent2">Seated</Tag>
+        ) : null}
+      </View>
+
+      {booking !== null ? (
+        <BookingSeatControls
+          booking={booking}
+          youId={youId}
+          busy={busy}
+          checkInBusy={checkInBusy}
+          onDecline={onDecline}
+          onAcceptOffer={onAcceptOffer}
+          onDeclineOffer={onDeclineOffer}
+          onLeaveWaitlist={onLeaveWaitlist}
+          onCheckIn={onCheckIn}
+        />
+      ) : null}
+    </Card>
+  );
+}
+
+/**
+ * The seat this member holds, and whatever they can do about it. Each booking
+ * carries its own action, in priority order: a live offer (accept/decline,
+ * with its countdown) beats a seat someone else booked for you (decline),
+ * which beats a self-held waitlist spot (leave the waitlist). An ordinary
+ * confirmed seat you booked yourself has nothing to press.
+ *
+ * Split out of `GameRow` rather than inlined behind a `booking !== null`
+ * ternary so every derivation below can read a non-null `MyBooking` directly,
+ * exactly as it did when this was one component — no non-null assertions
+ * threaded through logic whose whole job is to be exact.
+ */
+function BookingSeatControls({
   booking,
   youId,
   busy,
@@ -358,14 +768,7 @@ function BookingCard({
   const bookedByOther = booking.booked_by !== youId;
 
   return (
-    <Card>
-      <Text style={styles.clubName}>{booking.event_title}</Text>
-      <Text style={styles.help}>
-        {formatEventWhen(booking.starts_at, booking.club_timezone)}
-      </Text>
-      <Text style={styles.help}>{booking.venue_name}</Text>
-      <Text style={styles.help}>{booking.club_name}</Text>
-
+    <>
       {seatStatus ? <Text style={styles.help}>{seatStatus}</Text> : null}
 
       {offerLive ? (
@@ -444,7 +847,7 @@ function BookingCard({
           onChange={(next) => onCheckIn(booking, next)}
         />
       ) : null}
-    </Card>
+    </>
   );
 }
 
@@ -458,9 +861,6 @@ const styles = StyleSheet.create({
     // "no page padding" item in todo.md.
     padding: space[6],
     gap: space[4],
-  },
-  gamesSection: {
-    gap: space[3],
   },
   heading: {
     fontFamily: type.heading,
@@ -492,10 +892,56 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     lineHeight: 24,
   },
-  linkRow: { marginTop: space[6] },
-  link: {
+  gameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[3],
+  },
+  gameBody: {
+    flex: 1,
+    minWidth: 0,
+  },
+  // Takes over `gameRow`'s row layout for the part of the row that is now
+  // one press target, so the tile and the text still sit side by side and
+  // the trailing control still gets whatever width it needs.
+  gameOpen: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[3],
+  },
+  gameKicker: {
     fontFamily: type.bodySemiBold,
+    fontSize: type.size.helper,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    color: colors.textMuted,
+  },
+  gameTitle: {
+    fontFamily: type.bodyBold,
     fontSize: type.size.body,
-    color: colors.accentColor,
+    color: colors.text,
+    marginTop: 1,
+  },
+  gameAction: {
+    flexShrink: 0,
+  },
+  sectionTitle: {
+    fontFamily: type.bodyBold,
+    fontSize: type.size.body,
+    color: colors.text,
+    marginTop: space[2],
+  },
+  emptyCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: space[3],
+    padding: space[4],
+    borderRadius: radius.card,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    borderColor: colors.neutral[400],
   },
 });

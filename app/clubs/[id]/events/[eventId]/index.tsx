@@ -1,5 +1,5 @@
 import { Link, Redirect, useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import BringSomeoneSheet from '../../../../../components/BringSomeoneSheet';
 import Button from '../../../../../components/Button';
@@ -8,6 +8,7 @@ import CheckInControl from '../../../../../components/CheckInControl';
 import ErrorBanner from '../../../../../components/ErrorBanner';
 import Screen from '../../../../../components/Screen';
 import Tag from '../../../../../components/Tag';
+import TabBar from '../../../../../components/TabBar';
 import TableCard from '../../../../../components/TableCard';
 import TierPicker from '../../../../../components/TierPicker';
 import WaitlistPanel from '../../../../../components/WaitlistPanel';
@@ -21,6 +22,7 @@ import {
 } from '../../../../../lib/attendance';
 import { canInvite, fetchClub, fetchRoster } from '../../../../../lib/clubs';
 import type { Club, ClubMember } from '../../../../../lib/clubs';
+import { GENERIC_ERROR } from '../../../../../lib/constants';
 import {
   acceptPromotionOffer,
   callForAFourth,
@@ -53,6 +55,7 @@ import {
   type EventSeries,
   type EventTable,
 } from '../../../../../lib/events';
+import { openThreadForEvent } from '../../../../../lib/messages';
 import { useSession } from '../../../../../lib/session';
 import { addHours } from '../../../../../lib/time';
 import { colors, space, type } from '../../../../../lib/theme';
@@ -135,6 +138,11 @@ export default function EventScreen() {
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Written synchronously and cleared on every exit path -- `busy` state
+  // alone is read from the render closure, so a guard written as `if (busy)
+  // return` is blind to a second tap landing before React has re-rendered
+  // with the disabled button. See app/clubs/index.tsx's busyRef.
+  const messageBusyRef = useRef(false);
 
   // Who is coming: every live (confirmed or waitlisted) booking, plus
   // whether the fetch itself failed. Kept separate from `tablesFailed` for
@@ -281,9 +289,16 @@ export default function EventScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clubId, eventId, session]);
 
+  // Every state below carries the tab bar, the same rule
+  // app/clubs/[id]/index.tsx and app/clubs/[id]/venues.tsx already follow:
+  // TabBar navigates with router.replace off an entry route that is itself
+  // a <Redirect>, so the history stack is typically one deep, and a state
+  // with no bar strands a member with no way out but relaunching the app.
+  // The <Redirect> branch below is the deliberate exception -- it renders
+  // nothing, and a signed-out visitor belongs at sign-in, not in a tab bar.
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered}>
+      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="club" />}>
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
     );
@@ -300,7 +315,7 @@ export default function EventScreen() {
 
   if (!ready) {
     return (
-      <Screen center contentStyle={styles.centered}>
+      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="club" />}>
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
     );
@@ -308,7 +323,7 @@ export default function EventScreen() {
 
   if (!club || !event) {
     return (
-      <Screen contentStyle={styles.container}>
+      <Screen contentStyle={styles.container} tabBar={<TabBar active="club" />}>
         <ErrorBanner message="That game could not be loaded." />
       </Screen>
     );
@@ -349,6 +364,19 @@ export default function EventScreen() {
       return;
     }
     await load();
+  }
+
+  async function onMessageEveryoneBooked() {
+    if (!eventId || messageBusyRef.current) return;
+    messageBusyRef.current = true;
+    setError(null);
+    const { id: threadId, error: threadError } = await openThreadForEvent(eventId);
+    messageBusyRef.current = false;
+    if (threadError || !threadId) {
+      setError(threadError ?? GENERIC_ERROR);
+      return;
+    }
+    router.push(`/messages/${threadId}`);
   }
 
   // One instant, shared by `canBook` and every table's `needsAFourth` call
@@ -627,7 +655,15 @@ export default function EventScreen() {
   }
 
   return (
-    <Screen scroll contentStyle={styles.container}>
+    <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="club" />}>
+      {/*
+        Kept, not dropped: this goes to /clubs/${clubId}, a specific club,
+        which is a different destination from the Club tab's own /clubs (see
+        app/clubs/[id]/venues.tsx's identical "Back to the club" button, and
+        app/clubs/[id]/index.tsx for the contrasting case where a back link
+        WAS dropped because its destination and the tab's were the same
+        place).
+      */}
       <Button
         variant="ghost"
         big={false}
@@ -979,14 +1015,22 @@ export default function EventScreen() {
             Add a table
           </Button>
 
+          {/*
+            "Message everyone booked" -- this button's label before it
+            stopped pushing to a compose screen that emailed the confirmed
+            bookings -- is muscle-memory copy for an action that no longer
+            emails anybody. Ordinary messages never email; only the thread
+            screen's own "Also email everyone" toggle does, and it defaults
+            off. Naming the destination rather than the old verb keeps the
+            label honest. See the identical fix on app/clubs/[id]/index.tsx's
+            "Message members" button.
+          */}
           <Button
             variant="secondary"
-            onPress={() =>
-              router.push(`/clubs/${clubId}/broadcast?eventId=${eventId}`)
-            }
-            accessibilityLabel="Message everyone booked"
+            onPress={onMessageEveryoneBooked}
+            accessibilityLabel="Open the game thread"
           >
-            Message everyone booked
+            Open the game thread
           </Button>
 
           {/*

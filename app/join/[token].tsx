@@ -5,6 +5,7 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import Button from '../../components/Button';
 import ErrorBanner from '../../components/ErrorBanner';
 import Screen from '../../components/Screen';
+import TabBar from '../../components/TabBar';
 import { PENDING_INVITE_KEY, acceptInvite } from '../../lib/clubs';
 import { useSession } from '../../lib/session';
 import { colors, space, type } from '../../lib/theme';
@@ -27,6 +28,15 @@ import { colors, space, type } from '../../lib/theme';
  * is already a dependency (see `lib/supabase.ts`) and works identically on
  * web, iOS, and Android, so it is used here unconditionally rather than
  * branching on `Platform.OS`.
+ *
+ * Carries the tab bar with `active="club"` -- but ONLY once `userId` is
+ * known, unlike every other signed-in screen's own tab-bar treatment. This
+ * is the one screen in `appScreens` that is legitimately reachable SIGNED
+ * OUT (the branch just below parks the token and sends a stranger to sign
+ * in), and a bar there would offer four destinations that all bounce
+ * straight back to sign-in. `userId`, not `!loading`: while `loading` is
+ * still true the session is not yet known either way, so the safe default
+ * is the same as signed-out -- no bar.
  */
 export default function JoinScreen() {
   const { token } = useLocalSearchParams<{ token: string }>();
@@ -88,8 +98,12 @@ export default function JoinScreen() {
   }, [loading, userId, token, router]);
 
   if (error) {
+    // Only reachable once `userId` is known -- `error` is set solely inside
+    // the signed-in `acceptInvite` branch of the effect above, so this state
+    // is never hit while signed out. Gated on `userId` anyway, honestly,
+    // rather than assumed from that control flow.
     return (
-      <Screen contentStyle={styles.container}>
+      <Screen contentStyle={styles.container} tabBar={userId ? <TabBar active="club" /> : undefined}>
         <Text style={styles.heading}>That link did not work</Text>
         <ErrorBanner message={error} />
         <Button
@@ -101,7 +115,11 @@ export default function JoinScreen() {
   }
 
   return (
-    <Screen center contentStyle={styles.centered}>
+    <Screen
+      center
+      contentStyle={styles.centered}
+      tabBar={userId ? <TabBar active="club" /> : undefined}
+    >
       <View style={styles.spinnerGroup}>
         <ActivityIndicator
           color={colors.accentColor}

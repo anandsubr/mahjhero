@@ -29,8 +29,10 @@ import { resolveIndexRedirect } from '../index';
  * more indirect than asserting on the three inputs and one output directly.
  */
 describe('resolveIndexRedirect', () => {
-  it('sends a signed-out member to sign in', () => {
-    expect(resolveIndexRedirect(false, false, null)).toBe('/sign-in');
+  // /welcome, not /sign-in: the welcome screen is the app's front door, and
+  // sign-in is a step inside it.
+  it('sends a signed-out member to the welcome screen', () => {
+    expect(resolveIndexRedirect(false, false, null)).toBe('/welcome');
   });
 
   it('sends a signed-in member with no parked invite to their clubs', () => {

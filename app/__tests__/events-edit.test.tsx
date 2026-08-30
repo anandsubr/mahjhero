@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 const push = vi.fn();
 const replace = vi.fn();
@@ -9,12 +9,25 @@ const canGoBack = vi.fn();
 
 const searchParams: Record<string, string> = { id: 'club-1', eventId: 'event-1' };
 
+// This screen's own route, never TabBar's own /clubs -- the Club tab stays
+// live here the same way it does on the club detail and venues screens (see
+// clubs.test.tsx's and venues.test.tsx's identical comment).
+const pathname = '/clubs/club-1/events/event-1/edit';
+
 vi.mock('expo-router', () => ({
   Redirect: ({ href }: { href: string }) => (
     <div data-testid="redirect" data-href={href} />
   ),
   useRouter: () => ({ push, replace, back, canGoBack }),
+  usePathname: () => pathname,
   useLocalSearchParams: () => searchParams,
+  // Wrapped in a real `useEffect` keyed on the callback's identity, not
+  // called inline on every render -- see venues.test.tsx's identical
+  // comment: `(cb) => cb()` would refire `useUnreadCounts`'s fetch (now
+  // pulled in by TabBar) on every state update it causes.
+  useFocusEffect: (cb: () => void | (() => void)) => {
+    useEffect(cb, [cb]);
+  },
 }));
 
 const useSessionMock = vi.fn(
@@ -99,6 +112,17 @@ vi.mock('../../components/VenuePicker', () => ({
     );
   },
 }));
+
+// TabBar (now carried by this screen) calls `useUnreadCounts`, which reaches
+// `fetchUnreadCounts`.
+const fetchUnreadCounts = vi.fn(async () => []);
+vi.mock('../../lib/messages', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/messages')>();
+  return {
+    ...actual,
+    fetchUnreadCounts: () => fetchUnreadCounts(),
+  };
+});
 
 import EditEventScreen from '../clubs/[id]/events/[eventId]/edit';
 
@@ -194,6 +218,55 @@ describe('guard ordering', () => {
     const redirect = await screen.findByTestId('redirect');
     expect(redirect.getAttribute('data-href')).toBe('/sign-in');
     expect(fetchEvent).not.toHaveBeenCalled();
+  });
+});
+
+// TabBar navigates with router.replace off an entry route that is itself a
+// Redirect, so the history stack is typically one deep -- a state without
+// the bar strands a host with no way out but relaunching the app. See
+// clubs.test.tsx's and venues.test.tsx's identical rationale.
+describe('screen chrome', () => {
+  it('carries the tab bar once ready', async () => {
+    render(<EditEventScreen />);
+    expect(await screen.findByRole('button', { name: 'Club' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Messages' })).toBeTruthy();
+  });
+
+  it('carries the tab bar while the event is still loading', () => {
+    fetchClub.mockReturnValueOnce(new Promise(() => {}));
+    fetchEvent.mockReturnValueOnce(new Promise(() => {}));
+    render(<EditEventScreen />);
+    expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
+  });
+
+  it('carries the tab bar when the event cannot be loaded', async () => {
+    fetchEvent.mockResolvedValue(null);
+    render(<EditEventScreen />);
+    expect(
+      await screen.findByText('That game could not be loaded.'),
+    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
+  });
+
+  it('carries the tab bar when the start time cannot be read', async () => {
+    fetchEvent.mockResolvedValue({ ...ONE_OFF_EVENT, starts_at: 'not-a-date' });
+    render(<EditEventScreen />);
+    await screen.findByText(
+      "This game's start time could not be read, so it cannot be edited.",
+    );
+    expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
+  });
+
+  // Cancel goes to /clubs/club-1/events/event-1, a specific game -- a
+  // different destination from the Club tab's own /clubs -- so it stays,
+  // the same reasoning events-new.test.tsx's Cancel and venues.test.tsx's
+  // "Back to the club" document for themselves.
+  it('keeps Cancel, a different destination from the Club tab', async () => {
+    canGoBack.mockReturnValue(false);
+    render(<EditEventScreen />);
+    await screen.findByDisplayValue('Thursday Mahjong');
+    fireEvent.click(screen.getByLabelText('Cancel'));
+    expect(replace).toHaveBeenCalledWith('/clubs/club-1/events/event-1');
   });
 });
 
@@ -657,6 +730,29 @@ describe('the overridden-occurrences toggle', () => {
     fireEvent.click(screen.getByText('The whole series'));
     await screen.findByText(/Could not check which games you've changed/);
     expect(screen.queryByText(/Also apply this edit/)).toBeNull();
+  });
+});
+
+// Task 3 made eventStartTimeInZone return '' for a starts_at that new
+// Date() cannot parse, reasoning that an empty TimeField is the honest
+// state. That only holds on web (TimeField.web.tsx renders an empty
+// <input type="time">) -- the native TimeField has no empty state, so ''
+// falls through lib/time.ts's timeStringToDate to midnight and the picker
+// shows a plausible "12:00 AM". A host who merely confirms that dialog
+// saves a midnight nobody chose over the real stored value. Fix pass 1
+// closes that path by refusing the whole form instead of ever handing a
+// TimeField an unreadable time. Asserted on 'Game name', a form control
+// every other test in this file relies on being present -- if the guard
+// were dropped, this test would fail the same way those do.
+describe('a game whose start time cannot be read', () => {
+  it('refuses to render the form, showing an error instead', async () => {
+    fetchEvent.mockResolvedValue({ ...ONE_OFF_EVENT, starts_at: 'not-a-date' });
+    render(<EditEventScreen />);
+
+    await screen.findByText(
+      "This game's start time could not be read, so it cannot be edited.",
+    );
+    expect(screen.queryByLabelText('Game name')).toBeNull();
   });
 });
 
