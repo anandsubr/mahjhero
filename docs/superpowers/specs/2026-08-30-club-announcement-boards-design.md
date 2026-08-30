@@ -46,7 +46,8 @@ gain. The cost is two rendering modes in the app, and §4 spends it deliberately
 
 ## 1. Schema
 
-Three columns on `messages`, one new table. No new message table.
+Three columns on `messages`, plus `post_reads`. No new message table. (§5 adds
+one more table, `archived_messages`, purely to hold migrated-out rows.)
 
 | column | meaning |
 |---|---|
