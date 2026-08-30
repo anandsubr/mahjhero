@@ -622,6 +622,14 @@ describe('BOOKING_REFUSALS (self-audit against the migrations)', () => {
     // ids. Reachable only by following a stale link. lib/messages.ts owns it.
     'that post is no longer here':
       'raised by fetch_post_messages and mark_post_read — lib/messages.ts is the module responsible, and by design relays error.message rather than mapping through a refusal table',
+    // Raised by fetch_club_posts when the target thread is not a genuine
+    // club board (club_id null, or event_id set) — the read-side mirror of
+    // post_message's 'only a club has posts to reply to'. The board screen
+    // only ever calls fetch_club_posts with a thread it already knows is a
+    // club board, so a caller hitting this is malicious or buggy.
+    // lib/messages.ts owns it.
+    'only a club has posts to list':
+      'raised by fetch_club_posts — lib/messages.ts is the module responsible, and by design relays error.message rather than mapping through a refusal table',
   };
 
   function distinctRaisedMessages(): string[] {

@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(9);
+select plan(11);
 
 insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-000000000001', 'alice@example.com'),
@@ -53,6 +53,50 @@ insert into public.messages (id, thread_id, author_id, body, root_id, created_at
    '11111111-0000-0000-0000-000000000001',
    'aaaaaaaa-0000-0000-0000-000000000001', 'reply to newer',
    'cc000000-0000-0000-0000-00000000000c', now() - interval '1 day');
+
+-- A game thread and a group thread, both readable by Bob, neither a board
+-- (20260830021000). Shaped like thread_predicates.test.sql's game thread:
+-- a venue, a published event, a booking group and Bob's own confirmed
+-- booking, which is what lets Bob's can_read_thread pass on the game
+-- thread without a club_members row of his own to floor against.
+insert into public.venues (id, name, added_by_club_id, created_by) values
+  ('b1b1b1b1-0000-0000-0000-000000000001', 'The Hall',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   'aaaaaaaa-0000-0000-0000-000000000001');
+
+insert into public.events (id, club_id, title, venue_id, starts_at, ends_at,
+                           status, created_by) values
+  ('e1e1e1e1-0000-0000-0000-000000000001',
+   'c1c1c1c1-0000-0000-0000-000000000001', 'Tuesday Night',
+   'b1b1b1b1-0000-0000-0000-000000000001',
+   now() + interval '2 days', now() + interval '2 days 3 hours',
+   'published', 'aaaaaaaa-0000-0000-0000-000000000001');
+
+insert into public.booking_groups (id, event_id, club_id, created_by) values
+  ('9909aaaa-0000-0000-0000-000000000001',
+   'e1e1e1e1-0000-0000-0000-000000000001',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   'bbbbbbbb-0000-0000-0000-000000000002');
+
+insert into public.bookings (group_id, event_id, club_id, profile_id,
+                             booked_by, status) values
+  ('9909aaaa-0000-0000-0000-000000000001',
+   'e1e1e1e1-0000-0000-0000-000000000001',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   'bbbbbbbb-0000-0000-0000-000000000002',
+   'bbbbbbbb-0000-0000-0000-000000000002', 'confirmed');
+
+insert into public.message_threads (id, club_id, event_id) values
+  ('22222222-0000-0000-0000-000000000002',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   'e1e1e1e1-0000-0000-0000-000000000001');
+
+insert into public.message_threads (id, title, created_by) values
+  ('33333333-0000-0000-0000-000000000003', 'Tuesday four',
+   'aaaaaaaa-0000-0000-0000-000000000001');
+insert into public.thread_members (thread_id, profile_id) values
+  ('33333333-0000-0000-0000-000000000003',
+   'bbbbbbbb-0000-0000-0000-000000000002');
 
 set local role authenticated;
 set local request.jwt.claims =
@@ -114,6 +158,26 @@ select is(
     where id = 'cc000000-0000-0000-0000-00000000000c'),
   2,
   'and leaves every OTHER post untouched — the whole point of post_reads'
+);
+
+-- Bob can read the game thread (a confirmed seat) and the group thread (a
+-- member), so these two reach fetch_club_posts' own guard rather than being
+-- turned away earlier by can_read_thread — the case 20260830020000's
+-- comment claimed and 20260830021000 actually makes true.
+select throws_ok(
+  $$ select * from public.fetch_club_posts(
+       '22222222-0000-0000-0000-000000000002') $$,
+  '22023',
+  'only a club has posts to list',
+  'a game thread has no board — refused, not handed back as every message relabelled a root'
+);
+
+select throws_ok(
+  $$ select * from public.fetch_club_posts(
+       '33333333-0000-0000-0000-000000000003') $$,
+  '22023',
+  'only a club has posts to list',
+  'neither does a group thread'
 );
 
 -- A stranger to the club cannot read the board.
