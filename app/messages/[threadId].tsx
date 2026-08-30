@@ -14,15 +14,13 @@ import ErrorBanner from '../../components/ErrorBanner';
 import Screen from '../../components/Screen';
 import TabBar from '../../components/TabBar';
 import Tag from '../../components/Tag';
-import Toggle from '../../components/Toggle';
-import { SendIcon } from '../../components/icons';
-import { countBroadcastRecipients } from '../../lib/broadcasts';
+import ThreadAvatar from '../../components/ThreadAvatar';
+import { ChevronLeftIcon, ChevronRightIcon, SendIcon } from '../../components/icons';
 import { GENERIC_ERROR } from '../../lib/constants';
 import { fetchAddablePeople, fetchFriends } from '../../lib/friends';
 import {
   addToGroupThread,
   announcementBody,
-  deriveSubject,
   fetchThread,
   fetchThreadMessages,
   leaveGroupThread,
@@ -30,6 +28,7 @@ import {
   postMessage,
   quoteStub,
   relativeTimestamp,
+  threadKindFor,
   threadTitleFor,
   type ThreadDetail,
   type ThreadMessage,
@@ -55,10 +54,26 @@ type Candidate = { profile_id: string; display_name: string; meta: string };
  * Carries the tab bar with `active="messages"`, the same as every other
  * signed-in screen: the design source renders the bar as a sibling of every
  * `appScreens` entry, `thread` included — it is not gated to the four tabs
- * themselves. Its own "← Messages" back link, drawn above the heading until
- * the bar arrived, is gone now that the Messages tab reaches the identical
- * `/messages` route — the same call already made once for the club detail
- * screen (`app/clubs/[id]/index.tsx`'s own docstring).
+ * themselves. Its own "← Messages" text back link, drawn above the heading,
+ * was removed once the Messages tab reached the identical `/messages` route
+ * — the same call already made once for the club detail screen
+ * (`app/clubs/[id]/index.tsx`'s own docstring). The header below now carries
+ * a COMPACT chevron control of its own again, on the owner's explicit call:
+ * the iOS Messages convention this header is rebuilt to puts a back chevron
+ * in the header itself, and a small icon-only control there reads nothing
+ * like the loud text link that was removed for duplicating the tab bar — it
+ * is not that regression coming back.
+ *
+ * The composer's "Also email everyone" toggle and its two-step Send/Confirm
+ * arming are gone too, on the owner's call: they intend to redesign how
+ * announcing works and found the toggle's treatment unpleasant. Only
+ * COMPOSING an announcement goes — an announcement already posted (a
+ * migration backfilled every historical broadcast into its thread) still
+ * renders in full below, and `postMessage`'s `announce` parameter,
+ * `post_message`, `broadcast_recipients`, and the outbox fan-out are all
+ * untouched underneath this screen, for the redesign to reattach a UI to.
+ * `countBroadcastRecipients` (lib/broadcasts.ts) loses its only caller here
+ * and goes back to being test-only.
  */
 // Monotonic, not `Date.now()`/`Math.random()`: incremented once per Realtime
 // subscription below so a topic can never be handed back to a still-live
@@ -99,19 +114,9 @@ export default function ThreadScreen() {
   // hint, is what keeps the box between the resting 58px height and
   // `DRAFT_MAX_HEIGHT` for a long draft.
   const [inputHeight, setInputHeight] = useState(COMPOSER_HEIGHT);
-  const [announce, setAnnounce] = useState(false);
   // The message being answered, held whole rather than as an id so the
   // composer can show its stub without hunting back through `messages`.
   const [replyTo, setReplyTo] = useState<ThreadMessage | null>(null);
-  // Asked of the database when the toggle goes on, not counted from local
-  // state: a count derived from a stale roster would make the confirmation
-  // a lie. countBroadcastRecipients and the fan-out inside post_message
-  // resolve their recipients through the same broadcast_recipients function,
-  // so they cannot disagree. Null means "we could not ask" — the note then
-  // omits the number rather than claiming zero.
-  const [recipients, setRecipients] = useState<number | null>(null);
-  // An announcement is irreversible and outward-facing. Send asks once.
-  const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   // `sending` above is read from the render closure, so a guard written as
@@ -144,10 +149,9 @@ export default function ThreadScreen() {
   // button would otherwise double the call.
   const addBusyRef = useRef(false);
 
-  // An announcement is irreversible and outward-facing; leaving a group is
-  // irreversible and inward-facing -- the last member out deletes the
-  // thread and its messages (leave_group_thread's own comment). Same
-  // two-step confirmation as Send's `confirming` above.
+  // Leaving a group is irreversible -- the last member out deletes the
+  // thread and its messages (leave_group_thread's own comment). Asks once,
+  // the same two-step shape this file's own `leave()` button below uses.
   const [leaveConfirming, setLeaveConfirming] = useState(false);
   const [leaveBusy, setLeaveBusy] = useState(false);
   const leaveBusyRef = useRef(false);
@@ -243,10 +247,14 @@ export default function ThreadScreen() {
     sendingRef.current = true;
     setSending(true);
     setError(null);
+    // `false` -- composing an announcement is gone from this screen (see
+    // the component's own docstring), so this never posts one any more.
+    // `postMessage`'s `announce` parameter itself is untouched, for the
+    // redesign to reattach a UI to.
     const { error: refusal } = await postMessage(
       threadId,
       draft,
-      announce,
+      false,
       replyTo?.id ?? null,
     );
     if (refusal) {
@@ -262,14 +270,11 @@ export default function ThreadScreen() {
       return;
     }
     setDraft('');
-    setAnnounce(false);
     setReplyTo(null);
-    setRecipients(null);
-    setConfirming(false);
     await load();
     sendingRef.current = false;
     setSending(false);
-  }, [threadId, draft, announce, replyTo, load]);
+  }, [threadId, draft, replyTo, load]);
 
   // Friends first, then people from your clubs -- the identical shape and
   // ordering app/messages/new.tsx's own People picker uses (see that
@@ -362,11 +367,6 @@ export default function ThreadScreen() {
   if (!session) return <Redirect href="/sign-in" />;
 
   const title = thread ? threadTitleFor(thread, viewerId) : '';
-  // Only a club or game thread has a roster to announce to. Whether the
-  // viewer is an organizer is the database's question — post_message calls
-  // assert_club_organizer — so the toggle is offered on the right KIND of
-  // thread and the refusal, if any, is surfaced as words.
-  const canAnnounce = Boolean(thread?.club_id);
   // Only a GROUP or DIRECT thread has members to list, add to, or leave —
   // a club or game thread's membership is derived (club_members / bookings),
   // never stored in thread_members, so there is nothing here to manage.
@@ -377,61 +377,90 @@ export default function ThreadScreen() {
   // rather than bespoke text per kind, which is not cheap: a game thread
   // would need its own event-aware line, a group/direct its own.
   const isClubThread = Boolean(thread?.club_id) && !thread?.event_id;
-  // Whether the NEXT tap on Send actually mails people. An icon button has
-  // no text to swap to "Confirm" the way the old pill did, so this drives
-  // both the button's own fill (below) and the note above it -- a colour
-  // change alone would only be visible, not explained.
-  const armed = announce && confirming;
+  // The header avatar's kind -- the same club_id/event_id/other-member-count
+  // branches threadTitleFor above already reads, exported as threadKindFor
+  // so this doesn't carry a second copy of that branching.
+  const kind = thread ? threadKindFor(thread, viewerId) : null;
+  const memberCount = thread?.thread_members.length ?? 0;
+  const membersLabel = `${title}, ${memberCount} ${
+    memberCount === 1 ? 'member' : 'members'
+  }, view members`;
 
   return (
     <Screen contentStyle={styles.container} tabBar={<TabBar active="messages" />}>
+      {/*
+        The iOS Messages convention the owner asked for: a compact back
+        chevron top-left, a circular avatar for the conversation centred
+        beneath it, and the conversation's name in a rounded pill under
+        that. The chevron always renders (it doesn't need `thread` to
+        navigate away); the avatar and pill need a loaded thread to know
+        what to show, so they wait for one.
+      */}
+      <View style={styles.header}>
+        <Pressable
+          onPress={() => router.push('/messages')}
+          accessibilityRole="button"
+          accessibilityLabel="Back to Messages"
+          style={styles.backButton}
+        >
+          <ChevronLeftIcon color={colors.text} size={22} />
+        </Pressable>
+
+        {thread && kind ? (
+          <View style={styles.headerCenter}>
+            <ThreadAvatar
+              kind={kind}
+              name={title}
+              size={72}
+              testID={`thread-header-avatar-${kind}`}
+            />
+
+            {/*
+              The pill replaces the old pressable heading as the way into
+              the members view. Its accessibilityLabel composes the title,
+              the member count, and what pressing it does -- react-native-web's
+              aria-label REPLACES the accessible name computed from a
+              Pressable's children rather than merging with it, and this is
+              the only place the thread's title reaches assistive tech at
+              all now that the plain heading is gone, so the label has to
+              carry it explicitly instead of leaning on the visible text.
+
+              A club or game thread has no members view to open -- offering
+              the identical pill as a Pressable with a trailing chevron
+              anyway would be a control that LOOKS tappable and does
+              nothing, worse than one that plainly isn't interactive at
+              all. It renders as a plain, non-interactive label instead,
+              with no chevron and no button role.
+            */}
+            {canManageMembers ? (
+              <Pressable
+                onPress={() => setMembersOpen((v) => !v)}
+                accessibilityRole="button"
+                accessibilityLabel={membersLabel}
+                style={styles.namePill}
+              >
+                <Text numberOfLines={1} style={styles.namePillText}>
+                  {title}
+                </Text>
+                <ChevronRightIcon color={colors.text} size={14} />
+              </Pressable>
+            ) : (
+              <View style={styles.namePill}>
+                <Text numberOfLines={1} style={styles.namePillText}>
+                  {title}
+                </Text>
+              </View>
+            )}
+          </View>
+        ) : null}
+      </View>
+
       {error ? <ErrorBanner message={error} /> : null}
 
       {!ready ? (
         <ActivityIndicator color={colors.accentColor} />
       ) : (
         <>
-          <Text style={styles.heading}>{title}</Text>
-
-          {/*
-            The heading itself is plain text, not a Pressable: wrapping it
-            with accessibilityLabel="Members" (the previous shape of this
-            control) reintroduced the exact bug the last round fixed at
-            TabBar/ClubChips/ThreadRow -- react-native-web's aria-label
-            REPLACES the accessible name computed from a Pressable's
-            children rather than merging with it, and the heading is the
-            only place the thread's title appears. So the title now always
-            reaches assistive tech on its own, and this separate control
-            below composes the title back INTO its own label (the same
-            unreadSuffix-style pattern those three sites use) so a
-            screen-reader user still hears which conversation the control
-            belongs to, plus what pressing it does.
-
-            It also needed a visible affordance a sighted user could see: the
-            bare heading gave no chevron, underline, or "Members" text, so
-            leaving a group -- the whole point of the CRITICAL fix that added
-            this panel -- was reachable only by an invisible tap on the
-            title. The member count rendered as its own tappable line (the
-            same idea as this file's `replyText`/`replyingCancel` coloured
-            link text, not an invented control) both signals interactivity
-            and tells a sighted user something real before they tap it.
-          */}
-          {canManageMembers && thread ? (
-            <Pressable
-              onPress={() => setMembersOpen((v) => !v)}
-              accessibilityRole="button"
-              accessibilityLabel={`${title}, ${thread.thread_members.length} ${
-                thread.thread_members.length === 1 ? 'member' : 'members'
-              }, view members`}
-              style={styles.membersToggle}
-            >
-              <Text style={styles.membersToggleText}>
-                {thread.thread_members.length}{' '}
-                {thread.thread_members.length === 1 ? 'member' : 'members'}
-              </Text>
-            </Pressable>
-          ) : null}
-
           {canManageMembers && membersOpen && thread ? (
             <View style={styles.membersPanel}>
               {thread.thread_members.map((m) => (
@@ -683,48 +712,6 @@ export default function ThreadScreen() {
             })}
           </ScrollView>
 
-          {canAnnounce ? (
-            <View style={styles.announceRow}>
-              <Toggle
-                value={announce}
-                onValueChange={(next) => {
-                  setAnnounce(next);
-                  setConfirming(false);
-                  if (!next || !thread?.club_id) {
-                    setRecipients(null);
-                    return;
-                  }
-                  void countBroadcastRecipients(
-                    thread.club_id,
-                    thread.event_id,
-                  ).then(setRecipients);
-                }}
-                accessibilityLabel="Also email everyone"
-              />
-              <Text style={styles.announceLabel}>Also email everyone</Text>
-            </View>
-          ) : null}
-
-          {announce && draft.trim() ? (
-            <Text style={styles.announceNote}>
-              {/*
-                Once armed, the note states the CONDITION the second tap
-                fires, not just that an email will happen -- the same
-                information the plain-text "Confirm" pill used to carry by
-                simply appearing, now that an icon button has no text to
-                change. The subject and recipient count are unchanged from
-                the unarmed copy; only the "tap again" framing is new.
-              */}
-              {recipients === null
-                ? armed
-                  ? `Tap Send again to email the club, subject: ${deriveSubject(draft.trim())}`
-                  : `Emails the club with the subject: ${deriveSubject(draft.trim())}`
-                : armed
-                  ? `Tap Send again to email ${recipients} ${recipients === 1 ? 'member' : 'members'}, subject: ${deriveSubject(draft.trim())}`
-                  : `Emails ${recipients} ${recipients === 1 ? 'member' : 'members'}, subject: ${deriveSubject(draft.trim())}`}
-            </Text>
-          ) : null}
-
           {replyTo ? (
             <View style={styles.replyingRow}>
               <Text numberOfLines={1} style={styles.replyingText}>
@@ -764,20 +751,15 @@ export default function ThreadScreen() {
               numberOfLines={1}
             />
             <Pressable
-              onPress={() => {
-                // An ordinary message sends on one tap. An announcement mails
-                // people and cannot be unsent, so it asks first — the same
-                // second tap the deleted broadcast compose screen required.
-                if (announce && !confirming) {
-                  setConfirming(true);
-                  return;
-                }
-                void send();
-              }}
+              // A single tap posts an ordinary message. Composing an
+              // announcement -- and the two-step Send/Confirm arming that
+              // existed only for it -- is gone from this screen (see the
+              // component's own docstring).
+              onPress={() => void send()}
               accessibilityRole="button"
-              accessibilityLabel={armed ? 'Confirm send' : 'Send'}
+              accessibilityLabel="Send"
               disabled={sending}
-              style={[styles.send, armed ? styles.sendArmed : null]}
+              style={styles.send}
             >
               <SendIcon />
             </Pressable>
@@ -791,22 +773,53 @@ export default function ThreadScreen() {
 const styles = StyleSheet.create({
   container: { padding: space[6], gap: space[3], flex: 1 },
   centered: { alignItems: 'center' },
-  heading: {
-    fontFamily: type.heading,
-    fontSize: type.size.h3,
-    color: colors.text,
+  // The iOS Messages header: back chevron pinned top-left via absolute
+  // positioning against this `relative` container, avatar + name pill
+  // centred beneath it. Absolute positioning (rather than a mirrored spacer
+  // View the same width as the chevron) keeps the centred column exactly
+  // centred on the screen's own width regardless of the chevron's size.
+  header: {
+    position: 'relative',
+    alignItems: 'center',
+    paddingBottom: space[2],
   },
-  // Same visible-link language as `replyText`/`replyingCancel` further down
-  // this file: coloured semibold text, no chevron or underline invented.
-  // accent[700] on colors.bg (this screen's ground -- see Screen.tsx's
-  // default) is the same pairing lib/theme.test.ts already pins at 5.72:1
-  // for the unread badge/bubble/Send button, so this reuses an existing
-  // pin rather than needing a new one.
-  membersToggle: { alignSelf: 'flex-start' },
-  membersToggleText: {
+  // 44x44: below this screen's usual 58px "big" targets (this is a compact
+  // header control, not a primary action), but still at the common minimum
+  // touch-target size rather than a bare icon-sized hit area.
+  backButton: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerCenter: { alignItems: 'center', gap: space[2] },
+  // colors.surface, the same pill/panel ground this file already uses for
+  // `replyingRow` and `membersPanel` below -- reused rather than a fresh
+  // token. Capped so `namePillText`'s `numberOfLines={1}` has a width to
+  // actually truncate against for a long thread name.
+  namePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[1],
+    maxWidth: 240,
+    backgroundColor: colors.surface,
+    borderRadius: radius.pill,
+    paddingHorizontal: space[3],
+    paddingVertical: space[1],
+  },
+  // colors.text on colors.surface reads 12.40:1 -- comfortably past AA's
+  // 4.5:1 for this 16px text, and the same pairing this file's own
+  // `memberName`/`candidateName` below already use on this exact ground, so
+  // this is not a new pairing.
+  namePillText: {
+    flexShrink: 1,
+    minWidth: 0,
     fontFamily: type.bodySemiBold,
     fontSize: type.size.helper,
-    color: colors.accent[700],
+    color: colors.text,
   },
   scroller: { flex: 1 },
   // The same dashed-border empty card app/messages/index.tsx and
@@ -1052,17 +1065,6 @@ const styles = StyleSheet.create({
     fontSize: type.size.helper,
     color: colors.accent[800],
   },
-  announceRow: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
-  announceLabel: {
-    fontFamily: type.bodySemiBold,
-    fontSize: type.size.helper,
-    color: colors.text,
-  },
-  announceNote: {
-    fontFamily: type.bodyRegular,
-    fontSize: type.size.helper,
-    color: colors.textMuted,
-  },
   composer: { flexDirection: 'row', alignItems: 'flex-end', gap: space[2] },
   // Height is NOT set here -- it's driven by `inputHeight` state at the call
   // site (see `handleDraftSize`'s own comment), because `minHeight` alone is
@@ -1102,13 +1104,4 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // The armed (two-step-confirm) state's visible signal. An icon button has
-  // no text to swap to "Confirm" the way the old text pill did, so the fill
-  // switches to the SAME accent2 family this screen already uses everywhere
-  // else to mean "this involves email" -- the announcement Tag, the
-  // announcement bubble, MailIcon's own default colour -- rather than
-  // inventing a fourth colour for the same idea. colors.bg on accent2[700]
-  // measures 5.43:1, clearing AA; pinned in lib/theme.test.ts alongside the
-  // resting-state pairing above.
-  sendArmed: { backgroundColor: colors.accent2[700] },
 });

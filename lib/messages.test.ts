@@ -37,6 +37,7 @@ import {
   rowSubtitle,
   rowTitle,
   sortThreads,
+  threadKindFor,
   threadTitleFor,
   unreadLabel,
   unreadSuffix,
@@ -306,6 +307,58 @@ describe('threadTitleFor', () => {
         'me',
       ),
     ).toBe('Group');
+  });
+});
+
+describe('threadKindFor', () => {
+  function thread(over: Partial<ThreadDetail> = {}): ThreadDetail {
+    return {
+      id: 't1',
+      club_id: null,
+      event_id: null,
+      title: null,
+      clubs: null,
+      events: null,
+      thread_members: [
+        { profile_id: 'me', profiles: { display_name: 'You' } },
+        { profile_id: 'other', profiles: { display_name: 'Sara Lindqvist' } },
+      ],
+      ...over,
+    };
+  }
+
+  // The header avatar (app/messages/[threadId].tsx, via
+  // components/ThreadAvatar.tsx) needs the same kind ThreadRow.tsx's list
+  // row would have shown for this thread -- mirroring the same
+  // club_id/event_id/other-member-count branches threadTitleFor already
+  // reads, rather than a second copy of that branching at the call site.
+  it('is game when the thread carries an event', () => {
+    expect(threadKindFor(thread({ club_id: 'c1', event_id: 'e1' }), 'me')).toBe(
+      'game',
+    );
+  });
+
+  it('is club when the thread carries a club but no event', () => {
+    expect(threadKindFor(thread({ club_id: 'c1' }), 'me')).toBe('club');
+  });
+
+  it('is direct when exactly one other member is in the thread', () => {
+    expect(threadKindFor(thread(), 'me')).toBe('direct');
+  });
+
+  it('is group when more than one other member is in the thread', () => {
+    expect(
+      threadKindFor(
+        thread({
+          thread_members: [
+            { profile_id: 'me', profiles: { display_name: 'You' } },
+            { profile_id: 'other', profiles: { display_name: 'Sara Lindqvist' } },
+            { profile_id: 'third', profiles: { display_name: 'Peter Ng' } },
+          ],
+        }),
+        'me',
+      ),
+    ).toBe('group');
   });
 });
 

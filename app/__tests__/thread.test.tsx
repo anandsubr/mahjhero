@@ -51,15 +51,10 @@ const fetchThread = vi.fn();
 const fetchThreadMessages = vi.fn();
 const postMessage = vi.fn();
 const markThreadRead = vi.fn();
-const countBroadcastRecipients = vi.fn();
 const addToGroupThread = vi.fn();
 const leaveGroupThread = vi.fn();
 const fetchFriends = vi.fn();
 const fetchAddablePeople = vi.fn();
-
-vi.mock('../../lib/broadcasts', () => ({
-  countBroadcastRecipients: (...a: unknown[]) => countBroadcastRecipients(...a),
-}));
 
 // The same candidate source app/messages/new.tsx already uses for its own
 // People picker, reused rather than a second way of gathering who is
@@ -211,6 +206,22 @@ const GROUP_THREAD = {
 // names" branch) is "Sara, Peter", and it has 3 thread_members.
 const GROUP_MEMBERS_LABEL = 'Sara, Peter, 3 members, view members';
 
+// A genuine direct thread -- exactly one other member -- so the header
+// avatar picks the 'direct' kind (initials) rather than 'group' (a people
+// glyph).
+const DIRECT_THREAD = {
+  id: 't1',
+  club_id: null,
+  event_id: null,
+  title: null,
+  clubs: null,
+  events: null,
+  thread_members: [
+    { profile_id: 'me', profiles: { display_name: 'You' } },
+    { profile_id: 'other', profiles: { display_name: 'Bob Reyes' } },
+  ],
+};
+
 const MESSAGES = [
   {
     id: 'm1',
@@ -249,7 +260,6 @@ describe('thread screen', () => {
     fetchThreadMessages.mockResolvedValue(MESSAGES);
     postMessage.mockResolvedValue({ id: 'm3', error: null });
     markThreadRead.mockResolvedValue({ error: null });
-    countBroadcastRecipients.mockResolvedValue(14);
     addToGroupThread.mockResolvedValue({ error: null });
     leaveGroupThread.mockResolvedValue({ error: null });
     fetchFriends.mockResolvedValue([
@@ -336,43 +346,34 @@ describe('thread screen', () => {
     expect(getComputedStyle(input).height).toBe('58px');
   });
 
-  // An icon button has no text to swap to "Confirm" the way the old pill
-  // did, so the armed (two-step-confirm) state needs its own visible,
-  // non-text signal. The button's fill switches from the ordinary Send
-  // colour to the same accent2 family the rest of this screen already uses
-  // for "this involves email" (the announcement tag, the mail icon, the
-  // announcement bubble) -- not merely announced to assistive tech via the
-  // 'Confirm send' accessible name, which was already there.
-  it('gives the armed Send button a visually distinct fill, not only a different accessible name', async () => {
+  // The owner's call: composing an announcement (the toggle, its recipient-
+  // count note, and the two-step Send/Confirm arming that existed only for
+  // it) is gone until the redesign lands. Send is now a single tap that
+  // always posts an ordinary message -- `announce` is always `false`, never
+  // driven by UI state any more. `postMessage`'s own `announce` parameter,
+  // `post_message`, `broadcast_recipients`, and the outbox fan-out are all
+  // untouched below this screen -- see lib/broadcasts.ts's
+  // countBroadcastRecipients, which loses its only caller here but stays in
+  // place for the redesign to reattach a UI to.
+  it('has no announce toggle, note, or confirm arming -- Send posts in a single tap', async () => {
     render(<ThreadScreen />);
-    fireEvent.change(await screen.findByLabelText('Message'), {
+    const input = await screen.findByLabelText('Message');
+    expect(screen.queryByLabelText('Also email everyone')).toBeNull();
+    expect(screen.queryByText(/Emails.*subject/)).toBeNull();
+
+    fireEvent.change(input, {
       target: { value: 'Hall is closed Friday' },
     });
-    fireEvent.click(screen.getByLabelText('Also email everyone'));
-    const send = await screen.findByLabelText('Send');
-    const restingFill = getComputedStyle(send).backgroundColor;
-
-    fireEvent.click(send);
-    const armed = await screen.findByLabelText('Confirm send');
-    expect(getComputedStyle(armed).backgroundColor).not.toBe(restingFill);
-  });
-
-  // The note above the composer already discloses what an announcement will
-  // do; once armed it should also say so -- the second tap's consequence,
-  // not just its existence -- so the confirmation isn't carried by colour
-  // alone.
-  it("states the armed condition in the composer's note once Send is tapped", async () => {
-    render(<ThreadScreen />);
-    fireEvent.change(await screen.findByLabelText('Message'), {
-      target: { value: 'Hall is closed Friday' },
-    });
-    fireEvent.click(screen.getByLabelText('Also email everyone'));
-    await screen.findByText('Emails 14 members, subject: Hall is closed Friday');
-
     fireEvent.click(screen.getByLabelText('Send'));
-    expect(
-      await screen.findByText('Tap Send again to email 14 members, subject: Hall is closed Friday'),
-    ).toBeTruthy();
+    await waitFor(() =>
+      expect(postMessage).toHaveBeenCalledWith(
+        't1',
+        'Hall is closed Friday',
+        false,
+        null,
+      ),
+    );
+    expect(screen.queryByLabelText('Confirm send')).toBeNull();
   });
 
   it('keeps the text and shows the refusal when the send fails', async () => {
@@ -613,91 +614,6 @@ describe('thread screen', () => {
     expect(
       await screen.findByText('No messages yet. Say hello to start the conversation.'),
     ).toBeTruthy();
-  });
-
-  // An announcement mails people and cannot be unsent. The count comes from
-  // the database, not from local state, so the confirmation cannot be a lie.
-  it('shows the recipient count and asks before sending an announcement', async () => {
-    render(<ThreadScreen />);
-    fireEvent.change(await screen.findByLabelText('Message'), {
-      target: { value: 'Hall is closed Friday' },
-    });
-    fireEvent.click(screen.getByLabelText('Also email everyone'));
-    await waitFor(() =>
-      expect(countBroadcastRecipients).toHaveBeenCalledWith('c1', null),
-    );
-    expect(
-      await screen.findByText('Emails 14 members, subject: Hall is closed Friday'),
-    ).toBeTruthy();
-
-    // First tap arms, second tap sends.
-    fireEvent.click(screen.getByLabelText('Send'));
-    expect(postMessage).not.toHaveBeenCalled();
-    fireEvent.click(await screen.findByLabelText('Confirm send'));
-    await waitFor(() =>
-      expect(postMessage).toHaveBeenCalledWith(
-        't1',
-        'Hall is closed Friday',
-        true,
-        null,
-      ),
-    );
-  });
-
-  // postMessage trims before sending, and post_message's own SQL trims the
-  // WHOLE body before taking its first line -- `body := trim(coalesce(
-  // p_body, ''))`, then `split_part(body, E'\n', 1)`. Passing the raw,
-  // untrimmed draft to deriveSubject here used to disagree: the first LINE
-  // of an untrimmed body starting with a blank line is empty, so the
-  // confirmation showed no subject at all while post_message was about to
-  // mail a real one.
-  it('shows the real subject, not an empty one, for a body that starts with a blank line', async () => {
-    render(<ThreadScreen />);
-    fireEvent.change(await screen.findByLabelText('Message'), {
-      target: { value: '\n\nHall is closed Friday' },
-    });
-    fireEvent.click(screen.getByLabelText('Also email everyone'));
-    expect(
-      await screen.findByText(
-        'Emails the club with the subject: Hall is closed Friday',
-      ),
-    ).toBeTruthy();
-  });
-
-  // "Emails 0 members" is a claim; a failed count has nothing to say.
-  it('omits the number when the count cannot be fetched', async () => {
-    countBroadcastRecipients.mockResolvedValueOnce(null);
-    render(<ThreadScreen />);
-    fireEvent.change(await screen.findByLabelText('Message'), {
-      target: { value: 'Hall is closed Friday' },
-    });
-    fireEvent.click(screen.getByLabelText('Also email everyone'));
-    expect(
-      await screen.findByText(
-        'Emails the club with the subject: Hall is closed Friday',
-      ),
-    ).toBeTruthy();
-  });
-
-  it('disarms the confirmation when the toggle goes back off', async () => {
-    render(<ThreadScreen />);
-    fireEvent.change(await screen.findByLabelText('Message'), {
-      target: { value: 'Hall is closed Friday' },
-    });
-    fireEvent.click(screen.getByLabelText('Also email everyone'));
-    fireEvent.click(await screen.findByLabelText('Send'));
-    expect(await screen.findByLabelText('Confirm send')).toBeTruthy();
-
-    fireEvent.click(screen.getByLabelText('Also email everyone'));
-    fireEvent.click(await screen.findByLabelText('Send'));
-    await waitFor(() =>
-      expect(postMessage).toHaveBeenCalledWith(
-        't1',
-        'Hall is closed Friday',
-        false,
-        null,
-      ),
-    );
   });
 
   it('quotes the picked message and sends the pointer with the reply', async () => {
@@ -1087,17 +1003,63 @@ describe('thread screen', () => {
     ).toBe('true');
   });
 
-  // Removed with the tab bar's arrival: the Messages tab reaches the
-  // identical route (`/messages`) this screen's own back link used to, so
-  // the chevron above the heading was a second way to do one thing -- the
-  // same reasoning the club detail screen's own "no longer draws its own
-  // back link" test already records. Pinned as a count rather than a
-  // `queryByRole` miss: this control shared its accessible name ("Messages")
-  // with TabBar's own tab, so a stray second one would otherwise pass a
-  // `queryByRole(..., { name: 'Messages' })` check silently.
-  it('no longer draws its own back link', async () => {
-    render(<ThreadScreen />);
-    await screen.findByText('Riverside');
-    expect(screen.getAllByRole('button', { name: 'Messages' })).toHaveLength(1);
+  // The iOS Messages convention the owner asked for: a compact back chevron
+  // top-left, a circular avatar for the conversation, and its name in a
+  // pill beneath it. The owner is knowingly reinstating a back control the
+  // tab bar's own "Messages" tab made this screen drop a round ago -- but a
+  // compact header chevron reads very differently from the text link that
+  // was removed, so it is not the same regression coming back.
+  describe('header', () => {
+    it('shows a back chevron, distinctly named from the Messages tab, that returns to /messages', async () => {
+      render(<ThreadScreen />);
+      await screen.findByText('Riverside');
+      // Still exactly one control literally named "Messages" -- the tab
+      // bar's own tab. The back chevron carries its own distinct accessible
+      // name, so the two can never collapse into the same control the way
+      // the old text back link once did.
+      expect(screen.getAllByRole('button', { name: 'Messages' })).toHaveLength(1);
+      fireEvent.click(screen.getByLabelText('Back to Messages'));
+      expect(push).toHaveBeenCalledWith('/messages');
+    });
+
+    // The same club-initials treatment components/ThreadRow.tsx's list row
+    // already renders, reused rather than a second copy that can drift --
+    // see components/ThreadAvatar.tsx.
+    it("renders the thread's avatar in the header", async () => {
+      render(<ThreadScreen />);
+      await screen.findByText('Riverside');
+      expect(screen.getByTestId('thread-header-avatar-club').textContent).toBe('R');
+    });
+
+    it('shows the other member’s initials in the header avatar for a direct thread', async () => {
+      fetchThread.mockResolvedValueOnce(DIRECT_THREAD);
+      fetchThreadMessages.mockResolvedValueOnce([]);
+      render(<ThreadScreen />);
+      await screen.findByText('Bob Reyes');
+      expect(screen.getByTestId('thread-header-avatar-direct').textContent).toBe(
+        'BR',
+      );
+    });
+
+    // The name pill replaces the old pressable heading as the way into the
+    // members view -- same accessible name, same panel, just a new control
+    // carrying it.
+    it('opens the members panel from the name pill for a group thread', async () => {
+      fetchThread.mockResolvedValueOnce(GROUP_THREAD);
+      fetchThreadMessages.mockResolvedValueOnce([]);
+      render(<ThreadScreen />);
+      fireEvent.click(await screen.findByLabelText(GROUP_MEMBERS_LABEL));
+      expect(await screen.findByText('Sara Lindqvist')).toBeTruthy();
+    });
+
+    // A club or game thread has no members view to open -- rendering the
+    // pill as a Pressable with a chevron anyway would be a control that
+    // LOOKS tappable and does nothing, which is worse than one that plainly
+    // isn't. It stays a plain, non-interactive label instead.
+    it('gives the name pill no tap affordance on a club thread', async () => {
+      render(<ThreadScreen />);
+      await screen.findByText('Riverside');
+      expect(screen.queryByRole('button', { name: /Riverside/ })).toBeNull();
+    });
   });
 });

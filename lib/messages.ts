@@ -432,6 +432,21 @@ export function threadTitleFor(thread: ThreadDetail, viewerId: string): string {
 }
 
 /**
+ * The `ThreadKind` for a loaded `ThreadDetail` -- the same club_id/event_id/
+ * other-member-count branches `threadTitleFor` just above already reads to
+ * pick a title, exported here so the thread screen's header (app/messages/
+ * [threadId].tsx, via components/ThreadAvatar.tsx) can pick the same kind
+ * `ThreadRow.tsx`'s list row would have shown for this thread, rather than a
+ * second copy of this branching at the call site.
+ */
+export function threadKindFor(thread: ThreadDetail, viewerId: string): ThreadKind {
+  if (thread.event_id) return 'game';
+  if (thread.club_id) return 'club';
+  const others = thread.thread_members.filter((m) => m.profile_id !== viewerId);
+  return others.length === 1 ? 'direct' : 'group';
+}
+
+/**
  * `row.title`'s fallback, for the one place it is rendered
  * (components/ThreadRow.tsx). See the field's own docstring in
  * `ThreadListRow` for the two ways it arrives blank -- NULL from

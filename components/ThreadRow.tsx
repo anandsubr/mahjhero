@@ -1,7 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import ThreadAvatar from './ThreadAvatar';
 import UnreadBadge from './UnreadBadge';
-import { CalendarIcon, PeopleIcon } from './icons';
-import { initialsFrom } from '../lib/dashboard';
 import {
   messagePreview,
   relativeTimestamp,
@@ -67,7 +66,7 @@ export default function ThreadRow({
       accessibilityLabel={`${title}${unreadSuffix(row.unread)}`}
       style={styles.row}
     >
-      <Avatar row={row} title={title} />
+      <ThreadAvatar kind={row.kind} name={row.kind === 'club' ? row.club_name ?? '' : title} />
 
       <View style={styles.body}>
         {/*
@@ -106,36 +105,6 @@ export default function ThreadRow({
   );
 }
 
-function Avatar({ row, title }: { row: ThreadListRow; title: string }) {
-  if (row.kind === 'club') {
-    return (
-      <View testID="thread-avatar-club" style={[styles.avatar, styles.avatarClub]}>
-        <Text style={styles.avatarInitials}>{initialsFrom(row.club_name ?? '')}</Text>
-      </View>
-    );
-  }
-  if (row.kind === 'game') {
-    return (
-      <View testID="thread-avatar-game" style={[styles.avatar, styles.avatarGame]}>
-        <CalendarIcon color={colors.bg} />
-      </View>
-    );
-  }
-  if (row.kind === 'group') {
-    return (
-      <View testID="thread-avatar-group" style={[styles.avatar, styles.avatarGroup]}>
-        <PeopleIcon color={colors.bg} />
-      </View>
-    );
-  }
-  // direct
-  return (
-    <View testID="thread-avatar-direct" style={[styles.avatar, styles.avatarDirect]}>
-      <Text style={styles.avatarInitials}>{initialsFrom(title)}</Text>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
@@ -145,27 +114,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: space[4],
     // The hairline divider below is positioned absolutely against this.
     position: 'relative',
-  },
-  avatar: {
-    width: AVATAR_SIZE,
-    height: AVATAR_SIZE,
-    borderRadius: AVATAR_SIZE / 2,
-    flexShrink: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  // Each kind's own fill, so the avatar column stays scannable even before
-  // the title is read -- club and game share the warm accent family, direct
-  // and group the cool one, distinguished within each pair by shade. Every
-  // pairing below is pinned in lib/theme.test.ts.
-  avatarClub: { backgroundColor: colors.accent[700] },
-  avatarGame: { backgroundColor: colors.accent[600] },
-  avatarDirect: { backgroundColor: colors.accent2[700] },
-  avatarGroup: { backgroundColor: colors.accent2[600] },
-  avatarInitials: {
-    fontFamily: type.bodyBold,
-    fontSize: type.size.body,
-    color: colors.bg,
   },
   body: { flex: 1, minWidth: 0 },
   // The title's own line: title flexes and truncates, the trailing group

@@ -11,6 +11,17 @@ export function ChevronLeftIcon({ size = 20, color = colors.text }: { size?: num
   );
 }
 
+/** The thread screen's name pill (app/messages/[threadId].tsx) -- signals
+ *  that pressing it opens something further, the mirror of ChevronLeftIcon
+ *  above. */
+export function ChevronRightIcon({ size = 16, color = colors.text }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.75} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="m9 18 6-6-6-6" />
+    </Svg>
+  );
+}
+
 /** Envelope glyph for the "check your email" screen. */
 export function MailIcon({ size = 40, color = colors.accent2[700] }: { size?: number; color?: string }) {
   return (
