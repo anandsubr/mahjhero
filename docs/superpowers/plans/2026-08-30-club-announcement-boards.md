@@ -741,12 +741,21 @@ Create `supabase/tests/database/fixtures/club_board_reads.test.sql`:
 begin;
 set local search_path to extensions, public;
 
-select plan(8);
+select plan(9);
 
 insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-000000000001', 'alice@example.com'),
   ('bbbbbbbb-0000-0000-0000-000000000002', 'bob@example.com'),
   ('eeeeeeee-0000-0000-0000-000000000005', 'erin@example.com');
+
+-- Display names are seeded EXPLICITLY, exactly as thread_reads_api.test.sql
+-- does (its lines 20-24). profiles is self-row-only, so a fixture cannot
+-- read another member's name back to compare against — the literal here is
+-- the only thing an assertion can hold the RPC to.
+update public.profiles set display_name = 'Alice Ng'
+ where id = 'aaaaaaaa-0000-0000-0000-000000000001';
+update public.profiles set display_name = 'Bob Ruiz'
+ where id = 'bbbbbbbb-0000-0000-0000-000000000002';
 
 insert into public.clubs (id, name, slug, visibility, timezone, created_by) values
   ('c1c1c1c1-0000-0000-0000-000000000001', 'Riverside', 'riverside',
@@ -810,9 +819,16 @@ select is(
 select is(
   (select author_name from public.fetch_club_posts(
      '11111111-0000-0000-0000-000000000001') limit 1),
-  (select display_name from public.profiles
-    where id = 'aaaaaaaa-0000-0000-0000-000000000001'),
-  'sender names survive profiles self-row-only RLS'
+  'Alice Ng',
+  'the board resolves a sender name RLS would not'
+);
+
+-- What makes the assertion above an RLS test rather than a name check: the
+-- same read WITHOUT the security definer function returns nothing for Bob.
+select is_empty(
+  $$ select display_name from public.profiles
+      where id = 'aaaaaaaa-0000-0000-0000-000000000001' $$,
+  'and a plain read of that profile, as Bob, returns nothing at all'
 );
 
 -- Everything is unread: Bob has read neither post. Each post counts its own
@@ -1114,7 +1130,7 @@ In `lib/bookings.test.ts`'s `ALLOWLIST`:
 npx supabase db reset --local && npm run test:db
 ```
 
-Expected: PASS — `club_board_reads.test.sql` 8/8, `grants.test.sql` 104/104.
+Expected: PASS — `club_board_reads.test.sql` 9/9, `grants.test.sql` 104/104.
 
 ```bash
 npm test -- lib/bookings.test.ts
