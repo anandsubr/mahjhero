@@ -1068,6 +1068,183 @@ export async function seedUnreadClubMessage(
 }
 
 /**
+ * Seeds a POPULATED messages list: a club thread, a game thread and a
+ * direct thread, each carrying one message -- the minimum spread needed to
+ * picture the flat-list restyle's pinned-clubs-first ordering
+ * (`orderThreadsForList`, lib/messages.ts) and three of ThreadRow's four
+ * avatar treatments in one screen (club, game, direct; group is the one
+ * kind still unpictured after this task -- see docs/testing.md's "Known
+ * visual gaps"). Nothing prior to Task 17 ever screenshotted this screen
+ * with a row in it: every other `messages-*` baseline is the EMPTY state,
+ * and the agent that did the restyle had to write a throwaway spec, look at
+ * it, and delete it.
+ *
+ * Distinct from `seedUnreadClubMessage` just above, which exists for a
+ * narrower job -- pin the unread badge on the DASHBOARD (TabBar's tab and
+ * ClubChips' chip), seeding exactly one club row for that. This seeds three
+ * kinds at once for the messages LIST itself, so it is its own function
+ * rather than a parallel setup path or a change to that one's signature.
+ * The game thread rides the event `seedClubWithEvent` already seeded
+ * (`eventId`) rather than minting a second one: the signed-in member is
+ * already that club's host, and `can_read_thread`'s game branch
+ * (20260829010000_thread_predicates.sql) admits any organizer regardless of
+ * a booking, so no extra fixture is needed to make it readable.
+ *
+ * Every author is a FRESH filler profile, never the signed-in member --
+ * same reasoning as `seedUnreadClubMessage`'s own comment: a message you
+ * sent yourself is never unread (`fetch_my_threads`' lateral join filters
+ * on `author_id <> auth.uid()`), and a viewer-authored preview line reads
+ * like a diary entry ("Wei Chen: ...") rather than a conversation.
+ *
+ * Every timestamp is fixed relative to the suite's frozen clock
+ * (`page.clock.setFixedTime`, set in `e2e/visual.spec.ts` before this ever
+ * runs) rather than `new Date()`, and on the same calendar day as it,
+ * strictly before it -- not merely because a real-wall-clock timestamp
+ * rotates the baseline (the reason every fixture above pins its own
+ * instants), but because `relativeTimestamp` (lib/messages.ts) renders
+ * relative to the PAGE's clock. A message dated after the frozen "now" the
+ * page reads would print as a date in that "now"'s own future, which is a
+ * baseline of a bug that does not otherwise exist.
+ *
+ * The three messages land in newest-first order among themselves --
+ * direct (15:15), then game (14:00) -- so `orderThreadsForList`'s split
+ * has something to actually order (club pinned first regardless of
+ * recency, then the rest newest-active-first), and the direct thread's
+ * `thread_members.joined_at` is set BEFORE its message's timestamp, so
+ * that row also comes back unread -- the one baseline in this suite that
+ * pictures ThreadRow's own inline `UnreadBadge` sitting next to its
+ * timestamp, not just the dashboard's copies of it.
+ */
+export async function seedPopulatedMessagesList(
+  clubId: string,
+  eventId: string,
+  viewerId: string,
+  suffix: string,
+): Promise<void> {
+  const admin = adminClient('seed populated messages list');
+
+  const need = <T>(what: string, result: { data: unknown; error: unknown }): T => {
+    if (result.error || result.data == null) {
+      throw new Error(
+        `seedPopulatedMessagesList: ${what} failed: ${JSON.stringify(result.error)}`,
+      );
+    }
+    return result.data as T;
+  };
+
+  const [clubAuthor, gameAuthor, directPartner] = await Promise.all([
+    seedFillerProfile(admin, 'Grace Liu', 'msg-club', suffix),
+    seedFillerProfile(admin, 'Felix Turner', 'msg-game', suffix),
+    seedFillerProfile(admin, 'Yusuf Ahmed', 'msg-direct', suffix),
+  ]);
+
+  // Club: message_threads_one_per_club's own partial unique index (club_id
+  // where event_id is null) is what makes this the only club thread this
+  // club can ever get, seeded or otherwise.
+  const clubThread = need<{ id: string }>(
+    'club thread insert',
+    await admin
+      .from('message_threads')
+      .insert({
+        club_id: clubId,
+        event_id: null,
+        created_by: clubAuthor,
+        last_message_at: '2026-08-22T15:30:00Z',
+      })
+      .select('id')
+      .single(),
+  );
+  const { error: clubMessageError } = await admin.from('messages').insert({
+    thread_id: clubThread.id,
+    author_id: clubAuthor,
+    body: 'Reminder: bring exact change for the raffle this week!',
+    created_at: '2026-08-22T15:30:00Z',
+  });
+  if (clubMessageError) {
+    throw new Error(
+      `seedPopulatedMessagesList: club message insert failed: ${JSON.stringify(clubMessageError)}`,
+    );
+  }
+
+  // Game: club_id must equal the event's own club -- message_threads'
+  // (event_id, club_id) composite foreign key makes any other pairing
+  // unstateable, the same guard bookings and broadcasts carry.
+  const gameThread = need<{ id: string }>(
+    'game thread insert',
+    await admin
+      .from('message_threads')
+      .insert({
+        club_id: clubId,
+        event_id: eventId,
+        created_by: gameAuthor,
+        last_message_at: '2026-08-22T14:00:00Z',
+      })
+      .select('id')
+      .single(),
+  );
+  const { error: gameMessageError } = await admin.from('messages').insert({
+    thread_id: gameThread.id,
+    author_id: gameAuthor,
+    body: 'Save me a seat at Table 1 if there is room!',
+    created_at: '2026-08-22T14:00:00Z',
+  });
+  if (gameMessageError) {
+    throw new Error(
+      `seedPopulatedMessagesList: game message insert failed: ${JSON.stringify(gameMessageError)}`,
+    );
+  }
+
+  // Direct: a group of two (20260829000000_message_threads.sql's own
+  // docstring -- "A direct message is not a kind. It is a group of two.") --
+  // no club_id, no event_id, membership lives in thread_members instead of
+  // being derived.
+  const directThread = need<{ id: string }>(
+    'direct thread insert',
+    await admin
+      .from('message_threads')
+      .insert({
+        club_id: null,
+        event_id: null,
+        title: null,
+        created_by: directPartner,
+        last_message_at: '2026-08-22T15:15:00Z',
+      })
+      .select('id')
+      .single(),
+  );
+  const { error: membersError } = await admin.from('thread_members').insert([
+    {
+      thread_id: directThread.id,
+      profile_id: viewerId,
+      added_by: directPartner,
+      joined_at: '2026-08-22T13:00:00Z',
+    },
+    {
+      thread_id: directThread.id,
+      profile_id: directPartner,
+      added_by: directPartner,
+      joined_at: '2026-08-22T13:00:00Z',
+    },
+  ]);
+  if (membersError) {
+    throw new Error(
+      `seedPopulatedMessagesList: thread members insert failed: ${JSON.stringify(membersError)}`,
+    );
+  }
+  const { error: directMessageError } = await admin.from('messages').insert({
+    thread_id: directThread.id,
+    author_id: directPartner,
+    body: 'Looking forward to Tuesday -- see you there!',
+    created_at: '2026-08-22T15:15:00Z',
+  });
+  if (directMessageError) {
+    throw new Error(
+      `seedPopulatedMessagesList: direct message insert failed: ${JSON.stringify(directMessageError)}`,
+    );
+  }
+}
+
+/**
  * The localStorage key supabase-js persists its session under, derived from
  * the project ref in the URL. Keep in step with the client's own convention:
  * see `defaultStorageKey` in `node_modules/@supabase/supabase-js/src/SupabaseClient.ts`

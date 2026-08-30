@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import {
   mintSession,
   seedClubWithEvent,
+  seedPopulatedMessagesList,
   seedUnreadClubMessage,
   storageKeyFor,
 } from './session';
@@ -366,6 +367,44 @@ test.describe('signed in', () => {
         // a same-page collision on top of the multi-club one above.
         await expect(page.getByLabel('Message', { exact: true })).toBeVisible();
         await captureScreen(page, vp, `thread-${vp.name}.png`);
+      });
+
+      // The POPULATED list, pictured for the first time. Every other
+      // `messages-*` baseline in this suite is the EMPTY state
+      // ("No conversations yet") -- the flat-list restyle (row shape,
+      // avatar column per kind, hairline dividers, truncation, timestamp
+      // and badge placement) shipped guarded by nothing but a throwaway
+      // spec the restyling agent wrote, looked at, and deleted.
+      // `seedPopulatedMessagesList` (e2e/session.ts) seeds a club thread, a
+      // game thread and a direct thread -- three of ThreadRow's four
+      // avatar treatments -- each authored by a filler profile so the
+      // preview lines read as a real conversation, never the viewer's own.
+      test(`messages populated at ${vp.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        await seedPopulatedMessagesList(
+          seeded.clubId,
+          seeded.eventId,
+          userId,
+          userId.slice(0, 8),
+        );
+        await page.goto('/messages');
+        // The club row, pinned first by lib/messages.ts's
+        // `orderThreadsForList`. Same anchor the `club thread at …` test
+        // above uses -- `getByRole`'s `name` option is a substring match,
+        // which is what keeps this robust regardless of whether the row's
+        // composed accessibilityLabel (`unreadSuffix`, lib/messages.ts)
+        // carries a ", N unread" tail.
+        await expect(
+          page.getByRole('button', { name: 'Everyone at Riverside Mah Jongg' }),
+        ).toBeVisible();
+        // The game thread's own title -- unique to this fixture on this
+        // screen (no other row's title or subtitle contains it) -- proves a
+        // NON-club row survived the club pin, not just the club one. This
+        // is exactly the assertion this task exists to add: a future
+        // regression that empties the list fails loudly here instead of
+        // quietly matching the empty-state baseline above.
+        await expect(page.getByText('Tuesday night mahjong')).toBeVisible();
+        await captureScreen(page, vp, `messages-populated-${vp.name}.png`);
       });
 
       // The unread badge, pictured for the first time. Task 16 shipped it on
