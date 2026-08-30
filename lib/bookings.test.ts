@@ -568,6 +568,26 @@ describe('BOOKING_REFUSALS (self-audit against the migrations)', () => {
     // lib/messages.ts owns it.
     'you can only reply to a message in this conversation':
       'raised by post_message — lib/messages.ts (Task 5, not yet created) is the module responsible, and by design relays error.message rather than mapping through a refusal table',
+    // Raised by post_message when p_root names a message that is not a root
+    // in the target thread — a reply-to-a-reply, or a root from another
+    // club. The composite foreign key already makes the cross-thread case
+    // unstateable; this is the readable-words wrapper. The board only ever
+    // offers Reply on a root, so a caller hitting this is malicious or
+    // buggy. lib/messages.ts owns it and relays it verbatim.
+    'you can only reply to a post in this conversation':
+      'raised by post_message — lib/messages.ts is the module responsible, and by design relays error.message rather than mapping through a refusal table',
+    // Raised by post_message when p_root is passed on a game or group
+    // thread, neither of which is a board. The composer only passes a root
+    // from the club post screen, so a caller hitting this is malicious or
+    // buggy. lib/messages.ts owns it.
+    'only a club has posts to reply to':
+      'raised by post_message — lib/messages.ts is the module responsible, and by design relays error.message rather than mapping through a refusal table',
+    // Raised by post_message when p_announce is true on a reply. The
+    // Announcement toggle only renders on the new-post screen, never in a
+    // post's reply composer, so a caller hitting this is malicious or
+    // buggy. lib/messages.ts owns it.
+    'only a new post can be an announcement':
+      'raised by post_message — lib/messages.ts is the module responsible, and by design relays error.message rather than mapping through a refusal table',
     // Raised by post_message when p_announce is true on a group thread
     // (club_id is null). The announce control only ever renders on a club
     // thread, so a caller hitting this is malicious or buggy. lib/messages.ts

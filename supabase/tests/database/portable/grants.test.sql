@@ -725,7 +725,7 @@ select is(
        'public.create_group_thread(text, uuid[])',
        'public.add_to_group_thread(uuid, uuid[])',
        'public.leave_group_thread(uuid)',
-       'public.post_message(uuid, text, boolean, uuid)',
+       'public.post_message(uuid, text, boolean, uuid, uuid)',
        'public.mark_thread_read(uuid)',
        'public.fetch_my_threads()',
        'public.my_unread_counts()',
@@ -805,7 +805,7 @@ select is(
          'public.create_group_thread(text, uuid[])',
          'public.add_to_group_thread(uuid, uuid[])',
          'public.leave_group_thread(uuid)',
-         'public.post_message(uuid, text, boolean, uuid)',
+         'public.post_message(uuid, text, boolean, uuid, uuid)',
          'public.mark_thread_read(uuid)',
          'public.fetch_my_threads()',
          'public.my_unread_counts()',
@@ -967,7 +967,7 @@ select ok(
 -- compose and inbox screens call directly.
 select ok(
   has_function_privilege(
-    'authenticated', 'public.post_message(uuid, text, boolean, uuid)', 'EXECUTE'),
+    'authenticated', 'public.post_message(uuid, text, boolean, uuid, uuid)', 'EXECUTE'),
   'authenticated can execute post_message'
 );
 select ok(
