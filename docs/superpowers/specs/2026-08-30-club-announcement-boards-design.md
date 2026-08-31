@@ -255,12 +255,26 @@ contents:
 
 1. Every announcement (`is_announcement`) becomes a root. It already has
    `root_id is null`; nothing to write but its counters.
-2. Every message whose `reply_to_id` resolves to an announcement gets
-   `root_id` set to that announcement, becoming its first replies. This is the
-   discussion the new model is built to hold, and keeping it means the board
-   opens looking alive.
-3. Everything else in a club thread — free-floating chat — **moves** to a new
-   `archived_messages` table and is deleted from `messages`.
+2. **Every non-announcement club message joins the most recent announcement
+   posted strictly before it.** Time decides this, not quoting.
+
+   The first version of this migration walked `reply_to_id` chains instead,
+   which sounded equivalent and was not. `reply_to_id` is *opt-in* — it is
+   set only when somebody long-presses a message to quote it (`app/messages/
+   [threadId].tsx`, `replyTo` defaults null). A member who reads an
+   announcement and types "sounds good, I'll be there" has no `reply_to_id`
+   at all, so a chain-walk would have archived most of the discussion under
+   every announcement while claiming to keep it. Review caught it before the
+   hosted push. The accepted cost of the wider rule is the mirror image:
+   chatter that merely *followed* an announcement is now filed under it.
+3. Chat that precedes the club's first announcement belongs to no post and
+   **moves** to a new `archived_messages` table, deleted from `messages`.
+4. A quote whose target ends up in a different post has its **pointer**
+   nulled — never the message. Under a time-based rule a quote can straddle
+   two posts, which is exactly what `20260830011000_quote_stays_in_post.sql`
+   forbids for new writes; this repair makes the migrated rows obey the same
+   invariant. Rows on their way to the archive are skipped, so
+   `archived_messages` keeps their citations intact and stays a faithful copy.
 
 Step 3 is a move, not a `delete`. The rows leave the app exactly as intended,
 and a mistake stays recoverable by a follow-up migration. `archived_messages`
