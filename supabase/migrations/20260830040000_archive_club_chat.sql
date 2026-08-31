@@ -19,8 +19,10 @@
  * a follow-up migration. archived_messages carries no policy and no grant:
  * it is a bucket, not a table the app can see.
  *
- * Game and group threads are not touched. Every statement below names
- * `club_id is not null and event_id is null`.
+ * Game and group threads are not touched. Every statement below that reads
+ * or writes `messages` or `message_threads` names `club_id is not null and
+ * event_id is null` — the three DDL statements just below this comment set
+ * up `archived_messages` itself and touch neither table.
  */
 create table public.archived_messages (
   like public.messages including defaults,
@@ -38,12 +40,13 @@ revoke all on public.archived_messages from authenticated, anon;
  *    not hypothetical: created_at defaults to now(), which is the
  *    TRANSACTION's clock, so anything that wrote several messages in one
  *    transaction stamped them identically. Breaking the tie on id in the
- *    same direction as the timestamp is what the board itself already does
- *    (fetch_club_posts, 20260830020000: `order by … desc, m.id desc`), and
- *    using one total order for both halves is what makes the outcome
- *    defensible rather than merely deterministic — a message can never be
- *    filed under an announcement that the board renders as the later of the
- *    two, because the same comparison decides both.
+ *    same direction as the timestamp matters because fetch_post_messages
+ *    (20260830020000: `order by m.created_at, m.id`) is what renders a root
+ *    together with its replies, and it orders on literally this pair — using
+ *    one total order for both halves is what makes the outcome defensible
+ *    rather than merely deterministic — a message can never be filed under
+ *    an announcement that fetch_post_messages would render after it, because
+ *    the same comparison decides both.
  *
  *    A message with nothing before it selects null, keeps it, and is
  *    archived by step 3.
@@ -146,10 +149,14 @@ delete from public.messages m
 /*
  * 4. Rebuild the denormalised counters from what actually survived.
  *
- *    post_message wrote them only for replies it handled itself, and step 3
- *    just took rows out from under them, so neither branch can be skipped:
- *    the first fixes roots that have replies, the second zeroes roots that
- *    ended up with none. Both are scoped to club threads — root_id can only
+ *    Step 1 created replies post_message never counted — it set root_id on
+ *    existing rows directly, with no counter update of its own — which is
+ *    why the has-replies branch below is needed at all: the counters
+ *    predate this migration's reshaping. The zero-replies branch is a belt
+ *    for a root whose stored count outlived its replies (step 3 cannot be
+ *    the cause: it only ever removes rows with root_id is null, which by
+ *    construction were never counted as anyone's replies). Both are scoped
+ *    to club threads — root_id can only
  *    be set inside one, but that is post_message's rule, not a constraint,
  *    and "game and group threads are not touched" above is a promise this
  *    migration should keep from its own text rather than from another

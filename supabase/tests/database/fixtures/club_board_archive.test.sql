@@ -45,11 +45,15 @@ select is(
 
 -- Also vacuous on an empty local table, and kept for the same tripwire
 -- reason: a future migration that writes reply_count without writing the
--- replies would trip it the moment any fixture seeds a root.
+-- replies would trip it the moment any fixture seeds a root. Scoped to club
+-- threads, like its neighbour below: this migration only rebuilds counters
+-- there, and makes no promise about game or group thread counters.
 select is(
   (select count(*)::int
      from public.messages a
-    where a.root_id is null
+     join public.message_threads t on t.id = a.thread_id
+    where t.club_id is not null and t.event_id is null
+      and a.root_id is null
       and a.reply_count <> (select count(*)::int from public.messages r
                              where r.root_id = a.id)),
   0,
