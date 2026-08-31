@@ -468,6 +468,51 @@ export function quoteStub(
   return who ? `${who}: ${short}` : short;
 }
 
+/** One row of `fetch_club_posts` — a root post as the board renders it. */
+export type ClubPost = {
+  id: string;
+  author_id: string;
+  author_name: string | null;
+  body: string;
+  subject: string | null;
+  is_announcement: boolean;
+  created_at: string;
+  reply_count: number;
+  last_reply_at: string | null;
+  /** `greatest(created_at, last_reply_at)` — what the board sorts on. */
+  last_activity_at: string;
+  unread: number;
+};
+
+/** How long a post's title may run before the row wraps to three lines. */
+export const POST_TITLE_MAX = 80;
+
+/**
+ * A post's display line.
+ *
+ * There is no title column, deliberately: an announcement already carries a
+ * `subject` (derived by the same rule `post_message` uses), and a member
+ * post shows its own first line. A separate title field for member posts is
+ * one people leave blank, and a board of empty titles reads worse than a
+ * board of first lines.
+ */
+export function postTitle(post: ClubPost): string {
+  const raw = (post.subject ?? post.body.split('\n')[0] ?? '').trim();
+  if (raw.length === 0) return 'Untitled post';
+  if (raw.length <= POST_TITLE_MAX) return raw;
+  return `${raw.slice(0, POST_TITLE_MAX - 1)}…`;
+}
+
+/**
+ * The reply count as words. Composed into the row's accessibilityLabel
+ * rather than sitting beside it, because accessibilityLabel on a Pressable
+ * REPLACES the name computed from its children in react-native-web.
+ */
+export function replyCountLabel(n: number): string {
+  if (n <= 0) return 'No replies';
+  return n === 1 ? '1 reply' : `${n} replies`;
+}
+
 /** The Recent sort. Empty club threads have no `last_message_at` and sink. */
 export function sortThreads(rows: ThreadListRow[]): ThreadListRow[] {
   return [...rows].sort((a, b) => {
@@ -705,6 +750,85 @@ export async function fetchThreadMessages(
   }
 }
 
+/** One row of `fetch_club_posts`, as the RPC returns it. */
+type ClubPostRow = {
+  id: string;
+  author_id: string;
+  author_name: string | null;
+  body: string;
+  subject: string | null;
+  is_announcement: boolean;
+  created_at: string;
+  reply_count: number;
+  last_reply_at: string | null;
+  last_activity_at: string;
+  unread: number;
+};
+
+export async function fetchClubPosts(
+  threadId: string,
+  before: string | null = null,
+): Promise<ClubPost[] | null> {
+  try {
+    // security definer for the same reason fetch_thread_messages is:
+    // profiles' self-only RLS would otherwise null out every author name
+    // but the caller's own.
+    const { data, error } = await supabase.rpc('fetch_club_posts', {
+      target_thread: threadId,
+      p_before: before,
+    });
+    if (error) {
+      console.error('fetchClubPosts failed', error);
+      return null;
+    }
+    return ((data ?? []) as ClubPostRow[]).map((r) => ({ ...r }));
+  } catch (cause) {
+    console.error('fetchClubPosts failed', cause);
+    return null;
+  }
+}
+
+/**
+ * One post's root and replies. Returns the SAME shape as
+ * fetchThreadMessages — the RPCs return the same ten columns on purpose, so
+ * MessageBubble never learns a second row shape.
+ */
+export async function fetchPostMessages(
+  rootId: string,
+): Promise<ThreadMessage[] | null> {
+  try {
+    const { data, error } = await supabase.rpc('fetch_post_messages', {
+      p_root: rootId,
+    });
+    if (error) {
+      console.error('fetchPostMessages failed', error);
+      return null;
+    }
+    const rows = (data ?? []) as ThreadMessageRow[];
+
+    return rows.map((r) => ({
+      id: r.id,
+      author_id: r.author_id,
+      body: r.body,
+      subject: r.subject,
+      is_announcement: r.is_announcement,
+      created_at: r.created_at,
+      profiles: r.author_name ? { display_name: r.author_name } : null,
+      reply_to_id: r.reply_to_id,
+      reply_to: r.reply_to_id
+        ? {
+            id: r.reply_to_id,
+            body: r.reply_to_body ?? '',
+            profiles: r.reply_to_author ? { display_name: r.reply_to_author } : null,
+          }
+        : null,
+    }));
+  } catch (cause) {
+    console.error('fetchPostMessages failed', cause);
+    return null;
+  }
+}
+
 // ---------------------------------------------------------------------
 // Writes. Refusals from the RPCs are relayed verbatim rather than mapped
 // through a refusal table — they are already written to be read by a
@@ -775,6 +899,9 @@ export async function postMessage(
   body: string,
   announce = false,
   replyToId: string | null = null,
+  // Null in a game or direct thread, and null for a NEW post on a club
+  // board. Set only when replying inside a post.
+  rootId: string | null = null,
 ): Promise<{ id: string | null; error: string | null }> {
   const trimmed = (body ?? '').trim();
   // Checked here as well as in post_message so a member who taps Send on an
@@ -790,9 +917,14 @@ export async function postMessage(
     p_body: trimmed,
     p_announce: announce,
     p_reply_to: replyToId,
+    p_root: rootId,
   });
 }
 
 export function markThreadRead(threadId: string) {
   return voidRpc('mark_thread_read', { target_thread: threadId });
+}
+
+export function markPostRead(rootId: string) {
+  return voidRpc('mark_post_read', { p_root: rootId });
 }

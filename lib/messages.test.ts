@@ -24,6 +24,7 @@ import {
   announcementBody,
   createGroupThread,
   deriveSubject,
+  fetchClubPosts,
   fetchThread,
   fetchThreadMessages,
   fetchMyThreads,
@@ -33,8 +34,10 @@ import {
   messagePreview,
   orderThreadsForList,
   postMessage,
+  postTitle,
   quoteStub,
   relativeTimestamp,
+  replyCountLabel,
   rowSubtitle,
   rowTitle,
   sortThreads,
@@ -43,6 +46,7 @@ import {
   threadTitleFor,
   unreadLabel,
   unreadSuffix,
+  type ClubPost,
   type ThreadDetail,
   type ThreadListRow,
 } from './messages';
@@ -915,6 +919,7 @@ describe('postMessage', () => {
       p_body: 'hello',
       p_announce: false,
       p_reply_to: null,
+      p_root: null,
     });
   });
 
@@ -926,6 +931,7 @@ describe('postMessage', () => {
       p_body: 'Yes',
       p_announce: false,
       p_reply_to: 'm1',
+      p_root: null,
     });
   });
 
@@ -981,5 +987,97 @@ describe('createGroupThread', () => {
       error: 'Pick somebody to message.',
     });
     expect(rpcMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('postTitle', () => {
+  const base: ClubPost = {
+    id: 'p1',
+    author_id: 'a1',
+    author_name: 'Alice',
+    body: 'body',
+    subject: null,
+    is_announcement: false,
+    created_at: '2026-08-30T10:00:00.000Z',
+    reply_count: 0,
+    last_reply_at: null,
+    last_activity_at: '2026-08-30T10:00:00.000Z',
+    unread: 0,
+  };
+
+  it('uses the subject when the post has one', () => {
+    expect(postTitle({ ...base, subject: 'Doors at seven' })).toBe('Doors at seven');
+  });
+
+  it('falls back to the first line of the body', () => {
+    expect(postTitle({ ...base, body: 'Anyone free?\nI have a table.' }))
+      .toBe('Anyone free?');
+  });
+
+  it('truncates a long first line rather than wrapping the whole row', () => {
+    const long = 'x'.repeat(200);
+    const title = postTitle({ ...base, body: long });
+    expect(title).toHaveLength(80);
+    expect(title.endsWith('…')).toBe(true);
+  });
+
+  it('never returns an empty string', () => {
+    expect(postTitle({ ...base, body: '   ' })).toBe('Untitled post');
+  });
+});
+
+describe('replyCountLabel', () => {
+  it('says nothing about a post with no replies', () => {
+    expect(replyCountLabel(0)).toBe('No replies');
+  });
+
+  it('is singular at one', () => {
+    expect(replyCountLabel(1)).toBe('1 reply');
+  });
+
+  it('is plural above one', () => {
+    expect(replyCountLabel(4)).toBe('4 replies');
+  });
+});
+
+describe('fetchClubPosts', () => {
+  beforeEach(() => rpcMock.mockReset());
+
+  it('resolves null when the RPC fails, never throws', async () => {
+    rpcMock.mockResolvedValueOnce({ data: null, error: { message: 'boom' } });
+    await expect(fetchClubPosts('t1')).resolves.toBeNull();
+  });
+
+  it('resolves an empty array when there are no posts', async () => {
+    rpcMock.mockResolvedValueOnce({ data: [], error: null });
+    await expect(fetchClubPosts('t1')).resolves.toEqual([]);
+  });
+});
+
+describe('postMessage with a root', () => {
+  beforeEach(() => rpcMock.mockReset());
+
+  it('passes p_root through to the RPC', async () => {
+    rpcMock.mockResolvedValueOnce({ data: 'm1', error: null });
+    await postMessage('t1', 'I am', false, null, 'root1');
+    expect(rpcMock).toHaveBeenCalledWith('post_message', {
+      target_thread: 't1',
+      p_body: 'I am',
+      p_announce: false,
+      p_reply_to: null,
+      p_root: 'root1',
+    });
+  });
+
+  it('still sends p_root: null for a flat thread', async () => {
+    rpcMock.mockResolvedValueOnce({ data: 'm1', error: null });
+    await postMessage('t1', 'hello');
+    expect(rpcMock).toHaveBeenCalledWith('post_message', {
+      target_thread: 't1',
+      p_body: 'hello',
+      p_announce: false,
+      p_reply_to: null,
+      p_root: null,
+    });
   });
 });
