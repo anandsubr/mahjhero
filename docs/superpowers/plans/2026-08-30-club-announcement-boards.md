@@ -1357,6 +1357,20 @@ git commit -m "feat(db): count a club's unread per post, not per thread"
 ### Task 5: Archive the existing club chat
 
 **Files:**
+> ⚠️ **This task shipped with a DIFFERENT rule than the SQL below describes.**
+> The version here walks `reply_to_id` chains from each announcement, which
+> makes survival depend on the opt-in quote control — a member who replies
+> without long-pressing to quote has no `reply_to_id`, so most real discussion
+> would have been archived while the plan claimed to keep it. Review caught it
+> before any hosted push and the owner widened the rule to:
+>
+> **every non-announcement club message joins the most recent announcement
+> posted strictly before it; time decides, not quoting.**
+>
+> The SQL below is kept for the record. **The shipped
+> `supabase/migrations/20260830040000_archive_club_chat.sql` is the source of
+> truth** — read it, not this. See the spec's §5 for the reasoning.
+
 - Create: `supabase/migrations/20260830040000_archive_club_chat.sql`
 - Create: `supabase/tests/database/fixtures/club_board_archive.test.sql`
 
@@ -3545,7 +3559,24 @@ Expected: every suite green. Record the actual counts — they replace `pgTAP 10
 npx supabase db push
 ```
 
-⚠️ `20260830040000_archive_club_chat.sql` **moves real club chat into `archived_messages`** on the hosted database. This is the destructive step, taken on the owner's explicit decision. Confirm with the owner before running it, and confirm afterwards that `select count(*) from archived_messages` matches what left `messages`.
+⚠️ `20260830040000_archive_club_chat.sql` **moves real club chat into `archived_messages`** on the hosted database. This is the destructive step, taken on the owner's explicit decision. Confirm with the owner before running it.
+
+**Before the push, have the owner run this against the hosted project themselves.** It is exactly what will disappear from the app, and it should be seen beforehand rather than reconciled afterwards:
+
+```sql
+select count(*) from messages m
+  join message_threads t on t.id = m.thread_id
+ where t.club_id is not null and t.event_id is null
+   and not m.is_announcement
+   and not exists (
+     select 1 from messages a
+      where a.thread_id = m.thread_id and a.is_announcement
+        and (a.created_at, a.id) < (m.created_at, m.id));
+```
+
+Also worth a glance beforehand: replies-per-post. A club whose only announcement is ancient will end up with one post holding everything — correct under the rule, and possibly not what the owner pictures.
+
+Afterwards, confirm `select count(*) from archived_messages` matches that number.
 
 - [ ] **Step 7: Commit and open the PR**
 
