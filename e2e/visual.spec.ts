@@ -459,6 +459,57 @@ test.describe('signed in', () => {
         await captureScreen(page, vp, `thread-populated-${vp.name}.png`);
       });
 
+      // The board, pictured for the first time. `seedPopulatedThread` seeds
+      // four root-level messages (none set `root_id`, so each becomes its
+      // own post under the club-boards schema) with four different authors,
+      // one of them an announcement -- the same fixture the `thread
+      // populated` test above uses to picture the (still-reachable) flat
+      // screen, reused here rather than a second near-identical seed, since
+      // both screens read the same underlying rows.
+      test(`club board populated at ${vp.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        const { threadId } = await seedPopulatedThread(
+          seeded.clubId,
+          userId,
+          userId.slice(0, 8),
+        );
+        await page.goto(`/messages/club/${threadId}`);
+        // The announcement's own title (postTitle, lib/messages.ts, takes an
+        // announcement's `subject` verbatim) and a plain post's title (the
+        // body's own first line) -- proof the board rendered more than one
+        // row, and that the announcement styling actually reached a real
+        // post rather than being asserted against nothing.
+        await expect(page.getByText('Hall closed this week', { exact: true })).toBeVisible();
+        await expect(page.getByText('Thanks for letting us know!')).toBeVisible();
+        await captureScreen(page, vp, `club-board-${vp.name}.png`);
+      });
+
+      // The post screen, pictured for the first time. Opens the announcement
+      // from the board seeded just above -- MessageBubble's announcement
+      // treatment (the accent2 Tag, the subject line, `announcementBody`
+      // dropping the body's duplicated first line) has a baseline on the
+      // flat thread screen already; this is the same component reached
+      // through the board/post route instead, with the composer that always
+      // writes into this post beneath it.
+      test(`club post populated at ${vp.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        const { threadId } = await seedPopulatedThread(
+          seeded.clubId,
+          userId,
+          userId.slice(0, 8),
+        );
+        await page.goto(`/messages/club/${threadId}`);
+        await page.getByRole('button', { name: /Hall closed this week/ }).click();
+        await page.waitForURL(/\/messages\/club\/[^/]+\/[^/]+/);
+        // `announcementBody` drops the subject-duplicated first line, so
+        // this is the announcement's SECOND line -- proof the root rendered
+        // with the announcement treatment, not just that some post opened.
+        await expect(
+          page.getByText('We will meet at the community center instead.'),
+        ).toBeVisible();
+        await captureScreen(page, vp, `club-post-${vp.name}.png`);
+      });
+
       // The unread badge, pictured for the first time. Task 16 shipped it on
       // the Messages tab and on the dashboard's club chips (components/TabBar.tsx,
       // components/ClubChips.tsx), and every OTHER baseline in this suite is

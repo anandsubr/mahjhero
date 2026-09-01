@@ -4,8 +4,12 @@ Written to be read at the start of a session that did not build this. It is not 
 changelog; it is what you need to change this code without breaking it or
 re-litigating decisions that already cost something.
 
-**Spec:** [2026-08-26-messages-and-friends-design.md](superpowers/specs/2026-08-26-messages-and-friends-design.md)
-**Branch:** `feat/messages`, 79 commits, stacked on `feat/dashboard-artboard` (not `main`), [PR #9](https://github.com/anandsubr/mahjhero/pull/9)
+**Spec:** [2026-08-26-messages-and-friends-design.md](superpowers/specs/2026-08-26-messages-and-friends-design.md) for the
+original four-shape messaging feature; [2026-08-30-club-announcement-boards-design.md](superpowers/specs/2026-08-30-club-announcement-boards-design.md)
+for the board reshape below.
+**Branch history:** `feat/messages` (79 commits, stacked on `feat/dashboard-artboard`)
+shipped as [PR #9](https://github.com/anandsubr/mahjhero/pull/9), now **merged**.
+The board reshape is on `feat/club-boards`, cut from `main`.
 
 ---
 
@@ -52,19 +56,31 @@ cancellation. Deriving costs one join and cannot go stale.
 | `20260829070000_messages_realtime.sql` | `messages` joins `supabase_realtime` |
 | `20260829080000_thread_reads_api.sql` | `fetch_thread_messages`, `thread_roster` |
 | `20260829090000_club_thread_title.sql` | club thread title is the club's name |
+| `20260830000000_club_boards.sql` | `root_id`, `reply_count`/`last_reply_at`, `post_reads` |
+| `20260830010000_post_message_roots.sql` | `post_message` learns `p_root`, enforces one level |
+| `20260830011000_quote_stays_in_post.sql` | a quote may not cross a post boundary |
+| `20260830020000_board_reads.sql` | `fetch_club_posts`, `fetch_post_messages`, `mark_post_read` |
+| `20260830021000_board_posts_are_club_only.sql` | a game thread has no board — one flat thread still |
+| `20260830030000_board_unread.sql` | `my_unread_counts` counts per post, not per thread |
+| `20260830040000_archive_club_chat.sql` | moves a club's pre-board chat into `archived_messages` |
 
 **Client:**
 
 | file | lines | what |
 |---|---|---|
-| `lib/messages.ts` | 798 | every RPC wrapper plus ~16 pure helpers |
+| `lib/messages.ts` | 971 | every RPC wrapper plus the pure helpers, board included |
 | `lib/friends.ts` | — | the friends boundary |
 | `lib/use-unread.ts` | — | `useUnreadCounts()`, drives both badges |
-| `app/messages/index.tsx` | 194 | the list |
-| `app/messages/[threadId].tsx` | **1094** | the thread — see *Refactor candidates* |
-| `app/messages/new.tsx` | 453 | compose |
+| `lib/use-thread-realtime.ts` | 85 | the app's one Realtime subscription, lifted into a hook |
+| `app/messages/index.tsx` | 203 | the list |
+| `app/messages/[threadId].tsx` | 448 | the thread — see *Refactor candidates* |
+| `app/messages/new.tsx` | 453 | compose (direct/group/game) |
+| `app/messages/club/[threadId]/index.tsx` | 188 | the board |
+| `app/messages/club/[threadId]/[postId].tsx` | 236 | a post, its replies, the composer |
+| `app/messages/club/new.tsx` | 242 | compose a post, with the organizer-only Announcement toggle |
 | `app/friends.tsx` | 252 | friends |
 | `components/ThreadRow.tsx`, `ThreadAvatar.tsx`, `UnreadBadge.tsx` | — | shared row parts |
+| `components/messages/MessageBubble.tsx`, `Composer.tsx`, `MembersPanel.tsx`, `PostRow.tsx` | — | extracted from the thread screen — see *Refactor candidates* |
 
 **Tests:** pgTAP fixtures in `supabase/tests/database/fixtures/`, the hosted-only
 grant matrix in `portable/grants.test.sql`, vitest beside each module, Playwright
@@ -108,6 +124,29 @@ Each of these looks wrong at a glance and is not. Changing one is fine — doing
 9. **Refusals relay verbatim.** The database's messages are written to be read by a
    member. `lib/bookings.test.ts`'s ALLOWLIST names `lib/messages.ts` as responsible
    for exactly this.
+10. **`root_id` and `reply_to_id` are deliberately two columns, not one.** They
+    answer different questions — `root_id` is the CONTAINER, which post a message
+    belongs to, set once at insert and never changed; `reply_to_id` is the QUOTE,
+    which line it cites, and can name any message in the same post, including
+    another reply. Collapsing them would mean the quote chip and the containment
+    relation could never disagree, and they legitimately do. `root_id` carries the
+    same composite foreign key `(root_id, thread_id)` that `reply_to_id` already
+    does, for the same disclosure reason: a bare `references messages(id)` would
+    let a member of two clubs hang a reply off a root in the other club's thread,
+    and nothing downstream would catch it — `can_read_thread` is asked about a
+    row's own `thread_id`, and a bare containment pointer carries none of its own
+    to be asked about.
+
+    `post_reads` is a second trap in the same neighbourhood. Its primary key is
+    `(root_id, profile_id)` — two foreign-key columns as a composite primary key,
+    which PostgREST reads as a many-to-many JUNCTION TABLE. That makes it infer a
+    *second* `messages`-to-`profiles` relationship (through `post_reads`,
+    alongside the direct `messages_author_id_fkey`), so a bare
+    `profiles(display_name)` embed on `messages` is now ambiguous (PGRST201) even
+    though `post_reads` has nothing to do with who sent a message. `MESSAGE_COLUMNS`
+    (`lib/messages.ts`) carries the `!messages_author_id_fkey` hint to say which one
+    is meant. This one cost a real debugging round — don't drop the hint chasing a
+    "simpler" select.
 
 ---
 
@@ -183,20 +222,23 @@ npm run test:visual                                # Playwright, FOREGROUND
 npm run test:db:remote                             # hosted grant matrix
 ```
 
-Green at handoff: **pgTAP 1052/36 · vitest 1042/62 · Playwright 44/44 · tsc clean · hosted grants 115**.
+Green at handoff (`feat/club-boards`, local suites only): **pgTAP 1095/41 files ·
+vitest 1123/70 files · Playwright 48/48 · tsc clean**.
 
 `.env.local` points the app at the **hosted** project. Local suites do not exercise
-it — every migration here is already pushed, but a new one needs `npx supabase db push`.
+it — this branch's five migrations (`20260830000000` through `20260830040000`) are
+**not yet pushed**. `20260830040000_archive_club_chat.sql` moves a club's real
+chat into `archived_messages` on whichever database it runs against, which is why
+the push and the hosted grant matrix (`npm run test:db:remote`) are the owner's own
+step, taken deliberately, not part of this handoff's local gate.
 
 ---
 
 ## Open items
 
-**Capability gap, flagged on the PR.** Composing an announcement is **unreachable** —
-the organizer toggle was removed pending a friendlier design. Everything beneath is
-intact and tested; `countBroadcastRecipients` is parked for the replacement. Until
-it lands there is no way to email a club from the app, where before this branch
-there was.
+Composing an announcement is reachable again, from `app/messages/club/new.tsx`'s
+organizer-only toggle — the capability gap this section used to flag closed with
+the board reshape.
 
 **Never verified.** A live two-session cross-user Realtime check against the hosted
 project. RLS on `postgres_changes` was confirmed locally only, and Supabase Cloud
@@ -214,27 +256,64 @@ carries project-level Realtime settings outside this repo.
   substring. Inert — messaging relays verbatim and never calls `bookingErrorMessage`.
 
 **Out of scope by decision:** blocking, edit/delete, reactions, attachments, typing
-indicators, read receipts, named per-club groups, search, push, sub-threads.
+indicators, read receipts, named per-club groups, search, push. And, named when the
+board itself was designed:
+- **Pinning an announcement.** Considered and rejected — with no unpin affordance,
+  a pinned announcement would sit above this morning's post forever, and the top
+  of the board would become an archive of stale ones rather than a live one.
+- **Reply notifications.** Replies never email or notify; an organizer learns
+  about them only by opening the app. A reasonable follow-up, but it means a new
+  outbox kind, and that is more surface than it appears.
+- **Muting a post.** Without it, a busy post keeps producing unread. Acceptable
+  at club scale; the first thing to add if it stops being so.
+- **Moving an existing message into a post.** No message editing exists anywhere
+  in this app, and this would be the first.
+- **Deeper nesting.** One level is the whole point — see decision #10 above.
 
 ---
 
 ## Refactor candidates — an honest read
 
-**`app/messages/[threadId].tsx` is 1094 lines** and is the obvious target. It
-carries, in one component: the header and avatar, the message list and four bubble
-treatments, group separators, quote-reply state, the long-press affordance, the
-members panel with add and leave, the composer, the Realtime subscription and its
-teardown, and read-marking. Natural seams: the bubble (given a message, render it),
-the members panel, the composer, and the Realtime subscription as a hook.
+**`app/messages/[threadId].tsx` was 1094 lines and is now 448** — the split this
+section used to propose actually happened, done for the board and post screens
+rather than in place. What came out of it:
 
-**`lib/messages.ts` is 798 lines** holding ~16 pure helpers next to every RPC
-wrapper. The pure formatting and ordering helpers are separable from the data
-boundary, and are the parts with the densest tests.
+- `components/messages/MessageBubble.tsx` — one message, in its four treatments
+  (yours, somebody else's, an announcement, any of those carrying a quote stub).
+- `components/messages/Composer.tsx` — the quoted-reply row, the input, and Send.
+- `components/messages/MembersPanel.tsx` — the roster, with add and leave.
+- `lib/use-thread-realtime.ts` — the Realtime subscription and its teardown, as a
+  hook (see the property it has to keep, below).
+- `components/messages/PostRow.tsx` — new for the board, not extracted from the
+  thread screen, but cut from the same cloth: one post's row, given a post.
 
-Two things to preserve through any refactor:
+What is left in `app/messages/[threadId].tsx` is the header and avatar, the
+message list and group separators, quote-reply state, the long-press affordance,
+and read-marking — plus wiring the four extracted pieces together. The board
+(`app/messages/club/[threadId]/index.tsx`) and the post screen
+(`app/messages/club/[threadId]/[postId].tsx`) wire up the same pieces differently:
+the board renders `PostRow` and nothing else from this list; the post screen reuses
+`MessageBubble` and `Composer` exactly as the flat thread screen does, subscribing
+on the same hook.
+
+**`lib/messages.ts` is now 971 lines**, up from 798 — the board's RPC wrappers and
+its own pure helpers (`postTitle`, `replyCountLabel`, …) landed here rather than in
+a new module, the same reasoning that kept the original ~16 helpers beside every
+RPC wrapper. Still a legitimate split candidate for the same reason it was before:
+the pure formatting and ordering helpers are separable from the data boundary, and
+are the parts with the densest tests.
+
+Two things to preserve through any further refactor:
 - The pure helpers are what the tests actually pin. Keep them pure and keep them
   exported, or the coverage moves from "tested" to "rendered and hoped for".
-- The Realtime subscription is the app's only one. Its topic is unique per
-  subscription **on purpose** — `supabase.channel(topic)` returns an existing
-  channel, `removeChannel` is async, and `.on()` throws on a subscribed channel.
-  If you extract it into a hook, that property has to come with it.
+- **The Realtime subscription is the app's only one**, now shared by three screens
+  through `useThreadRealtime` — the flat thread screen, the board, and the post
+  screen all call it with the same `threadId`. Its topic is unique **per
+  subscription**, not per thread, on purpose: `supabase.channel(topic)` reuses an
+  existing channel by topic, `removeChannel` is async, and `.on()` throws on an
+  already-subscribed channel, so a topic that could be handed back to a still-live
+  channel would crash under React's dev double-mount or a fast navigation racing
+  its own teardown. `lib/use-thread-realtime.ts` guarantees this with a
+  module-scoped monotonic counter (`subscriptionSeq`), not `Date.now()` or a PRNG.
+  Any further change to this hook — or a second call site — has to keep that
+  guarantee, not just the dependency-array fix beside it.
