@@ -4,10 +4,11 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import NewPostScreen from '../messages/club/new';
 
 const replace = vi.fn();
+const push = vi.fn();
 
 vi.mock('expo-router', () => ({
   Redirect: () => null,
-  useRouter: () => ({ push: vi.fn(), back: vi.fn(), replace }),
+  useRouter: () => ({ push, back: vi.fn(), replace }),
   usePathname: () => '/messages/club/new',
   useLocalSearchParams: () => ({ threadId: 't1', clubId: 'c1' }),
   // A bare `(cb) => cb()` fires on every render, which the real hook never
@@ -228,5 +229,73 @@ describe('composing a post', () => {
       resolvePost({ id: 'p2', error: null });
       await Promise.resolve();
     });
+  });
+});
+
+describe('backing out of a post', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    fetchUnreadCounts.mockResolvedValue([]);
+    fetchRoster.mockResolvedValue(member('member'));
+  });
+
+  it('has a back control labelled for the board it came from', async () => {
+    render(<NewPostScreen />);
+    await waitFor(() => expect(screen.getByLabelText('Back to board')).toBeTruthy());
+  });
+
+  it('backs out to the board on the first tap when the draft is empty', async () => {
+    render(<NewPostScreen />);
+    fireEvent.click(await screen.findByLabelText('Back to board'));
+    expect(push).toHaveBeenCalledWith('/messages/club/t1');
+  });
+
+  it('arms a confirm, without navigating, on the first tap with a typed draft', async () => {
+    render(<NewPostScreen />);
+    fireEvent.change(await screen.findByLabelText('Post'), {
+      target: { value: 'Anyone free Thursday?' },
+    });
+    fireEvent.click(screen.getByLabelText('Back to board'));
+    expect(push).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(screen.getByLabelText('Discard post and go back to board')).toBeTruthy(),
+    );
+    expect(screen.getByText('Tap back again to discard this draft.')).toBeTruthy();
+  });
+
+  it('backs out to the board on the second tap with a typed draft', async () => {
+    render(<NewPostScreen />);
+    fireEvent.change(await screen.findByLabelText('Post'), {
+      target: { value: 'Anyone free Thursday?' },
+    });
+    fireEvent.click(screen.getByLabelText('Back to board'));
+    fireEvent.click(await screen.findByLabelText('Discard post and go back to board'));
+    expect(push).toHaveBeenCalledWith('/messages/club/t1');
+  });
+
+  it('disarms the confirm when the draft changes after arming', async () => {
+    render(<NewPostScreen />);
+    const input = await screen.findByLabelText('Post');
+    fireEvent.change(input, { target: { value: 'Anyone free Thursday?' } });
+    fireEvent.click(screen.getByLabelText('Back to board'));
+    await waitFor(() =>
+      expect(screen.getByLabelText('Discard post and go back to board')).toBeTruthy(),
+    );
+    fireEvent.change(input, { target: { value: 'Anyone free Thursday? Say 7pm' } });
+    expect(screen.getByLabelText('Back to board')).toBeTruthy();
+    expect(screen.queryByLabelText('Discard post and go back to board')).toBeNull();
+  });
+
+  it('backs out on one tap when the draft was armed and then cleared back to empty', async () => {
+    render(<NewPostScreen />);
+    const input = await screen.findByLabelText('Post');
+    fireEvent.change(input, { target: { value: 'Anyone free Thursday?' } });
+    fireEvent.click(screen.getByLabelText('Back to board'));
+    await waitFor(() =>
+      expect(screen.getByLabelText('Discard post and go back to board')).toBeTruthy(),
+    );
+    fireEvent.change(input, { target: { value: '' } });
+    fireEvent.click(screen.getByLabelText('Back to board'));
+    expect(push).toHaveBeenCalledWith('/messages/club/t1');
   });
 });
