@@ -74,7 +74,7 @@ cancellation. Deriving costs one join and cannot go stale.
 | `lib/use-thread-realtime.ts` | 85 | Realtime subscription, lifted into a hook shared by three screens |
 | `app/messages/index.tsx` | 208 | the list |
 | `app/messages/[threadId].tsx` | 473 | the thread — see *Refactor candidates* |
-| `app/messages/new.tsx` | 476 | compose (direct/group/game) |
+| `app/messages/new.tsx` | 368 | compose (direct/group) — no Everyone; see decision #7 |
 | `app/messages/club/[threadId]/index.tsx` | 200 | the board |
 | `app/messages/club/[threadId]/[postId].tsx` | 259 | a post, its replies, the composer |
 | `app/messages/club/new.tsx` | 241 | compose a post, with the organizer-only Announcement toggle |
@@ -136,7 +136,11 @@ Each of these looks wrong at a glance and is not. Changing one is fine — doing
    `broadcasts.tsx`'s legacy history redirect, and `app/messages/new.tsx`'s
    Everyone compose target) kept sending a club thread here through thirteen
    reviews — the fourth survived even the fix meant to catch them all — before
-   the screen-level redirect closed it off for good.
+   the screen-level redirect closed it off for good. (The fourth site no
+   longer exists in the current code — `app/messages/new.tsx`'s Everyone
+   target was removed entirely once the club board gave it a strictly
+   better replacement — but the history is why the redirect exists at all,
+   not just at that one site.)
 8. **`deriveSubject` must agree with `post_message`'s SQL character for character** —
    it is shown to an organizer as the subject their email will carry.
 9. **`lib/` never rejects.** Every exported async resolves `null` or `{ error }`.
