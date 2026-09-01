@@ -105,6 +105,13 @@ export type ThreadDetail = {
  * RPC that re-asks `can_read_thread` itself rather than going through
  * `profiles`' policy — the same shape `club_roster` uses for a club, for
  * the one thread kind `club_roster` cannot serve.
+ *
+ * `post_reads` (20260830000000) makes `messages`-to-`profiles` an ambiguous
+ * embed too (see MESSAGE_COLUMNS below) but does not touch this select:
+ * this query selects from `message_threads`, not `messages`, and its own
+ * `profiles` embed hangs off `thread_members`, not `messages` — a table
+ * `post_reads`'s two foreign keys never mention. No third relationship
+ * PostgREST could confuse this embed for.
  */
 export const THREAD_COLUMNS =
   'id, club_id, event_id, title, clubs(name, timezone), ' +
@@ -146,10 +153,25 @@ export const THREAD_COLUMNS =
  * directly (lib/schema-contract.test.ts) because both findings are still
  * true of a raw select — the RPC is the fix, not a change to what
  * PostgREST itself can do with this list.
+ *
+ * The `profiles` embed below carries a `!messages_author_id_fkey` hint, and
+ * as with THREAD_COLUMNS' two hints above, it is load-bearing, not
+ * decorative. `post_reads` (20260830000000) has two foreign keys —
+ * `root_id references messages(id)` and `profile_id references
+ * profiles(id)` — under a PRIMARY KEY that is exactly those two columns,
+ * `(root_id, profile_id)`. A composite primary key spanning two
+ * foreign-key columns is precisely the shape PostgREST reads as a
+ * many-to-many JUNCTION TABLE, so it infers a second `messages`-to-
+ * `profiles` relationship — through `post_reads` — alongside the direct
+ * `messages_author_id_fkey`. A bare `profiles(display_name)` on `messages`
+ * is therefore ambiguous the same way `events` and the members' `profiles`
+ * are above (PGRST201), even though `post_reads` has nothing to do with
+ * who sent a message. The hint says which of the two PostgREST now sees is
+ * meant.
  */
 export const MESSAGE_COLUMNS =
   'id, author_id, body, subject, is_announcement, created_at, reply_to_id, ' +
-  'profiles(display_name)';
+  'profiles!messages_author_id_fkey(display_name)';
 
 /** Mirrors messages.body's check constraint exactly. */
 export const BODY_MAX = 2000;
