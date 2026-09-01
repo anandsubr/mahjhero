@@ -1,32 +1,21 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
-import Button from '../../components/Button';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import Composer from '../../components/messages/Composer';
 import ErrorBanner from '../../components/ErrorBanner';
+import MembersPanel from '../../components/messages/MembersPanel';
 import MessageBubble from '../../components/messages/MessageBubble';
 import Screen from '../../components/Screen';
 import TabBar from '../../components/TabBar';
 import ThreadAvatar from '../../components/ThreadAvatar';
-import { ChevronLeftIcon, ChevronRightIcon, SendIcon } from '../../components/icons';
+import { ChevronLeftIcon, ChevronRightIcon } from '../../components/icons';
 import { GENERIC_ERROR } from '../../lib/constants';
-import { fetchAddablePeople, fetchFriends } from '../../lib/friends';
 import {
-  addToGroupThread,
   fetchThread,
   fetchThreadMessages,
   groupSeparatorLabel,
-  leaveGroupThread,
   markThreadRead,
   postMessage,
-  quoteStub,
   startsNewGroup,
   threadKindFor,
   threadTitleFor,
@@ -36,10 +25,6 @@ import {
 import { useSession } from '../../lib/session';
 import { supabase } from '../../lib/supabase';
 import { colors, radius, space, type } from '../../lib/theme';
-
-/** A candidate for Add people -- the same shape app/messages/new.tsx's own
- *  People picker uses for its candidate list. */
-type Candidate = { profile_id: string; display_name: string; meta: string };
 
 /**
  * The `1C thread` artboard.
@@ -82,17 +67,6 @@ type Candidate = { profile_id: string; display_name: string; meta: string };
 // it) is required.
 let subscriptionSeq = 0;
 
-// The artboard's `.bigin` height (`min-height: 58px`), and this screen's own
-// Send button -- a 58x58 circle beside a 58-tall input, matched heights, one
-// shape. Named once so the input's resting/grown heights and the button's
-// own size are visibly the same number rather than two literals that could
-// drift apart.
-const COMPOSER_HEIGHT = 58;
-// How tall a long draft may grow the input before it scrolls internally
-// instead. Unchanged from the pre-existing behaviour this screen already
-// had; only how it's enforced changes (see `handleDraftSize` below).
-const DRAFT_MAX_HEIGHT = 140;
-
 export default function ThreadScreen() {
   const { session, loading } = useSession();
   const { threadId } = useLocalSearchParams<{ threadId: string }>();
@@ -103,17 +77,6 @@ export default function ThreadScreen() {
   const [messages, setMessages] = useState<ThreadMessage[]>([]);
   const [ready, setReady] = useState(false);
   const [draft, setDraft] = useState('');
-  // The composer input's own rendered height, MEASURED rather than trusted
-  // from `minHeight` -- trusting `minHeight` is exactly what let a
-  // react-native-web multiline `TextInput` (a `<textarea>` under the hood,
-  // with its own intrinsic row height) render taller than the 58px Send
-  // button beside it. `onContentSizeChange` below reports the textarea's
-  // real `scrollHeight` on every keystroke (react-native-web's own
-  // implementation reads it directly off the host node), which already
-  // includes this input's padding — so clamping THAT number, not a CSS
-  // hint, is what keeps the box between the resting 58px height and
-  // `DRAFT_MAX_HEIGHT` for a long draft.
-  const [inputHeight, setInputHeight] = useState(COMPOSER_HEIGHT);
   // The message being answered, held whole rather than as an id so the
   // composer can show its stub without hunting back through `messages`.
   const [replyTo, setReplyTo] = useState<ThreadMessage | null>(null);
@@ -137,24 +100,9 @@ export default function ThreadScreen() {
   // Members panel: GROUP and DIRECT threads only (thread.club_id === null).
   // A club or game thread's membership is derived from club_members/
   // bookings, not stored, so there is nothing to list and nobody to add.
+  // Only the mount switch stays here -- MembersPanel owns everything else
+  // about opening Add people and leaving.
   const [membersOpen, setMembersOpen] = useState(false);
-  const [addingOpen, setAddingOpen] = useState(false);
-  const [candidates, setCandidates] = useState<Candidate[]>([]);
-  const [pickedToAdd, setPickedToAdd] = useState<string[]>([]);
-  const [addBusy, setAddBusy] = useState(false);
-  const [addError, setAddError] = useState<string | null>(null);
-  // Guards the add_to_group_thread RPC itself, the same shape as
-  // sendingRef above: `addBusy` state is read from the render closure, so a
-  // second activation landing before React re-renders with the disabled
-  // button would otherwise double the call.
-  const addBusyRef = useRef(false);
-
-  // Leaving a group is irreversible -- the last member out deletes the
-  // thread and its messages (leave_group_thread's own comment). Asks once,
-  // the same two-step shape this file's own `leave()` button below uses.
-  const [leaveConfirming, setLeaveConfirming] = useState(false);
-  const [leaveBusy, setLeaveBusy] = useState(false);
-  const leaveBusyRef = useRef(false);
   // Set alongside `thread`/`error`, not derived from them: the realtime
   // effect below subscribes regardless of whether the initial load
   // succeeded, and its INSERT handler needs to know -- at the moment an
@@ -276,87 +224,6 @@ export default function ThreadScreen() {
     setSending(false);
   }, [threadId, draft, replyTo, load]);
 
-  // Friends first, then people from your clubs -- the identical shape and
-  // ordering app/messages/new.tsx's own People picker uses (see that
-  // screen's docstring on why: a friend acquired in a club one of you has
-  // since left appears in neither club list). Reused here rather than a
-  // second way of gathering who is addable to a conversation.
-  const openAdding = useCallback(async () => {
-    setAddError(null);
-    setAddBusy(true);
-    const [friends, people] = await Promise.all([
-      fetchFriends(),
-      fetchAddablePeople(),
-    ]);
-    setAddBusy(false);
-    if (friends === null || people === null) {
-      setAddError(GENERIC_ERROR);
-      return;
-    }
-    // Already-in-the-thread people have nothing to be added to twice.
-    const already = new Set(thread?.thread_members.map((m) => m.profile_id) ?? []);
-    setCandidates([
-      ...friends
-        .filter((f) => !already.has(f.profile_id))
-        .map((f) => ({ profile_id: f.profile_id, display_name: f.display_name, meta: 'Friend' })),
-      ...people
-        .filter((p) => !already.has(p.profile_id))
-        .map((p) => ({ profile_id: p.profile_id, display_name: p.display_name, meta: p.club_name })),
-    ]);
-    setAddingOpen(true);
-  }, [thread]);
-
-  const addPicked = useCallback(async () => {
-    if (addBusyRef.current || !threadId || pickedToAdd.length === 0) return;
-    addBusyRef.current = true;
-    setAddBusy(true);
-    setAddError(null);
-    const { error: refusal } = await addToGroupThread(threadId, pickedToAdd);
-    addBusyRef.current = false;
-    setAddBusy(false);
-    if (refusal) {
-      setAddError(refusal);
-      return;
-    }
-    setPickedToAdd([]);
-    setAddingOpen(false);
-    // The roster shown has to include who was just added.
-    await load();
-  }, [threadId, pickedToAdd, load]);
-
-  const leave = useCallback(async () => {
-    if (leaveBusyRef.current || !threadId) return;
-    leaveBusyRef.current = true;
-    setLeaveBusy(true);
-    setError(null);
-    const { error: refusal } = await leaveGroupThread(threadId);
-    leaveBusyRef.current = false;
-    setLeaveBusy(false);
-    if (refusal) {
-      setLeaveConfirming(false);
-      setError(refusal);
-      return;
-    }
-    // Nothing left here to come back to -- the last member out takes the
-    // thread with them, and even short of that, staying would show a
-    // conversation this screen no longer has a roster row for.
-    router.replace('/messages');
-  }, [threadId, router]);
-
-  // `contentSize.height` is react-native-web's own name for the textarea's
-  // `scrollHeight` -- the real rendered height of the padding + text inside
-  // it, not a guess. Clamped to [COMPOSER_HEIGHT, DRAFT_MAX_HEIGHT] so an
-  // empty or one-line draft rests at the Send button's own height and a long
-  // one grows only up to the existing cap, same as before.
-  const handleDraftSize = useCallback(
-    (e: { nativeEvent: { contentSize: { height: number } } }) => {
-      setInputHeight(
-        Math.min(DRAFT_MAX_HEIGHT, Math.max(COMPOSER_HEIGHT, e.nativeEvent.contentSize.height)),
-      );
-    },
-    [],
-  );
-
   if (loading) {
     return (
       <Screen center contentStyle={styles.centered} tabBar={<TabBar active="messages" />}>
@@ -462,92 +329,7 @@ export default function ThreadScreen() {
       ) : (
         <>
           {canManageMembers && membersOpen && thread ? (
-            <View style={styles.membersPanel}>
-              {thread.thread_members.map((m) => (
-                <Text key={m.profile_id} style={styles.memberName}>
-                  {m.profiles?.display_name ?? 'Member'}
-                </Text>
-              ))}
-
-              {addError ? <ErrorBanner message={addError} /> : null}
-
-              {addingOpen ? (
-                <>
-                  {candidates.length === 0 ? (
-                    <Text style={styles.membersHint}>Nobody else to add.</Text>
-                  ) : (
-                    candidates.map((c) => {
-                      const picked = pickedToAdd.includes(c.profile_id);
-                      return (
-                        <Pressable
-                          key={c.profile_id}
-                          onPress={() =>
-                            setPickedToAdd((cur) =>
-                              cur.includes(c.profile_id)
-                                ? cur.filter((x) => x !== c.profile_id)
-                                : [...cur, c.profile_id],
-                            )
-                          }
-                          accessibilityRole="button"
-                          accessibilityLabel={c.display_name}
-                          aria-selected={picked}
-                          style={[
-                            styles.candidateRow,
-                            picked ? styles.candidateRowOn : null,
-                          ]}
-                        >
-                          <Text style={styles.candidateName}>{c.display_name}</Text>
-                          <Text style={styles.candidateMeta}>{c.meta}</Text>
-                        </Pressable>
-                      );
-                    })
-                  )}
-                  <Button
-                    big={false}
-                    accessibilityLabel="Add"
-                    disabled={addBusy || pickedToAdd.length === 0}
-                    loading={addBusy}
-                    onPress={() => void addPicked()}
-                  >
-                    Add
-                  </Button>
-                </>
-              ) : (
-                <Button
-                  variant="secondary"
-                  big={false}
-                  accessibilityLabel="Add people"
-                  disabled={addBusy}
-                  loading={addBusy}
-                  onPress={() => void openAdding()}
-                >
-                  Add people
-                </Button>
-              )}
-
-              {/*
-                Irreversible: the last member out deletes the thread and its
-                messages (leave_group_thread's own comment). Same two-step
-                confirmation Send already uses on this screen for an
-                announcement -- the other action here that cannot be undone.
-              */}
-              <Button
-                variant="destructive"
-                big={false}
-                accessibilityLabel={leaveConfirming ? 'Confirm leave' : 'Leave'}
-                disabled={leaveBusy}
-                loading={leaveBusy}
-                onPress={() => {
-                  if (!leaveConfirming) {
-                    setLeaveConfirming(true);
-                    return;
-                  }
-                  void leave();
-                }}
-              >
-                {leaveConfirming ? 'Confirm' : 'Leave'}
-              </Button>
-            </View>
+            <MembersPanel thread={thread} onChanged={load} onLeaveError={setError} />
           ) : null}
 
           <ScrollView
@@ -608,58 +390,14 @@ export default function ThreadScreen() {
             })}
           </ScrollView>
 
-          {replyTo ? (
-            <View style={styles.replyingRow}>
-              <Text numberOfLines={1} style={styles.replyingText}>
-                {quoteStub(replyTo)}
-              </Text>
-              <Pressable
-                onPress={() => setReplyTo(null)}
-                accessibilityRole="button"
-                accessibilityLabel="Cancel reply"
-              >
-                <Text style={styles.replyingCancel}>Cancel</Text>
-              </Pressable>
-            </View>
-          ) : null}
-
-          <View style={styles.composer}>
-            <TextInput
-              style={[styles.input, { height: inputHeight }]}
-              value={draft}
-              onChangeText={setDraft}
-              onContentSizeChange={handleDraftSize}
-              placeholder="Message"
-              accessibilityLabel="Message"
-              multiline
-              // Without this, react-native-web's own default (no `rows`/
-              // `numberOfLines` given) leaves the underlying `<textarea>`'s
-              // `rows` attribute unset, and an unset `<textarea rows>`
-              // renders 2 browser-default rows -- taller than the 58px
-              // resting height this screen needs to match the Send button,
-              // before a single character has even been typed.
-              // `numberOfLines`, not the newer `rows` prop react-native-web
-              // also accepts: `rows` is not in @types/react-native's
-              // `TextInputProps` at all, and `numberOfLines` is the same
-              // prop TextField.tsx already uses for this exact job.
-              // `handleDraftSize` still grows the box from here for a long
-              // draft.
-              numberOfLines={1}
-            />
-            <Pressable
-              // A single tap posts an ordinary message. Composing an
-              // announcement -- and the two-step Send/Confirm arming that
-              // existed only for it -- is gone from this screen (see the
-              // component's own docstring).
-              onPress={() => void send()}
-              accessibilityRole="button"
-              accessibilityLabel="Send"
-              disabled={sending}
-              style={styles.send}
-            >
-              <SendIcon />
-            </Pressable>
-          </View>
+          <Composer
+            draft={draft}
+            onDraftChange={setDraft}
+            replyTo={replyTo}
+            onClearReply={() => setReplyTo(null)}
+            onSend={() => void send()}
+            sending={sending}
+          />
         </>
       )}
     </Screen>
@@ -692,10 +430,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   headerCenter: { alignItems: 'center', gap: space[2] },
-  // colors.surface, the same pill/panel ground this file already uses for
-  // `replyingRow` and `membersPanel` below -- reused rather than a fresh
-  // token. Capped so `namePillText`'s `numberOfLines={1}` has a width to
-  // actually truncate against for a long thread name.
+  // colors.surface, the same pill/panel ground Composer's `replyingRow` and
+  // MembersPanel's own `membersPanel` reuse -- not a fresh token. Capped so
+  // `namePillText`'s `numberOfLines={1}` has a width to actually truncate
+  // against for a long thread name.
   namePill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -707,9 +445,9 @@ const styles = StyleSheet.create({
     paddingVertical: space[1],
   },
   // colors.text on colors.surface reads 12.40:1 -- comfortably past AA's
-  // 4.5:1 for this 16px text, and the same pairing this file's own
-  // `memberName`/`candidateName` below already use on this exact ground, so
-  // this is not a new pairing.
+  // 4.5:1 for this 16px text, and the same pairing MembersPanel's own
+  // `memberName`/`candidateName` already use on this exact ground, so this
+  // is not a new pairing.
   namePillText: {
     flexShrink: 1,
     minWidth: 0,
@@ -734,52 +472,6 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     color: colors.textMuted,
   },
-  membersPanel: {
-    gap: space[2],
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: space[4],
-  },
-  memberName: {
-    fontFamily: type.bodySemiBold,
-    fontSize: type.size.body,
-    color: colors.text,
-  },
-  membersHint: {
-    fontFamily: type.bodyRegular,
-    fontSize: type.size.helper,
-    color: colors.textMuted,
-  },
-  candidateRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    minHeight: 44,
-    borderRadius: radius.md,
-    backgroundColor: colors.bg,
-    paddingHorizontal: space[3],
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  // accent[700], not the artboard's accentColor: colors.bg on accentColor
-  // measures 3.030:1, a 0.03 margin over the 3:1 non-text bar that
-  // lib/theme.test.ts had no pin for. Selection is also conveyed by
-  // aria-selected, so this was never a correctness bug, but a margin that
-  // thin is exactly what the existing pins exist to prevent. accent[700] on
-  // colors.bg reads 5.72:1 and is already pinned there (the same pairing
-  // this file's `mine` bubble and `send` button use), so this reuses
-  // headroom that exists rather than adding a new pin for a fresh pairing.
-  candidateRowOn: { borderColor: colors.accent[700] },
-  candidateName: {
-    fontFamily: type.bodySemiBold,
-    fontSize: type.size.helper,
-    color: colors.text,
-  },
-  candidateMeta: {
-    fontFamily: type.bodyRegular,
-    fontSize: type.size.helper,
-    color: colors.textMuted,
-  },
   // The iOS Messages convention this screen now follows: no time inside any
   // bubble (the three `timestamp*` styles this replaced each put it in a
   // bubble's own corner, on that bubble's own ground -- gone along with the
@@ -798,65 +490,5 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: space[3],
     marginBottom: space[2],
-  },
-  replyingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space[3],
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    paddingVertical: space[2],
-    paddingHorizontal: space[3],
-  },
-  replyingText: {
-    flex: 1,
-    minWidth: 0,
-    fontFamily: type.bodyRegular,
-    fontSize: type.size.helper,
-    color: colors.textMuted,
-  },
-  replyingCancel: {
-    fontFamily: type.bodySemiBold,
-    fontSize: type.size.helper,
-    color: colors.accent[800],
-  },
-  composer: { flexDirection: 'row', alignItems: 'flex-end', gap: space[2] },
-  // Height is NOT set here -- it's driven by `inputHeight` state at the call
-  // site (see `handleDraftSize`'s own comment), because `minHeight` alone is
-  // exactly what let this box render taller than the 58px Send button beside
-  // it: react-native-web's multiline `TextInput` is a `<textarea>`, which
-  // has its own intrinsic row height independent of `minHeight`.
-  //
-  // `paddingVertical: 17` and `lineHeight: 24` are deliberately literal, not
-  // pulled from the `space`/`type` scales: their SUM has to land on exactly
-  // `COMPOSER_HEIGHT` (58) for the placeholder/first line to sit centred at
-  // rest. A `<textarea>` does not centre its own content vertically the way
-  // a plain `<input>` does (this is the artboard's `<input class="input
-  // bigin">`, singular-line, not a growing textarea) — the only way to get
-  // that centred look out of one is to leave no slack: equal top/bottom
-  // padding plus a line-height that together exactly fill the box, so there
-  // is no extra space left over for the text to be top-aligned within.
-  input: {
-    flex: 1,
-    borderRadius: radius.lg,
-    backgroundColor: colors.surface,
-    paddingHorizontal: space[4],
-    paddingVertical: 17,
-    lineHeight: 24,
-    fontFamily: type.bodyRegular,
-    fontSize: type.size.body,
-    color: colors.text,
-  },
-  // The artboard's 58x58 circular icon button -- accent[700], not
-  // accentColor: colors.bg on accentColor measures 3.03:1 and fails AA at
-  // this size; accent[700] reads 5.72:1 (already pinned in
-  // lib/theme.test.ts for this exact bubble/button pairing).
-  send: {
-    width: COMPOSER_HEIGHT,
-    height: COMPOSER_HEIGHT,
-    borderRadius: radius.pill,
-    backgroundColor: colors.accent[700],
-    alignItems: 'center',
-    justifyContent: 'center',
   },
 });
