@@ -23,8 +23,8 @@ import {
   type ThreadMessage,
 } from '../../lib/messages';
 import { useSession } from '../../lib/session';
-import { supabase } from '../../lib/supabase';
 import { colors, radius, space, type } from '../../lib/theme';
+import { useThreadRealtime } from '../../lib/use-thread-realtime';
 
 /**
  * The `1C thread` artboard.
@@ -60,13 +60,6 @@ import { colors, radius, space, type } from '../../lib/theme';
  * `countBroadcastRecipients` (lib/broadcasts.ts) loses its only caller here
  * and goes back to being test-only.
  */
-// Monotonic, not `Date.now()`/`Math.random()`: incremented once per Realtime
-// subscription below so a topic can never be handed back to a still-live
-// channel, no matter how the clock or a PRNG behave. See the effect's own
-// comment for why a unique topic (not just the dependency-array fix beside
-// it) is required.
-let subscriptionSeq = 0;
-
 export default function ThreadScreen() {
   const { session, loading } = useSession();
   const { threadId } = useLocalSearchParams<{ threadId: string }>();
@@ -103,11 +96,11 @@ export default function ThreadScreen() {
   // Only the mount switch stays here -- MembersPanel owns everything else
   // about opening Add people and leaving.
   const [membersOpen, setMembersOpen] = useState(false);
-  // Set alongside `thread`/`error`, not derived from them: the realtime
-  // effect below subscribes regardless of whether the initial load
-  // succeeded, and its INSERT handler needs to know -- at the moment an
-  // event actually arrives -- whether the screen ever loaded, not what some
-  // earlier render's closure happened to capture.
+  // Set alongside `thread`/`error`, not derived from them: useThreadRealtime
+  // below subscribes regardless of whether the initial load succeeded, and
+  // its onInsert callback needs to know -- at the moment an event actually
+  // arrives -- whether the screen ever loaded, not what some earlier
+  // render's closure happened to capture.
   const loadedRef = useRef(false);
 
   const load = useCallback(async () => {
@@ -131,64 +124,25 @@ export default function ThreadScreen() {
     void load();
   }, [session, load]);
 
-  useEffect(() => {
-    if (!session || !threadId) return;
-
-    // `supabase.channel(topic)` REUSES an existing channel by topic
-    // (RealtimeClient.channel), and `removeChannel` is async -- it awaits
-    // `channel.unsubscribe()` before deregistering the topic. A React
-    // cleanup cannot await, so if this effect re-runs with the same topic,
-    // `channel()` can hand back the OLD, still-subscribed channel, and
-    // `.on()` throws on it. `subscriptionSeq` makes every subscription's
-    // topic unique so that can never happen, regardless of how slow the
-    // teardown is: it is a monotonic counter incremented once per
-    // subscription, not `Date.now()`/`Math.random()`, so within one JS
-    // process it can never repeat and hand back a live channel -- not even
-    // under React's dev double-mount or a `threadId` change racing the old
-    // channel's teardown. `threadId` stays in the topic so a live channel
-    // is still identifiable when debugging.
-    const topic = `thread:${threadId}:${++subscriptionSeq}`;
-
-    const channel = supabase
-      .channel(topic)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'messages',
-          filter: `thread_id=eq.${threadId}`,
-        },
-        () => {
-          // Refetch rather than appending the payload row: the payload
-          // carries author_id but not the joined display_name, and a bubble
-          // that renders anonymously and then re-renders with a name is
-          // worse than one that arrives a beat later complete.
-          void fetchThreadMessages(threadId).then((rows) => {
-            if (rows) setMessages(rows);
-          });
-          // A conversation you are watching must never accumulate a badge --
-          // but only once it has actually loaded. A screen whose initial
-          // fetchThread failed never showed anything to read, and marking it
-          // read anyway would clear a badge for a thread the member never
-          // saw, the same way the initial load already gates this call.
-          if (loadedRef.current) void markThreadRead(threadId);
-        },
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-    // Keyed on `session?.user.id`, NOT `session`: lib/session.tsx hands out
-    // a fresh Session object on every onAuthStateChange, TOKEN_REFRESHED
-    // included, which fires within the hour and on web tab focus. Depending
-    // on the object would re-subscribe on every refresh for a value that
-    // only changes on a real account switch -- the same reasoning
-    // lib/use-viewer.ts and app/profile.tsx already record for their own
-    // effects.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.user.id, threadId]);
+  useThreadRealtime(
+    threadId,
+    session?.user.id,
+    useCallback(() => {
+      // Refetch rather than appending the payload row: the payload carries
+      // author_id but not the joined display_name, and a bubble that
+      // renders anonymously and then re-renders with a name is worse than
+      // one that arrives a beat later complete.
+      void fetchThreadMessages(threadId).then((rows) => {
+        if (rows) setMessages(rows);
+      });
+      // A conversation you are watching must never accumulate a badge --
+      // but only once it has actually loaded. A screen whose initial
+      // fetchThread failed never showed anything to read, and marking it
+      // read anyway would clear a badge for a thread the member never saw,
+      // the same way the initial load already gates this call.
+      if (loadedRef.current) void markThreadRead(threadId);
+    }, [threadId]),
+  );
 
   const send = useCallback(async () => {
     if (sendingRef.current || !threadId) return;
