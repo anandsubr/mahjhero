@@ -31,11 +31,14 @@ import { useThreadRealtime } from '../../../../lib/use-thread-realtime';
  * below passes both independently -- `postId` as the fifth argument on every
  * call, `replyTo?.id` as the fourth only when one is picked.
  *
- * Read-marking lives here, gated on `loadedRef`, rather than on the board:
- * opening the board is not reading any post on it (the board screen's own
- * docstring), and a screen whose initial fetch failed never showed anything
- * to read -- marking it read anyway would clear a badge for a post the
- * member never saw.
+ * Read-marking lives here, gated by `load()`'s own early return, rather
+ * than on the board: opening the board is not reading any post on it (the
+ * board screen's own docstring), and a screen whose initial fetch failed
+ * never showed anything to read -- `markPostRead` sits after the only
+ * `return` in `load()`, so a failed fetch can never reach it, whether that
+ * fetch runs on the initial mount or on a later refetch the realtime
+ * subscription below triggers (it re-enters `load()` from the top, not a
+ * lower-level fetch that bypasses the guard).
  *
  * The realtime subscription (lib/use-thread-realtime.ts) is thread-wide, not
  * per-post -- there is one channel per open thread, not one per post, the
@@ -67,11 +70,6 @@ export default function PostScreen() {
   // never cleared makes the composer permanently dead, worse than the bug
   // it guards against.
   const sendingRef = useRef(false);
-  // Set alongside `messages`/`error`, not derived from them: the realtime
-  // subscription below fires regardless of whether the initial load
-  // succeeded, and `mark_post_read` must only run once a load has actually
-  // shown the member something.
-  const loadedRef = useRef(false);
 
   const load = useCallback(async () => {
     if (!postId) return;
@@ -83,13 +81,16 @@ export default function PostScreen() {
     if (rows === null || rows.length === 0) {
       setError(GENERIC_ERROR);
       setReady(true);
-      loadedRef.current = false;
       return;
     }
     setError(null);
     setMessages(rows);
     setReady(true);
-    loadedRef.current = true;
+    // The only call site, and it is unreachable from a failed fetch: the
+    // branch above already returned. No ref is needed to remember that
+    // across a later refetch either -- the realtime subscription below
+    // re-enters `load()` from the top, so its own fetch hits the same
+    // early return on its own failure.
     void markPostRead(postId);
   }, [postId]);
 

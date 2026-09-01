@@ -119,6 +119,13 @@ describe('a club post', () => {
     await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
   });
 
+  it('treats an empty row list the same as a failed load -- a post always has a root', async () => {
+    fetchPostMessages.mockResolvedValue([]);
+    render(<PostScreen />);
+    await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
+    expect(markPostRead).not.toHaveBeenCalled();
+  });
+
   it('posts a reply INTO the post, not into the thread -- rootId stays p1, reply_to stays null', async () => {
     render(<PostScreen />);
     const input = await screen.findByLabelText('Message');
