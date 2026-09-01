@@ -11,15 +11,15 @@ import { supabase } from './supabase';
 let subscriptionSeq = 0;
 
 /**
- * The app's only Realtime subscriber, lifted out of `app/messages/[threadId].tsx`
- * so the coming board and post screens can subscribe the same way.
+ * Realtime, lifted out of `app/messages/[threadId].tsx` so the board and post
+ * screens could subscribe the same way -- three subscribers now (the flat
+ * thread screen, the board, and a post), not one.
  *
  * `postgres_changes` applies RLS per subscriber, so a channel filtered to
  * one thread_id delivers exactly what `can_read_thread` allows -- there is no
  * second authorization surface. `onInsert` fires for every message inserted
- * into the thread; it carries no payload on purpose (see the call site in
- * the thread screen for why a refetch, not the payload row, is what a
- * caller should do with it).
+ * into the thread; it carries no payload on purpose (see a call site for why
+ * a refetch, not the payload row, is what a caller should do with it).
  */
 export function useThreadRealtime(
   threadId: string | undefined,

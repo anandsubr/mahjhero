@@ -97,8 +97,9 @@ as $$
     case when v.kind = 'group' and coalesce(g.member_count, 0) = 2
          then 'direct' else v.kind end,
     case
-      -- Just the club's name -- see this migration's own header comment for
-      -- why this no longer says "Everyone at ".
+      -- Just the club's name -- see 20260829090000's header comment for why
+      -- this no longer says "Everyone at " (this migration only reproduces
+      -- that change verbatim; see this file's own header for why).
       when v.kind = 'club' then c.name
       when v.kind = 'game' then e.title
       when coalesce(g.member_count, 0) = 2 then g.other_name

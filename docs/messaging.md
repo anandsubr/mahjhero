@@ -71,13 +71,13 @@ cancellation. Deriving costs one join and cannot go stale.
 | `lib/messages.ts` | 971 | every RPC wrapper plus the pure helpers, board included |
 | `lib/friends.ts` | — | the friends boundary |
 | `lib/use-unread.ts` | — | `useUnreadCounts()`, drives both badges |
-| `lib/use-thread-realtime.ts` | 85 | the app's one Realtime subscription, lifted into a hook |
+| `lib/use-thread-realtime.ts` | 85 | Realtime subscription, lifted into a hook shared by three screens |
 | `app/messages/index.tsx` | 208 | the list |
-| `app/messages/[threadId].tsx` | 471 | the thread — see *Refactor candidates* |
-| `app/messages/new.tsx` | 453 | compose (direct/group/game) |
+| `app/messages/[threadId].tsx` | 473 | the thread — see *Refactor candidates* |
+| `app/messages/new.tsx` | 476 | compose (direct/group/game) |
 | `app/messages/club/[threadId]/index.tsx` | 200 | the board |
 | `app/messages/club/[threadId]/[postId].tsx` | 259 | a post, its replies, the composer |
-| `app/messages/club/new.tsx` | 242 | compose a post, with the organizer-only Announcement toggle |
+| `app/messages/club/new.tsx` | 241 | compose a post, with the organizer-only Announcement toggle |
 | `app/friends.tsx` | 252 | friends |
 | `components/ThreadRow.tsx`, `ThreadAvatar.tsx`, `UnreadBadge.tsx` | — | shared row parts |
 | `components/messages/MessageBubble.tsx`, `Composer.tsx`, `MembersPanel.tsx`, `PostRow.tsx` | — | extracted from the thread screen — see *Refactor candidates* |
@@ -120,17 +120,23 @@ Each of these looks wrong at a glance and is not. Changing one is fine — doing
    `/messages/[threadId]` screen.** `app/messages/[threadId].tsx` redirects one
    that arrives there anyway, after the load and before any content renders —
    enforced at that one choke point, not just at every caller. The flat screen
-   is not a degraded board for a club thread, it is a trap: the club's chat
-   already moved to `archived_messages`, so it opens empty; there is no
+   is not a degraded board for a club thread, it is a trap: there is no
    Announcement control; the composer silently creates a junk ROOT POST for
    every line typed; a long-press to quote fails ('you can only quote a
    message from the same post'); and read-marking writes `thread_reads`, which
    the club branch of `fetch_my_threads` no longer reads, so the badge never
-   clears. This invariant being written nowhere is a large part of why three
-   navigation sites (`app/clubs/[id]/index.tsx`'s "Open the club thread",
-   `broadcast.tsx`'s legacy compose redirect, `broadcasts.tsx`'s legacy
-   history redirect) kept sending a club thread here through thirteen
-   reviews before the screen-level redirect closed it off for good.
+   clears. (The chat is NOT actually invisible there — `fetch_thread_messages`
+   filters on `thread_id` alone, and `20260830040000_archive_club_chat.sql`
+   only moves messages written before the club's first announcement into
+   `archived_messages`, so most of a club's history typically still renders
+   flat. That makes the trap worse, not better: it looks like it mostly
+   works.) This invariant being written nowhere is a
+   large part of why four navigation sites (`app/clubs/[id]/index.tsx`'s "Open
+   the club thread", `broadcast.tsx`'s legacy compose redirect,
+   `broadcasts.tsx`'s legacy history redirect, and `app/messages/new.tsx`'s
+   Everyone compose target) kept sending a club thread here through thirteen
+   reviews — the fourth survived even the fix meant to catch them all — before
+   the screen-level redirect closed it off for good.
 8. **`deriveSubject` must agree with `post_message`'s SQL character for character** —
    it is shown to an organizer as the subject their email will carry.
 9. **`lib/` never rejects.** Every exported async resolves `null` or `{ error }`.
@@ -240,8 +246,8 @@ npm run test:visual                                # Playwright, FOREGROUND
 npm run test:db:remote                             # hosted grant matrix
 ```
 
-Green at handoff (`feat/club-boards`, local suites only): **pgTAP 1095/41 files ·
-vitest 1128/70 files · Playwright 48/48 · tsc clean**.
+Green at handoff (`feat/club-boards`, local suites only): **pgTAP 1098/41 files ·
+vitest 1129/70 files · Playwright 48/48 · tsc clean**.
 
 `.env.local` points the app at the **hosted** project. Local suites do not exercise
 it — this branch's seven migrations (`20260830000000` through `20260830040000`) are
@@ -292,7 +298,7 @@ board itself was designed:
 
 ## Refactor candidates — an honest read
 
-**`app/messages/[threadId].tsx` was 1094 lines and is now 471** — the split this
+**`app/messages/[threadId].tsx` was 1094 lines and is now 473** — the split this
 section used to propose actually happened, done for the board and post screens
 rather than in place. What came out of it:
 
