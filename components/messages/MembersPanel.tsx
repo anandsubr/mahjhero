@@ -190,9 +190,11 @@ export default function MembersPanel({ thread, onChanged, onLeaveError }: Props)
 
       {/*
         Irreversible: the last member out deletes the thread and its
-        messages (leave_group_thread's own comment). Same two-step
-        confirmation Send already uses on this screen for an
-        announcement -- the other action here that cannot be undone.
+        messages (leave_group_thread's own comment). Asks once, arm-then-
+        confirm -- the shape Send's announcement arming used before that
+        toggle was removed from this screen (see
+        app/messages/[threadId].tsx's own docstring). Leave is now the only
+        action here that cannot be undone, and still gets the two-step.
       */}
       <Button
         variant="destructive"

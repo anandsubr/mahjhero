@@ -18,11 +18,10 @@ import { colors, space, type } from '../../../lib/theme';
 /**
  * Start a post on a club's board.
  *
- * The Announcement toggle here is the capability docs/messaging.md flags as
- * unreachable: the organizer toggle was removed from the old flat thread
- * screen pending a friendlier design, and until this screen existed there
- * was no way to email a club from the app at all, where before the
- * messaging branch there was.
+ * The Announcement toggle here reopens a capability the old flat thread
+ * screen closed: its organizer toggle was removed pending a friendlier
+ * design, and until this screen existed there was no way to email a club
+ * from the app at all, where before the messaging branch there was.
  *
  * An announcement is a FLAG on a root, not a separate kind of object — one
  * posting path, one permission model, one fan-out. `post_message` refuses

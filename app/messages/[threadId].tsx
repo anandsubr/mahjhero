@@ -29,8 +29,9 @@ import { useThreadRealtime } from '../../lib/use-thread-realtime';
 /**
  * The `1C thread` artboard.
  *
- * This is the app's only Realtime subscriber, and deliberately the only one.
- * `postgres_changes` applies RLS per subscriber, so a channel filtered to
+ * This screen subscribes to Realtime through `lib/use-thread-realtime.ts`,
+ * the same hook the board and post screens call — three subscribers now, not
+ * one. `postgres_changes` applies RLS per subscriber, so a channel filtered to
  * one thread_id delivers exactly what `can_read_thread` allows — there is no
  * second authorization surface. Subscribing across every thread would keep
  * badges live at the cost of a connection held for the whole session and the
@@ -57,8 +58,9 @@ import { useThreadRealtime } from '../../lib/use-thread-realtime';
  * renders in full below, and `postMessage`'s `announce` parameter,
  * `post_message`, `broadcast_recipients`, and the outbox fan-out are all
  * untouched underneath this screen, for the redesign to reattach a UI to.
- * `countBroadcastRecipients` (lib/broadcasts.ts) loses its only caller here
- * and goes back to being test-only.
+ * `countBroadcastRecipients` (lib/broadcasts.ts) loses its caller here — it
+ * is called from `app/messages/club/new.tsx` now, for the same recipient
+ * count shown before an announcement is sent.
  */
 export default function ThreadScreen() {
   const { session, loading } = useSession();
