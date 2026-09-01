@@ -1,7 +1,10 @@
 /*
  * Club threads become BOARDS: a list of root posts, each with its own
- * replies. This migration adds only the container; post_message
- * (20260830010000) is what enforces how it may be filled.
+ * replies. This migration adds only the container; post_message is what
+ * enforces how it may be filled — and note it is redefined twice more after
+ * this, so 20260830011000 holds the live definition, not 20260830010000.
+ * Grep for the last `create function public.post_message` before trusting
+ * any pointer to it, here or anywhere else.
  *
  * `root_id` and `reply_to_id` answer two different questions and so they
  * are two different columns:
