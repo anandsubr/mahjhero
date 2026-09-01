@@ -361,7 +361,22 @@ test.describe('signed in', () => {
         // "Your clubs" trap this file's other comments record. The row's
         // title is the club's bare name now, not "Everyone at <club>" — see
         // lib/messages.ts's `threadTitleFor` for why.
+        //
+        // The club-boards feature (app/messages/index.tsx's `open`) sends
+        // this exact tap to the board (`/messages/club/{id}`) now, not the
+        // flat thread screen this baseline pictures — the board's own empty
+        // state gets its baseline in a later task, once it has one. This
+        // still exercises the identical open_thread_for_club RPC path a
+        // never-opened club thread goes through (the reason the click,
+        // rather than a guessed id, stays here), then follows straight on
+        // to the flat screen by the id the board's own URL just carried, so
+        // this baseline keeps covering that screen's still-real empty state
+        // — reachable directly, e.g. from a link shared before this
+        // feature, even though no row leads to it any more.
         await page.getByRole('button', { name: 'Riverside Mah Jongg' }).click();
+        await page.waitForURL(/\/messages\/club\/.+/);
+        const threadId = page.url().split('/messages/club/')[1];
+        await page.goto(`/messages/${threadId}`);
         // `exact: true` — the brief's own bare `getByLabel('Message')` is
         // ALSO a substring match on this screen's own "< Messages" back
         // link (accessibilityLabel="Messages", app/messages/[threadId].tsx),

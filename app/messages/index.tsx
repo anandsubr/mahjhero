@@ -81,7 +81,13 @@ export default function MessagesScreen() {
 
       if (row.thread_id) {
         openingRef.current = false;
-        router.push(`/messages/${row.thread_id}`);
+        // A club thread lands on its board now; every other kind still
+        // opens straight into the flat thread screen.
+        router.push(
+          row.kind === 'club'
+            ? `/messages/club/${row.thread_id}`
+            : `/messages/${row.thread_id}`,
+        );
         return;
       }
 
@@ -99,7 +105,10 @@ export default function MessagesScreen() {
         setActionError(refusal ?? GENERIC_ERROR);
         return;
       }
-      router.push(`/messages/${id}`);
+      // This branch is only ever reached for a club row (the `!row.club_id`
+      // guard above returns for anything else), so the id it just opened
+      // always belongs to a club thread -- always the board.
+      router.push(`/messages/club/${id}`);
     },
     [router],
   );
