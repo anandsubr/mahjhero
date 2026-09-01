@@ -147,9 +147,10 @@ export const THREAD_COLUMNS =
  * resolves the quoted parent with a plain self-join instead, the same
  * composite-key guarantee this docstring argues for, asked once rather
  * than through a second query. That RPC also sidesteps this select's OTHER
- * gap: `profiles(display_name)` here is self-only RLS (20260822180000), so
- * on a raw select of this column list a sender who is not the caller comes
- * back with `profiles: null`. MESSAGE_COLUMNS stays exported and tested
+ * gap: the `profiles` embed here is self-only RLS (20260822180000), so on a
+ * raw select of this column list a sender who is not the caller comes back
+ * with `profiles: null` — the FK hint added below picks WHICH relationship
+ * is meant, and does nothing about which rows RLS will hand back. MESSAGE_COLUMNS stays exported and tested
  * directly (lib/schema-contract.test.ts) because both findings are still
  * true of a raw select — the RPC is the fix, not a change to what
  * PostgREST itself can do with this list.
