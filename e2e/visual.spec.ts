@@ -3,6 +3,7 @@ import {
   mintSession,
   seedClubWithEvent,
   seedEmptyGroupThread,
+  seedMessageCandidates,
   seedPopulatedBoard,
   seedPopulatedMessagesList,
   seedPopulatedThread,
@@ -202,6 +203,26 @@ test.describe('signed in', () => {
       await captureScreen(page, vp, `friends-${vp.name}.png`);
     });
 
+    // The GENUINELY-EMPTY picker: this block's user belongs to no club, so
+    // `fetchFriends` and `fetchAddablePeople` both come back `[]` rather
+    // than failing -- a real state, not a fixture accident, and one every
+    // member sees at least once (their first visit, before joining a club
+    // or adding a friend). Worth its own baseline for exactly the reason
+    // this task exists: before Task 16 this was the ONLY thing `message-new`
+    // ever pictured, by accident, because nothing distinguished it from a
+    // still-loading or failed-fetch screen. Now that the populated picker
+    // has its own baseline (`with a seeded club`'s `new message` test
+    // below), this one keeps the honest-empty-state copy under regression
+    // instead of losing coverage of it entirely.
+    test(`message-new empty at ${vp.name}`, async ({ page }) => {
+      await page.setViewportSize({ width: vp.width, height: vp.height });
+      await page.goto('/messages/new');
+      await expect(
+        page.getByText('Nobody to message yet. Add a friend or join a club to find people to message.'),
+      ).toBeVisible();
+      await captureScreen(page, vp, `message-new-empty-${vp.name}.png`);
+    });
+
     // The EMPTY state, and it stays that way: this block's user belongs to no
     // club. The seeding hook lives in the nested describe below precisely so
     // that adding populated baselines could not quietly turn this one into a
@@ -344,10 +365,23 @@ test.describe('signed in', () => {
         await captureScreen(page, vp, `club-detail-${vp.name}.png`);
       });
 
+      // The POPULATED picker. Before Task 16 this baseline pictured the
+      // empty state by accident -- `seedClubWithEvent` puts nobody but the
+      // signed-in member on either of its clubs' rosters, so `fetchFriends`
+      // and `fetchAddablePeople` both came back `[]` and the whole point of
+      // the screen (picking somebody) went unpictured. `seedMessageCandidates`
+      // gives it two friends and two club-mates in a club of its own; one
+      // friend is also clicked before the shot so the selected-row border
+      // (`styles.personOn`, app/messages/new.tsx) is pictured too, not just
+      // the unselected list.
       test(`new message at ${vp.name}`, async ({ page }) => {
         await page.setViewportSize({ width: vp.width, height: vp.height });
+        const { friendName } = await seedMessageCandidates(userId);
         await page.goto('/messages/new');
         await expect(page.getByText('Send to')).toBeVisible();
+        await expect(page.getByLabel(friendName)).toBeVisible();
+        await expect(page.getByLabel('Priyanka Menon')).toBeVisible();
+        await page.getByLabel(friendName).click();
         await captureScreen(page, vp, `message-new-${vp.name}.png`);
       });
 

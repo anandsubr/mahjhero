@@ -14,7 +14,12 @@ import Screen from '../../components/Screen';
 import TabBar from '../../components/TabBar';
 import { GENERIC_ERROR } from '../../lib/constants';
 import { initialsFrom } from '../../lib/dashboard';
-import { fetchAddablePeople, fetchFriends } from '../../lib/friends';
+import {
+  fetchAddablePeople,
+  fetchFriends,
+  type AddablePerson,
+  type Friend,
+} from '../../lib/friends';
 import { createGroupThread, postMessage } from '../../lib/messages';
 import { useSession } from '../../lib/session';
 import { colors, radius, space, type } from '../../lib/theme';
@@ -75,7 +80,17 @@ export default function NewMessageScreen() {
   const { session, loading } = useSession();
   const router = useRouter();
 
-  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  // Kept apart, as `Friend[] | null` and `AddablePerson[] | null` -- not
+  // merged straight into one `Candidate[]` -- so `null` ("could not ask")
+  // stays tellable from `[]` ("genuinely nobody") for EACH source. Merging
+  // early into a single `candidates` list the way this screen used to would
+  // erase exactly that distinction: a failed fetchAddablePeople alongside an
+  // empty fetchFriends would come out looking identical to two fetches that
+  // both genuinely found nobody, and the screen would tell a member with a
+  // dead network that she has no friends. Same contract friends.tsx keeps
+  // for its own `friends`/`people` state.
+  const [friends, setFriends] = useState<Friend[] | null>(null);
+  const [people, setPeople] = useState<AddablePerson[] | null>(null);
   const [picked, setPicked] = useState<string[]>([]);
   const [draft, setDraft] = useState('');
   const [ready, setReady] = useState(false);
@@ -100,48 +115,36 @@ export default function NewMessageScreen() {
   // matches what the member is asking to send.
   const createdThreadRef = useRef<string | null>(null);
 
+  // Keyed on the user id, NOT on `session` itself -- lib/session.tsx hands
+  // out a fresh Session object on every onAuthStateChange (TOKEN_REFRESHED
+  // included, hourly, and on web tab focus), and none of that changes who
+  // is asking. Depending on the object would refetch and discard `picked`'s
+  // sibling state for no reason on every one of those. Same guard
+  // app/friends.tsx and app/messages/index.tsx keep on their own loads.
+  const userId = session?.user.id;
+
   useEffect(() => {
-    if (!session) return;
+    if (!userId) return;
     let cancelled = false;
 
     void (async () => {
-      const [friends, people] = await Promise.all([
-        fetchFriends(),
-        fetchAddablePeople(),
-      ]);
+      const [f, p] = await Promise.all([fetchFriends(), fetchAddablePeople()]);
       if (cancelled) return;
 
-      /*
-       * Friends first, then people from your clubs.
-       *
-       * Not merely a nicety: a friend acquired in a club one of you has
-       * since left appears in NEITHER club list, so ordering by club alone
-       * would bury exactly the person the friends feature exists to keep
-       * reachable.
-       */
-      setCandidates([
-        ...(friends ?? []).map((f) => ({
-          profile_id: f.profile_id,
-          display_name: f.display_name,
-          meta: 'Friend',
-        })),
-        ...(people ?? []).map((p) => ({
-          profile_id: p.profile_id,
-          display_name: p.display_name,
-          meta: p.club_name,
-        })),
-      ]);
-
-      if (friends === null || people === null) {
-        setError(GENERIC_ERROR);
-      }
+      setFriends(f);
+      setPeople(p);
+      // Only the read failure sets this -- an action's own refusal (`start`
+      // below) is set by the action, and clearing it here would erase a
+      // message the member is reading before they have read it. Same split
+      // app/friends.tsx's own `load` keeps.
+      if (f === null || p === null) setError(GENERIC_ERROR);
       setReady(true);
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [session]);
+  }, [userId]);
 
   const toggle = useCallback((id: string) => {
     createdThreadRef.current = null;
@@ -236,6 +239,34 @@ export default function NewMessageScreen() {
   }
   if (!session) return <Redirect href="/sign-in" />;
 
+  /*
+   * Friends first, then people from your clubs.
+   *
+   * Not merely a nicety: a friend acquired in a club one of you has since
+   * left appears in NEITHER club list, so ordering by club alone would
+   * bury exactly the person the friends feature exists to keep reachable.
+   *
+   * `friends ?? []` / `people ?? []` here is safe precisely because
+   * everything below that treats "nobody" as a fact -- the empty-state card
+   * -- checks `friends !== null && people !== null` first, the same guard
+   * app/friends.tsx puts on its own `emptyCard`. This list itself is allowed
+   * to render whatever came back, including a partial list from the one
+   * fetch that succeeded while the other failed.
+   */
+  const candidates: Candidate[] = [
+    ...(friends ?? []).map((f) => ({
+      profile_id: f.profile_id,
+      display_name: f.display_name,
+      meta: 'Friend',
+    })),
+    ...(people ?? []).map((p) => ({
+      profile_id: p.profile_id,
+      display_name: p.display_name,
+      meta: p.club_name,
+    })),
+  ];
+  const genuinelyEmpty = friends !== null && people !== null && candidates.length === 0;
+
   return (
     <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="messages" />}>
       <Text style={styles.heading}>New message</Text>
@@ -247,6 +278,14 @@ export default function NewMessageScreen() {
       ) : (
         <>
           <Text style={styles.label}>Send to</Text>
+          {genuinelyEmpty ? (
+            <View style={styles.emptyCard}>
+              <Text style={styles.emptyText}>
+                Nobody to message yet. Add a friend or join a club to find
+                people to message.
+              </Text>
+            </View>
+          ) : null}
           {candidates.map((c) => {
             const on = picked.includes(c.profile_id);
             return (
@@ -313,6 +352,23 @@ const styles = StyleSheet.create({
   label: {
     fontFamily: type.bodyRegular,
     fontSize: type.size.helper,
+    color: colors.textMuted,
+  },
+  // Same dashed-card treatment as app/friends.tsx's and
+  // app/messages/index.tsx's own `emptyCard`/`emptyText` -- reused rather
+  // than invented again, the third place this exact "nothing here, and
+  // here is why" card has appeared.
+  emptyCard: {
+    padding: space[4],
+    borderRadius: radius.card,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    borderColor: colors.neutral[400],
+  },
+  emptyText: {
+    fontFamily: type.bodyRegular,
+    fontSize: type.size.helper,
+    lineHeight: 24,
     color: colors.textMuted,
   },
   person: {

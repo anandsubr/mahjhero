@@ -1718,6 +1718,98 @@ export async function seedPopulatedBoard(
 }
 
 /**
+ * Two friends and two club-mates for `app/messages/new.tsx`'s picker, in a
+ * club of its own rather than added to `seedClubWithEvent`'s Riverside —
+ * that club's roster is what the club-detail, roster and booking baselines
+ * screenshot, and padding it out here would move every one of them for a
+ * baseline that has nothing to do with rosters.
+ *
+ * Friends first, since `fetchFriends` and `fetchAddablePeople` are two
+ * separate RPCs with two separate refusal rules to picture: a friendship
+ * (the `friendships` table, written directly the way `add_friend` would)
+ * and ordinary shared club membership are not the same relationship, and
+ * the screen's own "Friend" vs club-name meta line only means something if
+ * both are actually seeded.
+ */
+export async function seedMessageCandidates(
+  profileId: string,
+): Promise<{ friendId: string; friendName: string }> {
+  const admin = adminClient('seed message candidates');
+
+  const need = <T>(what: string, result: { data: unknown; error: unknown }): T => {
+    if (result.error || result.data == null) {
+      throw new Error(
+        `seedMessageCandidates: ${what} failed: ${JSON.stringify(result.error)}`,
+      );
+    }
+    return result.data as T;
+  };
+
+  const suffix = profileId.slice(0, 8);
+
+  const club = need<{ id: string }>(
+    'club insert',
+    await admin
+      .from('clubs')
+      .insert({
+        name: 'Maple Street Mahjong',
+        slug: `maple-street-${suffix}`,
+        rhythm: 'Wednesday evenings',
+        timezone: 'America/New_York',
+        created_by: profileId,
+      })
+      .select('id')
+      .single(),
+  );
+  const clubId = club.id;
+
+  const { error: memberError } = await admin
+    .from('club_members')
+    .insert({ club_id: clubId, profile_id: profileId, role: 'member' });
+  if (memberError) {
+    throw new Error(
+      `seedMessageCandidates: membership insert failed: ${JSON.stringify(memberError)}`,
+    );
+  }
+
+  const [friendA, friendB, clubmateA, clubmateB] = await Promise.all([
+    seedFillerProfile(admin, 'Elena Vasquez', 'msgpick-friend-a', suffix),
+    seedFillerProfile(admin, 'Tobias Reid', 'msgpick-friend-b', suffix),
+    seedFillerProfile(admin, 'Priyanka Menon', 'msgpick-clubmate-a', suffix),
+    seedFillerProfile(admin, 'Cormac Doyle', 'msgpick-clubmate-b', suffix),
+  ]);
+
+  const { error: rosterError } = await admin.from('club_members').insert([
+    { club_id: clubId, profile_id: friendA, role: 'member' },
+    { club_id: clubId, profile_id: friendB, role: 'member' },
+    { club_id: clubId, profile_id: clubmateA, role: 'member' },
+    { club_id: clubId, profile_id: clubmateB, role: 'member' },
+  ]);
+  if (rosterError) {
+    throw new Error(
+      `seedMessageCandidates: roster insert failed: ${JSON.stringify(rosterError)}`,
+    );
+  }
+
+  // Directly into `friendships`, not through `add_friend` — the RPC runs as
+  // the caller (`auth.uid()`), and the fixture has no session to call it
+  // with. The table has a select policy and no write policy at all (see
+  // supabase/migrations/20260828010000_friend_mutations.sql's own docstring
+  // on that), so service_role is the only way in here anyway.
+  const { error: friendshipError } = await admin.from('friendships').insert([
+    { profile_id: profileId, friend_id: friendA },
+    { profile_id: profileId, friend_id: friendB },
+  ]);
+  if (friendshipError) {
+    throw new Error(
+      `seedMessageCandidates: friendship insert failed: ${JSON.stringify(friendshipError)}`,
+    );
+  }
+
+  return { friendId: friendA, friendName: 'Elena Vasquez' };
+}
+
+/**
  * The localStorage key supabase-js persists its session under, derived from
  * the project ref in the URL. Keep in step with the client's own convention:
  * see `defaultStorageKey` in `node_modules/@supabase/supabase-js/src/SupabaseClient.ts`

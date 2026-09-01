@@ -64,6 +64,59 @@ describe('new message screen', () => {
     postMessage.mockResolvedValue({ id: 'm1', error: null });
   });
 
+  // `ready` gates the whole "Send to" section, including the empty-state
+  // card -- so a member whose fetch just hasn't landed yet should see
+  // neither the picker nor a premature "nobody to message" claim. This is
+  // the state Task 16 exists to keep honest: before candidates and errors
+  // were told apart, this component's only user-visible states were
+  // "spinner" and "the list (however empty)", with no way to catch a claim
+  // rendered before the data it describes had actually arrived.
+  it('shows no candidates and no empty-state claim while still loading', async () => {
+    let resolveFriends: (value: unknown) => void = () => {};
+    fetchFriends.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveFriends = resolve;
+      }),
+    );
+    render(<NewMessageScreen />);
+    await screen.findByText('New message');
+
+    expect(screen.queryByText('Send to')).toBeNull();
+    expect(screen.queryByText(/Nobody to message yet/)).toBeNull();
+
+    resolveFriends([]);
+    await screen.findByText('Send to');
+    expect(screen.queryByText(/Nobody to message yet/)).toBeNull();
+  });
+
+  // `null` is "we could not ask", `[]` is "you have no friends" -- telling a
+  // member with a dead network that she has nobody to message is a false
+  // statement about her, not a report on the network. Mirrors the identical
+  // test in app/__tests__/friends.test.tsx.
+  it('shows an error rather than the empty state when a fetch fails', async () => {
+    fetchFriends.mockResolvedValueOnce(null);
+    fetchAddablePeople.mockResolvedValueOnce([]);
+    render(<NewMessageScreen />);
+    expect(await screen.findByText(/Could not reach MahjHero/)).toBeTruthy();
+    expect(screen.queryByText(/Nobody to message yet/)).toBeNull();
+  });
+
+  // Genuinely nobody -- both fetches succeed and both come back empty. The
+  // honest copy names the fix rather than leaving a bare "Send to" label
+  // over empty space, which is the defect this screen shipped with once
+  // "Everyone" (the only other target) was removed.
+  it('shows the empty state and names the fix when there is genuinely nobody', async () => {
+    fetchFriends.mockResolvedValueOnce([]);
+    fetchAddablePeople.mockResolvedValueOnce([]);
+    render(<NewMessageScreen />);
+    expect(
+      await screen.findByText(
+        'Nobody to message yet. Add a friend or join a club to find people to message.',
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Could not reach MahjHero/)).toBeNull();
+  });
+
   // Friends first: they are the people you deliberately kept, and they are
   // the only ones who may not appear under any club.
   it('lists friends above people from your clubs', async () => {
