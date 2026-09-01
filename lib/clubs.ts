@@ -83,6 +83,22 @@ export function canInvite(role: ClubRole): boolean {
 }
 
 /**
+ * Only hosts and co-organizers may flip a post's Announcement toggle — the
+ * UI-side mirror of `assert_club_organizer`, which `post_message` calls
+ * before honouring `p_announce` and refuses with a 42501 otherwise.
+ *
+ * Computes the same thing `canInvite` does today, on purpose kept as its
+ * own export rather than reused: inviting and announcing are different
+ * permissions that happen to coincide for every role this app has right
+ * now. Collapsing them into one boolean would read fine until the day one
+ * of them changes without the other, at which point whichever call site
+ * kept sharing the wrong predicate breaks silently.
+ */
+export function canAnnounce(role: ClubRole): boolean {
+  return role === 'host' || role === 'co_organizer';
+}
+
+/**
  * Splits one CSV line into cells, honouring quoted fields.
  *
  * `line.split(',')` was wrong for the actual input this screen exists to

@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_ROSTER_ROWS, canInvite, importRoster, parseRoster, slugify } from './clubs';
+import {
+  MAX_ROSTER_ROWS,
+  canAnnounce,
+  canInvite,
+  importRoster,
+  parseRoster,
+  slugify,
+} from './clubs';
 
 describe('slugify', () => {
   it('lowercases and hyphenates', () => {
@@ -30,6 +37,20 @@ describe('canInvite', () => {
 
   it('refuses a plain member', () => {
     expect(canInvite('member')).toBe(false);
+  });
+});
+
+describe('canAnnounce', () => {
+  it('allows a host', () => {
+    expect(canAnnounce('host')).toBe(true);
+  });
+
+  it('allows a co-organizer', () => {
+    expect(canAnnounce('co_organizer')).toBe(true);
+  });
+
+  it('refuses a plain member', () => {
+    expect(canAnnounce('member')).toBe(false);
   });
 });
 

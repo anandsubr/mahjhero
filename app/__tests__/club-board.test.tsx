@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ClubBoardScreen from '../messages/club/[threadId]/index';
 
 const push = vi.fn();
@@ -37,6 +37,10 @@ vi.mock('../../lib/use-thread-realtime', () => ({
 
 const fetchClubPosts = vi.fn();
 const markPostRead = vi.fn();
+// The New post button's `clubId` query param comes from this, not from
+// `fetch_club_posts`' own rows (ClubPost carries no club_id -- every row it
+// returns already belongs to this one thread).
+const fetchThread = vi.fn();
 // TabBar (carried by this screen via Screen's `tabBar` prop) calls
 // useUnreadCounts, which reaches this -- the same reason every other screen
 // test that renders TabBar mocks it (see app/__tests__/messages.test.tsx).
@@ -49,6 +53,7 @@ vi.mock('../../lib/messages', async () => {
     ...actual,
     fetchClubPosts: (...a: unknown[]) => fetchClubPosts(...a),
     markPostRead: (...a: unknown[]) => markPostRead(...a),
+    fetchThread: (...a: unknown[]) => fetchThread(...a),
     fetchUnreadCounts: () => fetchUnreadCounts(),
   };
 });
@@ -57,6 +62,7 @@ describe('the club board', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     fetchUnreadCounts.mockResolvedValue([]);
+    fetchThread.mockResolvedValue({ id: 't1', club_id: 'c1' });
   });
 
   it('lists posts', async () => {
@@ -121,5 +127,32 @@ describe('the club board', () => {
       expect(screen.getByText('Anyone free Thursday?')).toBeTruthy(),
     );
     expect(markPostRead).not.toHaveBeenCalled();
+  });
+
+  // Task 10 deliberately shipped the board with no way to start a post --
+  // this route did not exist yet. This is that control finally wired up.
+  it('offers a New post control that carries this thread and its club to the compose screen', async () => {
+    fetchClubPosts.mockResolvedValue([]);
+    render(<ClubBoardScreen />);
+    await waitFor(() => expect(screen.getByLabelText('New post')).toBeTruthy());
+    // The button renders before `fetchThread`'s own promise settles (it is
+    // deliberately not gated on `ready` -- see the screen's own comment),
+    // so the href it carries is a moving target until `clubId` lands.
+    // Retrying the click inside `waitFor` catches it once state settles,
+    // rather than asserting against whichever href happened to be current
+    // the instant this test clicked.
+    await waitFor(() => {
+      fireEvent.click(screen.getByLabelText('New post'));
+      expect(push).toHaveBeenCalledWith('/messages/club/new?threadId=t1&clubId=c1');
+    });
+  });
+
+  it('still offers New post when fetchThread cannot say which club this is', async () => {
+    fetchClubPosts.mockResolvedValue([]);
+    fetchThread.mockResolvedValue(null);
+    render(<ClubBoardScreen />);
+    await waitFor(() => expect(screen.getByLabelText('New post')).toBeTruthy());
+    fireEvent.click(screen.getByLabelText('New post'));
+    expect(push).toHaveBeenCalledWith('/messages/club/new?threadId=t1&clubId=');
   });
 });

@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import Button from '../../../../components/Button';
 import ErrorBanner from '../../../../components/ErrorBanner';
 import PostRow from '../../../../components/messages/PostRow';
 import Screen from '../../../../components/Screen';
 import TabBar from '../../../../components/TabBar';
 import { GENERIC_ERROR } from '../../../../lib/constants';
-import { fetchClubPosts, type ClubPost } from '../../../../lib/messages';
+import { fetchClubPosts, fetchThread, type ClubPost } from '../../../../lib/messages';
 import { useSession } from '../../../../lib/session';
 import { colors, radius, space, type } from '../../../../lib/theme';
 import { useThreadRealtime } from '../../../../lib/use-thread-realtime';
@@ -30,6 +31,11 @@ export default function ClubBoardScreen() {
   const router = useRouter();
 
   const [posts, setPosts] = useState<ClubPost[]>([]);
+  // Not part of `fetch_club_posts`' own row shape (ClubPost has no club_id
+  // -- every row it returns already belongs to this one thread), so the
+  // New post button below needs it from a separate read. Read once here
+  // rather than adding a column the board's own list has no use for.
+  const [clubId, setClubId] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Written synchronously alongside the async call it guards, the same
@@ -64,6 +70,26 @@ export default function ClubBoardScreen() {
     void load();
   }, [session, load]);
 
+  useEffect(() => {
+    if (!session?.user.id || !threadId) return;
+    let cancelled = false;
+    // A best-effort read for the compose link's `clubId` query param, kept
+    // separate from `load()`'s own `loadingRef` guard: this must run once
+    // per thread, not on every realtime refetch `load()` also answers, and
+    // a failure here should not blank the board the way a failed
+    // `fetchClubPosts` does -- the posts are the thing this screen exists
+    // to show, and a member can still read them with no compose link.
+    void fetchThread(threadId).then((thread) => {
+      if (!cancelled) setClubId(thread?.club_id ?? null);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // Keyed on the viewer's id, not the `session` object -- see
+    // lib/session.tsx's docstring: a token refresh hands out a fresh
+    // `Session` that changes nothing about who is asking.
+  }, [session?.user.id, threadId]);
+
   useThreadRealtime(
     threadId,
     session?.user.id,
@@ -97,6 +123,24 @@ export default function ClubBoardScreen() {
           <ErrorBanner message={error} />
         </View>
       ) : null}
+
+      {/*
+        Deliberately not gated on `ready`: a member composing does not need
+        the existing posts loaded first, and the board's own load failing
+        must not also take away the one way to start a post. `clubId` falls
+        back to '' when the read above hasn't resolved yet (or failed) --
+        the compose screen still works without it, just without an
+        Announcement toggle or recipient preview to show a plain member
+        who couldn't see either anyway.
+      */}
+      <Button
+        onPress={() =>
+          router.push(`/messages/club/new?threadId=${threadId}&clubId=${clubId ?? ''}`)
+        }
+        accessibilityLabel="New post"
+      >
+        New post
+      </Button>
 
       {!ready ? (
         <ActivityIndicator color={colors.accentColor} />
