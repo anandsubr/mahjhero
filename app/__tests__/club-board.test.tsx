@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
-import ClubBoardScreen from '../messages/club/[threadId]';
+import ClubBoardScreen from '../messages/club/[threadId]/index';
 
 const push = vi.fn();
 

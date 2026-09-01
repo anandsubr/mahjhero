@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
-import ErrorBanner from '../../../components/ErrorBanner';
-import PostRow from '../../../components/messages/PostRow';
-import Screen from '../../../components/Screen';
-import TabBar from '../../../components/TabBar';
-import { GENERIC_ERROR } from '../../../lib/constants';
-import { fetchClubPosts, type ClubPost } from '../../../lib/messages';
-import { useSession } from '../../../lib/session';
-import { colors, radius, space, type } from '../../../lib/theme';
-import { useThreadRealtime } from '../../../lib/use-thread-realtime';
+import ErrorBanner from '../../../../components/ErrorBanner';
+import PostRow from '../../../../components/messages/PostRow';
+import Screen from '../../../../components/Screen';
+import TabBar from '../../../../components/TabBar';
+import { GENERIC_ERROR } from '../../../../lib/constants';
+import { fetchClubPosts, type ClubPost } from '../../../../lib/messages';
+import { useSession } from '../../../../lib/session';
+import { colors, radius, space, type } from '../../../../lib/theme';
+import { useThreadRealtime } from '../../../../lib/use-thread-realtime';
 
 /**
  * A club's board: its root posts, most recent activity first --
