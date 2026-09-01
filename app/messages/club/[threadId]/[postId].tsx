@@ -1,0 +1,235 @@
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
+import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import Composer from '../../../../components/messages/Composer';
+import ErrorBanner from '../../../../components/ErrorBanner';
+import MessageBubble from '../../../../components/messages/MessageBubble';
+import Screen from '../../../../components/Screen';
+import TabBar from '../../../../components/TabBar';
+import { ChevronLeftIcon } from '../../../../components/icons';
+import { GENERIC_ERROR } from '../../../../lib/constants';
+import {
+  fetchPostMessages,
+  groupSeparatorLabel,
+  markPostRead,
+  postMessage,
+  startsNewGroup,
+  type ThreadMessage,
+} from '../../../../lib/messages';
+import { useSession } from '../../../../lib/session';
+import { colors, space, type } from '../../../../lib/theme';
+import { useThreadRealtime } from '../../../../lib/use-thread-realtime';
+
+/**
+ * One post: its root, its replies, and a composer that always writes INTO
+ * this post -- `rootId` (the URL's `postId`) never changes while this
+ * screen is mounted.
+ *
+ * `replyTo` is a different thing and still works: it names which MESSAGE a
+ * reply quotes (`reply_to_id`), not which POST it belongs to (`root_id`).
+ * Quoting an earlier reply from inside the same post is normal, so `send`
+ * below passes both independently -- `postId` as the fifth argument on every
+ * call, `replyTo?.id` as the fourth only when one is picked.
+ *
+ * Read-marking lives here, gated on `loadedRef`, rather than on the board:
+ * opening the board is not reading any post on it (the board screen's own
+ * docstring), and a screen whose initial fetch failed never showed anything
+ * to read -- marking it read anyway would clear a badge for a post the
+ * member never saw.
+ *
+ * The realtime subscription (lib/use-thread-realtime.ts) is thread-wide, not
+ * per-post -- there is one channel per open thread, not one per post, the
+ * same channel the board itself would subscribe on if it stayed open. A
+ * message posted into ANOTHER post on this board fires the same `onInsert`
+ * and refetches this post for nothing; that refetch is cheap
+ * (`fetch_post_messages` returns only this root and its replies) and there
+ * is no payload field to filter on that would make skipping it worthwhile.
+ */
+export default function PostScreen() {
+  const { session, loading } = useSession();
+  const { threadId, postId } = useLocalSearchParams<{
+    threadId: string;
+    postId: string;
+  }>();
+  const router = useRouter();
+  const viewerId = session?.user.id ?? '';
+
+  const [messages, setMessages] = useState<ThreadMessage[]>([]);
+  const [ready, setReady] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [replyTo, setReplyTo] = useState<ThreadMessage | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+  // Written SYNCHRONOUSLY alongside `setSending`, the same pattern
+  // app/messages/[threadId].tsx's own `sendingRef` records: `sending` read
+  // from the render closure is blind to a second activation landing before
+  // that render commits. Cleared on every exit path below -- a ref set and
+  // never cleared makes the composer permanently dead, worse than the bug
+  // it guards against.
+  const sendingRef = useRef(false);
+  // Set alongside `messages`/`error`, not derived from them: the realtime
+  // subscription below fires regardless of whether the initial load
+  // succeeded, and `mark_post_read` must only run once a load has actually
+  // shown the member something.
+  const loadedRef = useRef(false);
+
+  const load = useCallback(async () => {
+    if (!postId) return;
+    const rows = await fetchPostMessages(postId);
+    // fetchPostMessages never rejects: null means "we could not ask". `[]`
+    // is not a real state here -- a post always contains at least its own
+    // root row -- so it is folded into the same failure the null case
+    // already handles rather than rendered as a blank, memberless post.
+    if (rows === null || rows.length === 0) {
+      setError(GENERIC_ERROR);
+      setReady(true);
+      loadedRef.current = false;
+      return;
+    }
+    setError(null);
+    setMessages(rows);
+    setReady(true);
+    loadedRef.current = true;
+    void markPostRead(postId);
+  }, [postId]);
+
+  useEffect(() => {
+    if (!session) return;
+    void load();
+  }, [session, load]);
+
+  useThreadRealtime(
+    threadId,
+    session?.user.id,
+    useCallback(() => {
+      void load();
+    }, [load]),
+  );
+
+  const send = useCallback(async () => {
+    if (sendingRef.current || !threadId || !postId) return;
+    sendingRef.current = true;
+    setSending(true);
+    setError(null);
+    // `false` -- an announcement is always a NEW post, never a reply;
+    // post_message refuses the combination outright ('only a new post can
+    // be an announcement').
+    const { error: refusal } = await postMessage(
+      threadId,
+      draft,
+      false,
+      replyTo?.id ?? null,
+      postId,
+    );
+    if (refusal) {
+      // Neither the draft NOR the quote is cleared. Losing what somebody
+      // typed because the network failed is the worst possible response to
+      // a failed send, and making them re-pick what they were answering is
+      // the second worst.
+      sendingRef.current = false;
+      setSending(false);
+      setError(refusal);
+      return;
+    }
+    setDraft('');
+    setReplyTo(null);
+    await load();
+    sendingRef.current = false;
+    setSending(false);
+  }, [threadId, postId, draft, replyTo, load]);
+
+  if (loading) {
+    return (
+      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="messages" />}>
+        <ActivityIndicator color={colors.accentColor} />
+      </Screen>
+    );
+  }
+  if (!session) return <Redirect href="/sign-in" />;
+
+  return (
+    <Screen contentStyle={styles.container} tabBar={<TabBar active="messages" />}>
+      <View style={styles.header}>
+        <Pressable
+          onPress={() => router.push(`/messages/club/${threadId}`)}
+          accessibilityRole="button"
+          accessibilityLabel="Back to board"
+          style={styles.backButton}
+        >
+          <ChevronLeftIcon color={colors.text} size={22} />
+        </Pressable>
+      </View>
+
+      {error ? (
+        <View accessibilityRole="alert">
+          <ErrorBanner message={error} />
+        </View>
+      ) : null}
+
+      {!ready ? (
+        <ActivityIndicator color={colors.accentColor} />
+      ) : (
+        <>
+          <ScrollView testID="screen-scroll" style={styles.scroller}>
+            {messages.map((m, i) => {
+              // Same iOS-Messages convention app/messages/[threadId].tsx
+              // established: MessageBubble carries no time of its own, so a
+              // centred separator marks the first message of a new group
+              // instead of repeating it on every bubble.
+              const previous = i > 0 ? messages[i - 1] : null;
+              const newGroup = startsNewGroup(m.created_at, previous?.created_at ?? null);
+              return (
+                <Fragment key={m.id}>
+                  {newGroup ? (
+                    <Text style={styles.separator}>{groupSeparatorLabel(m.created_at)}</Text>
+                  ) : null}
+                  <MessageBubble
+                    message={m}
+                    mine={m.author_id === viewerId}
+                    onReply={setReplyTo}
+                  />
+                </Fragment>
+              );
+            })}
+          </ScrollView>
+
+          <Composer
+            draft={draft}
+            onDraftChange={setDraft}
+            replyTo={replyTo}
+            onClearReply={() => setReplyTo(null)}
+            onSend={() => void send()}
+            sending={sending}
+          />
+        </>
+      )}
+    </Screen>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { padding: space[6], gap: space[3], flex: 1 },
+  centered: { alignItems: 'center' },
+  header: { position: 'relative', height: 44 },
+  backButton: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scroller: { flex: 1 },
+  // Same treatment as app/messages/[threadId].tsx's own `separator`: always
+  // on colors.bg (never a bubble's ground), so colors.textMuted's pinned
+  // 5.15:1 ratio (lib/theme.test.ts) applies here unchanged.
+  separator: {
+    fontFamily: type.bodyRegular,
+    fontSize: type.size.helper,
+    color: colors.textMuted,
+    textAlign: 'center',
+    marginTop: space[3],
+    marginBottom: space[2],
+  },
+});
