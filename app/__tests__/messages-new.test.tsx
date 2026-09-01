@@ -140,7 +140,9 @@ describe('new message screen', () => {
     expect(await screen.findByLabelText('Open')).toBeTruthy();
     fireEvent.click(screen.getByLabelText('Open'));
     await waitFor(() => expect(openThreadForClub).toHaveBeenCalledWith('c2'));
-    await waitFor(() => expect(replace).toHaveBeenCalledWith('/messages/t1'));
+    // No post was made, so there is no post to land on -- opens the board
+    // itself, never the flat screen (docs/messaging.md decision #7).
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/messages/club/t1'));
     expect(postMessage).not.toHaveBeenCalled();
   });
 
@@ -164,7 +166,10 @@ describe('new message screen', () => {
         null,
       ),
     );
-    await waitFor(() => expect(replace).toHaveBeenCalledWith('/messages/t1'));
+    // Lands on the post just created, not the flat screen (docs/messaging.md
+    // decision #7) and not the board list -- `postMessage` returns 'm1' for
+    // this call per the beforeEach mock above.
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/messages/club/t1/m1'));
   });
 
   // People is creating the thread in someone else's list for the first

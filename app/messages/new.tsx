@@ -210,8 +210,12 @@ export default function NewMessageScreen() {
     // Everyone with nothing typed just opens the thread -- no post call at
     // all, since it is legitimate to open a club thread to read without
     // writing. People always has a body here, having refused above if not.
+    // `p_root` null: this is a member starting a new post on the board, not
+    // replying inside one -- the same call app/messages/club/new.tsx makes
+    // for the identical reason.
+    let postId: string | null = null;
     if (trimmed.length > 0) {
-      const { error: refusal } = await postMessage(threadId, trimmed, false, null);
+      const { id, error: refusal } = await postMessage(threadId, trimmed, false, null);
       if (refusal) {
         // The thread now exists whether or not this post succeeds --
         // create_group_thread and open_thread_for_club have already run,
@@ -227,6 +231,7 @@ export default function NewMessageScreen() {
         setError(refusal);
         return;
       }
+      postId = id;
     }
 
     busyRef.current = false;
@@ -235,7 +240,21 @@ export default function NewMessageScreen() {
     // `replace`, not `push`: the compose screen has served its purpose and
     // backing out of a thread should land on the list, not on a picker with
     // stale selections.
-    router.replace(`/messages/${threadId}`);
+    //
+    // Everyone's target is a club board, never the flat screen -- a club
+    // thread only belongs on `/messages/club/<id>` (see docs/messaging.md
+    // decision #7). Posting text lands the member on the post they just
+    // started, `app/messages/club/new.tsx`'s own destination for the same
+    // action, since seeing it with its replies is more useful than seeing
+    // it buried in the board list. Opening with nothing typed has no post
+    // to land on, so it opens the board itself.
+    const destination =
+      target === 'everyone'
+        ? postId
+          ? `/messages/club/${threadId}/${postId}`
+          : `/messages/club/${threadId}`
+        : `/messages/${threadId}`;
+    router.replace(destination);
   }, [target, clubId, picked, draft, router]);
 
   // "Send" when the tap is about to post (People always requires a body;
@@ -303,11 +322,15 @@ export default function NewMessageScreen() {
             <Card background={colors.accent2[100]}>
               <Text style={styles.note}>
                 {/*
-                  Ordinary messages never email -- only the thread screen's
-                  "Also email everyone" toggle does, and it defaults off.
-                  This used to say "as a club announcement", which read as a
-                  promise that picking Everyone reaches the outbox. It does
-                  not: Send here posts in the app only.
+                  Ordinary messages never email -- only
+                  app/messages/club/new.tsx's "Also email everyone" toggle
+                  does, and it defaults off. This used to say "as a club
+                  announcement", which read as a promise that picking
+                  Everyone reaches the outbox. It does not: Send here posts
+                  in the app only, as a reply-less root on the club's board
+                  (never the flat thread screen -- see docs/messaging.md
+                  decision #7), the same way starting a fresh post there
+                  does.
                 */}
                 Goes to everyone at {clubName}, in the app. Email is a
                 separate opt-in on the thread.

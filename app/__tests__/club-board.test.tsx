@@ -5,6 +5,16 @@ import ClubBoardScreen from '../messages/club/[threadId]/index';
 
 const push = vi.fn();
 
+// Forwards to, rather than replaces, the identity-keyed `useEffect` double
+// below -- a bare `vi.fn()` swapped in for `useFocusEffect` would drop the
+// mount-time call every other test here relies on to load the board at
+// all. Capturing every call lets one test re-invoke the LATEST registered
+// callback by hand, standing in for a real refocus: expo-router's actual
+// hook re-fires on every focus event regardless of the callback's
+// identity, which this identity-keyed test double cannot do on its own
+// (see that test's own comment for why).
+const useFocusEffectSpy = vi.fn();
+
 vi.mock('expo-router', () => ({
   Redirect: () => null,
   useRouter: () => ({ push, back: vi.fn(), replace: vi.fn() }),
@@ -14,7 +24,10 @@ vi.mock('expo-router', () => ({
   // does -- see app/__tests__/messages.test.tsx's identical comment. Keying
   // this on the callback's own identity is the closest a lightweight mock
   // gets to the real semantics without wiring up navigation events.
-  useFocusEffect: (cb: () => void) => useEffect(cb, [cb]),
+  useFocusEffect: (cb: () => void) => {
+    useFocusEffectSpy(cb);
+    useEffect(cb, [cb]);
+  },
 }));
 
 // A module-scoped constant, not a literal inside the hook: the same
@@ -199,6 +212,66 @@ describe('the club board', () => {
       await Promise.resolve();
     });
     expect(fetchClubPosts).toHaveBeenCalledTimes(2);
+  });
+
+  // `useFocusEffect`, not a plain `useEffect`: opening a post pushes a
+  // screen ON TOP of the board rather than unmounting it, so a mount-only
+  // effect never runs again, and `markPostRead` (fired from the post
+  // screen) writes `post_reads`, which is outside the realtime
+  // publication -- nothing else would tell this screen a dot it drew is
+  // now stale. A plain `useEffect(load, [threadId])` leaves every other
+  // test in this file green, because none of them simulate a SECOND focus
+  // -- they only exercise the mount-time fetch every effect flavor shares.
+  //
+  // `mockResolvedValueOnce` twice, not `mockResolvedValue` once, because a
+  // single resolved value's array keeps the same identity across calls,
+  // and `setPosts(rows)` on an identical array bails out of re-rendering --
+  // a real change under a stable reference would look, to this test, like
+  // no refetch happened at all.
+  it('refetches the board on refocus, so a post read elsewhere clears its dot', async () => {
+    fetchClubPosts
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          id: 'p2',
+          author_id: 'a2',
+          author_name: 'Bob Reyes',
+          body: 'New post while you were away',
+          subject: null,
+          is_announcement: false,
+          created_at: '2026-08-30T11:00:00.000Z',
+          reply_count: 0,
+          last_reply_at: null,
+          last_activity_at: '2026-08-30T11:00:00.000Z',
+          unread: 0,
+        },
+      ]);
+    render(<ClubBoardScreen />);
+    await waitFor(() => expect(fetchClubPosts).toHaveBeenCalledTimes(1));
+    expect(screen.getByText(/Nothing here yet/)).toBeTruthy();
+
+    // The navigation event a real refocus delivers, played by hand: the
+    // registered callback's identity has not changed (`load` is stable on
+    // `threadId`), so nothing about a render triggers this on its own --
+    // only calling it, the way expo-router's subscription would, does.
+    //
+    // TabBar's own `useUnreadCounts` also calls `useFocusEffect` (Screen
+    // renders TabBar), so the spy sees more than one registrant. A real
+    // refocus reaches every one of them, not just the board's -- de-duped
+    // by identity (each is a stable `useCallback`) and invoked all
+    // together is the faithful replay, not a guess at which index is
+    // "the board's".
+    expect(useFocusEffectSpy).toHaveBeenCalled();
+    const callbacks = Array.from(
+      new Set(useFocusEffectSpy.mock.calls.map((c) => c[0] as () => void)),
+    );
+    await act(async () => {
+      callbacks.forEach((cb) => cb());
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(fetchClubPosts).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText('New post while you were away')).toBeTruthy();
   });
 
   it('still offers New post when fetchThread cannot say which club this is', async () => {
