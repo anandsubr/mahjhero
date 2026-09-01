@@ -38,6 +38,10 @@ vi.mock('../../lib/use-thread-realtime', () => ({
 const fetchPostMessages = vi.fn();
 const markPostRead = vi.fn();
 const postMessage = vi.fn();
+// The header's own best-effort read -- see the screen's own docstring on
+// why it duplicates the board's identical call rather than trusting a
+// value handed down from it.
+const fetchThread = vi.fn();
 // TabBar (carried by this screen via Screen's `tabBar` prop) calls
 // useUnreadCounts, which reaches this -- the same reason every other screen
 // test that renders TabBar mocks it.
@@ -51,6 +55,7 @@ vi.mock('../../lib/messages', async () => {
     fetchPostMessages: (...a: unknown[]) => fetchPostMessages(...a),
     markPostRead: (...a: unknown[]) => markPostRead(...a),
     postMessage: (...a: unknown[]) => postMessage(...a),
+    fetchThread: (...a: unknown[]) => fetchThread(...a),
     fetchUnreadCounts: () => fetchUnreadCounts(),
   };
 });
@@ -86,6 +91,15 @@ describe('a club post', () => {
     fetchPostMessages.mockResolvedValue([root]);
     markPostRead.mockResolvedValue({ error: null });
     postMessage.mockResolvedValue({ id: 'm2', error: null });
+    fetchThread.mockResolvedValue({
+      id: 't1',
+      club_id: 'c1',
+      event_id: null,
+      title: null,
+      clubs: { name: 'Cedar Falls Mah Jongg', timezone: 'America/New_York' },
+      events: null,
+      thread_members: [],
+    });
   });
 
   afterEach(() => {
@@ -247,5 +261,44 @@ describe('a club post', () => {
       await Promise.resolve();
     });
     expect(fetchPostMessages).toHaveBeenCalledTimes(2);
+  });
+
+  // A post reached directly (a deep link, a notification) has the same
+  // "which club is this" problem the board itself shipped with -- see the
+  // screen's own docstring for why this carries the board's header too.
+  describe('header', () => {
+    it("shows the club's name once the thread has loaded", async () => {
+      render(<PostScreen />);
+      expect(await screen.findByText('Cedar Falls Mah Jongg')).toBeTruthy();
+      expect(screen.getByTestId('thread-header-avatar-club')).toBeTruthy();
+    });
+
+    it('shows a back chevron, distinct from the Messages tab, that returns to the board', async () => {
+      render(<PostScreen />);
+      await screen.findByText('Cedar Falls Mah Jongg');
+      expect(screen.getAllByRole('button', { name: 'Messages' })).toHaveLength(1);
+      fireEvent.click(screen.getByLabelText('Back to board'));
+      expect(push).toHaveBeenCalledWith('/messages/club/t1');
+    });
+
+    it('opens the club from the name pill', async () => {
+      render(<PostScreen />);
+      fireEvent.click(
+        await screen.findByLabelText('Cedar Falls Mah Jongg, view club'),
+      );
+      expect(push).toHaveBeenCalledWith('/clubs/c1');
+    });
+
+    // A half-built header -- a pill with no name in it -- would tell a
+    // member something false. The post's own messages must not disappear
+    // just because this second, independent read failed.
+    it('renders only the back chevron, not a half-built pill, when the thread cannot be read -- and still shows the post', async () => {
+      fetchThread.mockResolvedValue(null);
+      render(<PostScreen />);
+      await screen.findByText('Anyone free Thursday?');
+      expect(screen.getByLabelText('Back to board')).toBeTruthy();
+      expect(screen.queryByRole('button', { name: /view club/ })).toBeNull();
+      expect(screen.queryByTestId('thread-header-avatar-club')).toBeNull();
+    });
   });
 });

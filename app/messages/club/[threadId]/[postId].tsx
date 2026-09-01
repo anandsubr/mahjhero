@@ -6,18 +6,23 @@ import ErrorBanner from '../../../../components/ErrorBanner';
 import MessageBubble from '../../../../components/messages/MessageBubble';
 import Screen from '../../../../components/Screen';
 import TabBar from '../../../../components/TabBar';
-import { ChevronLeftIcon } from '../../../../components/icons';
+import ThreadAvatar from '../../../../components/ThreadAvatar';
+import { ChevronLeftIcon, ChevronRightIcon } from '../../../../components/icons';
 import { GENERIC_ERROR } from '../../../../lib/constants';
 import {
   fetchPostMessages,
+  fetchThread,
   groupSeparatorLabel,
   markPostRead,
   postMessage,
   startsNewGroup,
+  threadKindFor,
+  threadTitleFor,
+  type ThreadDetail,
   type ThreadMessage,
 } from '../../../../lib/messages';
 import { useSession } from '../../../../lib/session';
-import { colors, space, type } from '../../../../lib/theme';
+import { colors, radius, space, type } from '../../../../lib/theme';
 import { useThreadRealtime } from '../../../../lib/use-thread-realtime';
 
 /**
@@ -47,6 +52,15 @@ import { useThreadRealtime } from '../../../../lib/use-thread-realtime';
  * and refetches this post for nothing; that refetch is cheap
  * (`fetch_post_messages` returns only this root and its replies) and there
  * is no payload field to filter on that would make skipping it worthwhile.
+ *
+ * Carries the same header the board does (app/messages/club/[threadId]/
+ * index.tsx), not just a bare chevron: a post can be reached directly (a
+ * deep link, a notification, a bookmark) without ever passing through the
+ * board, and a member arriving that way has exactly the same "which club is
+ * this" problem the board itself shipped with. The chevron still returns to
+ * the board rather than to `/messages` -- one level up, not two -- and a
+ * fresh best-effort `fetchThread` supplies the name and avatar the board's
+ * own read already would have if this screen had been reached through it.
  */
 export default function PostScreen() {
   const { session, loading } = useSession();
@@ -58,6 +72,14 @@ export default function PostScreen() {
   const viewerId = session?.user.id ?? '';
 
   const [messages, setMessages] = useState<ThreadMessage[]>([]);
+  // A best-effort read for the header alone -- see this screen's own
+  // docstring on why it duplicates the board's `fetchThread` call rather
+  // than trusting a value handed down from it. Its own success or failure
+  // is independent of `messages`/`loadError` below: a member reading a
+  // post that loaded fine must not lose it because this second, unrelated
+  // read failed, and the header degrades to its bare chevron in exactly
+  // that case (see the render below).
+  const [thread, setThread] = useState<ThreadDetail | null>(null);
   const [ready, setReady] = useState(false);
   const [draft, setDraft] = useState('');
   const [replyTo, setReplyTo] = useState<ThreadMessage | null>(null);
@@ -120,6 +142,26 @@ export default function PostScreen() {
     void load();
   }, [session?.user.id, load]);
 
+  // Kept out of `load()` above on purpose: `load()` re-enters on every
+  // realtime insert anywhere in this thread (see the subscription below),
+  // and refetching the thread's name/avatar on every message posted
+  // anywhere on the board would be a lot of asking for a value that never
+  // changes while this screen is mounted. Runs once per thread instead,
+  // the same shape the board's own `fetchThread` effect uses.
+  useEffect(() => {
+    if (!session?.user.id || !threadId) return;
+    let cancelled = false;
+    void fetchThread(threadId).then((detail) => {
+      if (!cancelled) setThread(detail);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // Keyed on the viewer's id, not the `session` object -- see
+    // lib/session.tsx's docstring: a token refresh hands out a fresh
+    // `Session` that changes nothing about who is asking.
+  }, [session?.user.id, threadId]);
+
   useThreadRealtime(
     threadId,
     session?.user.id,
@@ -174,8 +216,18 @@ export default function PostScreen() {
   // precedence app/messages/index.tsx applies to its own two slots.
   const error = actionError ?? loadError;
 
+  const title = thread ? threadTitleFor(thread, viewerId) : '';
+  const kind = thread ? threadKindFor(thread, viewerId) : null;
+
   return (
     <Screen contentStyle={styles.container} tabBar={<TabBar active="messages" />}>
+      {/*
+        The same header the board carries (app/messages/club/[threadId]/
+        index.tsx) -- see this screen's own docstring for why a bare
+        chevron back to the board is not enough context on its own. The
+        chevron goes to the board, not `/messages`: this screen is one level
+        below the board, not two below the list.
+      */}
       <View style={styles.header}>
         <Pressable
           onPress={() => router.push(`/messages/club/${threadId}`)}
@@ -185,6 +237,31 @@ export default function PostScreen() {
         >
           <ChevronLeftIcon color={colors.text} size={22} />
         </Pressable>
+
+        {thread && kind ? (
+          <View style={styles.headerCenter}>
+            <ThreadAvatar
+              kind={kind}
+              name={title}
+              size={72}
+              testID={`thread-header-avatar-${kind}`}
+            />
+
+            {/* Tappable for the same reason the board's own pill is --
+                see its docstring. */}
+            <Pressable
+              onPress={() => router.push(`/clubs/${thread.club_id}`)}
+              accessibilityRole="button"
+              accessibilityLabel={`${title}, view club`}
+              style={styles.namePill}
+            >
+              <Text numberOfLines={1} style={styles.namePillText}>
+                {title}
+              </Text>
+              <ChevronRightIcon color={colors.text} size={14} />
+            </Pressable>
+          </View>
+        ) : null}
       </View>
 
       {/* The alert role lives inside ErrorBanner now -- see its docstring. */}
@@ -234,7 +311,16 @@ export default function PostScreen() {
 const styles = StyleSheet.create({
   container: { padding: space[6], gap: space[3], flex: 1 },
   centered: { alignItems: 'center' },
-  header: { position: 'relative', height: 44 },
+  // Copied from the board's own `header`/`backButton`/`headerCenter`/
+  // `namePill`/`namePillText` (app/messages/club/[threadId]/index.tsx),
+  // itself copied from app/messages/[threadId].tsx -- see either's own
+  // comments for the reasoning behind the absolute positioning, the 44x44
+  // target, and the contrast ratios.
+  header: {
+    position: 'relative',
+    alignItems: 'center',
+    paddingBottom: space[2],
+  },
   backButton: {
     position: 'absolute',
     top: 0,
@@ -243,6 +329,24 @@ const styles = StyleSheet.create({
     height: 44,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  headerCenter: { alignItems: 'center', gap: space[2] },
+  namePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[1],
+    maxWidth: 240,
+    backgroundColor: colors.surface,
+    borderRadius: radius.pill,
+    paddingHorizontal: space[3],
+    paddingVertical: space[1],
+  },
+  namePillText: {
+    flexShrink: 1,
+    minWidth: 0,
+    fontFamily: type.bodySemiBold,
+    fontSize: type.size.helper,
+    color: colors.text,
   },
   scroller: { flex: 1 },
   // Same treatment as app/messages/[threadId].tsx's own `separator`: always

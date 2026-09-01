@@ -1,13 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Redirect, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import Button from '../../../../components/Button';
 import ErrorBanner from '../../../../components/ErrorBanner';
 import PostRow from '../../../../components/messages/PostRow';
 import Screen from '../../../../components/Screen';
 import TabBar from '../../../../components/TabBar';
+import ThreadAvatar from '../../../../components/ThreadAvatar';
+import { ChevronLeftIcon, ChevronRightIcon } from '../../../../components/icons';
 import { GENERIC_ERROR } from '../../../../lib/constants';
-import { fetchClubPosts, fetchThread, type ClubPost } from '../../../../lib/messages';
+import {
+  fetchClubPosts,
+  fetchThread,
+  threadKindFor,
+  threadTitleFor,
+  type ClubPost,
+  type ThreadDetail,
+} from '../../../../lib/messages';
 import { useSession } from '../../../../lib/session';
 import { colors, radius, space, type } from '../../../../lib/theme';
 import { useThreadRealtime } from '../../../../lib/use-thread-realtime';
@@ -24,6 +33,12 @@ import { useThreadRealtime } from '../../../../lib/use-thread-realtime';
  * Marking anything read from here would mean every post's dot goes dark the
  * moment a member glances at the board, which defeats the reason a board of
  * separately-readable posts exists at all.
+ *
+ * Carries the same iOS-Messages header app/messages/[threadId].tsx built --
+ * back chevron top-left, avatar and name pill centred beneath it -- so a
+ * board reads as the same app as the flat screen it replaced for a club,
+ * rather than a bare "New post" button and a list with nothing naming which
+ * club it belongs to.
  */
 export default function ClubBoardScreen() {
   const { session, loading } = useSession();
@@ -31,11 +46,12 @@ export default function ClubBoardScreen() {
   const router = useRouter();
 
   const [posts, setPosts] = useState<ClubPost[]>([]);
-  // Not part of `fetch_club_posts`' own row shape (ClubPost has no club_id
-  // -- every row it returns already belongs to this one thread), so the
-  // New post button below needs it from a separate read. Read once here
-  // rather than adding a column the board's own list has no use for.
-  const [clubId, setClubId] = useState<string | null>(null);
+  // Kept whole, not trimmed to `club_id`: the header below needs
+  // `threadTitleFor`/`threadKindFor`'s full `ThreadDetail` to name the club
+  // and pick the avatar kind, and the New-post button's `clubId` is one
+  // field of that same row, so there is nothing left to gain from narrowing
+  // the state down to a lone column the way this used to.
+  const [thread, setThread] = useState<ThreadDetail | null>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Written synchronously alongside the async call it guards, the same
@@ -92,14 +108,17 @@ export default function ClubBoardScreen() {
   useEffect(() => {
     if (!session?.user.id || !threadId) return;
     let cancelled = false;
-    // A best-effort read for the compose link's `clubId` query param, kept
-    // separate from `load()`'s own `loadingRef` guard: this must run once
-    // per thread, not on every realtime refetch `load()` also answers, and
-    // a failure here should not blank the board the way a failed
-    // `fetchClubPosts` does -- the posts are the thing this screen exists
-    // to show, and a member can still read them with no compose link.
-    void fetchThread(threadId).then((thread) => {
-      if (!cancelled) setClubId(thread?.club_id ?? null);
+    // A best-effort read, kept separate from `load()`'s own `loadingRef`
+    // guard: this must run once per thread, not on every realtime refetch
+    // `load()` also answers, and a failure here must not blank the board
+    // the way a failed `fetchClubPosts` does -- the posts are the thing
+    // this screen exists to show. `thread` staying null on a failure (or
+    // while still in flight) degrades the same way in both places that
+    // read it below: the New-post link falls back to an empty `clubId`,
+    // and the header renders its chevron alone, with no half-built avatar
+    // or pill guessing at a name it does not have.
+    void fetchThread(threadId).then((detail) => {
+      if (!cancelled) setThread(detail);
     });
     return () => {
       cancelled = true;
@@ -131,8 +150,72 @@ export default function ClubBoardScreen() {
   }
   if (!session) return <Redirect href="/sign-in" />;
 
+  const viewerId = session.user.id;
+  const title = thread ? threadTitleFor(thread, viewerId) : '';
+  // Always 'club' in practice -- this screen only ever opens a club's own
+  // board -- but derived through the same helper the flat screen's header
+  // uses rather than hard-coded, so a stray game/group thread that somehow
+  // reached this route renders its header honestly instead of mislabelled.
+  const kind = thread ? threadKindFor(thread, viewerId) : null;
+
   return (
     <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="messages" />}>
+      {/*
+        The same iOS Messages header app/messages/[threadId].tsx built:
+        a compact back chevron top-left, the club's avatar centred beneath
+        it, and its name in a rounded pill under that. The chevron always
+        renders (it doesn't need `thread` to navigate away); the avatar and
+        pill wait for a loaded thread, the same gate the flat screen's own
+        header uses -- there is no partial state where a pill shows without
+        a name to put in it.
+      */}
+      <View style={styles.header}>
+        <Pressable
+          onPress={() => router.push('/messages')}
+          accessibilityRole="button"
+          accessibilityLabel="Back to Messages"
+          style={styles.backButton}
+        >
+          <ChevronLeftIcon color={colors.text} size={22} />
+        </Pressable>
+
+        {thread && kind ? (
+          <View style={styles.headerCenter}>
+            <ThreadAvatar
+              kind={kind}
+              name={title}
+              size={72}
+              testID={`thread-header-avatar-${kind}`}
+            />
+
+            {/*
+              Unlike the flat screen's own pill -- inert for a club/game
+              kind there, since neither has a members view to open -- this
+              one is always tappable: the board IS a club's conversation,
+              so there is always somewhere useful to send a tap, the club's
+              own page. (The flat screen's club branch is dead code in
+              practice besides: every club thread redirects to THIS screen
+              before that header ever paints, so there is no drift between
+              an inert pill there and a tappable one here -- they never
+              render the same kind side by side.) Same
+              accessibilityLabel-replaces-children caveat as the flat
+              screen's own pill applies here too.
+            */}
+            <Pressable
+              onPress={() => router.push(`/clubs/${thread.club_id}`)}
+              accessibilityRole="button"
+              accessibilityLabel={`${title}, view club`}
+              style={styles.namePill}
+            >
+              <Text numberOfLines={1} style={styles.namePillText}>
+                {title}
+              </Text>
+              <ChevronRightIcon color={colors.text} size={14} />
+            </Pressable>
+          </View>
+        ) : null}
+      </View>
+
       {/* The alert role lives inside ErrorBanner now -- see its docstring. */}
       {error ? <ErrorBanner message={error} /> : null}
 
@@ -147,7 +230,9 @@ export default function ClubBoardScreen() {
       */}
       <Button
         onPress={() =>
-          router.push(`/messages/club/new?threadId=${threadId}&clubId=${clubId ?? ''}`)
+          router.push(
+            `/messages/club/new?threadId=${threadId}&clubId=${thread?.club_id ?? ''}`,
+          )
         }
         accessibilityLabel="New post"
       >
@@ -180,6 +265,54 @@ export default function ClubBoardScreen() {
 const styles = StyleSheet.create({
   container: { padding: space[6], gap: space[3] },
   centered: { alignItems: 'center' },
+  // Copied from app/messages/[threadId].tsx's own `header`: back chevron
+  // pinned top-left via absolute positioning against this `relative`
+  // container, avatar + name pill centred beneath it. Absolute positioning
+  // (rather than a mirrored spacer View the same width as the chevron)
+  // keeps the centred column exactly centred on the screen's own width
+  // regardless of the chevron's size.
+  header: {
+    position: 'relative',
+    alignItems: 'center',
+    paddingBottom: space[2],
+  },
+  // 44x44: below this screen's usual 58px "big" targets (this is a compact
+  // header control, not a primary action), but still at the common minimum
+  // touch-target size rather than a bare icon-sized hit area.
+  backButton: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerCenter: { alignItems: 'center', gap: space[2] },
+  // colors.surface, the same pill/panel ground the flat screen's own
+  // `namePill` reuses -- not a fresh token. Capped so `namePillText`'s
+  // `numberOfLines={1}` has a width to actually truncate against for a
+  // long club name.
+  namePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[1],
+    maxWidth: 240,
+    backgroundColor: colors.surface,
+    borderRadius: radius.pill,
+    paddingHorizontal: space[3],
+    paddingVertical: space[1],
+  },
+  // colors.text on colors.surface reads 12.40:1 -- comfortably past AA's
+  // 4.5:1 for this 16px text, the same pairing app/messages/[threadId].tsx's
+  // own `namePillText` already uses on this exact ground.
+  namePillText: {
+    flexShrink: 1,
+    minWidth: 0,
+    fontFamily: type.bodySemiBold,
+    fontSize: type.size.helper,
+    color: colors.text,
+  },
   list: { gap: space[3] },
   // The same dashed-border empty card app/messages/index.tsx and
   // app/messages/[threadId].tsx already use, reused rather than a third

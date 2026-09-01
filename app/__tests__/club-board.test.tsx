@@ -282,4 +282,80 @@ describe('the club board', () => {
     fireEvent.click(screen.getByLabelText('New post'));
     expect(push).toHaveBeenCalledWith('/messages/club/new?threadId=t1&clubId=');
   });
+
+  // The board shipped with no header at all -- a member who tapped in had
+  // no way to tell which club they had landed on, and no way back except
+  // the tab bar. This is the fix, built to the same iOS Messages convention
+  // app/messages/[threadId].tsx already carries.
+  describe('header', () => {
+    beforeEach(() => {
+      fetchThread.mockResolvedValue({
+        id: 't1',
+        club_id: 'c1',
+        event_id: null,
+        title: null,
+        clubs: { name: 'Cedar Falls Mah Jongg', timezone: 'America/New_York' },
+        events: null,
+        thread_members: [],
+      });
+      fetchClubPosts.mockResolvedValue([]);
+    });
+
+    it("shows the club's name once the thread has loaded", async () => {
+      render(<ClubBoardScreen />);
+      expect(await screen.findByText('Cedar Falls Mah Jongg')).toBeTruthy();
+      expect(screen.getByTestId('thread-header-avatar-club')).toBeTruthy();
+    });
+
+    it('shows a back chevron, distinctly named from the Messages tab, that returns to /messages', async () => {
+      render(<ClubBoardScreen />);
+      await screen.findByText('Cedar Falls Mah Jongg');
+      // Still exactly one control literally named "Messages" -- the tab
+      // bar's own tab -- so the two can never collapse into the same
+      // control.
+      expect(screen.getAllByRole('button', { name: 'Messages' })).toHaveLength(1);
+      fireEvent.click(screen.getByLabelText('Back to Messages'));
+      expect(push).toHaveBeenCalledWith('/messages');
+    });
+
+    // Unlike the flat screen's own pill -- deliberately inert for a club
+    // thread, since it has no members view to open -- the board's pill IS
+    // tappable: a member reading the board plausibly wants the club's own
+    // page (its events, its roster), and there is nowhere else on this
+    // screen offering that.
+    it('opens the club from the name pill', async () => {
+      render(<ClubBoardScreen />);
+      fireEvent.click(
+        await screen.findByLabelText('Cedar Falls Mah Jongg, view club'),
+      );
+      expect(push).toHaveBeenCalledWith('/clubs/c1');
+    });
+
+    // A half-built header -- a pill with no name in it -- would tell a
+    // member something false. The board's own posts must not disappear
+    // just because this best-effort read failed.
+    it('renders only the back chevron, not a half-built pill, when the thread cannot be read -- and still shows the posts', async () => {
+      fetchThread.mockResolvedValue(null);
+      fetchClubPosts.mockResolvedValue([
+        {
+          id: 'p1',
+          author_id: 'a1',
+          author_name: 'Alice Chen',
+          body: 'Anyone free Thursday?',
+          subject: null,
+          is_announcement: false,
+          created_at: '2026-08-30T10:00:00.000Z',
+          reply_count: 0,
+          last_reply_at: null,
+          last_activity_at: '2026-08-30T10:00:00.000Z',
+          unread: 0,
+        },
+      ]);
+      render(<ClubBoardScreen />);
+      await screen.findByText('Anyone free Thursday?');
+      expect(screen.getByLabelText('Back to Messages')).toBeTruthy();
+      expect(screen.queryByRole('button', { name: /view club/ })).toBeNull();
+      expect(screen.queryByTestId('thread-header-avatar-club')).toBeNull();
+    });
+  });
 });
