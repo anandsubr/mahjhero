@@ -24,9 +24,20 @@
  * event_id is null` — the three DDL statements just below this comment set
  * up `archived_messages` itself and touch neither table.
  */
+/*
+ * `primary key (id)` is not decoration on a bucket table. This is the only
+ * copy of members' deleted messages, and `like public.messages` brings the
+ * columns across without bringing the key: a second migration that archived
+ * the same row twice would silently store it twice rather than erroring, and
+ * "recoverable by a follow-up migration" then means recovering from a table
+ * nobody can tell apart from itself. It costs one index on a table that is
+ * written once and read by hand.
+ */
 create table public.archived_messages (
   like public.messages including defaults,
-  archived_at timestamptz not null default now()
+  archived_at timestamptz not null default now(),
+
+  primary key (id)
 );
 
 alter table public.archived_messages enable row level security;
@@ -192,3 +203,47 @@ update public.message_threads t
    set last_message_at = (
      select max(m.created_at) from public.messages m where m.thread_id = t.id)
  where t.club_id is not null and t.event_id is null;
+
+/*
+ * 6. Every member's read state moves with their club's chat.
+ *
+ *    20260830030000 switched fetch_my_threads' club branch from thread_reads
+ *    to post_reads. Nothing seeds post_reads, so without this a member who
+ *    had read every word arrives at a board where each post falls back to
+ *    club_members.joined_at — and counts everything posted since they joined
+ *    as new. Measured locally on a member who had read all 50 messages with
+ *    3 having arrived since: 0 unread today, 54 without this statement, 3
+ *    with it. This is the exact failure fetch_club_posts' own docstring
+ *    argues the joined_at floor exists to prevent, reintroduced by the
+ *    change of watermark table.
+ *
+ *    A single thread watermark becomes one marker per post, which is the
+ *    only honest translation available: a flat chat recorded ONE moment the
+ *    member had caught up to, and there is no per-post record to recover
+ *    because posts did not exist when it was written. Copying it to every
+ *    root, including roots whose messages are all NEWER than it, is
+ *    deliberate: unread is counted as "messages after the marker", so such a
+ *    marker filters nothing and that post stays fully unread — exactly
+ *    right, and strictly better than no marker at all, which would drop the
+ *    post back to the joined_at floor and count messages the member has
+ *    already read.
+ *
+ *    `m.root_id is null` selects only ROOTS, and after step 3 that is
+ *    precise rather than incidental: the only club-thread rows left with a
+ *    null root_id are the announcements steps 1 and 3 made the board's
+ *    posts. The thread predicate is the same one every other statement here
+ *    carries, so no game or group thread's thread_reads row is copied into a
+ *    table only the club branch reads.
+ *
+ *    thread_reads itself is left alone. It still serves game and group
+ *    threads, and leaving it intact is what keeps this migration's effect on
+ *    read state reversible.
+ */
+insert into public.post_reads (root_id, profile_id, last_read_at)
+select m.id, tr.profile_id, tr.last_read_at
+  from public.messages m
+  join public.message_threads t on t.id = m.thread_id
+  join public.thread_reads tr on tr.thread_id = t.id
+ where t.club_id is not null and t.event_id is null
+   and m.root_id is null
+on conflict (root_id, profile_id) do nothing;
