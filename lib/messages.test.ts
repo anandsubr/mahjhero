@@ -25,12 +25,14 @@ import {
   createGroupThread,
   deriveSubject,
   fetchClubPosts,
+  fetchPostMessages,
   fetchThread,
   fetchThreadMessages,
   fetchMyThreads,
   groupSeparatorLabel,
   kindLabel,
   leaveGroupThread,
+  markPostRead,
   messagePreview,
   orderThreadsForList,
   postMessage,
@@ -1046,11 +1048,133 @@ describe('fetchClubPosts', () => {
   it('resolves null when the RPC fails, never throws', async () => {
     rpcMock.mockResolvedValueOnce({ data: null, error: { message: 'boom' } });
     await expect(fetchClubPosts('t1')).resolves.toBeNull();
+    expect(rpcMock).toHaveBeenCalledWith('fetch_club_posts', {
+      target_thread: 't1',
+      p_before: null,
+    });
   });
 
   it('resolves an empty array when there are no posts', async () => {
     rpcMock.mockResolvedValueOnce({ data: [], error: null });
-    await expect(fetchClubPosts('t1')).resolves.toEqual([]);
+    await expect(fetchClubPosts('t1', '2026-08-20T10:00:00Z')).resolves.toEqual([]);
+    expect(rpcMock).toHaveBeenCalledWith('fetch_club_posts', {
+      target_thread: 't1',
+      p_before: '2026-08-20T10:00:00Z',
+    });
+  });
+});
+
+describe('fetchPostMessages', () => {
+  beforeEach(() => rpcMock.mockReset());
+
+  // Same mapping fetchThreadMessages produces -- mapThreadMessageRow is the
+  // one function both call, so a break in either RPC's row shape is caught
+  // here the same way it is caught for fetchThreadMessages above.
+  it('maps sender names and the quoted parent, the same shape fetchThreadMessages produces', async () => {
+    rpcMock.mockResolvedValueOnce({
+      data: [
+        {
+          id: 'p1',
+          author_id: 'u1',
+          author_name: 'Alice Ng',
+          body: 'Anyone free Tuesday?',
+          subject: null,
+          is_announcement: false,
+          created_at: '2026-08-25T10:00:00Z',
+          reply_to_id: null,
+          reply_to_body: null,
+          reply_to_author: null,
+        },
+        {
+          id: 'p2',
+          author_id: 'u2',
+          author_name: 'Carol Chen',
+          body: 'Yes, I am in.',
+          subject: null,
+          is_announcement: false,
+          created_at: '2026-08-25T10:01:00Z',
+          reply_to_id: 'p1',
+          reply_to_body: 'Anyone free Tuesday?',
+          reply_to_author: 'Alice Ng',
+        },
+      ],
+      error: null,
+    });
+
+    await expect(fetchPostMessages('p1')).resolves.toEqual([
+      {
+        id: 'p1',
+        author_id: 'u1',
+        body: 'Anyone free Tuesday?',
+        subject: null,
+        is_announcement: false,
+        created_at: '2026-08-25T10:00:00Z',
+        profiles: { display_name: 'Alice Ng' },
+        reply_to_id: null,
+        reply_to: null,
+      },
+      {
+        id: 'p2',
+        author_id: 'u2',
+        body: 'Yes, I am in.',
+        subject: null,
+        is_announcement: false,
+        created_at: '2026-08-25T10:01:00Z',
+        profiles: { display_name: 'Carol Chen' },
+        reply_to_id: 'p1',
+        reply_to: {
+          id: 'p1',
+          body: 'Anyone free Tuesday?',
+          profiles: { display_name: 'Alice Ng' },
+        },
+      },
+    ]);
+    expect(rpcMock).toHaveBeenCalledWith('fetch_post_messages', { p_root: 'p1' });
+  });
+
+  it('resolves null when the RPC fails, never throws', async () => {
+    rpcMock.mockResolvedValueOnce({ data: null, error: { message: 'boom' } });
+    await expect(fetchPostMessages('p1')).resolves.toBeNull();
+  });
+
+  // null is "we could not ask"; [] is "this post has no replies" -- the same
+  // distinction fetchMyThreads' own tests pin above.
+  it('resolves an empty array, not null, when the post has no messages', async () => {
+    rpcMock.mockResolvedValueOnce({ data: [], error: null });
+    await expect(fetchPostMessages('p1')).resolves.toEqual([]);
+  });
+
+  it('never rejects', async () => {
+    rpcMock.mockRejectedValueOnce(new Error('offline'));
+    await expect(fetchPostMessages('p1')).resolves.toBeNull();
+  });
+});
+
+describe('markPostRead', () => {
+  beforeEach(() => rpcMock.mockReset());
+
+  it('calls mark_post_read with the post', async () => {
+    rpcMock.mockResolvedValueOnce({ data: null, error: null });
+    await expect(markPostRead('p1')).resolves.toEqual({ error: null });
+    expect(rpcMock).toHaveBeenCalledWith('mark_post_read', { p_root: 'p1' });
+  });
+
+  // mark_post_read's refusals are already written to be read by a member --
+  // "that post is no longer here" -- so they are relayed verbatim, the same
+  // deliberate contract postMessage and addToGroupThread carry above.
+  it('relays a refusal verbatim', async () => {
+    rpcMock.mockResolvedValueOnce({
+      data: null,
+      error: { message: 'that post is no longer here' },
+    });
+    await expect(markPostRead('p1')).resolves.toEqual({
+      error: 'that post is no longer here',
+    });
+  });
+
+  it('resolves rather than rejecting when the RPC throws', async () => {
+    rpcMock.mockRejectedValueOnce(new Error('offline'));
+    await expect(markPostRead('p1')).resolves.toEqual({ error: GENERIC_ERROR });
   });
 });
 

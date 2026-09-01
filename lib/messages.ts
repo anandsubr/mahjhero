@@ -706,6 +706,33 @@ type ThreadMessageRow = {
   reply_to_author: string | null;
 };
 
+/**
+ * Maps one `fetch_thread_messages` / `fetch_post_messages` row into a
+ * `ThreadMessage` — shared by both, because the RPCs return the same ten
+ * columns on purpose, so MessageBubble never learns a second row shape. One
+ * copy of the mapping is what keeps that true; two copies is exactly the
+ * drift a future edit to one and not the other would produce silently.
+ */
+function mapThreadMessageRow(r: ThreadMessageRow): ThreadMessage {
+  return {
+    id: r.id,
+    author_id: r.author_id,
+    body: r.body,
+    subject: r.subject,
+    is_announcement: r.is_announcement,
+    created_at: r.created_at,
+    profiles: r.author_name ? { display_name: r.author_name } : null,
+    reply_to_id: r.reply_to_id,
+    reply_to: r.reply_to_id
+      ? {
+          id: r.reply_to_id,
+          body: r.reply_to_body ?? '',
+          profiles: r.reply_to_author ? { display_name: r.reply_to_author } : null,
+        }
+      : null,
+  };
+}
+
 export async function fetchThreadMessages(
   threadId: string,
 ): Promise<ThreadMessage[] | null> {
@@ -726,45 +753,22 @@ export async function fetchThreadMessages(
       return null;
     }
     const rows = (data ?? []) as ThreadMessageRow[];
-
-    return rows.map((r) => ({
-      id: r.id,
-      author_id: r.author_id,
-      body: r.body,
-      subject: r.subject,
-      is_announcement: r.is_announcement,
-      created_at: r.created_at,
-      profiles: r.author_name ? { display_name: r.author_name } : null,
-      reply_to_id: r.reply_to_id,
-      reply_to: r.reply_to_id
-        ? {
-            id: r.reply_to_id,
-            body: r.reply_to_body ?? '',
-            profiles: r.reply_to_author ? { display_name: r.reply_to_author } : null,
-          }
-        : null,
-    }));
+    return rows.map(mapThreadMessageRow);
   } catch (cause) {
     console.error('fetchThreadMessages failed', cause);
     return null;
   }
 }
 
-/** One row of `fetch_club_posts`, as the RPC returns it. */
-type ClubPostRow = {
-  id: string;
-  author_id: string;
-  author_name: string | null;
-  body: string;
-  subject: string | null;
-  is_announcement: boolean;
-  created_at: string;
-  reply_count: number;
-  last_reply_at: string | null;
-  last_activity_at: string;
-  unread: number;
-};
-
+/**
+ * `fetch_club_posts` returns exactly `ClubPost`'s columns, no flattened or
+ * nested fields to reshape — unlike `ThreadMessageRow` above, a distinct row
+ * type here would duplicate `ClubPost` field for field and buy nothing. The
+ * cast below trusts the RPC's compile-time shape; the explicit mapping is
+ * what actually guards the client's rows — a column `fetch_club_posts` grows
+ * later that `ClubPost` does not declare cannot leak into a `ClubPost` this
+ * way, where a bare `{ ...r }` spread would have let it through.
+ */
 export async function fetchClubPosts(
   threadId: string,
   before: string | null = null,
@@ -781,18 +785,27 @@ export async function fetchClubPosts(
       console.error('fetchClubPosts failed', error);
       return null;
     }
-    return ((data ?? []) as ClubPostRow[]).map((r) => ({ ...r }));
+    const rows = (data ?? []) as ClubPost[];
+    return rows.map((r) => ({
+      id: r.id,
+      author_id: r.author_id,
+      author_name: r.author_name,
+      body: r.body,
+      subject: r.subject,
+      is_announcement: r.is_announcement,
+      created_at: r.created_at,
+      reply_count: r.reply_count,
+      last_reply_at: r.last_reply_at,
+      last_activity_at: r.last_activity_at,
+      unread: r.unread,
+    }));
   } catch (cause) {
     console.error('fetchClubPosts failed', cause);
     return null;
   }
 }
 
-/**
- * One post's root and replies. Returns the SAME shape as
- * fetchThreadMessages — the RPCs return the same ten columns on purpose, so
- * MessageBubble never learns a second row shape.
- */
+/** One post's root and replies, mapped the same way fetchThreadMessages is. */
 export async function fetchPostMessages(
   rootId: string,
 ): Promise<ThreadMessage[] | null> {
@@ -805,24 +818,7 @@ export async function fetchPostMessages(
       return null;
     }
     const rows = (data ?? []) as ThreadMessageRow[];
-
-    return rows.map((r) => ({
-      id: r.id,
-      author_id: r.author_id,
-      body: r.body,
-      subject: r.subject,
-      is_announcement: r.is_announcement,
-      created_at: r.created_at,
-      profiles: r.author_name ? { display_name: r.author_name } : null,
-      reply_to_id: r.reply_to_id,
-      reply_to: r.reply_to_id
-        ? {
-            id: r.reply_to_id,
-            body: r.reply_to_body ?? '',
-            profiles: r.reply_to_author ? { display_name: r.reply_to_author } : null,
-          }
-        : null,
-    }));
+    return rows.map(mapThreadMessageRow);
   } catch (cause) {
     console.error('fetchPostMessages failed', cause);
     return null;
