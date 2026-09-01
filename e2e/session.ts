@@ -1379,6 +1379,265 @@ export async function seedPopulatedThread(
 }
 
 /**
+ * Seeds a POPULATED board — a club of its own, with a club thread carrying
+ * two posts that each have real replies, so the board and post screens
+ * (`app/messages/club/[threadId]/index.tsx`, `app/messages/club/[threadId]/
+ * [postId].tsx`) have something to picture besides the empty case.
+ *
+ * `seedPopulatedThread` above seeds four ROOT-level messages (none set
+ * `root_id`) and is what the board/post baselines used until this task —
+ * every post it produces therefore reads "No replies", because nothing in
+ * it is actually a reply. The board and post screens exist to show a post
+ * WITH a threaded discussion under it; a fixture that cannot produce one
+ * cannot picture the thing the feature adds. Direct inserts bypass
+ * `post_message` (20260830010000), so this sets `root_id`, `reply_count`
+ * and `last_reply_at` itself — the same denormalisation `post_message`
+ * performs in its own transaction (see that migration: `reply_count =
+ * reply_count + 1, last_reply_at = now()` on every reply) — rather than
+ * leaving `fetch_club_posts` to read stale zeros off rows it never
+ * recomputes on read.
+ *
+ * A brand-new club, not `seeded.clubId` (Riverside): `seedPopulatedThread`
+ * is left completely untouched by this function, but sharing a club would
+ * still leave a shared surface for a future edit to trip over, and this
+ * function needs its own `club_members` row anyway, stamped with a
+ * `joined_at` in the PAST relative to the seeded messages (see below) —
+ * touching Riverside's own membership row, seeded with the real wall clock
+ * by `seedClubWithEvent`, would be a second, harder-to-notice way for a
+ * future change here to reach into a fixture other baselines depend on. A
+ * club of its own keeps the blast radius exactly the two tests that call
+ * this.
+ *
+ * `floorAt` and every message timestamp sit in the SAME 2026-08-21/22
+ * window `seedPopulatedThread` and `seedClubWithEvent`'s own fixtures use,
+ * because `e2e/visual.spec.ts` freezes the PAGE's clock to
+ * `2026-08-22T16:00:00Z` before any of this runs — `relativeTimestamp` and
+ * `groupSeparatorLabel` (lib/messages.ts) both read that frozen "now", so a
+ * timestamp outside its frame reads as a bug in the baseline rather than a
+ * picture of one. `club_members.joined_at` is a different matter: unlike
+ * every timestamp on a message, it is inserted by THIS function running in
+ * Node, against the real Postgres wall clock (page.clock only patches the
+ * browser's Date, never this admin client's) — so it defaults to
+ * "whatever day this suite happens to run," which sits AFTER every
+ * 2026-08-22 message. `fetch_club_posts`' own unread arithmetic floors on
+ * exactly that column
+ * (`greatest(floor_at, coalesce(post_reads.last_read_at, floor_at))`,
+ * 20260830020000_board_reads.sql) — a joined_at left at its default would
+ * floor out every seeded message and the badge this fixture exists to show
+ * would never appear. `joinedAt` below is passed explicitly for that
+ * reason, dated before every message that follows it.
+ *
+ * Two posts, not one, so the board still shows more than a single row (the
+ * same proof `seedPopulatedThread`'s own board test used to make) and the
+ * announcement's distinct rail-and-tag treatment stays pictured alongside
+ * an ordinary post:
+ *
+ *   - an ANNOUNCEMENT root with FOUR replies, spread across three time
+ *     groups (a gap of exactly `GROUP_GAP_MS` or more, or a day boundary —
+ *     `startsNewGroup`, lib/messages.ts) so the post screen's separators
+ *     have more than one to draw, plus one reply authored by the VIEWER —
+ *     the post screen's "mine" bubble treatment — among three other reply
+ *     authors, so a fixture with only one other voice could not be mistaken
+ *     for proof the author-attribution line varies per sender.
+ *   - a PLAIN post with two replies, so `replyCountLabel`'s plural form
+ *     ("2 replies") sits on the board next to the announcement's ("4
+ *     replies") — a single populated post could only ever prove the
+ *     singular or the plural, never that the count itself is read off the
+ *     row rather than hard-coded.
+ *
+ * Every author but the viewer's own single reply is a FRESH filler
+ * profile, the same reasoning `seedPopulatedThread`'s own docstring
+ * gives — and, per `fetch_club_posts`' own `r.author_id <> caller` clause,
+ * why every row not authored by the viewer counts toward that post's
+ * unread total: this fixture does not have to contrive a SEPARATE
+ * unread-only post the way `seedUnreadClubMessage` does for the dashboard
+ * badge, because nothing here ever calls `mark_post_read` for either post
+ * before the board baseline is shot.
+ *
+ * Returns the announcement's own id, not just the thread's, so the post
+ * baseline can `page.goto` straight to it (`/messages/club/{threadId}/
+ * {announcementId}`) instead of clicking the board row to get there. A
+ * click is a CLIENT-SIDE navigation, and expo-router's web stack keeps the
+ * screen it leaves mounted (hidden, not unmounted) rather than tearing it
+ * down — so the board screen's OWN `testID="screen-scroll"` ScrollView is
+ * still in the DOM under the post screen's identical testID, and
+ * `captureScreen`'s `document.querySelector` (e2e/visual.spec.ts) returns
+ * whichever of the two comes first, which does not have to be the one
+ * actually on screen. That is latent in the click-based navigation the
+ * `club post populated` test used before this task, not something this
+ * fixture introduces — it stayed invisible only because the post it opened
+ * had no replies to overflow the viewport and so never needed
+ * `captureScreen` to grow anything. A `page.goto` is a full browser
+ * navigation, the same one `thread populated`'s own test already uses to
+ * reach its thread id, and it tears down the previous screen entirely, so
+ * there is only ever one `screen-scroll` node for the selector to find.
+ */
+export async function seedPopulatedBoard(
+  profileId: string,
+  suffix: string,
+): Promise<{ threadId: string; announcementId: string }> {
+  const admin = adminClient('seed populated board');
+
+  const need = <T>(what: string, result: { data: unknown; error: unknown }): T => {
+    if (result.error || result.data == null) {
+      throw new Error(`seedPopulatedBoard: ${what} failed: ${JSON.stringify(result.error)}`);
+    }
+    return result.data as T;
+  };
+
+  const club = need<{ id: string }>(
+    'club insert',
+    await admin
+      .from('clubs')
+      .insert({
+        name: 'Cedar Falls Mah Jongg',
+        slug: `cedar-falls-${suffix}`,
+        rhythm: 'Sunday afternoons',
+        timezone: 'America/New_York',
+        created_by: profileId,
+      })
+      .select('id')
+      .single(),
+  );
+  const clubId = club.id;
+
+  // Dated before every message below, and NOT the column's own default —
+  // see this function's own docstring on why `joined_at` cannot be left at
+  // its real-wall-clock default here.
+  const joinedAt = '2026-08-20T00:00:00Z';
+  const { error: memberError } = await admin
+    .from('club_members')
+    .insert({ club_id: clubId, profile_id: profileId, role: 'member', joined_at: joinedAt });
+  if (memberError) {
+    throw new Error(`seedPopulatedBoard: membership insert failed: ${JSON.stringify(memberError)}`);
+  }
+
+  const [announceAuthor, replyAuthorA, replyAuthorB, replyAuthorC, postAuthor, postReplyA, postReplyB] =
+    await Promise.all([
+      seedFillerProfile(admin, 'Mara Ellison', 'board-announce', suffix),
+      seedFillerProfile(admin, 'Devon Cole', 'board-reply-a', suffix),
+      seedFillerProfile(admin, 'Sana Iqbal', 'board-reply-b', suffix),
+      seedFillerProfile(admin, 'Theo Nakamura', 'board-reply-c', suffix),
+      seedFillerProfile(admin, 'Ruth Okafor', 'board-post', suffix),
+      seedFillerProfile(admin, 'Callum Reyes', 'board-post-reply-a', suffix),
+      seedFillerProfile(admin, 'Ines Duarte', 'board-post-reply-b', suffix),
+    ]);
+
+  const thread = need<{ id: string }>(
+    'club thread insert',
+    await admin
+      .from('message_threads')
+      .insert({
+        club_id: clubId,
+        event_id: null,
+        created_by: announceAuthor,
+        last_message_at: '2026-08-22T13:00:00Z',
+      })
+      .select('id')
+      .single(),
+  );
+  const threadId = thread.id;
+
+  // The announcement root. `2026-08-21` — the day BEFORE the frozen clock's
+  // own day — is what gives the first reply-group boundary below a real day
+  // change to fire on, not just a `GROUP_GAP_MS` gap.
+  const root1 = need<{ id: string }>(
+    'announcement root insert',
+    await admin
+      .from('messages')
+      .insert({
+        thread_id: threadId,
+        author_id: announceAuthor,
+        subject: 'Fall tournament signup opens Monday',
+        body: 'Fall tournament signup opens Monday\nSeats go fast, so reply here if you want in.',
+        is_announcement: true,
+        created_at: '2026-08-21T14:00:00Z',
+      })
+      .select('id')
+      .single(),
+  );
+
+  // Four replies. Timestamps deliberately fall into three groups
+  // (`startsNewGroup`, lib/messages.ts): r1 stays within an hour of the
+  // root (same group as the root itself); r2 is both a day later AND more
+  // than an hour on (new group); r3 stays within an hour of r2 (same
+  // group); r4 is more than an hour after r3, same day (a third group).
+  const root1Replies: { author: string; body: string; created_at: string }[] = [
+    { author: profileId, body: 'Count me in, I will bring extra tiles too.', created_at: '2026-08-21T14:20:00Z' },
+    { author: replyAuthorA, body: 'Same here — put me down for two seats.', created_at: '2026-08-22T09:00:00Z' },
+    { author: replyAuthorB, body: 'Is the beginner table still running this year?', created_at: '2026-08-22T09:10:00Z' },
+    { author: replyAuthorC, body: 'Yes, we kept the beginner table again this year.', created_at: '2026-08-22T13:00:00Z' },
+  ];
+  for (const reply of root1Replies) {
+    const { error } = await admin.from('messages').insert({
+      thread_id: threadId,
+      author_id: reply.author,
+      body: reply.body,
+      root_id: root1.id,
+      created_at: reply.created_at,
+    });
+    if (error) {
+      throw new Error(`seedPopulatedBoard: root1 reply insert failed: ${JSON.stringify(error)}`);
+    }
+  }
+  // Denormalised the same way `post_message` leaves them after four reply
+  // inserts: a running `reply_count` and the LAST reply's own timestamp,
+  // not `max()` over all of them — the two agree here only because the
+  // replies above are listed in chronological order, the same assumption
+  // `post_message`'s own `now()` update makes on every call it ever gets.
+  const { error: root1UpdateError } = await admin
+    .from('messages')
+    .update({ reply_count: root1Replies.length, last_reply_at: root1Replies[root1Replies.length - 1].created_at })
+    .eq('id', root1.id);
+  if (root1UpdateError) {
+    throw new Error(`seedPopulatedBoard: root1 update failed: ${JSON.stringify(root1UpdateError)}`);
+  }
+
+  // The plain post. Two replies, so `replyCountLabel(2)` reads "2 replies"
+  // on the board next to the announcement's "4 replies" — the plural form
+  // at a different count from the announcement's own, not a second copy of
+  // it.
+  const root2 = need<{ id: string }>(
+    'plain post root insert',
+    await admin
+      .from('messages')
+      .insert({
+        thread_id: threadId,
+        author_id: postAuthor,
+        body: 'Anyone free to help set up tables Saturday morning?',
+        created_at: '2026-08-22T10:00:00Z',
+      })
+      .select('id')
+      .single(),
+  );
+  const root2Replies: { author: string; body: string; created_at: string }[] = [
+    { author: postReplyA, body: 'I can be there by 9.', created_at: '2026-08-22T10:15:00Z' },
+    { author: postReplyB, body: 'Count me in as well.', created_at: '2026-08-22T10:30:00Z' },
+  ];
+  for (const reply of root2Replies) {
+    const { error } = await admin.from('messages').insert({
+      thread_id: threadId,
+      author_id: reply.author,
+      body: reply.body,
+      root_id: root2.id,
+      created_at: reply.created_at,
+    });
+    if (error) {
+      throw new Error(`seedPopulatedBoard: root2 reply insert failed: ${JSON.stringify(error)}`);
+    }
+  }
+  const { error: root2UpdateError } = await admin
+    .from('messages')
+    .update({ reply_count: root2Replies.length, last_reply_at: root2Replies[root2Replies.length - 1].created_at })
+    .eq('id', root2.id);
+  if (root2UpdateError) {
+    throw new Error(`seedPopulatedBoard: root2 update failed: ${JSON.stringify(root2UpdateError)}`);
+  }
+
+  return { threadId, announcementId: root1.id };
+}
+
+/**
  * The localStorage key supabase-js persists its session under, derived from
  * the project ref in the URL. Keep in step with the client's own convention:
  * see `defaultStorageKey` in `node_modules/@supabase/supabase-js/src/SupabaseClient.ts`
