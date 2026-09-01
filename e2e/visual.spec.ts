@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import {
   mintSession,
   seedClubWithEvent,
+  seedEmptyGroupThread,
   seedPopulatedBoard,
   seedPopulatedMessagesList,
   seedPopulatedThread,
@@ -350,7 +351,7 @@ test.describe('signed in', () => {
         await captureScreen(page, vp, `message-new-${vp.name}.png`);
       });
 
-      test(`club thread at ${vp.name}`, async ({ page }) => {
+      test(`flat thread empty at ${vp.name}`, async ({ page }) => {
         await page.setViewportSize({ width: vp.width, height: vp.height });
         await page.goto('/messages');
         // Through the row, not a guessed id: thread ids are generated and
@@ -363,26 +364,29 @@ test.describe('signed in', () => {
         // title is the club's bare name now, not "Everyone at <club>" — see
         // lib/messages.ts's `threadTitleFor` for why.
         //
-        // The club-boards feature (app/messages/index.tsx's `open`) sends
-        // this exact tap to the board (`/messages/club/{id}`) now, not the
-        // flat thread screen this baseline pictures — the board's own empty
-        // state gets its baseline in a later task, once it has one. This
-        // still exercises the identical open_thread_for_club RPC path a
-        // never-opened club thread goes through (the reason the click,
-        // rather than a guessed id, stays here), then follows straight on
-        // to the flat screen by the id the board's own URL just carried, so
-        // this baseline keeps covering that screen's still-real empty state
-        // — reachable directly, e.g. from a link shared before this
-        // feature, even though no row leads to it any more.
+        // The club row still goes through open_thread_for_club, and that RPC
+        // path — a club thread that has never been opened and so has no id
+        // to guess — is why the click, rather than a goto, stays here. It
+        // lands on the BOARD now, and this asserts that: the flat screen is
+        // no longer somewhere a club thread can end up, from a row or from
+        // anywhere else (app/messages/[threadId].tsx redirects one itself).
         await page.getByRole('button', { name: 'Riverside Mah Jongg' }).click();
         await page.waitForURL(/\/messages\/club\/.+/);
-        const threadId = page.url().split('/messages/club/')[1];
+
+        // The flat screen's own empty state is still real — game, group and
+        // direct conversations all live there — so it keeps its baseline, on
+        // a kind that still belongs to it. `seedEmptyGroupThread`
+        // (e2e/session.ts) seeds one with no messages at all.
+        const { threadId } = await seedEmptyGroupThread(userId, userId.slice(0, 8));
         await page.goto(`/messages/${threadId}`);
         // `exact: true` — the brief's own bare `getByLabel('Message')` is
         // ALSO a substring match on this screen's own "< Messages" back
         // link (accessibilityLabel="Messages", app/messages/[threadId].tsx),
         // a same-page collision on top of the multi-club one above.
         await expect(page.getByLabel('Message', { exact: true })).toBeVisible();
+        await expect(
+          page.getByText('No messages yet. Say hello to start the conversation.'),
+        ).toBeVisible();
         await captureScreen(page, vp, `thread-${vp.name}.png`);
       });
 
@@ -425,20 +429,23 @@ test.describe('signed in', () => {
       });
 
       // The thread screen's own bubbles, pictured for the first time. Every
-      // OTHER `thread-*` baseline in this suite (the `club thread at …` test
-      // above) is the EMPTY thread — nothing has ever screenshotted an
+      // OTHER `thread-*` baseline in this suite (the `flat thread empty at …`
+      // test above) is the EMPTY thread — nothing has ever screenshotted an
       // actual message, so the bubble treatments themselves (an ordinary
       // "theirs" bubble, the viewer's own "mine" bubble, and an
       // announcement) were guarded by nothing.
-      // `seedPopulatedThread` (e2e/session.ts) seeds one club thread with
+      // `seedPopulatedThread` (e2e/session.ts) seeds one GAME thread with
       // four messages: a filler's ordinary message, the viewer's own reply,
       // a second filler's announcement, and a third filler's ordinary
       // message after it — every bubble treatment this screen renders, in
-      // one thread.
+      // one thread. It used to seed a CLUB thread; see that function's own
+      // docstring for why a game thread is the kind that keeps all four of
+      // those treatments reachable now that a club's conversation is a board.
       test(`thread populated at ${vp.name}`, async ({ page }) => {
         await page.setViewportSize({ width: vp.width, height: vp.height });
         const { threadId } = await seedPopulatedThread(
           seeded.clubId,
+          seeded.eventId,
           userId,
           userId.slice(0, 8),
         );

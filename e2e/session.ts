@@ -1245,13 +1245,90 @@ export async function seedPopulatedMessagesList(
 }
 
 /**
- * Seeds a POPULATED thread -- four messages in one club thread, so the
+ * Seeds an EMPTY GROUP thread -- three members, no messages -- so the flat
+ * thread screen's own empty state (`app/messages/[threadId].tsx`) still has
+ * something to picture.
+ *
+ * That baseline used to be shot on the club thread, reached by clicking the
+ * club row in the messages list. Both halves of that stopped working at
+ * once: the row lands on the BOARD now, and the flat screen redirects a club
+ * thread there itself, so a club thread can no longer render this screen at
+ * all. A group is the cheapest kind that still belongs here -- no club, no
+ * event, no bookings, membership stored rather than derived.
+ *
+ * THREE members (the viewer and two fillers), not two: a group of exactly
+ * two is a DIRECT thread (20260829000000's own docstring -- "A direct
+ * message is not a kind. It is a group of two."), which renders a different
+ * avatar and a different title. Three keeps this the group case.
+ *
+ * `title` is set rather than left to `threadTitleFor`'s join-the-first-names
+ * fallback, so the header pill reads the same regardless of what order the
+ * filler profiles happen to come back in.
+ */
+export async function seedEmptyGroupThread(
+  viewerId: string,
+  suffix: string,
+): Promise<{ threadId: string }> {
+  const admin = adminClient('seed empty group thread');
+
+  const [first, second] = await Promise.all([
+    seedFillerProfile(admin, 'Priya Shah', 'empty-group-a', suffix),
+    seedFillerProfile(admin, 'Yusuf Ahmed', 'empty-group-b', suffix),
+  ]);
+
+  const { data, error } = await admin
+    .from('message_threads')
+    .insert({
+      club_id: null,
+      event_id: null,
+      title: 'Tuesday regulars',
+      created_by: first,
+      last_message_at: null,
+    })
+    .select('id')
+    .single();
+  if (error || !data) {
+    throw new Error(
+      `seedEmptyGroupThread: thread insert failed: ${JSON.stringify(error)}`,
+    );
+  }
+
+  const { error: membersError } = await admin.from('thread_members').insert(
+    [viewerId, first, second].map((profileId) => ({
+      thread_id: data.id,
+      profile_id: profileId,
+      added_by: first,
+      joined_at: '2026-08-22T13:00:00Z',
+    })),
+  );
+  if (membersError) {
+    throw new Error(
+      `seedEmptyGroupThread: thread members insert failed: ${JSON.stringify(membersError)}`,
+    );
+  }
+
+  return { threadId: data.id };
+}
+
+/**
+ * Seeds a POPULATED thread -- four messages in one GAME thread, so the
  * thread screen's own bubble treatments (`app/messages/[threadId].tsx`) have
  * something to picture. Every OTHER `thread-*` baseline in this suite is the
  * EMPTY thread: nothing has ever screenshotted an actual message, let alone
  * the viewer's OWN bubble, somebody else's, or an announcement's, which is
  * exactly the "amateurish" the bubbles were flagged for -- guarded by
  * nothing since nobody could see them.
+ *
+ * A GAME thread, not the club thread this used to seed. A club's
+ * conversation is a BOARD now, and `app/messages/[threadId].tsx` redirects
+ * one straight to `/messages/club/{id}` -- there is no longer any way to
+ * picture a club thread on the flat screen, because the app will not render
+ * one. A game thread is the kind that keeps every treatment below reachable:
+ * it stays flat, and unlike a group it carries a club_id, so `post_message`
+ * still permits the ANNOUNCEMENT this fixture seeds ('a group has no roster
+ * to announce to' is what a group thread would refuse it with). Seeding an
+ * announcement into a group thread would have pictured a state the app
+ * cannot produce, which is worse than not picturing it.
  *
  * Distinct from `seedPopulatedMessagesList` just above, which seeds THREE
  * different THREADS (club, game, direct) with one message each to picture
@@ -1281,6 +1358,7 @@ export async function seedPopulatedMessagesList(
  */
 export async function seedPopulatedThread(
   clubId: string,
+  eventId: string,
   viewerId: string,
   suffix: string,
 ): Promise<{ threadId: string }> {
@@ -1299,17 +1377,19 @@ export async function seedPopulatedThread(
     seedFillerProfile(admin, 'Yusuf Ahmed', 'thread-thanks', suffix),
   ]);
 
-  // message_threads_one_per_club's own partial unique index (club_id where
-  // event_id is null) is what makes this the only club thread this club can
-  // ever get -- same reasoning seedPopulatedMessagesList's own club-thread
-  // insert records.
+  // A GAME thread: club_id must equal the event's own club -- message_threads'
+  // (event_id, club_id) composite foreign key makes any other pairing
+  // unstateable, the same guard seedPopulatedMessagesList's own game-thread
+  // insert records. The viewer reads it as an organizer of the seeded club
+  // (`can_read_thread`, 20260829010000: "a seat of any colour, or an
+  // organizer of the club"), so no booking is needed here.
   const thread = need<{ id: string }>(
-    'club thread insert',
+    'game thread insert',
     await admin
       .from('message_threads')
       .insert({
         club_id: clubId,
-        event_id: null,
+        event_id: eventId,
         created_by: askAuthor,
         last_message_at: '2026-08-22T14:15:00Z',
       })

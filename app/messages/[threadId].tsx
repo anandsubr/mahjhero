@@ -119,10 +119,16 @@ export default function ThreadScreen() {
     if (detail) void markThreadRead(threadId);
   }, [threadId]);
 
+  // Keyed on the viewer's id, not the `session` OBJECT: lib/session.tsx hands
+  // out a fresh `Session` on every onAuthStateChange, TOKEN_REFRESHED
+  // included -- within the hour, and on web tab focus -- and none of that
+  // changes who is asking. The realtime effect below already learned this
+  // (see its own regression test); this one refetched the whole conversation
+  // on every refresh.
   useEffect(() => {
-    if (!session) return;
+    if (!session?.user.id) return;
     void load();
-  }, [session, load]);
+  }, [session?.user.id, load]);
 
   useThreadRealtime(
     threadId,
@@ -187,17 +193,35 @@ export default function ThreadScreen() {
   }
   if (!session) return <Redirect href="/sign-in" />;
 
+  /*
+   * A club's conversation is a BOARD of root posts now, not a flat chat, and
+   * this screen cannot serve one: its composer writes a message with no
+   * `root_id`, which on a club thread silently creates a new junk POST per
+   * line; it has no Announcement control (that lives on the compose screen);
+   * long-pressing to quote is refused outright by `post_message`; and the
+   * read marker it writes is `thread_reads`, which `fetch_my_threads`' club
+   * branch stopped consulting, so the badge never clears.
+   *
+   * Every route that led here was repointed at the board, but a history
+   * entry, a bookmark, or a link shared before the change still names this
+   * URL. Catching it here is what makes the flat screen unreachable for a
+   * club thread however it was reached, rather than only from the call sites
+   * anybody remembered to change.
+   *
+   * Placed after the thread has LOADED, deliberately: `club_id` is what
+   * decides this and it arrives with `fetchThread`. Until then the screen is
+   * still rendering its own spinner (`ready` is false), so nothing of the
+   * flat conversation is ever painted on the way past.
+   */
+  if (thread && thread.club_id && !thread.event_id) {
+    return <Redirect href={`/messages/club/${thread.id}`} />;
+  }
+
   const title = thread ? threadTitleFor(thread, viewerId) : '';
   // Only a GROUP or DIRECT thread has members to list, add to, or leave —
   // a club or game thread's membership is derived (club_members / bookings),
   // never stored in thread_members, so there is nothing here to manage.
   const canManageMembers = thread !== null && thread.club_id === null;
-  // A CLUB thread specifically (not a game, which also carries club_id) --
-  // the one kind the empty state below can cheaply say something specific
-  // about ("post the first one"). Every other kind gets the generic copy
-  // rather than bespoke text per kind, which is not cheap: a game thread
-  // would need its own event-aware line, a group/direct its own.
-  const isClubThread = Boolean(thread?.club_id) && !thread?.event_id;
   // The header avatar's kind -- the same club_id/event_id/other-member-count
   // branches threadTitleFor above already reads, exported as threadKindFor
   // so this doesn't carry a second copy of that branching.
@@ -303,22 +327,21 @@ export default function ThreadScreen() {
             }
           >
             {/*
-              A club or group thread with nothing posted yet used to render
-              as an enormous blank region between the title and the composer
-              -- the same dashed-border empty card app/messages/index.tsx and
+              A thread with nothing posted yet used to render as an enormous
+              blank region between the title and the composer -- the same
+              dashed-border empty card app/messages/index.tsx and
               app/friends.tsx already use for "nothing here yet", rather than
-              silence. Only the club case gets bespoke copy (`isClubThread`
-              above); every other kind gets the generic line, since writing a
-              correct bespoke line for a game thread (which would want its
-              own date-aware copy) or a group/direct is not cheap the way the
-              club one is.
+              silence. One line for every kind this screen still serves: the
+              club case that once earned bespoke copy is redirected to the
+              board above and can no longer reach here, and writing a correct
+              bespoke line for a game thread (which would want its own
+              date-aware copy) or a group/direct is not cheap the way the
+              club one was.
             */}
             {messages.length === 0 ? (
               <View style={styles.emptyCard}>
                 <Text style={styles.emptyText}>
-                  {isClubThread
-                    ? 'No messages yet. Post the first one below.'
-                    : 'No messages yet. Say hello to start the conversation.'}
+                  No messages yet. Say hello to start the conversation.
                 </Text>
               </View>
             ) : null}
