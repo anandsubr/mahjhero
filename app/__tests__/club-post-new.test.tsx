@@ -52,12 +52,14 @@ vi.mock('../../lib/broadcasts', () => ({
 // There is no `organizer` prop on this screen; both branches below are
 // driven entirely by what fetchRoster resolves.
 const fetchRoster = vi.fn();
+const fetchClub = vi.fn();
 vi.mock('../../lib/clubs', async () => {
   const actual =
     await vi.importActual<typeof import('../../lib/clubs')>('../../lib/clubs');
   return {
     ...actual,
     fetchRoster: (...a: unknown[]) => fetchRoster(...a),
+    fetchClub: (...a: unknown[]) => fetchClub(...a),
   };
 });
 
@@ -65,12 +67,22 @@ const member = (role: 'host' | 'co_organizer' | 'member') => [
   { profile_id: 'me', role, display_name: 'Me', skill_level: null },
 ];
 
+const CLUB = {
+  id: 'c1',
+  name: 'Riverside Riichi',
+  slug: 'riverside-riichi',
+  rhythm: 'Thursdays',
+  visibility: 'private' as const,
+  timezone: 'America/New_York',
+};
+
 describe('composing a post', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     fetchUnreadCounts.mockResolvedValue([]);
     postMessage.mockResolvedValue({ id: 'p1', error: null });
     countBroadcastRecipients.mockResolvedValue(12);
+    fetchClub.mockResolvedValue(CLUB);
   });
 
   it('posts a plain post as a root', async () => {
@@ -167,6 +179,54 @@ describe('composing a post', () => {
     expect(screen.queryByText(/null/)).toBeNull();
   });
 
+  // The club's identity belongs in the recipient notice, not a header --
+  // this screen's own docstring records why: the notice is the sentence an
+  // organizer reads immediately before arming an irreversible fan-out, and
+  // that is the one place naming the wrong club would actually be caught.
+  it('names the club in the recipient notice an organizer is about to act on', async () => {
+    fetchRoster.mockResolvedValue(member('host'));
+    render(<NewPostScreen />);
+    await waitFor(() => expect(screen.getByLabelText(/Also email/)).toBeTruthy());
+    fireEvent.click(screen.getByLabelText(/Also email/));
+    await waitFor(() =>
+      expect(screen.getAllByText(/Riverside Riichi/).length).toBeGreaterThan(0),
+    );
+    expect(fetchClub).toHaveBeenCalledWith('c1');
+  });
+
+  // fetchClub never rejects -- null means "could not ask", the same
+  // contract countBroadcastRecipients keeps. The notice must fall back to
+  // its no-name phrasing rather than print a blank or the literal word
+  // "null" in a sentence the organizer is about to act on.
+  it('omits the club clause, without a blank or "null", when the name could not be fetched', async () => {
+    fetchRoster.mockResolvedValue(member('host'));
+    fetchClub.mockResolvedValue(null);
+    render(<NewPostScreen />);
+    await waitFor(() => expect(screen.getByLabelText(/Also email/)).toBeTruthy());
+    fireEvent.click(screen.getByLabelText(/Also email/));
+    await waitFor(() =>
+      expect(screen.getAllByText(/12 people will be emailed/).length).toBeGreaterThan(0),
+    );
+    expect(screen.queryByText(/null/)).toBeNull();
+  });
+
+  // A failed name fetch must not block composing or announcing at all --
+  // the toggle, the count, and posting itself all still work.
+  it('still lets an organizer announce when the club name could not be fetched', async () => {
+    fetchRoster.mockResolvedValue(member('host'));
+    fetchClub.mockResolvedValue(null);
+    render(<NewPostScreen />);
+    await waitFor(() => expect(screen.getByLabelText(/Also email/)).toBeTruthy());
+    fireEvent.change(screen.getByLabelText('Post'), {
+      target: { value: 'Doors at seven' },
+    });
+    fireEvent.click(screen.getByLabelText(/Also email/));
+    fireEvent.click(screen.getByLabelText('Post it'));
+    await waitFor(() =>
+      expect(postMessage).toHaveBeenCalledWith('t1', 'Doors at seven', true, null, null),
+    );
+  });
+
   it('announces when the toggle is on', async () => {
     fetchRoster.mockResolvedValue(member('host'));
     render(<NewPostScreen />);
@@ -237,6 +297,7 @@ describe('backing out of a post', () => {
     vi.clearAllMocks();
     fetchUnreadCounts.mockResolvedValue([]);
     fetchRoster.mockResolvedValue(member('member'));
+    fetchClub.mockResolvedValue(CLUB);
   });
 
   it('has a back control labelled for the board it came from', async () => {

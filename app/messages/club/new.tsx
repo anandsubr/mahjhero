@@ -10,7 +10,7 @@ import TextField from '../../../components/TextField';
 import Toggle from '../../../components/Toggle';
 import { ChevronLeftIcon } from '../../../components/icons';
 import { countBroadcastRecipients } from '../../../lib/broadcasts';
-import { canAnnounce, fetchRoster } from '../../../lib/clubs';
+import { canAnnounce, fetchClub, fetchRoster } from '../../../lib/clubs';
 import { GENERIC_ERROR } from '../../../lib/constants';
 import { BODY_MAX, deriveSubject, postMessage } from '../../../lib/messages';
 import { useSession } from '../../../lib/session';
@@ -69,7 +69,34 @@ import { colors, space, type } from '../../../lib/theme';
  * fallback -- a bare chevron, the same thing this renders directly. A
  * compose form has less identity to assert than a conversation already in
  * progress; the one thing it owes a member who changes their mind is a way
- * out, not a restatement of which club they're posting to.
+ * out, not a restatement of which club they're posting to. That reasoning
+ * holds for an ordinary post: getting it wrong lands on the wrong board,
+ * one tap away from fixing.
+ *
+ * It does NOT hold once the Announcement toggle is on. That flips this
+ * screen from "post to a board" to "email every member of a club," and an
+ * organizer who belongs to several clubs has nothing on screen naming which
+ * one is armed -- the recipient count says how many, never who. So the
+ * club's name is folded into the recipient notice itself (`noticeText`
+ * below), the exact sentence an organizer reads immediately before
+ * committing an irreversible send, rather than added as a second header
+ * this form would otherwise not need. Naming the club in chrome the
+ * organizer stopped reading after their first visit protects nobody; naming
+ * it in the sentence that precedes the send does.
+ *
+ * `clubName` is fetched alongside the roster (below), through `fetchClub` --
+ * the same "one function, always right" tradeoff `fetchThread` makes for the
+ * board screen's own header, over a route param the board screen could have
+ * passed instead. A param is free and already in hand (the board has
+ * `title` computed before it navigates here), but it can go stale against a
+ * rename between the two screens and needs URL-encoding a name that may
+ * carry spaces or punctuation the route string cannot carry verbatim. One
+ * more read on a screen that already makes two (fetchRoster, and
+ * countBroadcastRecipients once armed) buys a name that is never wrong.
+ * `fetchClub` never rejects -- null covers both "still loading" and
+ * "could not be asked," and the notice below omits the club clause
+ * entirely rather than rendering a blank or the literal word "null" in a
+ * sentence an organizer is about to act on.
  *
  * Backing out with a typed, non-empty draft asks once before discarding it
  * -- the same arm-then-confirm shape MembersPanel's `leaveConfirming` uses
@@ -103,6 +130,10 @@ export default function NewPostScreen() {
   const [confirmingCancel, setConfirmingCancel] = useState(false);
   const [announce, setAnnounce] = useState(false);
   const [mayAnnounce, setMayAnnounce] = useState(false);
+  // null covers "still loading" and "fetchClub could not ask" alike -- see
+  // this screen's own docstring for why the notice below omits the club
+  // clause entirely rather than rendering either as a blank or "null".
+  const [clubName, setClubName] = useState<string | null>(null);
   // null covers two different things on purpose: "have not asked yet" and
   // "asked and could not find out" both render nothing rather than a
   // number -- see the recipient preview below, which never prints "null".
@@ -124,6 +155,13 @@ export default function NewPostScreen() {
       if (cancelled) return;
       const me = roster?.find((m) => m.profile_id === userId);
       setMayAnnounce(me ? canAnnounce(me.role) : false);
+    });
+    // Fetched here rather than gated behind the toggle: firing it alongside
+    // the roster read means the name is already in hand by the time an
+    // organizer flips Announce on, so the notice's first paint already
+    // names the club instead of filling that clause in a beat later.
+    void fetchClub(clubId).then((club) => {
+      if (!cancelled) setClubName(club?.name ?? null);
     });
     return () => {
       cancelled = true;
@@ -223,11 +261,18 @@ export default function NewPostScreen() {
   //
   // A null count means "could not be asked", not "goes to nobody" --
   // rendering it as a number here would tell an organizer something the
-  // app does not actually know, so the count clause is simply omitted.
+  // app does not actually know, so the count clause is simply omitted. The
+  // club clause follows the same rule for the same reason: a null name
+  // (still loading, or fetchClub came back empty) is omitted rather than
+  // rendered as a blank or the word "null" in a sentence an organizer is
+  // about to act on -- this screen's docstring records why the name lives
+  // in this sentence at all, not in a header.
   const noticeText =
     `Subject: ${subject || '(the first line of your post)'}` +
     (recipients !== null
-      ? ` · ${recipients} ${recipients === 1 ? 'person' : 'people'} will be emailed`
+      ? ` · ${recipients} ${recipients === 1 ? 'person' : 'people'}` +
+        (clubName ? ` in ${clubName}` : '') +
+        ` will be emailed`
       : '');
 
   return (
