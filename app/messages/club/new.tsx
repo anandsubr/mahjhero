@@ -7,6 +7,7 @@ import ErrorBanner from '../../../components/ErrorBanner';
 import Screen from '../../../components/Screen';
 import TabBar from '../../../components/TabBar';
 import TextField from '../../../components/TextField';
+import ThreadAvatar from '../../../components/ThreadAvatar';
 import Toggle from '../../../components/Toggle';
 import { ChevronLeftIcon } from '../../../components/icons';
 import { countBroadcastRecipients } from '../../../lib/broadcasts';
@@ -14,7 +15,7 @@ import { canAnnounce, fetchClub, fetchRoster } from '../../../lib/clubs';
 import { GENERIC_ERROR } from '../../../lib/constants';
 import { BODY_MAX, deriveSubject, postMessage } from '../../../lib/messages';
 import { useSession } from '../../../lib/session';
-import { colors, space, type } from '../../../lib/theme';
+import { colors, radius, space, type } from '../../../lib/theme';
 
 /**
  * Start a post on a club's board.
@@ -57,32 +58,42 @@ import { colors, space, type } from '../../../lib/theme';
  * board list, not the specific board they came from. The chevron below
  * returns to that exact board, the same destination and the same control
  * commit 2e39173 gave the board and post screens (app/messages/club/
- * [threadId]/index.tsx, .../[postId].tsx) -- reused here rather than
- * reintroducing the ghost-link pattern app/messages/new.tsx's docstring
- * explains was retired.
+ * [threadId]/index.tsx, .../[postId].tsx) -- and now sits inside the same
+ * header those two screens use, rather than alone.
  *
- * Only the chevron, not those two screens' full avatar+pill header: this
- * screen never fetches ThreadDetail (fetchRoster above is the only read it
- * needs, for the Announcement toggle's permission check), so drawing that
- * header would mean either a second network round trip that exists purely
- * for decoration, or permanently showing the header's own "still loading"
- * fallback -- a bare chevron, the same thing this renders directly. A
- * compose form has less identity to assert than a conversation already in
- * progress; the one thing it owes a member who changes their mind is a way
- * out, not a restatement of which club they're posting to. That reasoning
- * holds for an ordinary post: getting it wrong lands on the wrong board,
- * one tap away from fixing.
+ * That header -- a centred ThreadAvatar plus a name pill beneath the
+ * chevron -- is the exact treatment commit 2e39173 gave the board and post
+ * screens, its style entries (`header`, `backButton`, `headerCenter`,
+ * `namePill`, `namePillText`) copied from app/messages/club/[threadId]/
+ * index.tsx rather than re-derived. Which club a member is posting to is
+ * true of the whole screen, not just of the announcement decision -- a
+ * member should not have to arm the Announce toggle to find out where they
+ * are, which is what the previous design asked of them (the name lived only
+ * in the recipient notice below). `kind` is the literal `'club'`, not
+ * something derived through `threadKindFor` the way the board does: that
+ * screen fetches a full `ThreadDetail` (via `fetchThread`) because it has
+ * two questions to answer -- the name AND which avatar kind to draw. This
+ * route only ever composes onto a club's board, so there is only the one
+ * question, and `fetchClub`'s plain name already answers it.
  *
- * It does NOT hold once the Announcement toggle is on. That flips this
- * screen from "post to a board" to "email every member of a club," and an
- * organizer who belongs to several clubs has nothing on screen naming which
- * one is armed -- the recipient count says how many, never who. So the
- * club's name is folded into the recipient notice itself (`noticeText`
- * below), the exact sentence an organizer reads immediately before
- * committing an irreversible send, rather than added as a second header
- * this form would otherwise not need. Naming the club in chrome the
- * organizer stopped reading after their first visit protects nobody; naming
- * it in the sentence that precedes the send does.
+ * The pill here does NOT navigate, unlike the board's tappable one.
+ * app/messages/[threadId].tsx's own inert pill (drawn for a club/game
+ * thread there, which has no members view to open) already made this call
+ * and left the reasoning in its own comment: a control that LOOKS tappable
+ * and does nothing is worse than one that plainly isn't interactive at all.
+ * The reasoning is sharper here than "does nothing": tapping through to the
+ * club mid-draft would ABANDON whatever has been typed, and this screen
+ * already goes out of its way (`confirmingCancel` below) to ask before
+ * discarding a draft on the way OUT. A tap that discarded one on the way
+ * sideways, with no confirmation at all, would undercut that entirely. So
+ * the pill renders as a plain, non-interactive `View` -- no `Pressable`, no
+ * button role, no chevron, nothing that promises a tap will go anywhere.
+ *
+ * `clubName` keeps the null-safety it always had: `fetchClub` never rejects
+ * -- null covers both "still loading" and "could not be asked" -- and the
+ * header renders no pill at all, rather than an empty one, when it's null.
+ * That must never block composing or announcing: the toggle, the count, and
+ * posting itself all still work with no club name in hand.
  *
  * `clubName` is fetched alongside the roster (below), through `fetchClub` --
  * the same "one function, always right" tradeoff `fetchThread` makes for the
@@ -93,10 +104,15 @@ import { colors, space, type } from '../../../lib/theme';
  * carry spaces or punctuation the route string cannot carry verbatim. One
  * more read on a screen that already makes two (fetchRoster, and
  * countBroadcastRecipients once armed) buys a name that is never wrong.
- * `fetchClub` never rejects -- null covers both "still loading" and
- * "could not be asked," and the notice below omits the club clause
- * entirely rather than rendering a blank or the literal word "null" in a
- * sentence an organizer is about to act on.
+ *
+ * The recipient notice (`noticeText` below) no longer names the club. Now
+ * that the header says so persistently, restating it in the sentence an
+ * organizer reads right before sending would be the same fact twice, not
+ * extra safety -- and it is exactly the fact the header exists to answer
+ * without requiring the toggle. What the notice still carries is specific
+ * to arming Announce: the recipient count and the subject the email will
+ * actually carry, neither of which is true of this screen until the toggle
+ * is on.
  *
  * Backing out with a typed, non-empty draft asks once before discarding it
  * -- the same arm-then-confirm shape MembersPanel's `leaveConfirming` uses
@@ -261,28 +277,27 @@ export default function NewPostScreen() {
   //
   // A null count means "could not be asked", not "goes to nobody" --
   // rendering it as a number here would tell an organizer something the
-  // app does not actually know, so the count clause is simply omitted. The
-  // club clause follows the same rule for the same reason: a null name
-  // (still loading, or fetchClub came back empty) is omitted rather than
-  // rendered as a blank or the word "null" in a sentence an organizer is
-  // about to act on -- this screen's docstring records why the name lives
-  // in this sentence at all, not in a header.
+  // app does not actually know, so the count clause is simply omitted. No
+  // club clause here at all -- this screen's docstring records why: the
+  // header above already names the club persistently, so the notice only
+  // carries what's specific to arming Announce, the count and the subject.
   const noticeText =
     `Subject: ${subject || '(the first line of your post)'}` +
     (recipients !== null
-      ? ` · ${recipients} ${recipients === 1 ? 'person' : 'people'}` +
-        (clubName ? ` in ${clubName}` : '') +
-        ` will be emailed`
+      ? ` · ${recipients} ${recipients === 1 ? 'person' : 'people'} will be emailed`
       : '');
 
   return (
     <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="messages" />}>
       {/*
-        Chevron only -- see this screen's own docstring for why it skips the
-        board/post screens' avatar+pill. Same header/backButton styling
-        those two screens use (itself copied from app/messages/[threadId]
-        .tsx), not a fresh derivation of the same 44x44 target and
-        absolute-positioned corner.
+        The same header the board and post screens use (commit 2e39173,
+        app/messages/club/[threadId]/index.tsx): chevron top-left, the
+        club's avatar and name pill centred beneath it. Style entries
+        (header/backButton/headerCenter/namePill/namePillText) copied from
+        that screen rather than re-derived -- see this screen's own
+        docstring for why. `kind` is the literal 'club', not derived
+        through threadKindFor -- this route only ever composes onto a
+        club's board, so there is no second kind to distinguish.
       */}
       <View style={styles.header}>
         <Pressable
@@ -293,6 +308,28 @@ export default function NewPostScreen() {
         >
           <ChevronLeftIcon color={colors.text} size={22} />
         </Pressable>
+
+        {clubName ? (
+          <View style={styles.headerCenter}>
+            <ThreadAvatar
+              kind="club"
+              name={clubName}
+              size={72}
+              testID="thread-header-avatar-club"
+            />
+
+            {/*
+              A plain View, not a Pressable -- see this screen's own
+              docstring for why the pill here must not look tappable the
+              way the board's own pill does. No button role, no chevron.
+            */}
+            <View style={styles.namePill}>
+              <Text numberOfLines={1} style={styles.namePillText}>
+                {clubName}
+              </Text>
+            </View>
+          </View>
+        ) : null}
       </View>
 
       <Text style={styles.heading}>New post</Text>
@@ -352,9 +389,7 @@ const styles = StyleSheet.create({
   // Copied from the board and post screens' own `header`/`backButton`
   // (app/messages/club/[threadId]/index.tsx, .../[postId].tsx), themselves
   // copied from app/messages/[threadId].tsx -- see any of those for the
-  // reasoning behind the absolute positioning and the 44x44 target. No
-  // `headerCenter`/`namePill` here -- see this screen's own docstring for
-  // why it renders the chevron alone.
+  // reasoning behind the absolute positioning and the 44x44 target.
   header: {
     position: 'relative',
     alignItems: 'center',
@@ -368,6 +403,27 @@ const styles = StyleSheet.create({
     height: 44,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  // Also copied from the board screen's own `headerCenter`/`namePill`/
+  // `namePillText` -- see this screen's own docstring for why the pill
+  // itself is a plain View here rather than that screen's Pressable.
+  headerCenter: { alignItems: 'center', gap: space[2] },
+  namePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[1],
+    maxWidth: 240,
+    backgroundColor: colors.surface,
+    borderRadius: radius.pill,
+    paddingHorizontal: space[3],
+    paddingVertical: space[1],
+  },
+  namePillText: {
+    flexShrink: 1,
+    minWidth: 0,
+    fontFamily: type.bodySemiBold,
+    fontSize: type.size.helper,
+    color: colors.text,
   },
   heading: {
     fontFamily: type.heading,

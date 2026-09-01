@@ -179,26 +179,52 @@ describe('composing a post', () => {
     expect(screen.queryByText(/null/)).toBeNull();
   });
 
-  // The club's identity belongs in the recipient notice, not a header --
-  // this screen's own docstring records why: the notice is the sentence an
-  // organizer reads immediately before arming an irreversible fan-out, and
-  // that is the one place naming the wrong club would actually be caught.
-  it('names the club in the recipient notice an organizer is about to act on', async () => {
+  // The club's identity now lives in a persistent header, not gated behind
+  // the Announce toggle -- this screen's own docstring records why: which
+  // club a member is posting to is true of the whole screen, not just of
+  // the announcement decision.
+  it('names the club in a header, without needing the Announce toggle armed', async () => {
+    fetchRoster.mockResolvedValue(member('member'));
+    render(<NewPostScreen />);
+    await waitFor(() => expect(screen.getByText('Riverside Riichi')).toBeTruthy());
+    expect(fetchClub).toHaveBeenCalledWith('c1');
+  });
+
+  // See app/messages/[threadId].tsx's own inert-pill comment: a control
+  // that looks tappable and does nothing is worse than one that plainly
+  // isn't interactive. Here the reason is sharper than "does nothing" --
+  // tapping through mid-draft would abandon whatever has been typed.
+  it('renders the club pill as a plain label, not a button that could navigate away', async () => {
+    fetchRoster.mockResolvedValue(member('member'));
+    render(<NewPostScreen />);
+    await waitFor(() => expect(screen.getByText('Riverside Riichi')).toBeTruthy());
+    expect(
+      screen.queryByRole('button', { name: /Riverside Riichi/ }),
+    ).toBeNull();
+  });
+
+  // The recipient notice no longer names the club -- the header above
+  // already does, persistently, so restating it there would be the same
+  // fact twice. The notice keeps only what's specific to arming Announce:
+  // the count and the subject.
+  it('does not repeat the club name in the recipient notice', async () => {
     fetchRoster.mockResolvedValue(member('host'));
     render(<NewPostScreen />);
     await waitFor(() => expect(screen.getByLabelText(/Also email/)).toBeTruthy());
     fireEvent.click(screen.getByLabelText(/Also email/));
     await waitFor(() =>
-      expect(screen.getAllByText(/Riverside Riichi/).length).toBeGreaterThan(0),
+      expect(screen.getAllByText(/12 people will be emailed/).length).toBeGreaterThan(0),
     );
-    expect(fetchClub).toHaveBeenCalledWith('c1');
+    // "Riverside Riichi" still appears once, in the header -- not a second
+    // time folded into the notice sentence.
+    expect(screen.getAllByText('Riverside Riichi').length).toBe(1);
   });
 
   // fetchClub never rejects -- null means "could not ask", the same
-  // contract countBroadcastRecipients keeps. The notice must fall back to
-  // its no-name phrasing rather than print a blank or the literal word
-  // "null" in a sentence the organizer is about to act on.
-  it('omits the club clause, without a blank or "null", when the name could not be fetched', async () => {
+  // contract countBroadcastRecipients keeps. The header must render no
+  // pill at all (not a blank one, not the literal word "null") rather than
+  // guess at a name it doesn't have.
+  it('renders no pill, without a blank or "null", when the name could not be fetched', async () => {
     fetchRoster.mockResolvedValue(member('host'));
     fetchClub.mockResolvedValue(null);
     render(<NewPostScreen />);
@@ -208,6 +234,7 @@ describe('composing a post', () => {
       expect(screen.getAllByText(/12 people will be emailed/).length).toBeGreaterThan(0),
     );
     expect(screen.queryByText(/null/)).toBeNull();
+    expect(screen.queryByTestId('thread-header-avatar-club')).toBeNull();
   });
 
   // A failed name fetch must not block composing or announcing at all --
