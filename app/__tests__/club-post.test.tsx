@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import PostScreen from '../messages/club/[threadId]/[postId]';
+import { GENERIC_ERROR } from '../../lib/constants';
 
 const push = vi.fn();
 
@@ -113,10 +114,17 @@ describe('a club post', () => {
     expect(markPostRead).not.toHaveBeenCalled();
   });
 
+  // This used to be a byte-for-byte repeat of the test above minus its
+  // markPostRead assertion, so the "not as an empty post" half of its own
+  // name was checked by nothing. `lib/` never rejects: null is "we could not
+  // ask", and a post rendered as a blank scroller with a composer under it
+  // would tell a member something false about their club's board.
   it('reports a failed load as a failure, not as an empty post', async () => {
     fetchPostMessages.mockResolvedValue(null);
     render(<PostScreen />);
-    await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(GENERIC_ERROR)).toBeTruthy());
+    // The root that WOULD have rendered had the read succeeded.
+    expect(screen.queryByTestId('bubble-p1')).toBeNull();
   });
 
   it('treats an empty row list the same as a failed load -- a post always has a root', async () => {
@@ -151,6 +159,36 @@ describe('a club post', () => {
     expect(
       screen.getByText('Sara Lindqvist: We are one short for Tuesday.'),
     ).toBeTruthy();
+  });
+
+  /*
+   * The screen carried ONE error slot, and `load()` cleared it -- so any
+   * INSERT anywhere in this thread (the realtime callback calls `load()`)
+   * wiped the refusal a member's own send had just produced, while their
+   * unsent draft still sat in the composer with nothing left to explain it.
+   * Somebody else replying to an unrelated post on the same board is enough.
+   */
+  it('keeps a send refusal on screen when an unrelated message arrives', async () => {
+    postMessage.mockResolvedValue({ id: null, error: 'that message is too long' });
+    render(<PostScreen />);
+    const input = await screen.findByLabelText('Message');
+    fireEvent.change(input, { target: { value: 'I am' } });
+    fireEvent.click(screen.getByLabelText('Send'));
+    await waitFor(() =>
+      expect(screen.getByText('that message is too long')).toBeTruthy(),
+    );
+
+    // Somebody else posts anywhere in this thread. The subscription is
+    // thread-wide (see the screen's own docstring), so this fires here.
+    const onInsert = useThreadRealtime.mock.calls[0][2] as () => void;
+    fetchPostMessages.mockResolvedValue([root, reply]);
+    await act(async () => {
+      onInsert();
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText('that message is too long')).toBeTruthy();
+    expect((input as HTMLInputElement).value).toBe('I am');
   });
 
   it('quotes a reply from inside this post -- reply_to is a pointer, independent of rootId', async () => {

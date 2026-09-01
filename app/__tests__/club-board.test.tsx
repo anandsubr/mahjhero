@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ClubBoardScreen from '../messages/club/[threadId]/index';
 
 const push = vi.fn();
@@ -29,10 +29,17 @@ vi.mock('../../lib/session', () => ({
 // extracted in Task 9 and covered by its own unit tests
 // (lib/use-thread-realtime.test.ts). Re-deriving the full postgres_changes
 // channel double app/__tests__/thread.test.tsx builds for it would only
-// re-test the hook itself through an extra layer; a no-op stub is enough to
-// prove this screen wires the hook up without re-verifying the hook.
+// re-test the hook itself through an extra layer; a stub is enough to prove
+// this screen wires the hook up without re-verifying the hook.
+//
+// A module-scoped spy the factory FORWARDS to, not a bare `vi.fn()` inside
+// it: a stub nothing can reach is a stub nothing can assert on, and deleting
+// the hook call from the screen entirely would have left every test in this
+// file green. app/__tests__/club-post.test.tsx does it this way for the same
+// reason.
+const useThreadRealtime = vi.fn();
 vi.mock('../../lib/use-thread-realtime', () => ({
-  useThreadRealtime: vi.fn(),
+  useThreadRealtime: (...a: unknown[]) => useThreadRealtime(...a),
 }));
 
 const fetchClubPosts = vi.fn();
@@ -145,6 +152,53 @@ describe('the club board', () => {
       fireEvent.click(screen.getByLabelText('New post'));
       expect(push).toHaveBeenCalledWith('/messages/club/new?threadId=t1&clubId=c1');
     });
+  });
+
+  // Nothing at any level covered where a board row actually goes -- the
+  // screen could have pushed anywhere, or nowhere, and stayed green.
+  it('opens the post a row names, on this board', async () => {
+    fetchClubPosts.mockResolvedValue([
+      {
+        id: 'p1',
+        author_id: 'a1',
+        author_name: 'Alice Chen',
+        body: 'Anyone free Thursday?',
+        subject: null,
+        is_announcement: false,
+        created_at: '2026-08-30T10:00:00.000Z',
+        reply_count: 0,
+        last_reply_at: null,
+        last_activity_at: '2026-08-30T10:00:00.000Z',
+        unread: 0,
+      },
+    ]);
+    render(<ClubBoardScreen />);
+    fireEvent.click(await screen.findByLabelText(/Anyone free Thursday\?/));
+    expect(push).toHaveBeenCalledWith('/messages/club/t1/p1');
+  });
+
+  // The board subscribes to its THREAD, not to any one post -- the same
+  // channel every screen on this thread shares. Asserted rather than left to
+  // a stub nobody looks at: without this, deleting the hook call from the
+  // screen leaves the board permanently stale and every test here passing.
+  it('subscribes to the thread so a new post appears without a reopen', async () => {
+    fetchClubPosts.mockResolvedValue([]);
+    render(<ClubBoardScreen />);
+    await waitFor(() =>
+      expect(useThreadRealtime).toHaveBeenCalledWith('t1', 'me', expect.any(Function)),
+    );
+  });
+
+  it('refetches the board when the subscription fires', async () => {
+    fetchClubPosts.mockResolvedValue([]);
+    render(<ClubBoardScreen />);
+    await waitFor(() => expect(fetchClubPosts).toHaveBeenCalledTimes(1));
+    const onInsert = useThreadRealtime.mock.calls[0][2] as () => void;
+    await act(async () => {
+      onInsert();
+      await Promise.resolve();
+    });
+    expect(fetchClubPosts).toHaveBeenCalledTimes(2);
   });
 
   it('still offers New post when fetchThread cannot say which club this is', async () => {

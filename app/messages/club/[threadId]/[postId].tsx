@@ -61,7 +61,21 @@ export default function PostScreen() {
   const [ready, setReady] = useState(false);
   const [draft, setDraft] = useState('');
   const [replyTo, setReplyTo] = useState<ThreadMessage | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  /*
+   * Two slots, the same split app/messages/index.tsx keeps between
+   * `loadError` and `actionError`, and here it is load-bearing rather than
+   * tidy: `load()` clears the error it owns, and the realtime subscription
+   * below calls `load()` on EVERY insert anywhere in this thread. With one
+   * shared slot, somebody else posting into an unrelated post on this board
+   * erased the refusal a member's own failed send had just produced, while
+   * their unsent draft still sat in the composer with no explanation of why
+   * it had not gone.
+   *
+   * A refusal is relayed verbatim, so `actionError` is whatever post_message
+   * said; `loadError` is only ever GENERIC_ERROR.
+   */
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   // Written SYNCHRONOUSLY alongside `setSending`, the same pattern
   // app/messages/[threadId].tsx's own `sendingRef` records: `sending` read
@@ -79,11 +93,14 @@ export default function PostScreen() {
     // root row -- so it is folded into the same failure the null case
     // already handles rather than rendered as a blank, memberless post.
     if (rows === null || rows.length === 0) {
-      setError(GENERIC_ERROR);
+      setLoadError(GENERIC_ERROR);
       setReady(true);
       return;
     }
-    setError(null);
+    // Only this screen's own load failure is cleared here. A send refusal
+    // belongs to `actionError` and survives every refetch -- see the two
+    // slots' own comment above.
+    setLoadError(null);
     setMessages(rows);
     setReady(true);
     // The only call site, and it is unreachable from a failed fetch: the
@@ -94,10 +111,14 @@ export default function PostScreen() {
     void markPostRead(postId);
   }, [postId]);
 
+  // Keyed on the viewer's id, not the `session` OBJECT: lib/session.tsx hands
+  // out a fresh `Session` on every onAuthStateChange, TOKEN_REFRESHED
+  // included -- hourly, and on web tab focus -- and none of that changes who
+  // is asking. `load` is already stable on `postId`.
   useEffect(() => {
-    if (!session) return;
+    if (!session?.user.id) return;
     void load();
-  }, [session, load]);
+  }, [session?.user.id, load]);
 
   useThreadRealtime(
     threadId,
@@ -111,7 +132,7 @@ export default function PostScreen() {
     if (sendingRef.current || !threadId || !postId) return;
     sendingRef.current = true;
     setSending(true);
-    setError(null);
+    setActionError(null);
     // `false` -- an announcement is always a NEW post, never a reply;
     // post_message refuses the combination outright ('only a new post can
     // be an announcement').
@@ -129,7 +150,7 @@ export default function PostScreen() {
       // the second worst.
       sendingRef.current = false;
       setSending(false);
-      setError(refusal);
+      setActionError(refusal);
       return;
     }
     setDraft('');
@@ -148,6 +169,11 @@ export default function PostScreen() {
   }
   if (!session) return <Redirect href="/sign-in" />;
 
+  // actionError first: it names what the member just tried to send, which is
+  // more useful in the moment than a standing load failure -- the same
+  // precedence app/messages/index.tsx applies to its own two slots.
+  const error = actionError ?? loadError;
+
   return (
     <Screen contentStyle={styles.container} tabBar={<TabBar active="messages" />}>
       <View style={styles.header}>
@@ -161,11 +187,8 @@ export default function PostScreen() {
         </Pressable>
       </View>
 
-      {error ? (
-        <View accessibilityRole="alert">
-          <ErrorBanner message={error} />
-        </View>
-      ) : null}
+      {/* The alert role lives inside ErrorBanner now -- see its docstring. */}
+      {error ? <ErrorBanner message={error} /> : null}
 
       {!ready ? (
         <ActivityIndicator color={colors.accentColor} />

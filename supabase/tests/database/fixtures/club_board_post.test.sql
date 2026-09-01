@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(14);
+select plan(15);
 
 -- Alice hosts Riverside. Bob is a plain member. Both are in the club thread.
 insert into auth.users (id, email) values
@@ -142,6 +142,28 @@ select throws_ok(
   '22023',
   'you can only quote a message from the same post',
   'a reply cannot quote a message from a different post'
+);
+
+/*
+ * The OTHER half of the same guard: `p_root is null` on a club board. A
+ * message posted with no root is itself about to become a new post, so
+ * there is no "same post" its quote could belong to, and the board refuses
+ * it outright rather than asking whether some other post happens to agree.
+ *
+ * This stopped being theoretical when the flat thread screen turned out to
+ * still be reachable for club threads: a long-press-to-quote there called
+ * post_message with a p_reply_to and no p_root, and this is the branch it
+ * landed on. The screen redirects to the board now, but the guard is what
+ * makes the state unreachable rather than merely unrouted.
+ */
+select throws_ok(
+  $$ select public.post_message('11111111-0000-0000-0000-000000000001',
+       'quoting with no post of my own',
+       false,
+       (select id from public.messages where body = 'Anyone free Thursday?')) $$,
+  '22023',
+  'you can only quote a message from the same post',
+  'a new post on a board cannot quote anything'
 );
 
 -- Quoting a message that already lives under the same post — here, a

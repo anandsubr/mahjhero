@@ -65,12 +65,17 @@ export default function MessagesScreen() {
    * email, so this list and its badges are the whole notification surface —
    * coming back to the tab has to be enough to see something new. Realtime
    * is deliberately confined to the open thread; see app/messages/[threadId].
+   *
+   * Keyed on the viewer's id, not the `session` OBJECT: lib/session.tsx hands
+   * out a fresh `Session` on every onAuthStateChange, TOKEN_REFRESHED
+   * included — hourly, and on web tab focus — and none of that changes who is
+   * asking. `load` is already stable.
    */
   useFocusEffect(
     useCallback(() => {
-      if (!session) return;
+      if (!session?.user.id) return;
       void load();
-    }, [session, load]),
+    }, [session?.user.id, load]),
   );
 
   const open = useCallback(

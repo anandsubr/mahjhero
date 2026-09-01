@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
+import { Redirect, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import Button from '../../../../components/Button';
 import ErrorBanner from '../../../../components/ErrorBanner';
@@ -65,10 +65,29 @@ export default function ClubBoardScreen() {
     loadingRef.current = false;
   }, [threadId]);
 
-  useEffect(() => {
-    if (!session) return;
-    void load();
-  }, [session, load]);
+  /*
+   * On FOCUS, not only on mount -- the same call app/messages/index.tsx
+   * already makes for the list, and for a sharper reason here. Opening a
+   * post pushes a screen ON TOP of this one; the board stays mounted, so a
+   * mount-only effect never runs again. `markPostRead` writes post_reads,
+   * and post_reads is not in the realtime publication (20260829070000
+   * publishes `messages`), so nothing tells this screen the dot it is
+   * drawing is stale. Reading a post and pressing back left the dot lit
+   * until the app was restarted.
+   *
+   * The callback must be a stable `useCallback`: useFocusEffect keys a
+   * useEffect on the callback's identity, so a fresh function each render is
+   * a refetch loop. `load` is already stable on `threadId`, and the viewer's
+   * id -- not the `session` OBJECT, which lib/session.tsx replaces on every
+   * token refresh -- is what this actually depends on. The comment eight
+   * lines below said so; this effect was not doing it.
+   */
+  useFocusEffect(
+    useCallback(() => {
+      if (!session?.user.id) return;
+      void load();
+    }, [session?.user.id, load]),
+  );
 
   useEffect(() => {
     if (!session?.user.id || !threadId) return;
@@ -114,15 +133,8 @@ export default function ClubBoardScreen() {
 
   return (
     <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="messages" />}>
-      {error ? (
-        // No native `role="alert"` equivalent on ErrorBanner itself (it is
-        // shared by a dozen screens that don't need one) -- wrapping it here
-        // is what actually gets a member using a screen reader told a load
-        // failed without them having to find and read the banner's text.
-        <View accessibilityRole="alert">
-          <ErrorBanner message={error} />
-        </View>
-      ) : null}
+      {/* The alert role lives inside ErrorBanner now -- see its docstring. */}
+      {error ? <ErrorBanner message={error} /> : null}
 
       {/*
         Deliberately not gated on `ready`: a member composing does not need

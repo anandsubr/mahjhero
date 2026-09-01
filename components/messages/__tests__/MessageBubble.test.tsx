@@ -50,7 +50,12 @@ describe('MessageBubble', () => {
         onReply={() => {}}
       />,
     );
-    expect(screen.getByText('Doors at seven')).toBeTruthy();
+    // ONCE, stated. This test's name is about DE-DUPLICATION -- the bug was
+    // the subject printed, then the body repeating it -- and `getByText`
+    // only caught that as a side effect of its own "found multiple elements"
+    // throw, which reads as a broken query rather than as the claim failing.
+    // The count is the claim, so it is what the test asserts.
+    expect(screen.getAllByText('Doors at seven')).toHaveLength(1);
     expect(screen.getByText('Announcement')).toBeTruthy();
   });
 
