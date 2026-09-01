@@ -105,6 +105,17 @@ describe('deriveSubject', () => {
     expect(deriveSubject('   \n\nreal content')).toBe('');
   });
 
+  // Postgres's bare `trim(x)` strips only the literal ASCII space, U+0020 --
+  // confirmed live: `trim(U&'\00A0Doors at seven\00A0')` comes back
+  // unchanged, length 16. JS's `.trim()` strips the whole ECMAScript
+  // whitespace set, U+00A0 included, so a `.trim()` here would silently
+  // disagree with what `subj := trim(subj)` actually stores: the preview
+  // would read "Doors at seven" while the stored, emailed subject still
+  // carried the trailing non-breaking space. The character must survive.
+  it('keeps a non-breaking space Postgres would not trim', () => {
+    expect(deriveSubject(' Doors at seven ')).toBe(' Doors at seven ');
+  });
+
   // Postgres's `length()`/`left()` count characters, not UTF-16 code units.
   // `.length`/`.slice` count UTF-16 units, so an astral character (outside
   // the BMP, encoded as a surrogate pair) counts as ONE character server-side

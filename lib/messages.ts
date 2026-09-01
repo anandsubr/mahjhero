@@ -190,6 +190,21 @@ export const SUBJECT_MAX = 120;
 const CONTROL_CHAR_PATTERN = /[\x00-\x1f\x7f-\x9f]/g;
 
 /**
+ * Mirrors Postgres's `trim(x)` with no explicit character list -- which
+ * strips only the literal ASCII space, U+0020, from each end. Confirmed
+ * live against a local Postgres: `trim(U&'\00A0Doors at seven\00A0')`
+ * comes back unchanged, length 16. JS's `.trim()` strips the whole
+ * ECMAScript whitespace/line-terminator set instead -- U+00A0, the other
+ * Unicode space separators, U+FEFF -- so using it here would let
+ * `deriveSubject` silently disagree with what `post_message`'s
+ * `subj := trim(subj)` actually stores the moment a pasted first line was
+ * bounded by anything other than a plain space: the preview would read
+ * "Doors at seven" while the stored, emailed subject still carried an
+ * invisible trailing non-breaking space.
+ */
+const EDGE_SPACE_PATTERN = /^ +| +$/g;
+
+/**
  * The announcement subject, derived rather than typed.
  *
  * An email needs a subject line and the compose artboard has one input, so
@@ -219,10 +234,17 @@ const CONTROL_CHAR_PATTERN = /[\x00-\x1f\x7f-\x9f]/g;
  *     a pair in half outright. `Array.from` (and `for...of`) iterate a
  *     string by codepoint, which is what the split and slice below use
  *     instead.
+ *   - The TRIM must strip what Postgres's bare `trim()` strips, not what
+ *     JS's `.trim()` strips — see EDGE_SPACE_PATTERN above. `subj := trim(subj)`
+ *     in post_message runs on the first line only, after it has already been
+ *     split off and its control characters stripped, so this is the one step
+ *     where a pasted, Unicode-padded first line (a paste out of Word or a web
+ *     page is the plausible source) would otherwise survive to the stored
+ *     subject invisibly while the preview quietly trimmed it away.
  */
 export function deriveSubject(body: string): string {
   const firstLine = (body ?? '').split('\n')[0] ?? '';
-  const cleaned = firstLine.replace(CONTROL_CHAR_PATTERN, '').trim();
+  const cleaned = firstLine.replace(CONTROL_CHAR_PATTERN, '').replace(EDGE_SPACE_PATTERN, '');
   const codepoints = Array.from(cleaned);
   if (codepoints.length > SUBJECT_MAX) {
     return `${codepoints.slice(0, SUBJECT_MAX - 1).join('')}…`;
