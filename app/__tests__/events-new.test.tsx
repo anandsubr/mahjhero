@@ -130,6 +130,23 @@ describe('guard ordering', () => {
   });
 });
 
+// The club management page's own "Add a game" + is gone
+// (2026-09-02-club-page-games-and-back-links-design.md) — every real way
+// into this form is the dashboard now (its header's own +, or the
+// empty-state "Host a table" button), so this screen's back link goes
+// there. The Club tab reaches the same /clubs route but renders as
+// already-active here, which reads as "you are here" rather than "go
+// back" -- the same reasoning every other back link on this branch
+// documents.
+describe('back link', () => {
+  it('draws a back link to the dashboard', async () => {
+    render(<NewEventScreen />);
+    await screen.findByText('Add a game');
+    fireEvent.click(screen.getByRole('button', { name: 'Back to your clubs' }));
+    expect(push).toHaveBeenCalledWith('/clubs');
+  });
+});
+
 /*
  * Cancel used to always call `router.back()`, which throws
  * ("The action 'GO_BACK' was not handled by any navigator.") when this
