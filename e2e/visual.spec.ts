@@ -182,7 +182,7 @@ test.describe('signed in', () => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/messages');
       await expect(
-        page.getByText('No conversations yet. Start one with New.'),
+        page.getByText('No conversations yet. Start one with the + above.'),
       ).toBeVisible();
       await captureScreen(page, vp, `messages-${vp.name}.png`);
     });

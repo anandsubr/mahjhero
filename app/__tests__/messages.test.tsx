@@ -220,7 +220,7 @@ describe('messages list', () => {
 
   it('reaches the compose screen', async () => {
     render(<MessagesScreen />);
-    fireEvent.click(await screen.findByLabelText('New'));
+    fireEvent.click(await screen.findByLabelText('New message'));
     expect(push).toHaveBeenCalledWith('/messages/new');
   });
 });
