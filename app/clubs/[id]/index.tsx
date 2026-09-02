@@ -114,8 +114,8 @@ export default function ClubDetailScreen() {
   // costs nothing extra. `canInvite` is exactly the host-or-co-organizer
   // test the event functions enforce in SQL, so the UI and the database
   // agree about who may invite and manage venues rather than each deciding
-  // separately. Gates "Open the club thread", "Create an invite link" and
-  // "Import a roster" below.
+  // separately. Gates "Open the club thread", "Create an invite link",
+  // "Import a roster" and "Venues" below.
   const mayInvite = me ? canInvite(me.role) : false;
 
   // `app/clubs/[id]/import.tsx` redirects here with `?imported=<n>` after a
