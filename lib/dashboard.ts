@@ -35,17 +35,33 @@ export type HeaderScope = { kicker: string; name: string; meta: string };
  * The artboard's meta is "N clubs · M members". `fetchMyClubs` returns no
  * member counts, so the count half is dropped rather than faked — see the
  * spec's deferred item 4.
+ *
+ * One club is the exception to both fallbacks. There is nothing to disambiguate
+ * and no chip row to pick with, so a single-club list resolves to that club
+ * whatever `selected` says.
  */
 export function headerScope(clubs: Club[], selected: string): HeaderScope {
-  const club =
+  const picked =
     selected === ALL_CLUBS
       ? null
       : (clubs.find((candidate) => candidate.id === selected) ?? null);
+  // A one-club member's scope is never ambiguous, and their `selected` never
+  // moves off ALL_CLUBS — the chip row that would change it is not drawn
+  // below two clubs. Resolving the lone club here is what lets the header
+  // name it and be pressed into it. Same derivation, for the same reason, as
+  // the screen's own `scopeClubId`.
+  const club = picked ?? (clubs.length === 1 ? clubs[0] : null);
   if (!club) {
     return {
-      kicker: 'Your clubs',
-      name: 'All your clubs',
-      meta: `${clubs.length} ${clubs.length === 1 ? 'club' : 'clubs'}`,
+      // No kicker, and a shorter name. "YOUR CLUBS" above "All your clubs"
+      // was the same words twice, and the width it cost is what the header's
+      // "start a club" control now uses. The single-club scope below keeps
+      // its kicker: there "Your club" and the club's own name differ.
+      kicker: '',
+      name: 'Your clubs',
+      // Always plural: this branch is reached only by an empty list ("0
+      // clubs") or by two or more. A one-club list resolves above.
+      meta: `${clubs.length} clubs`,
     };
   }
   return { kicker: 'Your club', name: club.name, meta: club.rhythm };

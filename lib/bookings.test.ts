@@ -568,6 +568,35 @@ describe('BOOKING_REFUSALS (self-audit against the migrations)', () => {
     // lib/messages.ts owns it.
     'you can only reply to a message in this conversation':
       'raised by post_message — lib/messages.ts (Task 5, not yet created) is the module responsible, and by design relays error.message rather than mapping through a refusal table',
+    // Raised by post_message when p_root names a message that is not a root
+    // in the target thread — a reply-to-a-reply, or a root from another
+    // club. The composite foreign key already makes the cross-thread case
+    // unstateable; this is the readable-words wrapper. The board only ever
+    // offers Reply on a root, so a caller hitting this is malicious or
+    // buggy. lib/messages.ts owns it and relays it verbatim.
+    'you can only reply to a post in this conversation':
+      'raised by post_message — lib/messages.ts is the module responsible, and by design relays error.message rather than mapping through a refusal table',
+    // Raised by post_message when p_reply_to names a message that lives
+    // under a different post than p_root on a club board — including when
+    // p_root is null, since the message being posted is itself about to
+    // become a new post and so has no "same post" a quote could match. The
+    // board only ever offers Reply-with-quote inside the post the reader
+    // has open, so a caller hitting this is malicious or buggy.
+    // lib/messages.ts owns it.
+    'you can only quote a message from the same post':
+      'raised by post_message — lib/messages.ts is the module responsible, and by design relays error.message rather than mapping through a refusal table',
+    // Raised by post_message when p_root is passed on a game or group
+    // thread, neither of which is a board. The composer only passes a root
+    // from the club post screen, so a caller hitting this is malicious or
+    // buggy. lib/messages.ts owns it.
+    'only a club has posts to reply to':
+      'raised by post_message — lib/messages.ts is the module responsible, and by design relays error.message rather than mapping through a refusal table',
+    // Raised by post_message when p_announce is true on a reply. The
+    // Announcement toggle only renders on the new-post screen, never in a
+    // post's reply composer, so a caller hitting this is malicious or
+    // buggy. lib/messages.ts owns it.
+    'only a new post can be an announcement':
+      'raised by post_message — lib/messages.ts is the module responsible, and by design relays error.message rather than mapping through a refusal table',
     // Raised by post_message when p_announce is true on a group thread
     // (club_id is null). The announce control only ever renders on a club
     // thread, so a caller hitting this is malicious or buggy. lib/messages.ts
@@ -587,6 +616,20 @@ describe('BOOKING_REFUSALS (self-audit against the migrations)', () => {
     // malicious or buggy. lib/messages.ts owns it.
     'you cannot read this conversation':
       'raised by mark_thread_read — lib/messages.ts (Task 5, not yet created) is the module responsible, and by design relays error.message rather than mapping through a refusal table',
+    // Raised by fetch_post_messages and mark_post_read when the id names no
+    // root — a deleted post, or a reply id. Deliberately the same words for
+    // both cases: distinguishing them would let a caller probe for message
+    // ids. Reachable only by following a stale link. lib/messages.ts owns it.
+    'that post is no longer here':
+      'raised by fetch_post_messages and mark_post_read — lib/messages.ts is the module responsible, and by design relays error.message rather than mapping through a refusal table',
+    // Raised by fetch_club_posts when the target thread is not a genuine
+    // club board (club_id null, or event_id set) — the read-side mirror of
+    // post_message's 'only a club has posts to reply to'. The board screen
+    // only ever calls fetch_club_posts with a thread it already knows is a
+    // club board, so a caller hitting this is malicious or buggy.
+    // lib/messages.ts owns it.
+    'only a club has posts to list':
+      'raised by fetch_club_posts — lib/messages.ts is the module responsible, and by design relays error.message rather than mapping through a refusal table',
   };
 
   function distinctRaisedMessages(): string[] {

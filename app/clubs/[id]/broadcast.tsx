@@ -36,9 +36,19 @@ export default function BroadcastRedirect() {
         ? await openThreadForEvent(eventId)
         : await openThreadForClub(id);
       if (cancelled) return;
-      // A refusal lands on the club screen rather than leaving somebody on a
-      // spinner with nowhere to go.
-      router.replace(result.id ? `/messages/${result.id}` : `/clubs/${id}`);
+      if (!result.id) {
+        // A refusal lands on the club screen rather than leaving somebody on
+        // a spinner with nowhere to go.
+        router.replace(`/clubs/${id}`);
+        return;
+      }
+      // A game thread is still a flat chat; a club's is a BOARD of posts.
+      // `eventId` is what decided which thread was opened above, so it is
+      // what decides which screen renders it -- the flat screen cannot serve
+      // a club thread at all any more.
+      router.replace(
+        eventId ? `/messages/${result.id}` : `/messages/club/${result.id}`,
+      );
     })();
 
     return () => {

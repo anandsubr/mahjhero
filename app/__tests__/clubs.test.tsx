@@ -276,20 +276,36 @@ describe('clubs list', () => {
     expect(screen.getByText('Start a club')).toBeTruthy();
   });
 
-  it('lists the clubs a member belongs to', async () => {
+  // The early return's whole point: a member in no clubs is shown the one
+  // thing they can do, not walked past an empty games list and a chip row to
+  // reach it. Exactly one way to start a club — the full-width button — and
+  // not also the header's ⊕, which that screen deliberately does not draw.
+  it('shows a member in no clubs nothing but the way in', async () => {
+    fetchMyClubs.mockResolvedValueOnce([]);
+    render(<ClubsScreen />);
+    expect(await screen.findByText(/not in a club yet/i)).toBeTruthy();
+    expect(screen.queryByText('Your games')).toBeNull();
+    expect(screen.getAllByRole('button', { name: 'Start a club' })).toHaveLength(1);
+  });
+
+  // The club and its rhythm are read off the header now: with one club there
+  // is no chip row of filters and no card list, and the header is the club.
+  it('names the one club a member belongs to', async () => {
     fetchMyClubs.mockResolvedValueOnce([CLUB]);
     render(<ClubsScreen />);
     expect(await screen.findByText('Riverside Mah Jongg')).toBeTruthy();
     expect(screen.getByText('Thursday evenings')).toBeTruthy();
+    expect(screen.getByText('Your club')).toBeTruthy();
   });
 
-  // "Your games" (Task 13) stacked a whole section above the club list with
-  // no `scroll` prop on Screen, unlike every other list screen
+  // "Your games" (Task 13) stacked a whole section below the header and chip
+  // row with no `scroll` prop on Screen, unlike every other list screen
   // (app/clubs/[id]/index.tsx, the event screen). A member with a few games
-  // and a few clubs could produce a page taller than the viewport with no
-  // way to reach "Start another club" or "Your profile". Only the populated
-  // main render needs this — the loading/ready spinners and the load-failed
-  // error banner are all short, centered, single-purpose content.
+  // could produce a page taller than the viewport with no way to reach the
+  // games further down. Both the populated main render and the zero-club
+  // early return pass `scroll` now — the loading/ready spinners and the
+  // load-failed error banner are the only short, centered, single-purpose
+  // content that doesn't need it.
   it('lets the populated screen scroll', async () => {
     fetchMyClubs.mockResolvedValueOnce([CLUB]);
     render(<ClubsScreen />);
@@ -320,7 +336,7 @@ describe('dashboard artboard', () => {
 
     render(<ClubsScreen />);
 
-    expect(await screen.findByText('All your clubs')).toBeTruthy();
+    expect(await screen.findByText('Your clubs')).toBeTruthy();
     expect(screen.getByText('2 clubs')).toBeTruthy();
     expect(screen.getByText('JW')).toBeTruthy();
   });
@@ -371,14 +387,30 @@ describe('dashboard artboard', () => {
     expect(await screen.findByText('Riverside game')).toBeTruthy();
     expect(screen.getByText('Harbour game')).toBeTruthy();
 
-    // Two buttons answer to "Harbour": the club chip up top and the club's
-    // own card down in "Your clubs". The chip is the first in document
-    // order — `getByRole` would refuse the ambiguity rather than pick.
-    fireEvent.click(screen.getAllByRole('button', { name: 'Harbour' })[0]);
+    // One "Harbour" button now: the chip. The club's own card in "Your
+    // clubs" is gone — the chip row is the whole club list.
+    fireEvent.click(screen.getByRole('button', { name: 'Harbour' }));
 
     expect(screen.queryByText('Riverside game')).toBeNull();
     expect(screen.getByText('Harbour game')).toBeTruthy();
     expect(screen.getByText('Your club')).toBeTruthy();
+  });
+
+  // A lone "All clubs" pill beside a lone club pill filters nothing, so the
+  // row is not drawn at all for a one-club member — not drawn empty, not
+  // drawn at all. "All clubs" is the one chip that only ever exists when the
+  // row does, which is what makes it a fair stand-in for "is the row there".
+  it('draws no chip row for a one-club member', async () => {
+    fetchMyClubs.mockResolvedValueOnce([CLUB]);
+    render(<ClubsScreen />);
+    expect(await screen.findByText('Riverside Mah Jongg')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'All clubs' })).toBeNull();
+  });
+
+  it('draws the chip row at two clubs', async () => {
+    fetchMyClubs.mockResolvedValue([CLUB, { ...CLUB, id: 'club-2', name: 'Harbour' }]);
+    render(<ClubsScreen />);
+    expect(await screen.findByRole('button', { name: 'All clubs' })).toBeTruthy();
   });
 
   it('shows skeletons before the first load resolves', () => {
@@ -911,6 +943,43 @@ describe('dashboard artboard', () => {
     ).toBe('true');
 
     releaseReload([heldBooking]);
+  });
+
+  it('opens the club from the header when one club is in scope', async () => {
+    fetchMyClubs.mockResolvedValueOnce([CLUB]);
+    render(<ClubsScreen />);
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Manage Riverside Mah Jongg, Thursday evenings' }),
+    );
+    expect(push).toHaveBeenCalledWith('/clubs/club-1');
+  });
+
+  // "All clubs" is not a club. Offering a way in from the header there would
+  // have to guess which one the member meant.
+  it('offers no way in while every club is in scope', async () => {
+    fetchMyClubs.mockResolvedValue([CLUB, { ...CLUB, id: 'club-2', name: 'Harbour' }]);
+    render(<ClubsScreen />);
+    expect(await screen.findByText('Your clubs')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^Manage / })).toBeNull();
+    expect(screen.queryByTestId('scope-glyph')).toBeNull();
+  });
+
+  it('opens the club the chips picked', async () => {
+    fetchMyClubs.mockResolvedValue([CLUB, { ...CLUB, id: 'club-2', name: 'Harbour' }]);
+    render(<ClubsScreen />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Harbour' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Manage Harbour, Thursday evenings' }));
+    expect(push).toHaveBeenCalledWith('/clubs/club-2');
+  });
+
+  // The chip row isn't even drawn for a one-club member (it would hold no
+  // filters), so the way to start another club cannot live in it. It is the
+  // header's ⊕ now.
+  it('keeps a way to start another club at one club', async () => {
+    fetchMyClubs.mockResolvedValueOnce([CLUB]);
+    render(<ClubsScreen />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Start a club' }));
+    expect(push).toHaveBeenCalledWith('/clubs/new');
   });
 });
 

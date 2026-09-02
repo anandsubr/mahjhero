@@ -105,6 +105,13 @@ export type ThreadDetail = {
  * RPC that re-asks `can_read_thread` itself rather than going through
  * `profiles`' policy — the same shape `club_roster` uses for a club, for
  * the one thread kind `club_roster` cannot serve.
+ *
+ * `post_reads` (20260830000000) makes `messages`-to-`profiles` an ambiguous
+ * embed too (see MESSAGE_COLUMNS below) but does not touch this select:
+ * this query selects from `message_threads`, not `messages`, and its own
+ * `profiles` embed hangs off `thread_members`, not `messages` — a table
+ * `post_reads`'s two foreign keys never mention. No third relationship
+ * PostgREST could confuse this embed for.
  */
 export const THREAD_COLUMNS =
   'id, club_id, event_id, title, clubs(name, timezone), ' +
@@ -140,16 +147,32 @@ export const THREAD_COLUMNS =
  * resolves the quoted parent with a plain self-join instead, the same
  * composite-key guarantee this docstring argues for, asked once rather
  * than through a second query. That RPC also sidesteps this select's OTHER
- * gap: `profiles(display_name)` here is self-only RLS (20260822180000), so
- * on a raw select of this column list a sender who is not the caller comes
- * back with `profiles: null`. MESSAGE_COLUMNS stays exported and tested
+ * gap: the `profiles` embed here is self-only RLS (20260822180000), so on a
+ * raw select of this column list a sender who is not the caller comes back
+ * with `profiles: null` — the FK hint added below picks WHICH relationship
+ * is meant, and does nothing about which rows RLS will hand back. MESSAGE_COLUMNS stays exported and tested
  * directly (lib/schema-contract.test.ts) because both findings are still
  * true of a raw select — the RPC is the fix, not a change to what
  * PostgREST itself can do with this list.
+ *
+ * The `profiles` embed below carries a `!messages_author_id_fkey` hint, and
+ * as with THREAD_COLUMNS' two hints above, it is load-bearing, not
+ * decorative. `post_reads` (20260830000000) has two foreign keys —
+ * `root_id references messages(id)` and `profile_id references
+ * profiles(id)` — under a PRIMARY KEY that is exactly those two columns,
+ * `(root_id, profile_id)`. A composite primary key spanning two
+ * foreign-key columns is precisely the shape PostgREST reads as a
+ * many-to-many JUNCTION TABLE, so it infers a second `messages`-to-
+ * `profiles` relationship — through `post_reads` — alongside the direct
+ * `messages_author_id_fkey`. A bare `profiles(display_name)` on `messages`
+ * is therefore ambiguous the same way `events` and the members' `profiles`
+ * are above (PGRST201), even though `post_reads` has nothing to do with
+ * who sent a message. The hint says which of the two PostgREST now sees is
+ * meant.
  */
 export const MESSAGE_COLUMNS =
   'id, author_id, body, subject, is_announcement, created_at, reply_to_id, ' +
-  'profiles(display_name)';
+  'profiles!messages_author_id_fkey(display_name)';
 
 /** Mirrors messages.body's check constraint exactly. */
 export const BODY_MAX = 2000;
@@ -165,6 +188,21 @@ export const SUBJECT_MAX = 120;
  * and hit the database constraint anyway.
  */
 const CONTROL_CHAR_PATTERN = /[\x00-\x1f\x7f-\x9f]/g;
+
+/**
+ * Mirrors Postgres's `trim(x)` with no explicit character list -- which
+ * strips only the literal ASCII space, U+0020, from each end. Confirmed
+ * live against a local Postgres: `trim(U&'\00A0Doors at seven\00A0')`
+ * comes back unchanged, length 16. JS's `.trim()` strips the whole
+ * ECMAScript whitespace/line-terminator set instead -- U+00A0, the other
+ * Unicode space separators, U+FEFF -- so using it here would let
+ * `deriveSubject` silently disagree with what `post_message`'s
+ * `subj := trim(subj)` actually stores the moment a pasted first line was
+ * bounded by anything other than a plain space: the preview would read
+ * "Doors at seven" while the stored, emailed subject still carried an
+ * invisible trailing non-breaking space.
+ */
+const EDGE_SPACE_PATTERN = /^ +| +$/g;
 
 /**
  * The announcement subject, derived rather than typed.
@@ -185,7 +223,7 @@ const CONTROL_CHAR_PATTERN = /[\x00-\x1f\x7f-\x9f]/g;
  *     with a blank line loses the blank line before the split, not after.
  *     This function takes the first line of whatever it is GIVEN, so the
  *     caller must pass the trimmed draft, not the raw one: see the call
- *     site in app/messages/[threadId].tsx, which used to pass the untrimmed
+ *     site in app/messages/club/new.tsx, which used to pass the untrimmed
  *     draft and show an empty subject for a body that was about to mail a
  *     real one.
  *   - The TRUNCATION must count characters the way Postgres's `length()`/
@@ -196,10 +234,17 @@ const CONTROL_CHAR_PATTERN = /[\x00-\x1f\x7f-\x9f]/g;
  *     a pair in half outright. `Array.from` (and `for...of`) iterate a
  *     string by codepoint, which is what the split and slice below use
  *     instead.
+ *   - The TRIM must strip what Postgres's bare `trim()` strips, not what
+ *     JS's `.trim()` strips — see EDGE_SPACE_PATTERN above. `subj := trim(subj)`
+ *     in post_message runs on the first line only, after it has already been
+ *     split off and its control characters stripped, so this is the one step
+ *     where a pasted, Unicode-padded first line (a paste out of Word or a web
+ *     page is the plausible source) would otherwise survive to the stored
+ *     subject invisibly while the preview quietly trimmed it away.
  */
 export function deriveSubject(body: string): string {
   const firstLine = (body ?? '').split('\n')[0] ?? '';
-  const cleaned = firstLine.replace(CONTROL_CHAR_PATTERN, '').trim();
+  const cleaned = firstLine.replace(CONTROL_CHAR_PATTERN, '').replace(EDGE_SPACE_PATTERN, '');
   const codepoints = Array.from(cleaned);
   if (codepoints.length > SUBJECT_MAX) {
     return `${codepoints.slice(0, SUBJECT_MAX - 1).join('')}…`;
@@ -468,6 +513,51 @@ export function quoteStub(
   return who ? `${who}: ${short}` : short;
 }
 
+/** One row of `fetch_club_posts` — a root post as the board renders it. */
+export type ClubPost = {
+  id: string;
+  author_id: string;
+  author_name: string | null;
+  body: string;
+  subject: string | null;
+  is_announcement: boolean;
+  created_at: string;
+  reply_count: number;
+  last_reply_at: string | null;
+  /** `greatest(created_at, last_reply_at)` — what the board sorts on. */
+  last_activity_at: string;
+  unread: number;
+};
+
+/** How long a post's title may run before the row wraps to three lines. */
+export const POST_TITLE_MAX = 80;
+
+/**
+ * A post's display line.
+ *
+ * There is no title column, deliberately: an announcement already carries a
+ * `subject` (derived by the same rule `post_message` uses), and a member
+ * post shows its own first line. A separate title field for member posts is
+ * one people leave blank, and a board of empty titles reads worse than a
+ * board of first lines.
+ */
+export function postTitle(post: ClubPost): string {
+  const raw = (post.subject ?? post.body.split('\n')[0] ?? '').trim();
+  if (raw.length === 0) return 'Untitled post';
+  if (raw.length <= POST_TITLE_MAX) return raw;
+  return `${raw.slice(0, POST_TITLE_MAX - 1)}…`;
+}
+
+/**
+ * The reply count as words. Composed into the row's accessibilityLabel
+ * rather than sitting beside it, because accessibilityLabel on a Pressable
+ * REPLACES the name computed from its children in react-native-web.
+ */
+export function replyCountLabel(n: number): string {
+  if (n <= 0) return 'No replies';
+  return n === 1 ? '1 reply' : `${n} replies`;
+}
+
 /** The Recent sort. Empty club threads have no `last_message_at` and sink. */
 export function sortThreads(rows: ThreadListRow[]): ThreadListRow[] {
   return [...rows].sort((a, b) => {
@@ -661,6 +751,33 @@ type ThreadMessageRow = {
   reply_to_author: string | null;
 };
 
+/**
+ * Maps one `fetch_thread_messages` / `fetch_post_messages` row into a
+ * `ThreadMessage` — shared by both, because the RPCs return the same ten
+ * columns on purpose, so MessageBubble never learns a second row shape. One
+ * copy of the mapping is what keeps that true; two copies is exactly the
+ * drift a future edit to one and not the other would produce silently.
+ */
+function mapThreadMessageRow(r: ThreadMessageRow): ThreadMessage {
+  return {
+    id: r.id,
+    author_id: r.author_id,
+    body: r.body,
+    subject: r.subject,
+    is_announcement: r.is_announcement,
+    created_at: r.created_at,
+    profiles: r.author_name ? { display_name: r.author_name } : null,
+    reply_to_id: r.reply_to_id,
+    reply_to: r.reply_to_id
+      ? {
+          id: r.reply_to_id,
+          body: r.reply_to_body ?? '',
+          profiles: r.reply_to_author ? { display_name: r.reply_to_author } : null,
+        }
+      : null,
+  };
+}
+
 export async function fetchThreadMessages(
   threadId: string,
 ): Promise<ThreadMessage[] | null> {
@@ -681,26 +798,74 @@ export async function fetchThreadMessages(
       return null;
     }
     const rows = (data ?? []) as ThreadMessageRow[];
+    return rows.map(mapThreadMessageRow);
+  } catch (cause) {
+    console.error('fetchThreadMessages failed', cause);
+    return null;
+  }
+}
 
+/**
+ * `fetch_club_posts` returns exactly `ClubPost`'s columns, no flattened or
+ * nested fields to reshape — unlike `ThreadMessageRow` above, a distinct row
+ * type here would duplicate `ClubPost` field for field and buy nothing. The
+ * cast below trusts the RPC's compile-time shape; the explicit mapping is
+ * what actually guards the client's rows — a column `fetch_club_posts` grows
+ * later that `ClubPost` does not declare cannot leak into a `ClubPost` this
+ * way, where a bare `{ ...r }` spread would have let it through.
+ */
+export async function fetchClubPosts(
+  threadId: string,
+  before: string | null = null,
+): Promise<ClubPost[] | null> {
+  try {
+    // security definer for the same reason fetch_thread_messages is:
+    // profiles' self-only RLS would otherwise null out every author name
+    // but the caller's own.
+    const { data, error } = await supabase.rpc('fetch_club_posts', {
+      target_thread: threadId,
+      p_before: before,
+    });
+    if (error) {
+      console.error('fetchClubPosts failed', error);
+      return null;
+    }
+    const rows = (data ?? []) as ClubPost[];
     return rows.map((r) => ({
       id: r.id,
       author_id: r.author_id,
+      author_name: r.author_name,
       body: r.body,
       subject: r.subject,
       is_announcement: r.is_announcement,
       created_at: r.created_at,
-      profiles: r.author_name ? { display_name: r.author_name } : null,
-      reply_to_id: r.reply_to_id,
-      reply_to: r.reply_to_id
-        ? {
-            id: r.reply_to_id,
-            body: r.reply_to_body ?? '',
-            profiles: r.reply_to_author ? { display_name: r.reply_to_author } : null,
-          }
-        : null,
+      reply_count: r.reply_count,
+      last_reply_at: r.last_reply_at,
+      last_activity_at: r.last_activity_at,
+      unread: r.unread,
     }));
   } catch (cause) {
-    console.error('fetchThreadMessages failed', cause);
+    console.error('fetchClubPosts failed', cause);
+    return null;
+  }
+}
+
+/** One post's root and replies, mapped the same way fetchThreadMessages is. */
+export async function fetchPostMessages(
+  rootId: string,
+): Promise<ThreadMessage[] | null> {
+  try {
+    const { data, error } = await supabase.rpc('fetch_post_messages', {
+      p_root: rootId,
+    });
+    if (error) {
+      console.error('fetchPostMessages failed', error);
+      return null;
+    }
+    const rows = (data ?? []) as ThreadMessageRow[];
+    return rows.map(mapThreadMessageRow);
+  } catch (cause) {
+    console.error('fetchPostMessages failed', cause);
     return null;
   }
 }
@@ -775,6 +940,9 @@ export async function postMessage(
   body: string,
   announce = false,
   replyToId: string | null = null,
+  // Null in a game or direct thread, and null for a NEW post on a club
+  // board. Set only when replying inside a post.
+  rootId: string | null = null,
 ): Promise<{ id: string | null; error: string | null }> {
   const trimmed = (body ?? '').trim();
   // Checked here as well as in post_message so a member who taps Send on an
@@ -790,9 +958,14 @@ export async function postMessage(
     p_body: trimmed,
     p_announce: announce,
     p_reply_to: replyToId,
+    p_root: rootId,
   });
 }
 
 export function markThreadRead(threadId: string) {
   return voidRpc('mark_thread_read', { target_thread: threadId });
+}
+
+export function markPostRead(rootId: string) {
+  return voidRpc('mark_post_read', { p_root: rootId });
 }

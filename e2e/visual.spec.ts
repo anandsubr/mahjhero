@@ -2,6 +2,9 @@ import { expect, test, type Page } from '@playwright/test';
 import {
   mintSession,
   seedClubWithEvent,
+  seedEmptyGroupThread,
+  seedMessageCandidates,
+  seedPopulatedBoard,
   seedPopulatedMessagesList,
   seedPopulatedThread,
   seedUnreadClubMessage,
@@ -200,6 +203,26 @@ test.describe('signed in', () => {
       await captureScreen(page, vp, `friends-${vp.name}.png`);
     });
 
+    // The GENUINELY-EMPTY picker: this block's user belongs to no club, so
+    // `fetchFriends` and `fetchAddablePeople` both come back `[]` rather
+    // than failing -- a real state, not a fixture accident, and one every
+    // member sees at least once (their first visit, before joining a club
+    // or adding a friend). Worth its own baseline for exactly the reason
+    // this task exists: before Task 16 this was the ONLY thing `message-new`
+    // ever pictured, by accident, because nothing distinguished it from a
+    // still-loading or failed-fetch screen. Now that the populated picker
+    // has its own baseline (`with a seeded club`'s `new message` test
+    // below), this one keeps the honest-empty-state copy under regression
+    // instead of losing coverage of it entirely.
+    test(`message-new empty at ${vp.name}`, async ({ page }) => {
+      await page.setViewportSize({ width: vp.width, height: vp.height });
+      await page.goto('/messages/new');
+      await expect(
+        page.getByText('Nobody to message yet. Add a friend or join a club to find people to message.'),
+      ).toBeVisible();
+      await captureScreen(page, vp, `message-new-empty-${vp.name}.png`);
+    });
+
     // The EMPTY state, and it stays that way: this block's user belongs to no
     // club. The seeding hook lives in the nested describe below precisely so
     // that adding populated baselines could not quietly turn this one into a
@@ -207,13 +230,13 @@ test.describe('signed in', () => {
     test(`clubs at ${vp.name}`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/clubs');
-      // `.first()` — "Your clubs" now renders TWICE on this screen: once as
-      // DashboardHeader's kicker (headerScope's all-clubs scope, lib/dashboard.ts)
-      // and once as the club-list section title. Both are real, and Playwright's
-      // strict mode turns the bare locator into a hard failure rather than a
-      // stale baseline. The unit suite had to switch to `findAllByText` for
-      // exactly this reason; this line only needs to know the screen painted.
-      await expect(page.getByText('Your clubs').first()).toBeVisible();
+      // `{ exact: true }` — "Your clubs" is the header's NAME now
+      // (headerScope's all-clubs scope, lib/dashboard.ts), and that scope
+      // draws no kicker: "YOUR CLUBS" above "All your clubs" was the same
+      // words twice. Playwright's getByText does substring matching by
+      // default, so the bare locator would still be worth avoiding if the
+      // longer title ever comes back.
+      await expect(page.getByText('Your clubs', { exact: true })).toBeVisible();
       // The brief's literal snippet uses `toHaveScreenshot(..., { fullPage:
       // true })`, but `captureScreen`'s own doc comment above explains why
       // that option is a no-op against this app's ScrollView-based layout
@@ -266,25 +289,43 @@ test.describe('signed in', () => {
     });
 
     for (const vp of WIDTHS) {
-      // The clubs LIST with cards in it. Task 11 fixed the spacing bug
-      // todo.md reported — "no space between the last club and the Start
-      // another club button" — but could only regenerate the EMPTY-state
-      // baseline, because nothing seeded a club at that point. So the state
-      // the bug was actually reported against had never been screenshotted.
+      // The populated dashboard: the chip row (the only club list now), the
+      // header's ⊕ and pencil, and "Your games" underneath. This baseline's
+      // existence still traces back to Task 11's spacing fix — "no space
+      // between the last club and the Start another club button" (todo.md)
+      // — which could only regenerate the EMPTY-state baseline, because
+      // nothing seeded a club at that point, so the state that bug was
+      // actually reported against had never been screenshotted. The cards
+      // and that button are both gone from the screen since (the single-list
+      // rework folded the club list into the chip row and moved the action
+      // into the header), but this is still the one baseline that shoots a
+      // member's dashboard with a club on it.
       test(`clubs list with a club at ${vp.name}`, async ({ page }) => {
         await page.setViewportSize({ width: vp.width, height: vp.height });
         await page.goto('/clubs');
-        // `.first()` — Task 15's booking fixtures give the signed-in member
-        // a confirmed seat in this club's own seeded game, so "Riverside
-        // Mah Jongg" now also renders a second time as that booking's club
-        // name inside the "Your games" card above this list. Both are real;
-        // this line only needs to know the club list itself still has one.
+        // `.first()` — there is no club-list card left for this to anchor
+        // on; the club list is the chip row now, and "Riverside Mah Jongg"
+        // is one of its two chip labels (the seeded user belongs to both
+        // Riverside and Thursday Casuals). Task 15's booking fixtures give
+        // the signed-in member a confirmed seat in Riverside's own seeded
+        // game, so the name renders a second time as that booking's club
+        // name inside the "Your games" card below the chip row, and a third
+        // time on the row for Riverside's second occurrence, which
+        // `buildDashboardRows` (lib/dashboard.ts) now also lists as an open,
+        // joinable game the member is not in. All three are real; this line
+        // only needs to know the chip itself still has one.
         await expect(page.getByText('Riverside Mah Jongg').first()).toBeVisible();
+        // The action moved out of the chip row and into the header: at two
+        // clubs the trailing "+ New club" pill was scrolled off-screen
+        // entirely, and it was the only route to /clubs/new for a member who
+        // already had a club. The ⊕ beside the avatar does not scroll.
         await expect(
-          page.getByRole('button', { name: 'Start another club' }),
+          page.getByRole('button', { name: 'Start a club' }),
         ).toBeVisible();
-        // The "Your games" section above the club list: one game the
-        // member booked themselves (Riverside's own seeded event above)
+        await expect(page.getByText('+ New club')).toHaveCount(0);
+        // The "Your games" section below the chip row — the club list, once
+        // the section below it, is the chip row now: one game the member
+        // booked themselves (Riverside's own seeded event above)
         // and one a friend booked for them (`seedBookings`'s
         // `friendEventId`, under the second club). This is the same
         // `/clubs` page in the same seeded state a dedicated `your games`
@@ -342,14 +383,27 @@ test.describe('signed in', () => {
         await captureScreen(page, vp, `club-detail-${vp.name}.png`);
       });
 
+      // The POPULATED picker. Before Task 16 this baseline pictured the
+      // empty state by accident -- `seedClubWithEvent` puts nobody but the
+      // signed-in member on either of its clubs' rosters, so `fetchFriends`
+      // and `fetchAddablePeople` both came back `[]` and the whole point of
+      // the screen (picking somebody) went unpictured. `seedMessageCandidates`
+      // gives it two friends and two club-mates in a club of its own; one
+      // friend is also clicked before the shot so the selected-row border
+      // (`styles.personOn`, app/messages/new.tsx) is pictured too, not just
+      // the unselected list.
       test(`new message at ${vp.name}`, async ({ page }) => {
         await page.setViewportSize({ width: vp.width, height: vp.height });
+        const { friendName } = await seedMessageCandidates(userId);
         await page.goto('/messages/new');
         await expect(page.getByText('Send to')).toBeVisible();
+        await expect(page.getByLabel(friendName)).toBeVisible();
+        await expect(page.getByLabel('Priyanka Menon')).toBeVisible();
+        await page.getByLabel(friendName).click();
         await captureScreen(page, vp, `message-new-${vp.name}.png`);
       });
 
-      test(`club thread at ${vp.name}`, async ({ page }) => {
+      test(`flat thread empty at ${vp.name}`, async ({ page }) => {
         await page.setViewportSize({ width: vp.width, height: vp.height });
         await page.goto('/messages');
         // Through the row, not a guessed id: thread ids are generated and
@@ -361,12 +415,30 @@ test.describe('signed in', () => {
         // "Your clubs" trap this file's other comments record. The row's
         // title is the club's bare name now, not "Everyone at <club>" — see
         // lib/messages.ts's `threadTitleFor` for why.
+        //
+        // The club row still goes through open_thread_for_club, and that RPC
+        // path — a club thread that has never been opened and so has no id
+        // to guess — is why the click, rather than a goto, stays here. It
+        // lands on the BOARD now, and this asserts that: the flat screen is
+        // no longer somewhere a club thread can end up, from a row or from
+        // anywhere else (app/messages/[threadId].tsx redirects one itself).
         await page.getByRole('button', { name: 'Riverside Mah Jongg' }).click();
+        await page.waitForURL(/\/messages\/club\/.+/);
+
+        // The flat screen's own empty state is still real — game, group and
+        // direct conversations all live there — so it keeps its baseline, on
+        // a kind that still belongs to it. `seedEmptyGroupThread`
+        // (e2e/session.ts) seeds one with no messages at all.
+        const { threadId } = await seedEmptyGroupThread(userId, userId.slice(0, 8));
+        await page.goto(`/messages/${threadId}`);
         // `exact: true` — the brief's own bare `getByLabel('Message')` is
         // ALSO a substring match on this screen's own "< Messages" back
         // link (accessibilityLabel="Messages", app/messages/[threadId].tsx),
         // a same-page collision on top of the multi-club one above.
         await expect(page.getByLabel('Message', { exact: true })).toBeVisible();
+        await expect(
+          page.getByText('No messages yet. Say hello to start the conversation.'),
+        ).toBeVisible();
         await captureScreen(page, vp, `thread-${vp.name}.png`);
       });
 
@@ -409,20 +481,23 @@ test.describe('signed in', () => {
       });
 
       // The thread screen's own bubbles, pictured for the first time. Every
-      // OTHER `thread-*` baseline in this suite (the `club thread at …` test
-      // above) is the EMPTY thread — nothing has ever screenshotted an
+      // OTHER `thread-*` baseline in this suite (the `flat thread empty at …`
+      // test above) is the EMPTY thread — nothing has ever screenshotted an
       // actual message, so the bubble treatments themselves (an ordinary
       // "theirs" bubble, the viewer's own "mine" bubble, and an
       // announcement) were guarded by nothing.
-      // `seedPopulatedThread` (e2e/session.ts) seeds one club thread with
+      // `seedPopulatedThread` (e2e/session.ts) seeds one GAME thread with
       // four messages: a filler's ordinary message, the viewer's own reply,
       // a second filler's announcement, and a third filler's ordinary
       // message after it — every bubble treatment this screen renders, in
-      // one thread.
+      // one thread. It used to seed a CLUB thread; see that function's own
+      // docstring for why a game thread is the kind that keeps all four of
+      // those treatments reachable now that a club's conversation is a board.
       test(`thread populated at ${vp.name}`, async ({ page }) => {
         await page.setViewportSize({ width: vp.width, height: vp.height });
         const { threadId } = await seedPopulatedThread(
           seeded.clubId,
+          seeded.eventId,
           userId,
           userId.slice(0, 8),
         );
@@ -442,6 +517,90 @@ test.describe('signed in', () => {
           page.getByText('Hall closed this week', { exact: true }),
         ).toBeVisible();
         await captureScreen(page, vp, `thread-populated-${vp.name}.png`);
+      });
+
+      // The board, pictured for the first time -- and, since Task 13's own
+      // review, pictured with a THREADED discussion under it, not just four
+      // root-level messages that each read "No replies". `seedPopulatedThread`
+      // sets no message's `root_id`, so every message it inserts becomes its
+      // own post; reusing it here (as this test used to) meant the one thing
+      // this feature exists to show -- a post with replies under it -- was
+      // never in the picture. `seedPopulatedBoard` (e2e/session.ts) seeds its
+      // OWN club and thread instead, an announcement with four replies and a
+      // plain post with two, so this baseline shows two different
+      // `replyCountLabel` plurals ("4 replies", "2 replies") rather than four
+      // rows all reading "No replies".
+      test(`club board populated at ${vp.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        const { threadId } = await seedPopulatedBoard(userId, userId.slice(0, 8));
+        await page.goto(`/messages/club/${threadId}`);
+        // The announcement's own title (postTitle, lib/messages.ts, takes an
+        // announcement's `subject` verbatim) and the plain post's title (the
+        // body's own first line) -- proof the board rendered more than one
+        // row, and that the announcement styling actually reached a real
+        // post rather than being asserted against nothing.
+        await expect(
+          page.getByText('Fall tournament signup opens Monday', { exact: true }),
+        ).toBeVisible();
+        await expect(
+          page.getByText('Anyone free to help set up tables Saturday morning?'),
+        ).toBeVisible();
+        // Both plurals, read off the row rather than asserted only via the
+        // screenshot -- "pixels cannot catch a one-glyph regression"
+        // (docs/testing.md). A regression that collapsed every count to the
+        // same value would still "pass" a screenshot-only check if both rows
+        // happened to read the same text.
+        await expect(page.getByText('4 replies')).toBeVisible();
+        await expect(page.getByText('2 replies')).toBeVisible();
+        await captureScreen(page, vp, `club-board-${vp.name}.png`);
+      });
+
+      // The post screen, pictured for the first time -- and, like the board
+      // test above, now with real replies under the root instead of an
+      // empty post and a composer. Opens the announcement `seedPopulatedBoard`
+      // seeded above by its OWN id, via a direct `page.goto`, not by clicking
+      // the board row: a click is a client-side navigation, and expo-router's
+      // web stack leaves the screen it came from mounted (hidden, not torn
+      // down), so the board's own `testID="screen-scroll"` ScrollView is
+      // still in the DOM under the post screen's identical testID --
+      // `captureScreen`'s `document.querySelector` (this file, above) can
+      // then measure the WRONG one and grow the viewport by nothing, leaving
+      // this screen's own last reply clipped below the fold. That was latent
+      // in this test's old click-based navigation too; it only started
+      // failing once this test had enough replies to actually overflow.
+      // `page.goto`, the same full navigation `thread populated`'s own test
+      // already uses to reach its id, tears the previous screen down
+      // entirely, so there is only ever one `screen-scroll` node here.
+      // MessageBubble's announcement treatment (the accent2 Tag, the subject
+      // line, `announcementBody` dropping the body's duplicated first line)
+      // has a baseline on the flat thread screen already; this is the same
+      // component reached through the board/post route instead, now actually
+      // carrying the four replies `seedPopulatedBoard` seeded under it -- an
+      // ordinary "theirs" bubble, the viewer's own "mine" bubble, and three
+      // time-group separators among them.
+      test(`club post populated at ${vp.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        const { threadId, announcementId } = await seedPopulatedBoard(
+          userId,
+          userId.slice(0, 8),
+        );
+        await page.goto(`/messages/club/${threadId}/${announcementId}`);
+        // `announcementBody` drops the subject-duplicated first line, so
+        // this is the announcement's SECOND line -- proof the root rendered
+        // with the announcement treatment, not just that some post opened.
+        await expect(
+          page.getByText('Seats go fast, so reply here if you want in.'),
+        ).toBeVisible();
+        // The viewer's own reply (the "mine" bubble) and the LAST reply in
+        // the thread -- proof the replies rendered at all, not just the
+        // root, and that the one authored by the viewer is among them.
+        await expect(
+          page.getByText('Count me in, I will bring extra tiles too.'),
+        ).toBeVisible();
+        await expect(
+          page.getByText('Yes, we kept the beginner table again this year.'),
+        ).toBeVisible();
+        await captureScreen(page, vp, `club-post-${vp.name}.png`);
       });
 
       // The unread badge, pictured for the first time. Task 16 shipped it on
@@ -471,10 +630,11 @@ test.describe('signed in', () => {
         // nested <Text> — react-native-web's aria-label REPLACES the
         // accessible name computed from children, it does not merge with
         // it, so the count never reached assistive tech any other way. That
-        // also settles the trap this comment used to record: the club LIST
-        // card below (line ~549) shares "Riverside Mah Jongg" with the chip,
-        // but only the chip carries a badge, so its composed name is unique
-        // on its own — `.first()` stays only as a defensive belt.
+        // also settles the trap this comment used to record: whatever else
+        // on the page renders the plain "Riverside Mah Jongg" text, only the
+        // chip's accessible name has "1 unread" composed into it, so that
+        // composed name is unique on its own — `.first()` stays only as a
+        // defensive belt.
         const clubChip = page
           .getByRole('button', { name: 'Riverside Mah Jongg, 1 unread', exact: true })
           .first();

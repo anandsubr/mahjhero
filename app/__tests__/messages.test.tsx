@@ -156,13 +156,23 @@ describe('messages list', () => {
     render(<MessagesScreen />);
     fireEvent.click(await screen.findByLabelText('Riverside'));
     await waitFor(() => expect(openThreadForClub).toHaveBeenCalledWith('c1'));
-    await waitFor(() => expect(push).toHaveBeenCalledWith('/messages/t1'));
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/messages/club/t1'));
   });
 
   it('navigates straight to a thread that already has an id', async () => {
     render(<MessagesScreen />);
     fireEvent.click(await screen.findByLabelText('Tuesday Night'));
     await waitFor(() => expect(push).toHaveBeenCalledWith('/messages/t2'));
+    expect(openThreadForClub).not.toHaveBeenCalled();
+  });
+
+  // A club thread already posted in has an id like any other -- this row
+  // still goes to the board rather than the flat thread screen, and it
+  // never needs the open_thread_for_club RPC to get there.
+  it('sends a club thread that already has an id to its board, not the flat thread screen', async () => {
+    render(<MessagesScreen />);
+    fireEvent.click(await screen.findByLabelText('Riverside'));
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/messages/club/t1'));
     expect(openThreadForClub).not.toHaveBeenCalled();
   });
 
@@ -204,7 +214,7 @@ describe('messages list', () => {
     });
 
     resolveOpen!({ id: 't1', error: null });
-    await waitFor(() => expect(push).toHaveBeenCalledWith('/messages/t1'));
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/messages/club/t1'));
     expect(openThreadForClub).toHaveBeenCalledTimes(1);
   });
 

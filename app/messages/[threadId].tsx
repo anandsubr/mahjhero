@@ -1,33 +1,21 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
-import Button from '../../components/Button';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import Composer from '../../components/messages/Composer';
 import ErrorBanner from '../../components/ErrorBanner';
+import MembersPanel from '../../components/messages/MembersPanel';
+import MessageBubble from '../../components/messages/MessageBubble';
 import Screen from '../../components/Screen';
 import TabBar from '../../components/TabBar';
-import Tag from '../../components/Tag';
 import ThreadAvatar from '../../components/ThreadAvatar';
-import { ChevronLeftIcon, ChevronRightIcon, SendIcon } from '../../components/icons';
+import { ChevronLeftIcon, ChevronRightIcon } from '../../components/icons';
 import { GENERIC_ERROR } from '../../lib/constants';
-import { fetchAddablePeople, fetchFriends } from '../../lib/friends';
 import {
-  addToGroupThread,
-  announcementBody,
   fetchThread,
   fetchThreadMessages,
   groupSeparatorLabel,
-  leaveGroupThread,
   markThreadRead,
   postMessage,
-  quoteStub,
   startsNewGroup,
   threadKindFor,
   threadTitleFor,
@@ -35,18 +23,15 @@ import {
   type ThreadMessage,
 } from '../../lib/messages';
 import { useSession } from '../../lib/session';
-import { supabase } from '../../lib/supabase';
 import { colors, radius, space, type } from '../../lib/theme';
-
-/** A candidate for Add people -- the same shape app/messages/new.tsx's own
- *  People picker uses for its candidate list. */
-type Candidate = { profile_id: string; display_name: string; meta: string };
+import { useThreadRealtime } from '../../lib/use-thread-realtime';
 
 /**
  * The `1C thread` artboard.
  *
- * This is the app's only Realtime subscriber, and deliberately the only one.
- * `postgres_changes` applies RLS per subscriber, so a channel filtered to
+ * This screen subscribes to Realtime through `lib/use-thread-realtime.ts`,
+ * the same hook the board and post screens call — three subscribers now, not
+ * one. `postgres_changes` applies RLS per subscriber, so a channel filtered to
  * one thread_id delivers exactly what `can_read_thread` allows — there is no
  * second authorization surface. Subscribing across every thread would keep
  * badges live at the cost of a connection held for the whole session and the
@@ -73,27 +58,10 @@ type Candidate = { profile_id: string; display_name: string; meta: string };
  * renders in full below, and `postMessage`'s `announce` parameter,
  * `post_message`, `broadcast_recipients`, and the outbox fan-out are all
  * untouched underneath this screen, for the redesign to reattach a UI to.
- * `countBroadcastRecipients` (lib/broadcasts.ts) loses its only caller here
- * and goes back to being test-only.
+ * `countBroadcastRecipients` (lib/broadcasts.ts) loses its caller here — it
+ * is called from `app/messages/club/new.tsx` now, for the same recipient
+ * count shown before an announcement is sent.
  */
-// Monotonic, not `Date.now()`/`Math.random()`: incremented once per Realtime
-// subscription below so a topic can never be handed back to a still-live
-// channel, no matter how the clock or a PRNG behave. See the effect's own
-// comment for why a unique topic (not just the dependency-array fix beside
-// it) is required.
-let subscriptionSeq = 0;
-
-// The artboard's `.bigin` height (`min-height: 58px`), and this screen's own
-// Send button -- a 58x58 circle beside a 58-tall input, matched heights, one
-// shape. Named once so the input's resting/grown heights and the button's
-// own size are visibly the same number rather than two literals that could
-// drift apart.
-const COMPOSER_HEIGHT = 58;
-// How tall a long draft may grow the input before it scrolls internally
-// instead. Unchanged from the pre-existing behaviour this screen already
-// had; only how it's enforced changes (see `handleDraftSize` below).
-const DRAFT_MAX_HEIGHT = 140;
-
 export default function ThreadScreen() {
   const { session, loading } = useSession();
   const { threadId } = useLocalSearchParams<{ threadId: string }>();
@@ -104,17 +72,6 @@ export default function ThreadScreen() {
   const [messages, setMessages] = useState<ThreadMessage[]>([]);
   const [ready, setReady] = useState(false);
   const [draft, setDraft] = useState('');
-  // The composer input's own rendered height, MEASURED rather than trusted
-  // from `minHeight` -- trusting `minHeight` is exactly what let a
-  // react-native-web multiline `TextInput` (a `<textarea>` under the hood,
-  // with its own intrinsic row height) render taller than the 58px Send
-  // button beside it. `onContentSizeChange` below reports the textarea's
-  // real `scrollHeight` on every keystroke (react-native-web's own
-  // implementation reads it directly off the host node), which already
-  // includes this input's padding — so clamping THAT number, not a CSS
-  // hint, is what keeps the box between the resting 58px height and
-  // `DRAFT_MAX_HEIGHT` for a long draft.
-  const [inputHeight, setInputHeight] = useState(COMPOSER_HEIGHT);
   // The message being answered, held whole rather than as an id so the
   // composer can show its stub without hunting back through `messages`.
   const [replyTo, setReplyTo] = useState<ThreadMessage | null>(null);
@@ -138,29 +95,14 @@ export default function ThreadScreen() {
   // Members panel: GROUP and DIRECT threads only (thread.club_id === null).
   // A club or game thread's membership is derived from club_members/
   // bookings, not stored, so there is nothing to list and nobody to add.
+  // Only the mount switch stays here -- MembersPanel owns everything else
+  // about opening Add people and leaving.
   const [membersOpen, setMembersOpen] = useState(false);
-  const [addingOpen, setAddingOpen] = useState(false);
-  const [candidates, setCandidates] = useState<Candidate[]>([]);
-  const [pickedToAdd, setPickedToAdd] = useState<string[]>([]);
-  const [addBusy, setAddBusy] = useState(false);
-  const [addError, setAddError] = useState<string | null>(null);
-  // Guards the add_to_group_thread RPC itself, the same shape as
-  // sendingRef above: `addBusy` state is read from the render closure, so a
-  // second activation landing before React re-renders with the disabled
-  // button would otherwise double the call.
-  const addBusyRef = useRef(false);
-
-  // Leaving a group is irreversible -- the last member out deletes the
-  // thread and its messages (leave_group_thread's own comment). Asks once,
-  // the same two-step shape this file's own `leave()` button below uses.
-  const [leaveConfirming, setLeaveConfirming] = useState(false);
-  const [leaveBusy, setLeaveBusy] = useState(false);
-  const leaveBusyRef = useRef(false);
-  // Set alongside `thread`/`error`, not derived from them: the realtime
-  // effect below subscribes regardless of whether the initial load
-  // succeeded, and its INSERT handler needs to know -- at the moment an
-  // event actually arrives -- whether the screen ever loaded, not what some
-  // earlier render's closure happened to capture.
+  // Set alongside `thread`/`error`, not derived from them: useThreadRealtime
+  // below subscribes regardless of whether the initial load succeeded, and
+  // its onInsert callback needs to know -- at the moment an event actually
+  // arrives -- whether the screen ever loaded, not what some earlier
+  // render's closure happened to capture.
   const loadedRef = useRef(false);
 
   const load = useCallback(async () => {
@@ -179,69 +121,36 @@ export default function ThreadScreen() {
     if (detail) void markThreadRead(threadId);
   }, [threadId]);
 
+  // Keyed on the viewer's id, not the `session` OBJECT: lib/session.tsx hands
+  // out a fresh `Session` on every onAuthStateChange, TOKEN_REFRESHED
+  // included -- within the hour, and on web tab focus -- and none of that
+  // changes who is asking. The realtime effect below already learned this
+  // (see its own regression test); this one refetched the whole conversation
+  // on every refresh.
   useEffect(() => {
-    if (!session) return;
+    if (!session?.user.id) return;
     void load();
-  }, [session, load]);
+  }, [session?.user.id, load]);
 
-  useEffect(() => {
-    if (!session || !threadId) return;
-
-    // `supabase.channel(topic)` REUSES an existing channel by topic
-    // (RealtimeClient.channel), and `removeChannel` is async -- it awaits
-    // `channel.unsubscribe()` before deregistering the topic. A React
-    // cleanup cannot await, so if this effect re-runs with the same topic,
-    // `channel()` can hand back the OLD, still-subscribed channel, and
-    // `.on()` throws on it. `subscriptionSeq` makes every subscription's
-    // topic unique so that can never happen, regardless of how slow the
-    // teardown is: it is a monotonic counter incremented once per
-    // subscription, not `Date.now()`/`Math.random()`, so within one JS
-    // process it can never repeat and hand back a live channel -- not even
-    // under React's dev double-mount or a `threadId` change racing the old
-    // channel's teardown. `threadId` stays in the topic so a live channel
-    // is still identifiable when debugging.
-    const topic = `thread:${threadId}:${++subscriptionSeq}`;
-
-    const channel = supabase
-      .channel(topic)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'messages',
-          filter: `thread_id=eq.${threadId}`,
-        },
-        () => {
-          // Refetch rather than appending the payload row: the payload
-          // carries author_id but not the joined display_name, and a bubble
-          // that renders anonymously and then re-renders with a name is
-          // worse than one that arrives a beat later complete.
-          void fetchThreadMessages(threadId).then((rows) => {
-            if (rows) setMessages(rows);
-          });
-          // A conversation you are watching must never accumulate a badge --
-          // but only once it has actually loaded. A screen whose initial
-          // fetchThread failed never showed anything to read, and marking it
-          // read anyway would clear a badge for a thread the member never
-          // saw, the same way the initial load already gates this call.
-          if (loadedRef.current) void markThreadRead(threadId);
-        },
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-    // Keyed on `session?.user.id`, NOT `session`: lib/session.tsx hands out
-    // a fresh Session object on every onAuthStateChange, TOKEN_REFRESHED
-    // included, which fires within the hour and on web tab focus. Depending
-    // on the object would re-subscribe on every refresh for a value that
-    // only changes on a real account switch -- the same reasoning
-    // lib/use-viewer.ts and app/profile.tsx already record for their own
-    // effects.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.user.id, threadId]);
+  useThreadRealtime(
+    threadId,
+    session?.user.id,
+    useCallback(() => {
+      // Refetch rather than appending the payload row: the payload carries
+      // author_id but not the joined display_name, and a bubble that
+      // renders anonymously and then re-renders with a name is worse than
+      // one that arrives a beat later complete.
+      void fetchThreadMessages(threadId).then((rows) => {
+        if (rows) setMessages(rows);
+      });
+      // A conversation you are watching must never accumulate a badge --
+      // but only once it has actually loaded. A screen whose initial
+      // fetchThread failed never showed anything to read, and marking it
+      // read anyway would clear a badge for a thread the member never saw,
+      // the same way the initial load already gates this call.
+      if (loadedRef.current) void markThreadRead(threadId);
+    }, [threadId]),
+  );
 
   const send = useCallback(async () => {
     if (sendingRef.current || !threadId) return;
@@ -277,87 +186,6 @@ export default function ThreadScreen() {
     setSending(false);
   }, [threadId, draft, replyTo, load]);
 
-  // Friends first, then people from your clubs -- the identical shape and
-  // ordering app/messages/new.tsx's own People picker uses (see that
-  // screen's docstring on why: a friend acquired in a club one of you has
-  // since left appears in neither club list). Reused here rather than a
-  // second way of gathering who is addable to a conversation.
-  const openAdding = useCallback(async () => {
-    setAddError(null);
-    setAddBusy(true);
-    const [friends, people] = await Promise.all([
-      fetchFriends(),
-      fetchAddablePeople(),
-    ]);
-    setAddBusy(false);
-    if (friends === null || people === null) {
-      setAddError(GENERIC_ERROR);
-      return;
-    }
-    // Already-in-the-thread people have nothing to be added to twice.
-    const already = new Set(thread?.thread_members.map((m) => m.profile_id) ?? []);
-    setCandidates([
-      ...friends
-        .filter((f) => !already.has(f.profile_id))
-        .map((f) => ({ profile_id: f.profile_id, display_name: f.display_name, meta: 'Friend' })),
-      ...people
-        .filter((p) => !already.has(p.profile_id))
-        .map((p) => ({ profile_id: p.profile_id, display_name: p.display_name, meta: p.club_name })),
-    ]);
-    setAddingOpen(true);
-  }, [thread]);
-
-  const addPicked = useCallback(async () => {
-    if (addBusyRef.current || !threadId || pickedToAdd.length === 0) return;
-    addBusyRef.current = true;
-    setAddBusy(true);
-    setAddError(null);
-    const { error: refusal } = await addToGroupThread(threadId, pickedToAdd);
-    addBusyRef.current = false;
-    setAddBusy(false);
-    if (refusal) {
-      setAddError(refusal);
-      return;
-    }
-    setPickedToAdd([]);
-    setAddingOpen(false);
-    // The roster shown has to include who was just added.
-    await load();
-  }, [threadId, pickedToAdd, load]);
-
-  const leave = useCallback(async () => {
-    if (leaveBusyRef.current || !threadId) return;
-    leaveBusyRef.current = true;
-    setLeaveBusy(true);
-    setError(null);
-    const { error: refusal } = await leaveGroupThread(threadId);
-    leaveBusyRef.current = false;
-    setLeaveBusy(false);
-    if (refusal) {
-      setLeaveConfirming(false);
-      setError(refusal);
-      return;
-    }
-    // Nothing left here to come back to -- the last member out takes the
-    // thread with them, and even short of that, staying would show a
-    // conversation this screen no longer has a roster row for.
-    router.replace('/messages');
-  }, [threadId, router]);
-
-  // `contentSize.height` is react-native-web's own name for the textarea's
-  // `scrollHeight` -- the real rendered height of the padding + text inside
-  // it, not a guess. Clamped to [COMPOSER_HEIGHT, DRAFT_MAX_HEIGHT] so an
-  // empty or one-line draft rests at the Send button's own height and a long
-  // one grows only up to the existing cap, same as before.
-  const handleDraftSize = useCallback(
-    (e: { nativeEvent: { contentSize: { height: number } } }) => {
-      setInputHeight(
-        Math.min(DRAFT_MAX_HEIGHT, Math.max(COMPOSER_HEIGHT, e.nativeEvent.contentSize.height)),
-      );
-    },
-    [],
-  );
-
   if (loading) {
     return (
       <Screen center contentStyle={styles.centered} tabBar={<TabBar active="messages" />}>
@@ -367,17 +195,35 @@ export default function ThreadScreen() {
   }
   if (!session) return <Redirect href="/sign-in" />;
 
+  /*
+   * A club's conversation is a BOARD of root posts now, not a flat chat, and
+   * this screen cannot serve one: its composer writes a message with no
+   * `root_id`, which on a club thread silently creates a new junk POST per
+   * line; it has no Announcement control (that lives on the compose screen);
+   * long-pressing to quote is refused outright by `post_message`; and the
+   * read marker it writes is `thread_reads`, which `fetch_my_threads`' club
+   * branch stopped consulting, so the badge never clears.
+   *
+   * Every route that led here was repointed at the board, but a history
+   * entry, a bookmark, or a link shared before the change still names this
+   * URL. Catching it here is what makes the flat screen unreachable for a
+   * club thread however it was reached, rather than only from the call sites
+   * anybody remembered to change.
+   *
+   * Placed after the thread has LOADED, deliberately: `club_id` is what
+   * decides this and it arrives with `fetchThread`. Until then the screen is
+   * still rendering its own spinner (`ready` is false), so nothing of the
+   * flat conversation is ever painted on the way past.
+   */
+  if (thread && thread.club_id && !thread.event_id) {
+    return <Redirect href={`/messages/club/${thread.id}`} />;
+  }
+
   const title = thread ? threadTitleFor(thread, viewerId) : '';
   // Only a GROUP or DIRECT thread has members to list, add to, or leave —
   // a club or game thread's membership is derived (club_members / bookings),
   // never stored in thread_members, so there is nothing here to manage.
   const canManageMembers = thread !== null && thread.club_id === null;
-  // A CLUB thread specifically (not a game, which also carries club_id) --
-  // the one kind the empty state below can cheaply say something specific
-  // about ("post the first one"). Every other kind gets the generic copy
-  // rather than bespoke text per kind, which is not cheap: a game thread
-  // would need its own event-aware line, a group/direct its own.
-  const isClubThread = Boolean(thread?.club_id) && !thread?.event_id;
   // The header avatar's kind -- the same club_id/event_id/other-member-count
   // branches threadTitleFor above already reads, exported as threadKindFor
   // so this doesn't carry a second copy of that branching.
@@ -463,92 +309,7 @@ export default function ThreadScreen() {
       ) : (
         <>
           {canManageMembers && membersOpen && thread ? (
-            <View style={styles.membersPanel}>
-              {thread.thread_members.map((m) => (
-                <Text key={m.profile_id} style={styles.memberName}>
-                  {m.profiles?.display_name ?? 'Member'}
-                </Text>
-              ))}
-
-              {addError ? <ErrorBanner message={addError} /> : null}
-
-              {addingOpen ? (
-                <>
-                  {candidates.length === 0 ? (
-                    <Text style={styles.membersHint}>Nobody else to add.</Text>
-                  ) : (
-                    candidates.map((c) => {
-                      const picked = pickedToAdd.includes(c.profile_id);
-                      return (
-                        <Pressable
-                          key={c.profile_id}
-                          onPress={() =>
-                            setPickedToAdd((cur) =>
-                              cur.includes(c.profile_id)
-                                ? cur.filter((x) => x !== c.profile_id)
-                                : [...cur, c.profile_id],
-                            )
-                          }
-                          accessibilityRole="button"
-                          accessibilityLabel={c.display_name}
-                          aria-selected={picked}
-                          style={[
-                            styles.candidateRow,
-                            picked ? styles.candidateRowOn : null,
-                          ]}
-                        >
-                          <Text style={styles.candidateName}>{c.display_name}</Text>
-                          <Text style={styles.candidateMeta}>{c.meta}</Text>
-                        </Pressable>
-                      );
-                    })
-                  )}
-                  <Button
-                    big={false}
-                    accessibilityLabel="Add"
-                    disabled={addBusy || pickedToAdd.length === 0}
-                    loading={addBusy}
-                    onPress={() => void addPicked()}
-                  >
-                    Add
-                  </Button>
-                </>
-              ) : (
-                <Button
-                  variant="secondary"
-                  big={false}
-                  accessibilityLabel="Add people"
-                  disabled={addBusy}
-                  loading={addBusy}
-                  onPress={() => void openAdding()}
-                >
-                  Add people
-                </Button>
-              )}
-
-              {/*
-                Irreversible: the last member out deletes the thread and its
-                messages (leave_group_thread's own comment). Same two-step
-                confirmation Send already uses on this screen for an
-                announcement -- the other action here that cannot be undone.
-              */}
-              <Button
-                variant="destructive"
-                big={false}
-                accessibilityLabel={leaveConfirming ? 'Confirm leave' : 'Leave'}
-                disabled={leaveBusy}
-                loading={leaveBusy}
-                onPress={() => {
-                  if (!leaveConfirming) {
-                    setLeaveConfirming(true);
-                    return;
-                  }
-                  void leave();
-                }}
-              >
-                {leaveConfirming ? 'Confirm' : 'Leave'}
-              </Button>
-            </View>
+            <MembersPanel thread={thread} onChanged={load} onLeaveError={setError} />
           ) : null}
 
           <ScrollView
@@ -568,38 +329,27 @@ export default function ThreadScreen() {
             }
           >
             {/*
-              A club or group thread with nothing posted yet used to render
-              as an enormous blank region between the title and the composer
-              -- the same dashed-border empty card app/messages/index.tsx and
+              A thread with nothing posted yet used to render as an enormous
+              blank region between the title and the composer -- the same
+              dashed-border empty card app/messages/index.tsx and
               app/friends.tsx already use for "nothing here yet", rather than
-              silence. Only the club case gets bespoke copy (`isClubThread`
-              above); every other kind gets the generic line, since writing a
-              correct bespoke line for a game thread (which would want its
-              own date-aware copy) or a group/direct is not cheap the way the
-              club one is.
+              silence. One line for every kind this screen still serves: the
+              club case that once earned bespoke copy is redirected to the
+              board above and can no longer reach here, and writing a correct
+              bespoke line for a game thread (which would want its own
+              date-aware copy) or a group/direct is not cheap the way the
+              club one was.
             */}
             {messages.length === 0 ? (
               <View style={styles.emptyCard}>
                 <Text style={styles.emptyText}>
-                  {isClubThread
-                    ? 'No messages yet. Post the first one below.'
-                    : 'No messages yet. Say hello to start the conversation.'}
+                  No messages yet. Say hello to start the conversation.
                 </Text>
               </View>
             ) : null}
 
             {messages.map((m, i) => {
               const mine = m.author_id === viewerId;
-              // An announcement's subject IS the body's first line
-              // (deriveSubject's own contract) -- so printing `m.body`
-              // verbatim under a subject that already said it once repeats
-              // it. The derivation stays untouched (post_message must still
-              // store and mail the real subject); only what this bubble
-              // prints drops the duplicate. A body whose first line
-              // genuinely differs from the subject is untouched.
-              const displayBody = m.is_announcement
-                ? announcementBody(m.subject, m.body)
-                : m.body;
               // iOS Messages carries no time inside a bubble at all -- time
               // lives here instead, in a centred separator above the first
               // message of a new group (lib/messages.ts's `startsNewGroup`),
@@ -607,167 +357,26 @@ export default function ThreadScreen() {
               const previous = i > 0 ? messages[i - 1] : null;
               const newGroup = startsNewGroup(m.created_at, previous?.created_at ?? null);
               return (
-                // A long press on the bubble picks it as the reply target --
-                // the iOS/WhatsApp convention the owner chose over a
-                // permanent "Reply" link on every message (the loudest thing
-                // on the old screen). `onLongPress` is the touch/mouse path;
-                // it is not reachable by assistive tech, which cannot
-                // long-press meaningfully, so a second, always-present
-                // control below carries the identical action for AT and
-                // keyboard users. `tabIndex={-1}` and no `accessibilityRole`
-                // keep this outer wrapper out of the tab order and off the
-                // accessibility tree as anything other than a plain
-                // container -- the bubble's own text (author, body, quote)
-                // is what a screen reader should read here, not a second
-                // "button" stop that does nothing on a single activation.
-                // Time is no longer part of that text at all -- see the
-                // separator above, the only place it appears now.
                 <Fragment key={m.id}>
                   {newGroup ? (
                     <Text style={styles.separator}>
                       {groupSeparatorLabel(m.created_at)}
                     </Text>
                   ) : null}
-                  <Pressable
-                    testID={`bubble-${m.id}`}
-                    onLongPress={() => setReplyTo(m)}
-                    tabIndex={-1}
-                    style={[
-                      styles.bubble,
-                      mine ? styles.mine : styles.theirs,
-                      m.is_announcement ? styles.announcement : null,
-                    ]}
-                  >
-                    {!mine && !m.is_announcement ? (
-                      <Text style={styles.author}>
-                        {m.profiles?.display_name ?? ''}
-                      </Text>
-                    ) : null}
-                    {m.is_announcement ? (
-                      <View style={styles.announcementHead}>
-                        <Tag variant="accent2">Announcement</Tag>
-                        {m.subject ? (
-                          <Text style={styles.subject}>{m.subject}</Text>
-                        ) : null}
-                      </View>
-                    ) : null}
-
-                    {/*
-                      Rendered from `reply_to`, not from `reply_to_id`. The
-                      key is `on delete set null`, so a reply can outlive
-                      what it answered — and an empty quote box is worse
-                      than none.
-                    */}
-                    {m.reply_to ? (
-                      <Text
-                        testID="quote-stub"
-                        numberOfLines={1}
-                        style={[
-                          styles.stub,
-                          m.is_announcement
-                            ? styles.stubAnnouncement
-                            : mine
-                              ? styles.stubMine
-                              : null,
-                        ]}
-                      >
-                        {quoteStub(m.reply_to)}
-                      </Text>
-                    ) : null}
-
-                    {displayBody ? (
-                      <Text
-                        style={
-                          m.is_announcement
-                            ? styles.bodyAnnouncement
-                            : mine
-                              ? styles.bodyMine
-                              : styles.body
-                        }
-                      >
-                        {displayBody}
-                      </Text>
-                    ) : null}
-
-                    {/*
-                      The accessible, always-reachable twin of the long
-                      press above: same action, same accessible name the
-                      visible "Reply" link used to carry, just no longer
-                      painted on screen. No children — accessibilityLabel is
-                      this control's ONLY name, so there is nothing for it
-                      to compose with (the "compose, don't replace" rule
-                      that matters at the members-toggle heading above does
-                      not apply here, since there is no children-derived
-                      name to step on). Visually hidden via a true 1x1 clip
-                      rather than opacity, which some accessibility trees
-                      exclude — this stays clipped, not transparent, so it
-                      still reads to screen readers and is still reachable
-                      by Tab.
-                    */}
-                    <Pressable
-                      onPress={() => setReplyTo(m)}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Reply to ${m.profiles?.display_name ?? 'this message'}`}
-                      style={styles.replyAction}
-                    />
-                  </Pressable>
+                  <MessageBubble message={m} mine={mine} onReply={setReplyTo} />
                 </Fragment>
               );
             })}
           </ScrollView>
 
-          {replyTo ? (
-            <View style={styles.replyingRow}>
-              <Text numberOfLines={1} style={styles.replyingText}>
-                {quoteStub(replyTo)}
-              </Text>
-              <Pressable
-                onPress={() => setReplyTo(null)}
-                accessibilityRole="button"
-                accessibilityLabel="Cancel reply"
-              >
-                <Text style={styles.replyingCancel}>Cancel</Text>
-              </Pressable>
-            </View>
-          ) : null}
-
-          <View style={styles.composer}>
-            <TextInput
-              style={[styles.input, { height: inputHeight }]}
-              value={draft}
-              onChangeText={setDraft}
-              onContentSizeChange={handleDraftSize}
-              placeholder="Message"
-              accessibilityLabel="Message"
-              multiline
-              // Without this, react-native-web's own default (no `rows`/
-              // `numberOfLines` given) leaves the underlying `<textarea>`'s
-              // `rows` attribute unset, and an unset `<textarea rows>`
-              // renders 2 browser-default rows -- taller than the 58px
-              // resting height this screen needs to match the Send button,
-              // before a single character has even been typed.
-              // `numberOfLines`, not the newer `rows` prop react-native-web
-              // also accepts: `rows` is not in @types/react-native's
-              // `TextInputProps` at all, and `numberOfLines` is the same
-              // prop TextField.tsx already uses for this exact job.
-              // `handleDraftSize` still grows the box from here for a long
-              // draft.
-              numberOfLines={1}
-            />
-            <Pressable
-              // A single tap posts an ordinary message. Composing an
-              // announcement -- and the two-step Send/Confirm arming that
-              // existed only for it -- is gone from this screen (see the
-              // component's own docstring).
-              onPress={() => void send()}
-              accessibilityRole="button"
-              accessibilityLabel="Send"
-              disabled={sending}
-              style={styles.send}
-            >
-              <SendIcon />
-            </Pressable>
-          </View>
+          <Composer
+            draft={draft}
+            onDraftChange={setDraft}
+            replyTo={replyTo}
+            onClearReply={() => setReplyTo(null)}
+            onSend={() => void send()}
+            sending={sending}
+          />
         </>
       )}
     </Screen>
@@ -800,10 +409,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   headerCenter: { alignItems: 'center', gap: space[2] },
-  // colors.surface, the same pill/panel ground this file already uses for
-  // `replyingRow` and `membersPanel` below -- reused rather than a fresh
-  // token. Capped so `namePillText`'s `numberOfLines={1}` has a width to
-  // actually truncate against for a long thread name.
+  // colors.surface, the same pill/panel ground Composer's `replyingRow` and
+  // MembersPanel's own `membersPanel` reuse -- not a fresh token. Capped so
+  // `namePillText`'s `numberOfLines={1}` has a width to actually truncate
+  // against for a long thread name.
   namePill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -815,9 +424,9 @@ const styles = StyleSheet.create({
     paddingVertical: space[1],
   },
   // colors.text on colors.surface reads 12.40:1 -- comfortably past AA's
-  // 4.5:1 for this 16px text, and the same pairing this file's own
-  // `memberName`/`candidateName` below already use on this exact ground, so
-  // this is not a new pairing.
+  // 4.5:1 for this 16px text, and the same pairing MembersPanel's own
+  // `memberName`/`candidateName` already use on this exact ground, so this
+  // is not a new pairing.
   namePillText: {
     flexShrink: 1,
     minWidth: 0,
@@ -842,164 +451,6 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     color: colors.textMuted,
   },
-  membersPanel: {
-    gap: space[2],
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: space[4],
-  },
-  memberName: {
-    fontFamily: type.bodySemiBold,
-    fontSize: type.size.body,
-    color: colors.text,
-  },
-  membersHint: {
-    fontFamily: type.bodyRegular,
-    fontSize: type.size.helper,
-    color: colors.textMuted,
-  },
-  candidateRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    minHeight: 44,
-    borderRadius: radius.md,
-    backgroundColor: colors.bg,
-    paddingHorizontal: space[3],
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  // accent[700], not the artboard's accentColor: colors.bg on accentColor
-  // measures 3.030:1, a 0.03 margin over the 3:1 non-text bar that
-  // lib/theme.test.ts had no pin for. Selection is also conveyed by
-  // aria-selected, so this was never a correctness bug, but a margin that
-  // thin is exactly what the existing pins exist to prevent. accent[700] on
-  // colors.bg reads 5.72:1 and is already pinned there (the same pairing
-  // this file's `mine` bubble and `send` button use), so this reuses
-  // headroom that exists rather than adding a new pin for a fresh pairing.
-  candidateRowOn: { borderColor: colors.accent[700] },
-  candidateName: {
-    fontFamily: type.bodySemiBold,
-    fontSize: type.size.helper,
-    color: colors.text,
-  },
-  candidateMeta: {
-    fontFamily: type.bodyRegular,
-    fontSize: type.size.helper,
-    color: colors.textMuted,
-  },
-  // No `borderRadius` here any more -- a single uniform value on every
-  // bubble is exactly what made the design's speech bubbles read as plain
-  // rounded boxes. The design specifies asymmetric corners with one corner
-  // clipped down to a tight radius to act as a tail, pointing toward
-  // whichever edge the bubble is anchored to; `theirs`/`mine` below each set
-  // all four corners individually (React Native has no border-radius
-  // shorthand that takes four values) so the tail lands on the correct
-  // corner for which side the bubble is on.
-  bubble: {
-    maxWidth: '78%',
-    paddingVertical: space[3],
-    paddingHorizontal: space[4],
-    marginBottom: space[2],
-  },
-  // Tail at bottom-left (radius.sm, 8px) -- the corner nearest the author's
-  // name and the left edge this bubble is anchored to.
-  theirs: {
-    alignSelf: 'flex-start',
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: radius.lg,
-    borderTopRightRadius: radius.lg,
-    borderBottomRightRadius: radius.lg,
-    borderBottomLeftRadius: radius.sm,
-  },
-  // accent[700], not the artboard's accentColor: colors.bg on accentColor
-  // measures 3.03:1, and this bubble's body text is 18px regular — needing
-  // AA's 4.5:1, not the 3:1 large-text allowance (which needs 24px regular
-  // or 18.66px actual-bold, neither of which this is). It fails. accent[700]
-  // reads 5.72:1 against colors.bg and clears AA — same failure, same fix,
-  // as components/UnreadBadge.tsx's pill.
-  //
-  // Tail at bottom-right (radius.sm) -- the mirror of `theirs`, anchored to
-  // the right edge this bubble sits against.
-  mine: {
-    alignSelf: 'flex-end',
-    backgroundColor: colors.accent[700],
-    borderTopLeftRadius: radius.lg,
-    borderTopRightRadius: radius.lg,
-    borderBottomRightRadius: radius.sm,
-    borderBottomLeftRadius: radius.lg,
-  },
-  // Deliberately NOT tailed, unlike `theirs`/`mine` above: a tail reads as
-  // "this came from the person on this side," and an announcement is
-  // full-width, addressed to everyone, with no side to point from -- more a
-  // notice card than a person's speech. All four corners stay at the same
-  // radius (overriding whichever of `theirs`/`mine` happened to combine with
-  // this in the bubble's own style array, since this entry is always last)
-  // so the announcement reads as its own, structurally different kind of
-  // bubble rather than a mis-tailed chat bubble.
-  announcement: {
-    alignSelf: 'stretch',
-    maxWidth: '100%',
-    backgroundColor: colors.accent2[100],
-    borderTopLeftRadius: radius.lg,
-    borderTopRightRadius: radius.lg,
-    borderBottomRightRadius: radius.lg,
-    borderBottomLeftRadius: radius.lg,
-  },
-  announcementHead: { gap: space[2], marginBottom: space[2] },
-  subject: {
-    fontFamily: type.bodyBold,
-    fontSize: type.size.body,
-    color: colors.accent2[800],
-  },
-  author: {
-    fontFamily: type.bodyBold,
-    fontSize: type.size.helper,
-    color: colors.accent2[700],
-  },
-  body: {
-    fontFamily: type.bodyRegular,
-    fontSize: type.size.body,
-    lineHeight: 26,
-    color: colors.text,
-  },
-  bodyMine: {
-    fontFamily: type.bodyRegular,
-    fontSize: type.size.body,
-    lineHeight: 26,
-    color: colors.bg,
-  },
-  // The announcement background (accent2[100]) always wins over `mine`'s in
-  // the bubble's own style array above, regardless of who sent it -- an
-  // organizer's own announcement reloads with is_announcement=true AND
-  // author_id===viewerId every single time, so `mine` cannot be what decides
-  // this text's colour. accent2[800] on accent2[100] measures 9.12:1, well
-  // past AA's 4.5:1 for this 18px regular body text -- the same token the
-  // subject line below already uses on this ground. lib/theme.test.ts pins
-  // the ratio.
-  bodyAnnouncement: {
-    fontFamily: type.bodyRegular,
-    fontSize: type.size.body,
-    lineHeight: 26,
-    color: colors.accent2[800],
-  },
-  stub: {
-    fontFamily: type.bodyRegular,
-    fontSize: type.size.helper,
-    color: colors.textMuted,
-    borderLeftWidth: 3,
-    borderLeftColor: colors.accent2[500],
-    paddingLeft: space[2],
-    marginBottom: space[2],
-  },
-  // On the accent bubble the muted tone is unreadable; bg at this size is
-  // the same choice the bubble body already makes.
-  stubMine: { color: colors.bg, borderLeftColor: colors.bg },
-  // Same reasoning as bodyAnnouncement just above: an announcement's quote
-  // stub and its Reply label need the dark tone whenever is_announcement is
-  // true, not only when the viewer didn't send it. Reused rather than a
-  // third near-duplicate style, since both call sites want the same colour.
-  stubAnnouncement: { color: colors.accent2[800], borderLeftColor: colors.accent2[500] },
   // The iOS Messages convention this screen now follows: no time inside any
   // bubble (the three `timestamp*` styles this replaced each put it in a
   // bubble's own corner, on that bubble's own ground -- gone along with the
@@ -1018,77 +469,5 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: space[3],
     marginBottom: space[2],
-  },
-  // The accessible twin of the long press above: a true 1x1, clipped (not
-  // merely transparent) so it is never part of what a sighted user sees,
-  // while staying in the accessibility tree and the Tab order -- the
-  // standard visually-hidden-but-reachable shape, not `display: none` /
-  // `visibility: hidden` / `aria-hidden`, all three of which would also
-  // remove it from screen readers, defeating the reason it exists.
-  replyAction: {
-    position: 'absolute',
-    width: 1,
-    height: 1,
-    overflow: 'hidden',
-  },
-  replyingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space[3],
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    paddingVertical: space[2],
-    paddingHorizontal: space[3],
-  },
-  replyingText: {
-    flex: 1,
-    minWidth: 0,
-    fontFamily: type.bodyRegular,
-    fontSize: type.size.helper,
-    color: colors.textMuted,
-  },
-  replyingCancel: {
-    fontFamily: type.bodySemiBold,
-    fontSize: type.size.helper,
-    color: colors.accent[800],
-  },
-  composer: { flexDirection: 'row', alignItems: 'flex-end', gap: space[2] },
-  // Height is NOT set here -- it's driven by `inputHeight` state at the call
-  // site (see `handleDraftSize`'s own comment), because `minHeight` alone is
-  // exactly what let this box render taller than the 58px Send button beside
-  // it: react-native-web's multiline `TextInput` is a `<textarea>`, which
-  // has its own intrinsic row height independent of `minHeight`.
-  //
-  // `paddingVertical: 17` and `lineHeight: 24` are deliberately literal, not
-  // pulled from the `space`/`type` scales: their SUM has to land on exactly
-  // `COMPOSER_HEIGHT` (58) for the placeholder/first line to sit centred at
-  // rest. A `<textarea>` does not centre its own content vertically the way
-  // a plain `<input>` does (this is the artboard's `<input class="input
-  // bigin">`, singular-line, not a growing textarea) — the only way to get
-  // that centred look out of one is to leave no slack: equal top/bottom
-  // padding plus a line-height that together exactly fill the box, so there
-  // is no extra space left over for the text to be top-aligned within.
-  input: {
-    flex: 1,
-    borderRadius: radius.lg,
-    backgroundColor: colors.surface,
-    paddingHorizontal: space[4],
-    paddingVertical: 17,
-    lineHeight: 24,
-    fontFamily: type.bodyRegular,
-    fontSize: type.size.body,
-    color: colors.text,
-  },
-  // The artboard's 58x58 circular icon button -- accent[700], not
-  // accentColor: colors.bg on accentColor measures 3.03:1 and fails AA at
-  // this size; accent[700] reads 5.72:1 (already pinned in
-  // lib/theme.test.ts for this exact bubble/button pairing).
-  send: {
-    width: COMPOSER_HEIGHT,
-    height: COMPOSER_HEIGHT,
-    borderRadius: radius.pill,
-    backgroundColor: colors.accent[700],
-    alignItems: 'center',
-    justifyContent: 'center',
   },
 });

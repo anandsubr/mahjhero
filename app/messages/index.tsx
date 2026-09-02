@@ -65,12 +65,17 @@ export default function MessagesScreen() {
    * email, so this list and its badges are the whole notification surface —
    * coming back to the tab has to be enough to see something new. Realtime
    * is deliberately confined to the open thread; see app/messages/[threadId].
+   *
+   * Keyed on the viewer's id, not the `session` OBJECT: lib/session.tsx hands
+   * out a fresh `Session` on every onAuthStateChange, TOKEN_REFRESHED
+   * included — hourly, and on web tab focus — and none of that changes who is
+   * asking. `load` is already stable.
    */
   useFocusEffect(
     useCallback(() => {
-      if (!session) return;
+      if (!session?.user.id) return;
       void load();
-    }, [session, load]),
+    }, [session?.user.id, load]),
   );
 
   const open = useCallback(
@@ -81,7 +86,13 @@ export default function MessagesScreen() {
 
       if (row.thread_id) {
         openingRef.current = false;
-        router.push(`/messages/${row.thread_id}`);
+        // A club thread lands on its board now; every other kind still
+        // opens straight into the flat thread screen.
+        router.push(
+          row.kind === 'club'
+            ? `/messages/club/${row.thread_id}`
+            : `/messages/${row.thread_id}`,
+        );
         return;
       }
 
@@ -99,7 +110,10 @@ export default function MessagesScreen() {
         setActionError(refusal ?? GENERIC_ERROR);
         return;
       }
-      router.push(`/messages/${id}`);
+      // This branch is only ever reached for a club row (the `!row.club_id`
+      // guard above returns for anything else), so the id it just opened
+      // always belongs to a club thread -- always the board.
+      router.push(`/messages/club/${id}`);
     },
     [router],
   );

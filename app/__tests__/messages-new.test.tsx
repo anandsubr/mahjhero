@@ -28,16 +28,10 @@ vi.mock('../../lib/session', () => ({
   useSession: () => SESSION,
 }));
 
-const fetchMyClubs = vi.fn();
 const fetchFriends = vi.fn();
 const fetchAddablePeople = vi.fn();
-const openThreadForClub = vi.fn();
 const createGroupThread = vi.fn();
 const postMessage = vi.fn();
-
-vi.mock('../../lib/clubs', () => ({
-  fetchMyClubs: (...a: unknown[]) => fetchMyClubs(...a),
-}));
 
 vi.mock('../../lib/friends', () => ({
   fetchFriends: (...a: unknown[]) => fetchFriends(...a),
@@ -49,7 +43,6 @@ vi.mock('../../lib/messages', async () => {
     await vi.importActual<typeof import('../../lib/messages')>('../../lib/messages');
   return {
     ...actual,
-    openThreadForClub: (...a: unknown[]) => openThreadForClub(...a),
     createGroupThread: (...a: unknown[]) => createGroupThread(...a),
     postMessage: (...a: unknown[]) => postMessage(...a),
     // TabBar (now carried by this screen) calls `useUnreadCounts`, which
@@ -58,121 +51,85 @@ vi.mock('../../lib/messages', async () => {
   };
 });
 
-const RIVERSIDE = { id: 'c1', name: 'Riverside', rhythm: 'Tuesdays' };
-const OAKFIELD = { id: 'c2', name: 'Oakfield', rhythm: 'Thursdays' };
-
 describe('new message screen', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    fetchMyClubs.mockResolvedValue([RIVERSIDE, OAKFIELD]);
     fetchFriends.mockResolvedValue([
       { profile_id: 'p1', display_name: 'Bob Reyes', club_names: [] },
     ]);
     fetchAddablePeople.mockResolvedValue([
       { profile_id: 'p2', display_name: 'Carol Diaz', club_name: 'Riverside' },
     ]);
-    openThreadForClub.mockResolvedValue({ id: 't1', error: null });
     createGroupThread.mockResolvedValue({ id: 't9', error: null });
     postMessage.mockResolvedValue({ id: 'm1', error: null });
   });
 
-  it('offers Everyone and People, and not the artboard’s middle segment', async () => {
+  // `ready` gates the whole "Send to" section, including the empty-state
+  // card -- so a member whose fetch just hasn't landed yet should see
+  // neither the picker nor a premature "nobody to message" claim. This is
+  // the state Task 16 exists to keep honest: before candidates and errors
+  // were told apart, this component's only user-visible states were
+  // "spinner" and "the list (however empty)", with no way to catch a claim
+  // rendered before the data it describes had actually arrived.
+  it('shows no candidates and no empty-state claim while still loading', async () => {
+    let resolveFriends: (value: unknown) => void = () => {};
+    fetchFriends.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveFriends = resolve;
+      }),
+    );
     render(<NewMessageScreen />);
-    expect(await screen.findByText('Everyone')).toBeTruthy();
-    expect(screen.getByText('People')).toBeTruthy();
-    expect(screen.queryByText('A group')).toBeNull();
+    await screen.findByText('New message');
+
+    expect(screen.queryByText('Send to')).toBeNull();
+    expect(screen.queryByText(/Nobody to message yet/)).toBeNull();
+
+    resolveFriends([]);
+    await screen.findByText('Send to');
+    expect(screen.queryByText(/Nobody to message yet/)).toBeNull();
   });
 
-  // Picking Everyone lands on a thread with `announce` defaulting false --
-  // Send posts in the app only. The note used to say "as a club
-  // announcement", which reads as a promise that this reaches the outbox;
-  // it does not, and the old copy contradicted the toggle it sits above.
-  it('says Everyone posts in the app, not that it announces or emails', async () => {
+  // `null` is "we could not ask", `[]` is "you have no friends" -- telling a
+  // member with a dead network that she has nobody to message is a false
+  // statement about her, not a report on the network. Mirrors the identical
+  // test in app/__tests__/friends.test.tsx.
+  it('shows an error rather than the empty state when a fetch fails', async () => {
+    fetchFriends.mockResolvedValueOnce(null);
+    fetchAddablePeople.mockResolvedValueOnce([]);
+    render(<NewMessageScreen />);
+    expect(await screen.findByText(/Could not reach MahjHero/)).toBeTruthy();
+    expect(screen.queryByText(/Nobody to message yet/)).toBeNull();
+  });
+
+  // Genuinely nobody -- both fetches succeed and both come back empty. The
+  // honest copy names the fix rather than leaving a bare "Send to" label
+  // over empty space, which is the defect this screen shipped with once
+  // "Everyone" (the only other target) was removed.
+  it('shows the empty state and names the fix when there is genuinely nobody', async () => {
+    fetchFriends.mockResolvedValueOnce([]);
+    fetchAddablePeople.mockResolvedValueOnce([]);
     render(<NewMessageScreen />);
     expect(
-      await screen.findByText(/Goes to everyone at Riverside, in the app\./),
+      await screen.findByText(
+        'Nobody to message yet. Add a friend or join a club to find people to message.',
+      ),
     ).toBeTruthy();
-    expect(screen.queryByText(/as a club announcement/)).toBeNull();
-  });
-
-  // A member in one club has nothing to switch between.
-  //
-  // The brief's version of this test called render() a second time inside
-  // the same `it` without unmounting the first tree. vitest.setup.ts only
-  // registers `cleanup` on `afterEach`, so within one test both trees stay
-  // mounted side by side in document.body — and RTL's bound queries
-  // (whether from `screen` or destructured off a `render()` result) query
-  // `baseElement`, which defaults to `document.body`, not the caller's own
-  // container. So a `queryByLabelText` taken after the second render would
-  // still see the FIRST tree's still-mounted "Oakfield" chip and the
-  // assertion that it's gone would fail even for a correct implementation.
-  // Unmounting the first tree before mounting the second makes the second
-  // render's DOM state actually isolated, which is what the test needs to
-  // mean what it says.
-  it('shows the club chips only when there is more than one club', async () => {
-    const { unmount } = render(<NewMessageScreen />);
-    expect(await screen.findByLabelText('Riverside')).toBeTruthy();
-    expect(screen.getByLabelText('Oakfield')).toBeTruthy();
-    unmount();
-
-    fetchMyClubs.mockResolvedValueOnce([RIVERSIDE]);
-    render(<NewMessageScreen />);
-    await waitFor(() => expect(fetchMyClubs).toHaveBeenCalledTimes(2));
-    expect(screen.queryByLabelText('Oakfield')).toBeNull();
+    expect(screen.queryByText(/Could not reach MahjHero/)).toBeNull();
   });
 
   // Friends first: they are the people you deliberately kept, and they are
   // the only ones who may not appear under any club.
   it('lists friends above people from your clubs', async () => {
     render(<NewMessageScreen />);
-    fireEvent.click(await screen.findByText('People'));
     const names = await screen.findAllByText(/Bob Reyes|Carol Diaz/);
     expect(names.map((n) => n.textContent)).toEqual(['Bob Reyes', 'Carol Diaz']);
   });
 
-  // One step: Everyone's club thread already exists conceptually and is
-  // already in everyone's list, so opening it to read without writing is
-  // legitimate. The button says "Open", not "Send", and no post is made.
-  it('opens Everyone’s thread without posting when there is no message', async () => {
-    render(<NewMessageScreen />);
-    fireEvent.click(await screen.findByLabelText('Oakfield'));
-    fireEvent.click(screen.getByText('Everyone'));
-    expect(await screen.findByLabelText('Open')).toBeTruthy();
-    fireEvent.click(screen.getByLabelText('Open'));
-    await waitFor(() => expect(openThreadForClub).toHaveBeenCalledWith('c2'));
-    await waitFor(() => expect(replace).toHaveBeenCalledWith('/messages/t1'));
-    expect(postMessage).not.toHaveBeenCalled();
-  });
-
-  // With something typed, Everyone posts it into the (already-existing)
-  // club thread and the button says "Send", not "Open".
-  it('posts to Everyone’s thread when there is a message', async () => {
-    render(<NewMessageScreen />);
-    fireEvent.click(await screen.findByLabelText('Oakfield'));
-    fireEvent.click(screen.getByText('Everyone'));
-    fireEvent.change(screen.getByLabelText('Message'), {
-      target: { value: 'See everyone Thursday' },
-    });
-    expect(await screen.findByLabelText('Send')).toBeTruthy();
-    fireEvent.click(screen.getByLabelText('Send'));
-    await waitFor(() => expect(openThreadForClub).toHaveBeenCalledWith('c2'));
-    await waitFor(() =>
-      expect(postMessage).toHaveBeenCalledWith(
-        't1',
-        'See everyone Thursday',
-        false,
-        null,
-      ),
-    );
-    await waitFor(() => expect(replace).toHaveBeenCalledWith('/messages/t1'));
-  });
-
-  // People is creating the thread in someone else's list for the first
-  // time, so a message is required -- the one-step flow's whole point is
-  // that an empty person-to-person thread can no longer be created.
+  // Creating a thread in someone else's list for the first time always
+  // needs something to say -- the one-step flow's whole point is that an
+  // empty person-to-person thread can no longer be created.
   it('refuses an empty message to People before any RPC call', async () => {
     render(<NewMessageScreen />);
-    fireEvent.click(await screen.findByText('People'));
     fireEvent.click(await screen.findByLabelText('Bob Reyes'));
     fireEvent.click(screen.getByLabelText('Send'));
     expect(await screen.findByText('Write something first.')).toBeTruthy();
@@ -183,7 +140,6 @@ describe('new message screen', () => {
 
   it('creates a group from the picked people and posts the first message', async () => {
     render(<NewMessageScreen />);
-    fireEvent.click(await screen.findByText('People'));
     fireEvent.click(await screen.findByLabelText('Bob Reyes'));
     fireEvent.click(screen.getByLabelText('Carol Diaz'));
     fireEvent.change(screen.getByLabelText('Message'), {
@@ -206,7 +162,6 @@ describe('new message screen', () => {
 
   it('deselects somebody picked by mistake', async () => {
     render(<NewMessageScreen />);
-    fireEvent.click(await screen.findByText('People'));
     fireEvent.click(await screen.findByLabelText('Bob Reyes'));
     fireEvent.click(screen.getByLabelText('Bob Reyes'));
     fireEvent.change(screen.getByLabelText('Message'), {
@@ -223,7 +178,6 @@ describe('new message screen', () => {
       error: 'you can only message people from your clubs or your friends',
     });
     render(<NewMessageScreen />);
-    fireEvent.click(await screen.findByText('People'));
     fireEvent.click(await screen.findByLabelText('Bob Reyes'));
     fireEvent.change(screen.getByLabelText('Message'), {
       target: { value: 'Hello' },
@@ -250,7 +204,6 @@ describe('new message screen', () => {
       error: 'that message could not be sent',
     });
     render(<NewMessageScreen />);
-    fireEvent.click(await screen.findByText('People'));
     fireEvent.click(await screen.findByLabelText('Bob Reyes'));
     const input = screen.getByLabelText('Message');
     fireEvent.change(input, { target: { value: 'Table for four Tuesday?' } });

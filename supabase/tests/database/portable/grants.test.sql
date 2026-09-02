@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(102);
+select plan(104);
 
 /*
  * Guards the privileges themselves, not the policies.
@@ -725,12 +725,15 @@ select is(
        'public.create_group_thread(text, uuid[])',
        'public.add_to_group_thread(uuid, uuid[])',
        'public.leave_group_thread(uuid)',
-       'public.post_message(uuid, text, boolean, uuid)',
+       'public.post_message(uuid, text, boolean, uuid, uuid)',
        'public.mark_thread_read(uuid)',
        'public.fetch_my_threads()',
        'public.my_unread_counts()',
        'public.fetch_thread_messages(uuid)',
-       'public.thread_roster(uuid)'
+       'public.thread_roster(uuid)',
+       'public.fetch_club_posts(uuid, integer, timestamp with time zone)',
+       'public.fetch_post_messages(uuid)',
+       'public.mark_post_read(uuid)'
      ]) as f
    ) expected
    where not exists (
@@ -805,12 +808,15 @@ select is(
          'public.create_group_thread(text, uuid[])',
          'public.add_to_group_thread(uuid, uuid[])',
          'public.leave_group_thread(uuid)',
-         'public.post_message(uuid, text, boolean, uuid)',
+         'public.post_message(uuid, text, boolean, uuid, uuid)',
          'public.mark_thread_read(uuid)',
          'public.fetch_my_threads()',
          'public.my_unread_counts()',
          'public.fetch_thread_messages(uuid)',
-         'public.thread_roster(uuid)'
+         'public.thread_roster(uuid)',
+         'public.fetch_club_posts(uuid, integer, timestamp with time zone)',
+         'public.fetch_post_messages(uuid)',
+         'public.mark_post_read(uuid)'
        ]) as f
        where to_regprocedure(f) = p.oid::regprocedure
      )),
@@ -888,6 +894,14 @@ select ok(
   not has_table_privilege('authenticated', 'public.thread_reads', 'TRUNCATE'),
   'authenticated cannot TRUNCATE thread_reads'
 );
+select ok(
+  not has_table_privilege('authenticated', 'public.post_reads', 'TRUNCATE'),
+  'authenticated cannot TRUNCATE post_reads'
+);
+select ok(
+  not has_table_privilege('authenticated', 'public.post_reads', 'UPDATE'),
+  'authenticated cannot UPDATE post_reads directly'
+);
 
 -- No messaging table takes direct DML. A client that could INSERT into
 -- messages could forge an author_id, and the select policy would then show
@@ -959,7 +973,7 @@ select ok(
 -- compose and inbox screens call directly.
 select ok(
   has_function_privilege(
-    'authenticated', 'public.post_message(uuid, text, boolean, uuid)', 'EXECUTE'),
+    'authenticated', 'public.post_message(uuid, text, boolean, uuid, uuid)', 'EXECUTE'),
   'authenticated can execute post_message'
 );
 select ok(

@@ -14,7 +14,13 @@ const replace = vi.fn();
 const back = vi.fn();
 
 vi.mock('expo-router', () => ({
-  Redirect: () => null,
+  // Renders the href rather than null: this screen redirects a CLUB thread
+  // to its board, and a mock that renders nothing cannot tell "redirected
+  // somewhere" from "redirected to the right place". Same shape
+  // app/__tests__/clubs.test.tsx already uses.
+  Redirect: ({ href }: { href: string }) => (
+    <div data-testid="redirect" data-href={href} />
+  ),
   useRouter: () => ({ push, back, replace }),
   usePathname: () => '/messages/t1',
   useLocalSearchParams: () => ({ threadId: 't1' }),
@@ -173,6 +179,10 @@ vi.mock('../../lib/supabase', () => ({
   },
 }));
 
+// A CLUB thread -- which this screen no longer RENDERS. Its conversation is
+// a board of posts, so the only thing left to assert about one here is that
+// it is sent there; every other test in this file runs on a kind that still
+// belongs on the flat screen.
 const CLUB_THREAD = {
   id: 't1',
   club_id: 'c1',
@@ -180,6 +190,21 @@ const CLUB_THREAD = {
   title: null,
   clubs: { name: 'Riverside', timezone: 'America/New_York' },
   events: null,
+  thread_members: [],
+};
+
+// A GAME thread: club_id AND event_id, so it stays flat but still has
+// DERIVED membership (bookings) with nothing to list or leave. It is the
+// kind that now carries every "a thread with no members view" assertion the
+// club thread used to, since it is the only one left on this screen whose
+// club_id is set.
+const GAME_THREAD = {
+  id: 't1',
+  club_id: 'c1',
+  event_id: 'e1',
+  title: null,
+  clubs: { name: 'Riverside', timezone: 'America/New_York' },
+  events: { title: 'Tuesday night mahjong', starts_at: '2026-08-25T18:00:00Z' },
   thread_members: [],
 };
 
@@ -256,7 +281,10 @@ describe('thread screen', () => {
     // topic) would leak forward.
     useSessionMock.mockReturnValue({ session: { user: { id: 'me' } }, loading: false });
     channelsByTopic = new Map();
-    fetchThread.mockResolvedValue(CLUB_THREAD);
+    // A GROUP thread by default. The default used to be CLUB_THREAD, which
+    // this screen redirects to the board now -- every test below that just
+    // wants "a thread on the flat screen" gets one that still is.
+    fetchThread.mockResolvedValue(GROUP_THREAD);
     fetchThreadMessages.mockResolvedValue(MESSAGES);
     postMessage.mockResolvedValue({ id: 'm3', error: null });
     markThreadRead.mockResolvedValue({ error: null });
@@ -281,9 +309,42 @@ describe('thread screen', () => {
 
   it('shows the thread title and every message', async () => {
     render(<ThreadScreen />);
-    expect(await screen.findByText('Riverside')).toBeTruthy();
+    expect(await screen.findByText('Sara, Peter')).toBeTruthy();
     expect(screen.getByText('We are one short for Tuesday.')).toBeTruthy();
     expect(screen.getByText('I can take the seat.')).toBeTruthy();
+  });
+
+  /*
+   * A club's conversation is a BOARD of root posts, not a flat chat, and
+   * this screen cannot serve one. Three routing sites still sent an
+   * organizer here; they were repointed, but a history entry, a bookmark or
+   * a link shared before the change still names this URL. What it gave a
+   * club member was a composer that silently started a new POST per line, no
+   * Announcement control, a quote post_message refuses outright, and a badge
+   * that never cleared -- so the screen catches it itself rather than
+   * trusting every caller to remember.
+   */
+  it('sends a club thread to its board rather than rendering a flat chat', async () => {
+    fetchThread.mockResolvedValueOnce(CLUB_THREAD);
+    render(<ThreadScreen />);
+    const redirect = await screen.findByTestId('redirect');
+    expect(redirect.getAttribute('data-href')).toBe('/messages/club/t1');
+    // Not even for a frame on the way past: the composer and the messages
+    // are the flat screen, and neither is ever painted for a club thread.
+    expect(screen.queryByLabelText('Message')).toBeNull();
+    expect(screen.queryByText('We are one short for Tuesday.')).toBeNull();
+  });
+
+  // A game thread carries a club_id too, and it is still a flat chat. The
+  // redirect keys on event_id being NULL as well, not on club_id alone --
+  // get that wrong and every game conversation lands on a board that has no
+  // posts and never will.
+  it('leaves a game thread on the flat screen', async () => {
+    fetchThread.mockResolvedValueOnce(GAME_THREAD);
+    render(<ThreadScreen />);
+    expect(await screen.findByText('Tuesday night mahjong')).toBeTruthy();
+    expect(screen.queryByTestId('redirect')).toBeNull();
+    expect(screen.getByLabelText('Message')).toBeTruthy();
   });
 
   // Somebody else's message is attributed; your own is not — it is on your
@@ -592,23 +653,18 @@ describe('thread screen', () => {
     expect(await screen.findByText(/Could not reach MahjHero/)).toBeTruthy();
   });
 
-  // A club thread with no messages used to render an enormous blank region
+  // A thread with no messages used to render an enormous blank region
   // between the title and the composer -- the dashed-border empty card this
   // app already uses (app/messages/index.tsx, app/friends.tsx) instead of
   // silence.
-  it('shows an empty state, not a blank scroller, for a club thread with no messages', async () => {
-    fetchThreadMessages.mockResolvedValueOnce([]);
-    render(<ThreadScreen />);
-    expect(
-      await screen.findByText('No messages yet. Post the first one below.'),
-    ).toBeTruthy();
-  });
-
-  // A group/direct thread has no club to post "the first one" into, so it
-  // gets the generic copy rather than a bespoke line for every kind -- cheap
-  // where it's cheap (club), generic everywhere else.
-  it('shows generic empty copy for a non-club thread with no messages', async () => {
-    fetchThread.mockResolvedValueOnce(GROUP_THREAD);
+  //
+  // One line for every kind now. The club thread's own bespoke copy ("Post
+  // the first one below") went with the redirect above: the branch that
+  // chose it could only ever be reached by a club thread, and a club thread
+  // never renders this screen. Its test went with it rather than being
+  // reseeded onto a kind that would only have re-asserted the generic line
+  // this test already covers.
+  it('shows an empty state, not a blank scroller, for a thread with no messages', async () => {
     fetchThreadMessages.mockResolvedValueOnce([]);
     render(<ThreadScreen />);
     expect(
@@ -900,9 +956,15 @@ describe('thread screen', () => {
     // A club or game thread's membership is derived, not stored -- there is
     // nothing to leave and nobody to add. Only a group or direct (both
     // thread.club_id === null) gets the Members affordance at all.
-    it('offers no Members control on a club thread', async () => {
+    //
+    // A GAME thread rather than a club one: the rule is `club_id !== null`
+    // and a game thread carries a club_id too, so this still tests exactly
+    // what it tested -- on the only kind with derived membership that this
+    // screen still renders.
+    it('offers no Members control on a game thread', async () => {
+      fetchThread.mockResolvedValueOnce(GAME_THREAD);
       render(<ThreadScreen />);
-      await screen.findByText('Riverside');
+      await screen.findByText('Tuesday night mahjong');
       expect(screen.queryByLabelText(/view members/i)).toBeNull();
     });
 
@@ -1059,7 +1121,7 @@ describe('thread screen', () => {
   // with no bar would be a dead end on native short of relaunching the app.
   it('carries the tab bar with Messages marked', async () => {
     render(<ThreadScreen />);
-    await screen.findByText('Riverside');
+    await screen.findByText('Sara, Peter');
     expect(
       screen.getByRole('button', { name: 'Messages' }).getAttribute('aria-selected'),
     ).toBe('true');
@@ -1086,7 +1148,7 @@ describe('thread screen', () => {
   describe('header', () => {
     it('shows a back chevron, distinctly named from the Messages tab, that returns to /messages', async () => {
       render(<ThreadScreen />);
-      await screen.findByText('Riverside');
+      await screen.findByText('Sara, Peter');
       // Still exactly one control literally named "Messages" -- the tab
       // bar's own tab. The back chevron carries its own distinct accessible
       // name, so the two can never collapse into the same control the way
@@ -1096,13 +1158,17 @@ describe('thread screen', () => {
       expect(push).toHaveBeenCalledWith('/messages');
     });
 
-    // The same club-initials treatment components/ThreadRow.tsx's list row
-    // already renders, reused rather than a second copy that can drift --
-    // see components/ThreadAvatar.tsx.
+    // The same per-kind treatment components/ThreadRow.tsx's list row already
+    // renders, reused rather than a second copy that can drift -- see
+    // components/ThreadAvatar.tsx. A group has no single person to initial,
+    // so it gets the people glyph; the initials half of that treatment is
+    // asserted by the direct-thread test just below, and the header-sized
+    // CLUB avatar (unreachable from this screen now) keeps its own coverage
+    // in components/__tests__/ThreadAvatar.test.tsx.
     it("renders the thread's avatar in the header", async () => {
       render(<ThreadScreen />);
-      await screen.findByText('Riverside');
-      expect(screen.getByTestId('thread-header-avatar-club').textContent).toBe('R');
+      await screen.findByText('Sara, Peter');
+      expect(screen.getByTestId('thread-header-avatar-group')).toBeTruthy();
     });
 
     it('shows the other member’s initials in the header avatar for a direct thread', async () => {
@@ -1129,11 +1195,15 @@ describe('thread screen', () => {
     // A club or game thread has no members view to open -- rendering the
     // pill as a Pressable with a chevron anyway would be a control that
     // LOOKS tappable and does nothing, which is worse than one that plainly
-    // isn't. It stays a plain, non-interactive label instead.
-    it('gives the name pill no tap affordance on a club thread', async () => {
+    // isn't. It stays a plain, non-interactive label instead. On a GAME
+    // thread here, for the reason the members-control test above records.
+    it('gives the name pill no tap affordance on a game thread', async () => {
+      fetchThread.mockResolvedValueOnce(GAME_THREAD);
       render(<ThreadScreen />);
-      await screen.findByText('Riverside');
-      expect(screen.queryByRole('button', { name: /Riverside/ })).toBeNull();
+      await screen.findByText('Tuesday night mahjong');
+      expect(
+        screen.queryByRole('button', { name: /Tuesday night mahjong/ }),
+      ).toBeNull();
     });
   });
 });

@@ -35,13 +35,17 @@ describe('the old broadcast routes', () => {
 
   // These URLs are in members' history and in already-sent emails. A 404 is
   // not an acceptable answer to a link that worked last week.
-  it('sends the club compose route to the club thread', async () => {
+  // The club's conversation is a BOARD of posts, not a flat chat -- the flat
+  // screen has no Announcement control, silently starts a new post per line,
+  // and writes a read marker the club branch no longer reads.
+  it('sends the club compose route to the club board', async () => {
     render(<BroadcastRedirect />);
     await waitFor(() => expect(openThreadForClub).toHaveBeenCalledWith('c1'));
-    await waitFor(() => expect(replace).toHaveBeenCalledWith('/messages/t1'));
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/messages/club/t1'));
   });
 
-  it('sends the event-scoped compose route to that game’s thread', async () => {
+  // A game thread stays FLAT -- only the club branch moved to the board.
+  it('sends the event-scoped compose route to that game’s flat thread', async () => {
     params = { id: 'c1', eventId: 'e1' };
     render(<BroadcastRedirect />);
     await waitFor(() => expect(openThreadForEvent).toHaveBeenCalledWith('e1'));
@@ -49,9 +53,9 @@ describe('the old broadcast routes', () => {
     expect(openThreadForClub).not.toHaveBeenCalled();
   });
 
-  it('sends the sent-history route to the club thread', async () => {
+  it('sends the sent-history route to the club board', async () => {
     render(<BroadcastsRedirect />);
-    await waitFor(() => expect(replace).toHaveBeenCalledWith('/messages/t1'));
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/messages/club/t1'));
   });
 
   // A refusal must not strand somebody on a blank screen with a spinner.

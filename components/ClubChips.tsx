@@ -1,16 +1,21 @@
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import UnreadBadge from './UnreadBadge';
 import type { Chip } from '../lib/dashboard';
 import { unreadSuffix } from '../lib/messages';
 import { colors, radius, space, type } from '../lib/theme';
 
 /**
- * The artboard's horizontal club switcher. Selection is presentation state
- * the dashboard owns; this component only reports presses.
+ * The artboard's club switcher. Selection is presentation state the
+ * dashboard owns; this component only reports presses.
  *
  * Not built from Button: the artboard's chip carries a leading dot only when
  * active and uses the body face rather than Button's heading face, and
  * bending Button that far is more code than the row it replaces.
+ *
+ * Wraps onto as many lines as it needs rather than scrolling horizontally:
+ * selecting a chip is now the only way to arm the header's Manage control,
+ * so a chip clipped or scrolled off-screen would hide a member's only route
+ * into that club. Wrapping means nothing is ever hidden, at any club count.
  */
 export default function ClubChips({
   chips,
@@ -24,11 +29,7 @@ export default function ClubChips({
   unreadByClub?: Record<string, number>;
 }) {
   return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.row}
-    >
+    <View style={styles.row}>
       {chips.map((chip) => {
         const active = chip.id === selected;
         const count = unreadByClub?.[chip.id] ?? 0;
@@ -52,23 +53,15 @@ export default function ClubChips({
           </Pressable>
         );
       })}
-    </ScrollView>
+    </View>
   );
 }
-
-/**
- * The artboard's chip row is `overflow-x: auto` with `padding-bottom: 2px`,
- * a literal 2 rather than a step on the spacing scale — whose smallest step,
- * space[1], is 4.4. Named here so the number is not a mystery, and NOT added
- * to lib/theme.ts: a value with one call site is a literal, not a token.
- */
-const SCROLL_GUTTER = 2;
 
 const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: space[2],
-    paddingBottom: SCROLL_GUTTER,
   },
   chip: {
     flexDirection: 'row',

@@ -24,17 +24,22 @@ import {
   announcementBody,
   createGroupThread,
   deriveSubject,
+  fetchClubPosts,
+  fetchPostMessages,
   fetchThread,
   fetchThreadMessages,
   fetchMyThreads,
   groupSeparatorLabel,
   kindLabel,
   leaveGroupThread,
+  markPostRead,
   messagePreview,
   orderThreadsForList,
   postMessage,
+  postTitle,
   quoteStub,
   relativeTimestamp,
+  replyCountLabel,
   rowSubtitle,
   rowTitle,
   sortThreads,
@@ -43,6 +48,7 @@ import {
   threadTitleFor,
   unreadLabel,
   unreadSuffix,
+  type ClubPost,
   type ThreadDetail,
   type ThreadListRow,
 } from './messages';
@@ -97,6 +103,17 @@ describe('deriveSubject', () => {
 
   it('is empty for a body with no usable first line', () => {
     expect(deriveSubject('   \n\nreal content')).toBe('');
+  });
+
+  // Postgres's bare `trim(x)` strips only the literal ASCII space, U+0020 --
+  // confirmed live: `trim(U&'\00A0Doors at seven\00A0')` comes back
+  // unchanged, length 16. JS's `.trim()` strips the whole ECMAScript
+  // whitespace set, U+00A0 included, so a `.trim()` here would silently
+  // disagree with what `subj := trim(subj)` actually stores: the preview
+  // would read "Doors at seven" while the stored, emailed subject still
+  // carried the trailing non-breaking space. The character must survive.
+  it('keeps a non-breaking space Postgres would not trim', () => {
+    expect(deriveSubject(' Doors at seven ')).toBe(' Doors at seven ');
   });
 
   // Postgres's `length()`/`left()` count characters, not UTF-16 code units.
@@ -915,6 +932,7 @@ describe('postMessage', () => {
       p_body: 'hello',
       p_announce: false,
       p_reply_to: null,
+      p_root: null,
     });
   });
 
@@ -926,6 +944,7 @@ describe('postMessage', () => {
       p_body: 'Yes',
       p_announce: false,
       p_reply_to: 'm1',
+      p_root: null,
     });
   });
 
@@ -981,5 +1000,219 @@ describe('createGroupThread', () => {
       error: 'Pick somebody to message.',
     });
     expect(rpcMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('postTitle', () => {
+  const base: ClubPost = {
+    id: 'p1',
+    author_id: 'a1',
+    author_name: 'Alice',
+    body: 'body',
+    subject: null,
+    is_announcement: false,
+    created_at: '2026-08-30T10:00:00.000Z',
+    reply_count: 0,
+    last_reply_at: null,
+    last_activity_at: '2026-08-30T10:00:00.000Z',
+    unread: 0,
+  };
+
+  it('uses the subject when the post has one', () => {
+    expect(postTitle({ ...base, subject: 'Doors at seven' })).toBe('Doors at seven');
+  });
+
+  it('falls back to the first line of the body', () => {
+    expect(postTitle({ ...base, body: 'Anyone free?\nI have a table.' }))
+      .toBe('Anyone free?');
+  });
+
+  it('truncates a long first line rather than wrapping the whole row', () => {
+    const long = 'x'.repeat(200);
+    const title = postTitle({ ...base, body: long });
+    expect(title).toHaveLength(80);
+    expect(title.endsWith('…')).toBe(true);
+  });
+
+  it('never returns an empty string', () => {
+    expect(postTitle({ ...base, body: '   ' })).toBe('Untitled post');
+  });
+});
+
+describe('replyCountLabel', () => {
+  it('says nothing about a post with no replies', () => {
+    expect(replyCountLabel(0)).toBe('No replies');
+  });
+
+  it('is singular at one', () => {
+    expect(replyCountLabel(1)).toBe('1 reply');
+  });
+
+  it('is plural above one', () => {
+    expect(replyCountLabel(4)).toBe('4 replies');
+  });
+});
+
+describe('fetchClubPosts', () => {
+  beforeEach(() => rpcMock.mockReset());
+
+  it('resolves null when the RPC fails, never throws', async () => {
+    rpcMock.mockResolvedValueOnce({ data: null, error: { message: 'boom' } });
+    await expect(fetchClubPosts('t1')).resolves.toBeNull();
+    expect(rpcMock).toHaveBeenCalledWith('fetch_club_posts', {
+      target_thread: 't1',
+      p_before: null,
+    });
+  });
+
+  it('resolves an empty array when there are no posts', async () => {
+    rpcMock.mockResolvedValueOnce({ data: [], error: null });
+    await expect(fetchClubPosts('t1', '2026-08-20T10:00:00Z')).resolves.toEqual([]);
+    expect(rpcMock).toHaveBeenCalledWith('fetch_club_posts', {
+      target_thread: 't1',
+      p_before: '2026-08-20T10:00:00Z',
+    });
+  });
+});
+
+describe('fetchPostMessages', () => {
+  beforeEach(() => rpcMock.mockReset());
+
+  // Same mapping fetchThreadMessages produces -- mapThreadMessageRow is the
+  // one function both call, so a break in either RPC's row shape is caught
+  // here the same way it is caught for fetchThreadMessages above.
+  it('maps sender names and the quoted parent, the same shape fetchThreadMessages produces', async () => {
+    rpcMock.mockResolvedValueOnce({
+      data: [
+        {
+          id: 'p1',
+          author_id: 'u1',
+          author_name: 'Alice Ng',
+          body: 'Anyone free Tuesday?',
+          subject: null,
+          is_announcement: false,
+          created_at: '2026-08-25T10:00:00Z',
+          reply_to_id: null,
+          reply_to_body: null,
+          reply_to_author: null,
+        },
+        {
+          id: 'p2',
+          author_id: 'u2',
+          author_name: 'Carol Chen',
+          body: 'Yes, I am in.',
+          subject: null,
+          is_announcement: false,
+          created_at: '2026-08-25T10:01:00Z',
+          reply_to_id: 'p1',
+          reply_to_body: 'Anyone free Tuesday?',
+          reply_to_author: 'Alice Ng',
+        },
+      ],
+      error: null,
+    });
+
+    await expect(fetchPostMessages('p1')).resolves.toEqual([
+      {
+        id: 'p1',
+        author_id: 'u1',
+        body: 'Anyone free Tuesday?',
+        subject: null,
+        is_announcement: false,
+        created_at: '2026-08-25T10:00:00Z',
+        profiles: { display_name: 'Alice Ng' },
+        reply_to_id: null,
+        reply_to: null,
+      },
+      {
+        id: 'p2',
+        author_id: 'u2',
+        body: 'Yes, I am in.',
+        subject: null,
+        is_announcement: false,
+        created_at: '2026-08-25T10:01:00Z',
+        profiles: { display_name: 'Carol Chen' },
+        reply_to_id: 'p1',
+        reply_to: {
+          id: 'p1',
+          body: 'Anyone free Tuesday?',
+          profiles: { display_name: 'Alice Ng' },
+        },
+      },
+    ]);
+    expect(rpcMock).toHaveBeenCalledWith('fetch_post_messages', { p_root: 'p1' });
+  });
+
+  it('resolves null when the RPC fails, never throws', async () => {
+    rpcMock.mockResolvedValueOnce({ data: null, error: { message: 'boom' } });
+    await expect(fetchPostMessages('p1')).resolves.toBeNull();
+  });
+
+  // null is "we could not ask"; [] is "this post has no replies" -- the same
+  // distinction fetchMyThreads' own tests pin above.
+  it('resolves an empty array, not null, when the post has no messages', async () => {
+    rpcMock.mockResolvedValueOnce({ data: [], error: null });
+    await expect(fetchPostMessages('p1')).resolves.toEqual([]);
+  });
+
+  it('never rejects', async () => {
+    rpcMock.mockRejectedValueOnce(new Error('offline'));
+    await expect(fetchPostMessages('p1')).resolves.toBeNull();
+  });
+});
+
+describe('markPostRead', () => {
+  beforeEach(() => rpcMock.mockReset());
+
+  it('calls mark_post_read with the post', async () => {
+    rpcMock.mockResolvedValueOnce({ data: null, error: null });
+    await expect(markPostRead('p1')).resolves.toEqual({ error: null });
+    expect(rpcMock).toHaveBeenCalledWith('mark_post_read', { p_root: 'p1' });
+  });
+
+  // mark_post_read's refusals are already written to be read by a member --
+  // "that post is no longer here" -- so they are relayed verbatim, the same
+  // deliberate contract postMessage and addToGroupThread carry above.
+  it('relays a refusal verbatim', async () => {
+    rpcMock.mockResolvedValueOnce({
+      data: null,
+      error: { message: 'that post is no longer here' },
+    });
+    await expect(markPostRead('p1')).resolves.toEqual({
+      error: 'that post is no longer here',
+    });
+  });
+
+  it('resolves rather than rejecting when the RPC throws', async () => {
+    rpcMock.mockRejectedValueOnce(new Error('offline'));
+    await expect(markPostRead('p1')).resolves.toEqual({ error: GENERIC_ERROR });
+  });
+});
+
+describe('postMessage with a root', () => {
+  beforeEach(() => rpcMock.mockReset());
+
+  it('passes p_root through to the RPC', async () => {
+    rpcMock.mockResolvedValueOnce({ data: 'm1', error: null });
+    await postMessage('t1', 'I am', false, null, 'root1');
+    expect(rpcMock).toHaveBeenCalledWith('post_message', {
+      target_thread: 't1',
+      p_body: 'I am',
+      p_announce: false,
+      p_reply_to: null,
+      p_root: 'root1',
+    });
+  });
+
+  it('still sends p_root: null for a flat thread', async () => {
+    rpcMock.mockResolvedValueOnce({ data: 'm1', error: null });
+    await postMessage('t1', 'hello');
+    expect(rpcMock).toHaveBeenCalledWith('post_message', {
+      target_thread: 't1',
+      p_body: 'hello',
+      p_announce: false,
+      p_reply_to: null,
+      p_root: null,
+    });
   });
 });

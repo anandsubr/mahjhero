@@ -22,6 +22,29 @@ export function ChevronRightIcon({ size = 16, color = colors.text }: { size?: nu
   );
 }
 
+/** Pencil for the clubs dashboard header (components/DashboardHeader.tsx),
+ *  where pressing the club in scope opens that club's roster, invites,
+ *  venues and import — management, not a form. */
+export function PencilIcon({ size = 16, color = colors.text }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.75} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M12 20h9" />
+      <Path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </Svg>
+  );
+}
+
+/** Plus for the clubs dashboard header's "start a club" control
+ *  (components/DashboardHeader.tsx). */
+export function PlusIcon({ size = 24, color = colors.text }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.75} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M12 5v14" />
+      <Path d="M5 12h14" />
+    </Svg>
+  );
+}
+
 /** Envelope glyph for the "check your email" screen. */
 export function MailIcon({ size = 40, color = colors.accent2[700] }: { size?: number; color?: string }) {
   return (

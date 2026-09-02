@@ -114,18 +114,53 @@ describe('ClubChips', () => {
 import DashboardHeader from '../DashboardHeader';
 
 describe('DashboardHeader', () => {
-  it('shows the scope kicker, name and meta', () => {
+  // headerScope's all-clubs scope shortens its name to "Your clubs", which
+  // makes a "YOUR CLUBS" kicker above it the same words twice — so that
+  // scope passes no kicker at all. An empty string must draw nothing rather
+  // than an empty line, the same way `meta` already does.
+  it('draws no kicker when it is given none', () => {
     render(
       <DashboardHeader
-        kicker="Your clubs"
-        name="All your clubs"
+        kicker=""
+        name="Your clubs"
         meta="2 clubs"
         initials="JW"
         onPressAvatar={() => {}}
       />,
     );
     expect(screen.getByText('Your clubs')).toBeTruthy();
-    expect(screen.getByText('All your clubs')).toBeTruthy();
+    expect(screen.getByText('2 clubs')).toBeTruthy();
+    expect(screen.queryByTestId('scope-kicker')).toBeNull();
+  });
+
+  it('still draws a kicker when it is given one', () => {
+    render(
+      <DashboardHeader
+        kicker="Your club"
+        name="Riverside Mah Jongg"
+        meta="Thursdays, 7pm"
+        initials="JW"
+        onPressAvatar={() => {}}
+      />,
+    );
+    expect(screen.getByTestId('scope-kicker')).toBeTruthy();
+  });
+
+  // The all-clubs scope: `headerScope` returns no kicker for it, "Your
+  // clubs" for the name, and a plural count for the meta — `kicker="Your
+  // clubs"` alongside `name="All your clubs"` was never a shape this screen
+  // can actually produce.
+  it('shows the scope name, meta and initials with no kicker', () => {
+    render(
+      <DashboardHeader
+        kicker=""
+        name="Your clubs"
+        meta="2 clubs"
+        initials="JW"
+        onPressAvatar={() => {}}
+      />,
+    );
+    expect(screen.getByText('Your clubs')).toBeTruthy();
     expect(screen.getByText('2 clubs')).toBeTruthy();
     expect(screen.getByText('JW')).toBeTruthy();
   });
@@ -149,13 +184,139 @@ describe('DashboardHeader', () => {
     render(
       <DashboardHeader
         kicker="Your clubs"
-        name="All your clubs"
-        meta="1 club"
+        name="Your clubs"
+        meta="2 clubs"
         initials=""
         onPressAvatar={() => {}}
       />,
     );
     expect(screen.getByTestId('avatar-fallback')).toBeTruthy();
+  });
+
+  it('leaves the scope inert when there is nothing to open', () => {
+    render(
+      <DashboardHeader
+        kicker="Your clubs"
+        name="Your clubs"
+        meta="2 clubs"
+        initials="JW"
+        onPressAvatar={() => {}}
+      />,
+    );
+    // The avatar is still a button; the scope is not.
+    expect(screen.getByRole('button', { name: 'Your profile' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^Manage / })).toBeNull();
+    expect(screen.queryByTestId('scope-glyph')).toBeNull();
+  });
+
+  it('opens the club in scope when the scope is pressed', () => {
+    const onPressScope = vi.fn();
+    render(
+      <DashboardHeader
+        kicker="Your club"
+        name="Riverside Mah Jongg"
+        meta="Thursdays, 7pm"
+        initials="JW"
+        onPressAvatar={() => {}}
+        onPressScope={onPressScope}
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Manage Riverside Mah Jongg, Thursdays, 7pm' }),
+    );
+    expect(onPressScope).toHaveBeenCalled();
+    expect(screen.getByTestId('scope-glyph')).toBeTruthy();
+  });
+
+  // accessibilityLabel replaces the accessible name react-native-web would
+  // otherwise compute from the Pressable's children, so the meta text
+  // visible in the <Text> below the name — the club's rhythm — goes unheard
+  // unless the label carries it too. Two shapes: a club with a rhythm gets
+  // it appended, a club without one (meta === '') gets no trailing comma
+  // rather than "Manage Riverside Mah Jongg, ".
+  it('folds the rhythm into the scope label when there is one', () => {
+    render(
+      <DashboardHeader
+        kicker="Your club"
+        name="Riverside Mah Jongg"
+        meta="Thursdays, 7pm"
+        initials="JW"
+        onPressAvatar={() => {}}
+        onPressScope={() => {}}
+      />,
+    );
+    expect(
+      screen.getByRole('button', { name: 'Manage Riverside Mah Jongg, Thursdays, 7pm' }),
+    ).toBeTruthy();
+  });
+
+  it('leaves the scope label as just the name when there is no rhythm to lose', () => {
+    render(
+      <DashboardHeader
+        kicker="Your club"
+        name="Riverside Mah Jongg"
+        meta=""
+        initials="JW"
+        onPressAvatar={() => {}}
+        onPressScope={() => {}}
+      />,
+    );
+    expect(
+      screen.getByRole('button', { name: 'Manage Riverside Mah Jongg' }),
+    ).toBeTruthy();
+  });
+
+  // The scope text has to stay reachable by content, not only by label:
+  // the screen's own tests read the club name and rhythm straight off the
+  // header now that the club cards below are gone.
+  it('still shows the scope text when it is pressable', () => {
+    render(
+      <DashboardHeader
+        kicker="Your club"
+        name="Riverside Mah Jongg"
+        meta="Thursdays, 7pm"
+        initials="JW"
+        onPressAvatar={() => {}}
+        onPressScope={() => {}}
+      />,
+    );
+    expect(screen.getByText('Your club')).toBeTruthy();
+    expect(screen.getByText('Riverside Mah Jongg')).toBeTruthy();
+    expect(screen.getByText('Thursdays, 7pm')).toBeTruthy();
+  });
+
+  // The chip row scrolls and this does not. "+ New club" used to trail the
+  // row and was already off-screen at two clubs, which made it invisible to
+  // exactly the member most likely to start another.
+  it('starts a club from the header when it is given a way to', () => {
+    const onPressNew = vi.fn();
+    render(
+      <DashboardHeader
+        kicker=""
+        name="Your clubs"
+        meta="2 clubs"
+        initials="JW"
+        onPressAvatar={() => {}}
+        onPressNew={onPressNew}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Start a club' }));
+    expect(onPressNew).toHaveBeenCalled();
+  });
+
+  it('draws no way to start a club unless it is given one', () => {
+    render(
+      <DashboardHeader
+        kicker="Your club"
+        name="Riverside Mah Jongg"
+        meta="Thursdays, 7pm"
+        initials="JW"
+        onPressAvatar={() => {}}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: 'Start a club' })).toBeNull();
+    // The avatar is untouched by the new control beside it.
+    expect(screen.getByRole('button', { name: 'Your profile' })).toBeTruthy();
   });
 });
 

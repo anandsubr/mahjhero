@@ -93,6 +93,22 @@ vi.mock('../../lib/clubs', async (importOriginal) => {
   };
 });
 
+const fetchUpcomingEvents = vi.fn();
+
+// Needed only because this file now seeds a club (see `beforeEach`): the
+// dashboard reads the open games of every club the member is in, so with an
+// empty club list it issued no read at all and none of these tests noticed.
+// One club means one read, and unmocked it would go to the real Supabase call
+// against the placeholder env. Partial mock so `formatEventWhen` stays real —
+// the rows below assert the strings it actually produces.
+vi.mock('../../lib/events', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/events')>();
+  return {
+    ...actual,
+    fetchUpcomingEvents: (...args: unknown[]) => fetchUpcomingEvents(...args),
+  };
+});
+
 const fetchProfile = vi.fn();
 
 // The dashboard reads the member's display name for the header avatar. With
@@ -137,6 +153,21 @@ const base: MyBooking = {
   check_in_closes_at: null,
 };
 
+// The club every fixture booking above belongs to. This file used to seed
+// no clubs at all, which was never coherent — a booking is a seat at a club's
+// event, so a member holding one is in that club — and stopped working once
+// the dashboard gave a member in no clubs an early return of their own: the
+// "Your games" section this whole file is about is not drawn for someone with
+// nowhere to play.
+const CLUB = {
+  id: base.club_id,
+  name: base.club_name,
+  slug: 'riverside',
+  rhythm: 'Tuesday evenings',
+  visibility: 'private' as const,
+  timezone: base.club_timezone,
+};
+
 // A `booking()` helper, not four fields repeated per test: every fixture
 // in this file goes through this rather than spreading `base` inline, so
 // adding a field here (as the check-in fields just were) does not require
@@ -154,9 +185,14 @@ beforeEach(() => {
   recordAttendance.mockReset();
   clearAttendance.mockReset();
   fetchMyClubs.mockReset();
+  fetchUpcomingEvents.mockReset();
   fetchProfile.mockReset();
   fetchMyUpcomingBookings.mockResolvedValue([]);
-  fetchMyClubs.mockResolvedValue([]);
+  fetchMyClubs.mockResolvedValue([CLUB]);
+  // No open games beyond whatever the bookings themselves describe: this
+  // file is about the seats a member holds, not the ones they could still
+  // join.
+  fetchUpcomingEvents.mockResolvedValue([]);
   // No display name set, which is what the header's avatar falls back to a
   // person glyph for — the state every test here was already implicitly in
   // when the real call failed.
@@ -314,12 +350,11 @@ describe('Your games', () => {
     // The clubs are the point of this screen. A failed secondary fetch
     // says so quietly and gets out of the way.
     //
-    // "Your clubs" is on the Task 8 dashboard twice — the header's kicker
-    // above the scope name, and the club-list section title — hence
-    // findAllByText. The club list's own empty-state copy is the assertion
-    // that actually proves the clubs half was not blanked.
-    expect((await screen.findAllByText('Your clubs')).length).toBeGreaterThan(0);
-    expect(screen.getByText(/not in a club yet/i)).toBeTruthy();
+    // The club list is the header and the chip row now, not a section of
+    // cards, so that is where the assertion looks: the header naming the
+    // club in scope is what proves the clubs half was not blanked.
+    expect(await screen.findByText('Your club')).toBeTruthy();
+    expect(screen.getByRole('button', { name: `Manage ${CLUB.name}, ${CLUB.rhythm}` })).toBeTruthy();
     expect(screen.getByText('Could not load your games.')).toBeTruthy();
   });
 

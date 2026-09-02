@@ -182,7 +182,11 @@ export default function ClubDetailScreen() {
       setError(threadError ?? GENERIC_ERROR);
       return;
     }
-    router.push(`/messages/${threadId}`);
+    // The BOARD, not the flat thread screen. `open_thread_for_club` only
+    // ever returns a club thread, and a club's conversation is a board of
+    // posts now -- the flat screen would give an organizer a composer that
+    // silently starts a new post per line and a badge that never clears.
+    router.push(`/messages/club/${threadId}`);
   }
 
   return (
