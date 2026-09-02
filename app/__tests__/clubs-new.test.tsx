@@ -85,13 +85,13 @@ describe('new club screen', () => {
     expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
   });
 
-  // Removed with the tab bar's arrival: the Club tab is the same
-  // destination, so the chevron was a second way to do one thing -- the same
-  // reasoning the club detail screen's own "no longer draws its own back
-  // link" test already records.
-  it('no longer draws its own back link', async () => {
+  // Same reasoning as the club detail screen's own back-link test
+  // (2026-09-01-back-links-design.md): the Club tab renders active here
+  // too, so it reads as "you are here" rather than a way out.
+  it('draws a back link to the dashboard', async () => {
     render(<NewClubScreen />);
     await screen.findByText('Start a club');
-    expect(screen.queryByRole('button', { name: 'Back to your clubs' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Back to your clubs' }));
+    expect(push).toHaveBeenCalledWith('/clubs');
   });
 });

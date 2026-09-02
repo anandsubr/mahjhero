@@ -1,4 +1,4 @@
-import { Redirect, useLocalSearchParams } from 'expo-router';
+import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import Button from '../../../../../components/Button';
@@ -7,6 +7,7 @@ import CheckInControl from '../../../../../components/CheckInControl';
 import ErrorBanner from '../../../../../components/ErrorBanner';
 import Screen from '../../../../../components/Screen';
 import TabBar from '../../../../../components/TabBar';
+import { ChevronLeftIcon } from '../../../../../components/icons';
 import {
   attendanceSummary,
   checkInOpen,
@@ -142,6 +143,7 @@ export default function CheckInScreen() {
     id: string;
     eventId: string;
   }>();
+  const router = useRouter();
   const { session, loading } = useSession();
 
   const [rows, setRows] = useState<AttendanceRow[]>([]);
@@ -560,6 +562,17 @@ export default function CheckInScreen() {
 
   return (
     <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="club" />}>
+      <Button
+        variant="ghost"
+        big={false}
+        icon={<ChevronLeftIcon color={colors.accentColor} />}
+        onPress={() => router.push(`/clubs/${clubId}/events/${eventId}`)}
+        accessibilityLabel="Back to the game"
+        style={styles.backButton}
+      >
+        Game
+      </Button>
+
       <Text style={styles.heading}>Check-in</Text>
 
       {error ? <ErrorBanner message={error} /> : null}
@@ -713,6 +726,7 @@ export default function CheckInScreen() {
 const styles = StyleSheet.create({
   container: { padding: space[6], gap: space[4] },
   centered: { alignItems: 'center' },
+  backButton: { alignSelf: 'flex-start' },
   heading: {
     fontFamily: type.heading,
     fontSize: type.size.h2,

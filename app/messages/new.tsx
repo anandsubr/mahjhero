@@ -12,6 +12,7 @@ import Button from '../../components/Button';
 import ErrorBanner from '../../components/ErrorBanner';
 import Screen from '../../components/Screen';
 import TabBar from '../../components/TabBar';
+import { ChevronLeftIcon } from '../../components/icons';
 import { GENERIC_ERROR } from '../../lib/constants';
 import { initialsFrom } from '../../lib/dashboard';
 import {
@@ -32,10 +33,10 @@ type Candidate = { profile_id: string; display_name: string; meta: string };
  * Carries the tab bar with `active="messages"`, the same as every other
  * signed-in screen: the design source renders the bar as a sibling of every
  * `appScreens` entry, `compose` included — it is not gated to the four tabs
- * themselves. Its own "Messages" ghost back link, drawn above the heading
- * until the bar arrived, is gone now that the Messages tab reaches the
- * identical `/messages` route — the same call already made once for the
- * club detail screen (`app/clubs/[id]/index.tsx`'s own docstring).
+ * themselves. Also carries an explicit "Messages" ghost back link again
+ * (2026-09-01-back-links-design.md): the Messages tab reaches the identical
+ * `/messages` route, but renders as *already active* here, which reads as
+ * "you are here" rather than a way out.
  *
  * One step, not two: the message box and Send live on THIS screen, not on
  * a thread screen reached after picking who to message. The old two-step
@@ -269,6 +270,17 @@ export default function NewMessageScreen() {
 
   return (
     <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="messages" />}>
+      <Button
+        variant="ghost"
+        big={false}
+        icon={<ChevronLeftIcon color={colors.accentColor} />}
+        onPress={() => router.push('/messages')}
+        accessibilityLabel="Back to messages"
+        style={styles.backButton}
+      >
+        Messages
+      </Button>
+
       <Text style={styles.heading}>New message</Text>
 
       {error ? <ErrorBanner message={error} /> : null}
@@ -344,6 +356,7 @@ export default function NewMessageScreen() {
 const styles = StyleSheet.create({
   container: { padding: space[6], gap: space[3] },
   centered: { alignItems: 'center' },
+  backButton: { alignSelf: 'flex-start' },
   heading: {
     fontFamily: type.heading,
     fontSize: type.size.h3,

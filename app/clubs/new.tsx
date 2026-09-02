@@ -6,6 +6,7 @@ import ErrorBanner from '../../components/ErrorBanner';
 import Screen from '../../components/Screen';
 import TabBar from '../../components/TabBar';
 import TextField from '../../components/TextField';
+import { ChevronLeftIcon } from '../../components/icons';
 import { createClub } from '../../lib/clubs';
 import { useSession } from '../../lib/session';
 import { colors, space, type } from '../../lib/theme';
@@ -18,10 +19,11 @@ import { colors, space, type } from '../../lib/theme';
  * `appScreens` entry, `newclub` included — it is not gated to the four tabs
  * themselves.
  *
- * The `← Clubs` back link the artboard also draws is deliberately absent:
- * the Club tab reaches the identical `/clubs` route, so it was a second way
- * to do one thing — the same call already made once for the club detail
- * screen (`app/clubs/[id]/index.tsx`'s own docstring).
+ * Also carries an explicit `← Clubs` back link
+ * (2026-09-01-back-links-design.md): the Club tab reaches the identical
+ * `/clubs` route, but renders as *already active* on this screen — which
+ * reads as "you are here", not "go back" — so the way out the tab bar
+ * offers is technically present but invisible.
  */
 export default function NewClubScreen() {
   const { session, loading } = useSession();
@@ -56,6 +58,17 @@ export default function NewClubScreen() {
 
   return (
     <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="club" />}>
+      <Button
+        variant="ghost"
+        big={false}
+        icon={<ChevronLeftIcon color={colors.accentColor} />}
+        onPress={() => router.push('/clubs')}
+        accessibilityLabel="Back to your clubs"
+        style={styles.backButton}
+      >
+        Clubs
+      </Button>
+
       <Text style={styles.heading}>Start a club</Text>
       <Text style={styles.help}>
         A club is just a name and a rhythm. Invite people once it exists.
@@ -101,6 +114,7 @@ const styles = StyleSheet.create({
   centered: {
     alignItems: 'center',
   },
+  backButton: { alignSelf: 'flex-start' },
   heading: {
     fontFamily: type.heading,
     fontSize: type.size.h2,

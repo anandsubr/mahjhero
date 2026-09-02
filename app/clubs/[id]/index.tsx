@@ -17,6 +17,7 @@ import Screen from '../../../components/Screen';
 import SkillLevelPips from '../../../components/SkillLevelPips';
 import Tag from '../../../components/Tag';
 import TabBar from '../../../components/TabBar';
+import { ChevronLeftIcon } from '../../../components/icons';
 import {
   canInvite,
   createInvite,
@@ -190,6 +191,17 @@ export default function ClubDetailScreen() {
 
   return (
     <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="club" />}>
+      <Button
+        variant="ghost"
+        big={false}
+        icon={<ChevronLeftIcon color={colors.accentColor} />}
+        onPress={() => router.push('/clubs')}
+        accessibilityLabel="Back to your clubs"
+        style={styles.backButton}
+      >
+        Clubs
+      </Button>
+
       <DashboardHeader
         kicker="Your club"
         name={club.name}
@@ -429,6 +441,7 @@ const styles = StyleSheet.create({
   centered: {
     alignItems: 'center',
   },
+  backButton: { alignSelf: 'flex-start' },
   sectionTitle: {
     fontFamily: type.bodyBold,
     fontSize: type.size.body,

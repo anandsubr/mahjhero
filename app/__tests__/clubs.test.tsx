@@ -1210,12 +1210,14 @@ describe('club detail screen', () => {
     expect(screen.queryByRole('button', { name: 'Your profile' })).toBeNull();
   });
 
-  // Removed with the tab bar's arrival: the Club tab is the same
-  // destination, so the chevron was a second way to do one thing.
-  it('no longer draws its own back link', async () => {
+  // The tab bar's Club tab reaches the identical /clubs route, but renders
+  // as *already active* on this screen — which reads as "you are here",
+  // not "go back" — so this screen carries its own explicit back link
+  // (2026-09-01-back-links-design.md).
+  it('draws a back link to the dashboard', async () => {
     render(<ClubDetailScreen />);
-    expect(await screen.findByText('Upcoming')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Back to your clubs' })).toBeNull();
+    fireEvent.click(await screen.findByRole('button', { name: 'Back to your clubs' }));
+    expect(push).toHaveBeenCalledWith('/clubs');
   });
 });
 
