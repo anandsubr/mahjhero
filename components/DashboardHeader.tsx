@@ -118,6 +118,10 @@ export default function DashboardHeader({
     );
   }
 
+  // A View, not a fragment: these three Texts must stay one child of
+  // whatever caller renders this header, or they'd inherit that caller's
+  // own `gap` (every screen sets one) and spread apart instead of sitting
+  // at the tight `marginTop: 3` each Text style already carries.
   return (
     <View>
       {kicker.length > 0 ? (
