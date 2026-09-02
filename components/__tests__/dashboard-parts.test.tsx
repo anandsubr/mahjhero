@@ -233,8 +233,8 @@ import NeedAFourthCard from '../NeedAFourthCard';
 describe('NoticeBanner', () => {
   it('shows the message and dismisses', () => {
     const onDismiss = vi.fn();
-    render(<NoticeBanner message="You're in -- Thursday night." onDismiss={onDismiss} />);
-    expect(screen.getByText("You're in -- Thursday night.")).toBeTruthy();
+    render(<NoticeBanner message="You're in — Thursday night." onDismiss={onDismiss} />);
+    expect(screen.getByText("You're in — Thursday night.")).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
     expect(onDismiss).toHaveBeenCalled();
   });
@@ -245,13 +245,13 @@ describe('NeedAFourthCard', () => {
     render(
       <NeedAFourthCard
         clubName="Riverside Mah Jongg"
-        text="Thu, 3 Sep, 7:00 pm -- Thursday night"
+        text="Thu, 3 Sep, 7:00 pm — Thursday night"
         busy={false}
         onTake={() => {}}
       />,
     );
     expect(screen.getByText('Need a 4th · Riverside Mah Jongg')).toBeTruthy();
-    expect(screen.getByText('Thu, 3 Sep, 7:00 pm -- Thursday night')).toBeTruthy();
+    expect(screen.getByText('Thu, 3 Sep, 7:00 pm — Thursday night')).toBeTruthy();
   });
 
   it('takes the seat', () => {
