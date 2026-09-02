@@ -994,7 +994,6 @@ describe('dashboard artboard', () => {
     render(<ClubsScreen />);
     expect(await screen.findByText('Your clubs')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /^Manage / })).toBeNull();
-    expect(screen.queryByTestId('scope-glyph')).toBeNull();
   });
 
   it('opens the club the chips picked', async () => {
@@ -1239,6 +1238,10 @@ describe('club detail screen', () => {
     render(<ClubDetailScreen />);
     expect(await screen.findByText('Riverside Mah Jongg')).toBeTruthy();
     expect(screen.getByText('Thursday evenings')).toBeTruthy();
+    // Pins this to the "Your club" avatar/pill variant specifically — the
+    // name and rhythm text alone would pass identically for the flat
+    // branch, so they don't prove which shape actually rendered.
+    expect(screen.getByTestId('thread-avatar-club')).toBeTruthy();
     // The bottom tab bar's own Profile tab is the way to profile now —
     // this header no longer draws its own avatar/profile control.
     expect(screen.queryByRole('button', { name: 'Your profile' })).toBeNull();

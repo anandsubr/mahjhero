@@ -249,6 +249,13 @@ describe('DashboardHeader', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Start a club' }));
       expect(onPressNew).toHaveBeenCalled();
     });
+
+    it('draws no way to start a club unless it is given one', () => {
+      render(
+        <DashboardHeader kicker="Your club" name="Riverside Mah Jongg" meta="Thursdays, 7pm" onPressBack={() => {}} />,
+      );
+      expect(screen.queryByRole('button', { name: 'Start a club' })).toBeNull();
+    });
   });
 });
 

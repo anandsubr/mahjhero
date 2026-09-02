@@ -17,13 +17,14 @@ import { colors, radius, space, type } from '../lib/theme';
  * venues.tsx passes the club's own name as its kicker, never the literal
  * string 'Your club', so it always draws the flat shape.
  *
- * `onPressScope`, in the "Your club" shape, draws a pencil beside the name
- * and opens the club's roster, invites, venues and import — management, not
- * a form, hence "Manage", not "Edit". Omitted wherever there is no
- * destination for it: the all-clubs scope, and the two screens that already
- * render this same header for one particular club
+ * `onPressScope`, only meaningful in the "Your club" shape, draws a pencil
+ * beside the name and opens the club's roster, invites, venues and import —
+ * management, not a form, hence "Manage", not "Edit". Omitted wherever there
+ * is no destination for it: the all-clubs scope, and the two screens that
+ * already render this same header for one particular club
  * (app/clubs/[id]/index.tsx, venues.tsx), where the scope IS the
- * destination.
+ * destination. The flat branch below never reads it, so passing it there
+ * has no effect — no error, no control drawn.
  *
  * `onPressBack`, also only meaningful in the "Your club" shape, draws a
  * chevron and is app/clubs/index.tsx's way to clear its club filter back to

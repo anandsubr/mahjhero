@@ -210,6 +210,13 @@ export default function ClubDetailScreen() {
 
       <Text style={styles.sectionTitle}>Upcoming</Text>
 
+      {mayInvite ? (
+        <PlusButton
+          onPress={() => router.push(`/clubs/${id}/events/new`)}
+          accessibilityLabel="Add a game"
+        />
+      ) : null}
+
       {eventsFailed ? (
         <Text style={styles.help}>Could not load upcoming games.</Text>
       ) : events.length === 0 ? (
@@ -281,13 +288,6 @@ export default function ClubDetailScreen() {
           </Link>
         ))
       )}
-
-      {mayInvite ? (
-        <PlusButton
-          onPress={() => router.push(`/clubs/${id}/events/new`)}
-          accessibilityLabel="Add a game"
-        />
-      ) : null}
 
       {mayInvite ? (
         // "Message members" -- this button's label before it stopped

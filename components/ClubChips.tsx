@@ -4,7 +4,7 @@ import UnreadBadge from './UnreadBadge';
 import { ALL_CLUBS, initialsFrom } from '../lib/dashboard';
 import type { Chip } from '../lib/dashboard';
 import { unreadSuffix } from '../lib/messages';
-import { colors, radius, space, type } from '../lib/theme';
+import { colors, space, type } from '../lib/theme';
 
 /**
  * The artboard's club switcher, restyled icon-over-label — the same shape

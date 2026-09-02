@@ -78,8 +78,8 @@ export function useThreadRealtime(
     // included, which fires within the hour and on web tab focus. Depending
     // on the object would re-subscribe on every refresh for a value that
     // only changes on a real account switch -- the same reasoning
-    // lib/use-viewer.ts and app/profile.tsx already record for their own
-    // effects.
+    // lib/use-unread.ts's own docstring and app/profile.tsx already record
+    // for their own effects.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewerId, threadId]);
 }
