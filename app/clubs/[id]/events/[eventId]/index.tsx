@@ -686,7 +686,7 @@ export default function EventScreen() {
               accessibilityRole="button"
               accessibilityLabel={`Edit ${event.title}`}
             >
-              <PencilIcon size={16} color={colors.accentColor} />
+              <PencilIcon size={14} color={colors.accentColor} />
             </Pressable>
           ) : null}
         </View>
