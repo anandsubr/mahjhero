@@ -115,6 +115,20 @@ export const radius = {
 } as const;
 
 // ---------------------------------------------------------------------------
+// Control sizing
+// ---------------------------------------------------------------------------
+
+export const control = {
+  // The 50x50 circular touch target every icon-only circular button uses
+  // (PlusButton, and formerly DashboardHeader's own avatar/⊕ styles) — not
+  // on the space[] scale, which is sized for gaps and padding, not a fixed
+  // control dimension.
+  circleSize: 50,
+  // The hairline border every outlined circular control in this app uses.
+  hairline: 1,
+} as const;
+
+// ---------------------------------------------------------------------------
 // Shadow (RN has no box-shadow; these are shadow* + elevation equivalents)
 // ---------------------------------------------------------------------------
 
@@ -196,5 +210,5 @@ export const layout = {
   contentMaxWidth: 440,
 } as const;
 
-export const theme = { colors, space, radius, shadow, type, layout };
+export const theme = { colors, space, radius, shadow, type, layout, control };
 export default theme;

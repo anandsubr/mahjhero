@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet } from 'react-native';
 import { PlusIcon } from './icons';
-import { colors, radius } from '../lib/theme';
+import { colors, control, radius } from '../lib/theme';
 
 /**
  * The circular icon-only "+" this app uses everywhere something new gets
@@ -34,11 +34,11 @@ const styles = StyleSheet.create({
   // past the 3:1 a control boundary needs. Carried over unchanged from
   // DashboardHeader's own former `newClub` style.
   button: {
-    width: 50,
-    height: 50,
+    width: control.circleSize,
+    height: control.circleSize,
     flexShrink: 0,
     borderRadius: radius.pill,
-    borderWidth: 1,
+    borderWidth: control.hairline,
     borderColor: colors.textMuted,
     backgroundColor: 'transparent',
     alignItems: 'center',
