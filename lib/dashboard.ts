@@ -53,9 +53,8 @@ export function headerScope(clubs: Club[], selected: string): HeaderScope {
   if (!club) {
     return {
       // No kicker, and a shorter name. "YOUR CLUBS" above "All your clubs"
-      // was the same words twice, and the width it cost is what the chip
-      // row's own "New club" tile now uses. The single-club scope below
-      // keeps its kicker: there "Your club" and the club's own name differ.
+      // was the same words twice. The single-club scope below keeps its
+      // kicker: there "Your club" and the club's own name differ.
       kicker: '',
       name: 'Your clubs',
       // Always plural: this branch is reached only by an empty list ("0
