@@ -1340,7 +1340,10 @@ describe('club detail screen upcoming events', () => {
     expect(
       await screen.findByText('No games scheduled yet. Add one and everyone in the club will see it.'),
     ).toBeTruthy();
-    expect(screen.getByText('Add a game')).toBeTruthy();
+    // Icon-only now -- no visible "Add a game" text, but still reachable by
+    // its accessible name.
+    expect(screen.queryByText('Add a game')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Add a game' })).toBeTruthy();
     expect(screen.getByText('Venues')).toBeTruthy();
   });
 

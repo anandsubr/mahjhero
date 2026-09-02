@@ -12,6 +12,7 @@ import Button from '../../../components/Button';
 import Card from '../../../components/Card';
 import DashboardHeader from '../../../components/DashboardHeader';
 import ErrorBanner from '../../../components/ErrorBanner';
+import PlusButton from '../../../components/PlusButton';
 import Screen from '../../../components/Screen';
 import SkillLevelPips from '../../../components/SkillLevelPips';
 import Tag from '../../../components/Tag';
@@ -274,13 +275,10 @@ export default function ClubDetailScreen() {
       )}
 
       {mayInvite ? (
-        <Button
-          variant="secondary"
+        <PlusButton
           onPress={() => router.push(`/clubs/${id}/events/new`)}
           accessibilityLabel="Add a game"
-        >
-          Add a game
-        </Button>
+        />
       ) : null}
 
       {mayInvite ? (
