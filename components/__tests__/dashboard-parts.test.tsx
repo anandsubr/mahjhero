@@ -95,7 +95,7 @@ describe('ClubChips', () => {
   // the accessible name computed from children (the badge included) rather
   // than merging with it. The count has to be composed into the chip's own
   // label for a screen-reader user to ever hear it.
-  it('composes the unread count into the chip’s accessible name', () => {
+  it("composes the unread count into the chip's accessible name", () => {
     render(
       <ClubChips
         chips={CHIPS}
@@ -108,6 +108,15 @@ describe('ClubChips', () => {
       screen.getByRole('button', { name: 'Riverside Mah Jongg, 4 unread' }),
     ).toBeTruthy();
     expect(screen.getByRole('button', { name: 'All clubs' })).toBeTruthy();
+  });
+
+  it("shows each club's initials in its tile, and a people glyph - not initials - for All clubs", () => {
+    render(<ClubChips chips={CHIPS} selected={ALL_CLUBS} onSelect={() => {}} />);
+    expect(screen.getByText('RM')).toBeTruthy();
+    // initialsFrom('All clubs') would compute 'AC' -- asserting its absence
+    // is what proves the ALL_CLUBS tile takes the glyph branch instead of
+    // initialling its own chip label like every other tile does.
+    expect(screen.queryByText('AC')).toBeNull();
   });
 });
 
@@ -224,8 +233,8 @@ import NeedAFourthCard from '../NeedAFourthCard';
 describe('NoticeBanner', () => {
   it('shows the message and dismisses', () => {
     const onDismiss = vi.fn();
-    render(<NoticeBanner message="You're in — Thursday night." onDismiss={onDismiss} />);
-    expect(screen.getByText("You're in — Thursday night.")).toBeTruthy();
+    render(<NoticeBanner message="You're in -- Thursday night." onDismiss={onDismiss} />);
+    expect(screen.getByText("You're in -- Thursday night.")).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
     expect(onDismiss).toHaveBeenCalled();
   });
@@ -236,13 +245,13 @@ describe('NeedAFourthCard', () => {
     render(
       <NeedAFourthCard
         clubName="Riverside Mah Jongg"
-        text="Thu, 3 Sep, 7:00 pm — Thursday night"
+        text="Thu, 3 Sep, 7:00 pm -- Thursday night"
         busy={false}
         onTake={() => {}}
       />,
     );
     expect(screen.getByText('Need a 4th · Riverside Mah Jongg')).toBeTruthy();
-    expect(screen.getByText('Thu, 3 Sep, 7:00 pm — Thursday night')).toBeTruthy();
+    expect(screen.getByText('Thu, 3 Sep, 7:00 pm -- Thursday night')).toBeTruthy();
   });
 
   it('takes the seat', () => {
