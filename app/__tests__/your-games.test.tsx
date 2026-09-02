@@ -354,7 +354,7 @@ describe('Your games', () => {
     // The club list is the header and the chip row now, not a section of
     // cards, so that is where the assertion looks: the header naming the
     // club in scope is what proves the clubs half was not blanked.
-    expect(await screen.findByText('Your club')).toBeTruthy();
+    expect(await screen.findByText(CLUB.name)).toBeTruthy();
     expect(screen.getByRole('button', { name: `Manage ${CLUB.name}, ${CLUB.rhythm}` })).toBeTruthy();
     expect(screen.getByText('Could not load your games.')).toBeTruthy();
   });

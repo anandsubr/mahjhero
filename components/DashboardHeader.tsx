@@ -1,32 +1,42 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { PencilIcon } from './icons';
+import { ChevronLeftIcon, PencilIcon } from './icons';
 import PlusButton from './PlusButton';
-import { colors, space, type } from '../lib/theme';
+import ThreadAvatar from './ThreadAvatar';
+import { colors, radius, space, type } from '../lib/theme';
 
 /**
- * The artboard's dashboard header: scope on the left, the member on the
- * right.
+ * The artboard's dashboard header.
  *
- * The artboard draws a chevron beside the kicker, tapping through to a
- * separate "Your clubs" screen. This screen used to keep that list on itself,
- * so the chevron had nowhere to go and was not drawn — an affordance that
- * does nothing is worse than none. The club list is now the chip row alone,
- * and the way into a club is this header, so the glyph has a destination
- * again: `onPressScope` opens the club currently in scope.
+ * Two shapes. The all-clubs scope and app/clubs/[id]/venues.tsx's "Venues"
+ * scope draw a flat kicker/name/meta block, optionally with a ⊕ beside it
+ * (`onPressNew`) for starting a club. The single-club scope —
+ * `kicker === 'Your club'`, the one value lib/dashboard.ts's `headerScope`
+ * and app/clubs/[id]/index.tsx ever pass for it — instead centres the
+ * club's own identity: an avatar and a name pill, the same treatment the
+ * messages board header uses for a club thread (app/messages/club/new.tsx).
+ * venues.tsx passes the club's own name as its kicker, never the literal
+ * string 'Your club', so it always draws the flat shape.
  *
- * It is a pencil, not the artboard's chevron. The destination is the club's
- * roster, invites, venues and import — management — and a chevron says only
- * "somewhere else". "Manage", not "Edit", for the same reason: there is no
- * single form behind it.
+ * `onPressScope`, in the "Your club" shape, draws a pencil beside the name
+ * and opens the club's roster, invites, venues and import — management, not
+ * a form, hence "Manage", not "Edit". Omitted wherever there is no
+ * destination for it: the all-clubs scope, and the two screens that already
+ * render this same header for one particular club
+ * (app/clubs/[id]/index.tsx, venues.tsx), where the scope IS the
+ * destination.
  *
- * Both call-to-action props below are optional. `onPressScope` goes missing
- * whenever there is no single club to open into — the all-clubs scope, where
- * there is nothing single to open, and the two screens that already render
- * this same header for one particular club, `app/clubs/[id]/index.tsx` and
- * `app/clubs/[id]/venues.tsx`, where the scope IS the destination rather
- * than a link to it. `onPressNew` goes missing at those same two screens for
- * a different reason: there is no club list there to add to. See each
- * prop's own comment below for what its control actually draws.
+ * `onPressBack`, also only meaningful in the "Your club" shape, draws a
+ * chevron and is app/clubs/index.tsx's way to clear its club filter back to
+ * "All clubs" — client state, not navigation. app/clubs/[id]/index.tsx
+ * renders this same shape but never passes it: that screen's way back is
+ * the separate ghost Button above this header
+ * (2026-09-01-back-links-design.md), a real navigation rather than a filter
+ * clear, so the two were kept apart rather than overloading one chevron
+ * with both meanings.
+ *
+ * `onPressNew` draws the ⊕ "start a club" control in either shape. Omitted
+ * at app/clubs/[id]/index.tsx and venues.tsx for the same reason
+ * `onPressScope` is: there is no club list there to add to.
  */
 export default function DashboardHeader({
   kicker,
@@ -34,62 +44,85 @@ export default function DashboardHeader({
   meta,
   onPressNew,
   onPressScope,
+  onPressBack,
 }: {
   kicker: string;
   name: string;
   meta: string;
-  /** Draws the "start a club" control. Omitted where there is no club list
-   *  to add to — the club detail and venues screens render this same header. */
   onPressNew?: () => void;
   onPressScope?: () => void;
+  onPressBack?: () => void;
 }) {
-  const scope = (
-    <>
-      <View style={styles.kickerRow}>
+  if (kicker === 'Your club') {
+    return (
+      <View style={styles.clubHeader}>
+        {onPressBack || onPressNew ? (
+          <View style={styles.clubTopRow}>
+            {/* Fixed 44x44 footprint whether or not the chevron itself
+                draws, so the ⊕ beside it stays in the same place either
+                way — app/clubs/index.tsx passes both together except for a
+                one-club member, who gets the ⊕ alone. */}
+            <View style={styles.clubBack}>
+              {onPressBack ? (
+                <Pressable
+                  onPress={onPressBack}
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear club filter"
+                >
+                  <ChevronLeftIcon color={colors.text} size={22} />
+                </Pressable>
+              ) : null}
+            </View>
+            {onPressNew ? (
+              <PlusButton onPress={onPressNew} accessibilityLabel="Start a club" />
+            ) : null}
+          </View>
+        ) : null}
+        <View style={styles.clubCenter}>
+          <ThreadAvatar kind="club" name={name} size={72} />
+          {onPressScope ? (
+            <Pressable
+              onPress={onPressScope}
+              accessibilityRole="button"
+              // See this file's header comment for why the label composes
+              // `meta` -- accessibilityLabel replaces the accessible name
+              // react-native-web would otherwise compute from this
+              // Pressable's children, so the rhythm visible in the meta
+              // line below goes unheard unless it rides along here too.
+              accessibilityLabel={
+                meta.length > 0 ? `Manage ${name}, ${meta}` : `Manage ${name}`
+              }
+              style={styles.clubNamePill}
+            >
+              <Text numberOfLines={1} style={styles.clubNamePillText}>
+                {name}
+              </Text>
+              <PencilIcon size={14} color={colors.accentColor} />
+            </Pressable>
+          ) : (
+            <View style={styles.clubNamePill}>
+              <Text numberOfLines={1} style={styles.clubNamePillText}>
+                {name}
+              </Text>
+            </View>
+          )}
+          {meta.length > 0 ? <Text style={styles.clubMeta}>{meta}</Text> : null}
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.row}>
+      <View style={styles.scope}>
         {kicker.length > 0 ? (
           <Text testID="scope-kicker" style={styles.kicker}>
             {kicker}
           </Text>
         ) : null}
-        {onPressScope ? (
-          <View testID="scope-glyph">
-            <PencilIcon size={14} color={colors.accentColor} />
-          </View>
-        ) : null}
+        <Text style={styles.name}>{name}</Text>
+        {meta.length > 0 ? <Text style={styles.meta}>{meta}</Text> : null}
       </View>
-      <Text style={styles.name}>{name}</Text>
-      {meta.length > 0 ? <Text style={styles.meta}>{meta}</Text> : null}
-    </>
-  );
-
-  return (
-    <View style={styles.row}>
-      {onPressScope ? (
-        <Pressable
-          onPress={onPressScope}
-          accessibilityRole="button"
-          // The name, not the kicker: "Manage Riverside Mah Jongg" says what
-          // this acts on, where "Manage Your club" says nothing. See this
-          // file's header comment for why the label has to carry it — aria-label
-          // replaces the name computed from the children below, so a screen
-          // reader never hears the club name from the <Text> itself. The
-          // same replacement swallows `meta` (the club's rhythm, e.g.
-          // "Thursday evenings"): it is visible right below the name, but
-          // without it in the label a VoiceOver user would hear the name and
-          // nothing else, while the all-clubs scope (a plain View, no label
-          // override) still reads its meta normally. So the label composes
-          // both, guarding on the same `meta.length > 0` the visible <Text>
-          // below already uses — an empty rhythm gets no trailing comma.
-          accessibilityLabel={
-            meta.length > 0 ? `Manage ${name}, ${meta}` : `Manage ${name}`
-          }
-          style={styles.scope}
-        >
-          {scope}
-        </Pressable>
-      ) : (
-        <View style={styles.scope}>{scope}</View>
-      )}
       {onPressNew ? (
         <PlusButton onPress={onPressNew} accessibilityLabel="Start a club" />
       ) : null}
@@ -107,15 +140,6 @@ const styles = StyleSheet.create({
   scope: {
     flex: 1,
     minWidth: 0,
-  },
-  // The kicker and its glyph sit on one line. A plain <Text> cannot hold
-  // the icon without the icon inheriting text layout, so the row is a View
-  // and the kicker keeps its own type styles. The glyph is a pencil now —
-  // see this file's header comment for why it stopped being a chevron.
-  kickerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space[1],
   },
   kicker: {
     fontFamily: type.bodySemiBold,
@@ -136,5 +160,41 @@ const styles = StyleSheet.create({
     fontSize: type.size.helper,
     color: colors.textMuted,
     marginTop: 3,
+  },
+  clubHeader: { gap: space[3] },
+  clubTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  clubBack: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  clubCenter: { alignItems: 'center', gap: space[2] },
+  // Same pill treatment as the messages board header's own name pill
+  // (app/messages/club/new.tsx) — maxWidth, radius and padding copied
+  // rather than re-derived.
+  clubNamePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[1],
+    maxWidth: 240,
+    backgroundColor: colors.surface,
+    borderRadius: radius.pill,
+    paddingHorizontal: space[3],
+    paddingVertical: space[1],
+  },
+  clubNamePillText: {
+    fontFamily: type.bodySemiBold,
+    fontSize: type.size.body,
+    color: colors.text,
+  },
+  clubMeta: {
+    fontFamily: type.bodyRegular,
+    fontSize: type.size.helper,
+    color: colors.textMuted,
   },
 });

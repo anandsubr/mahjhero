@@ -479,6 +479,18 @@ export default function ClubsScreen() {
         onPressScope={
           scopeClubId ? () => router.push(`/clubs/${scopeClubId}`) : undefined
         }
+        // Only when the chip row itself is drawn (list.length > 1) — a
+        // one-club member's `selected` never leaves ALL_CLUBS (the chip row
+        // that would change it is not drawn below two clubs, per
+        // ClubChips's own docstring), so there is nothing to clear for them.
+        onPressBack={
+          list.length > 1
+            ? () => {
+                setSelected(ALL_CLUBS);
+                setNotice(null);
+              }
+            : undefined
+        }
       />
 
       {/*

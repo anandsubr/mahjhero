@@ -295,7 +295,6 @@ describe('clubs list', () => {
     render(<ClubsScreen />);
     expect(await screen.findByText('Riverside Mah Jongg')).toBeTruthy();
     expect(screen.getByText('Thursday evenings')).toBeTruthy();
-    expect(screen.getByText('Your club')).toBeTruthy();
   });
 
   // "Your games" (Task 13) stacked a whole section below the header and chip
@@ -391,7 +390,10 @@ describe('dashboard artboard', () => {
 
     expect(screen.queryByText('Riverside game')).toBeNull();
     expect(screen.getByText('Harbour game')).toBeTruthy();
-    expect(screen.getByText('Your club')).toBeTruthy();
+    // The header switched to Harbour's own scope. Role-based, not
+    // getByText('Harbour') — that text is now ambiguous, since Harbour's
+    // own chip tile renders the same label alongside the header.
+    expect(screen.getByRole('button', { name: /^Manage Harbour/ })).toBeTruthy();
   });
 
   // A lone "All clubs" pill beside a lone club pill filters nothing, so the
@@ -1202,8 +1204,7 @@ describe('club detail screen', () => {
 
   it('names the club in the dashboard header', async () => {
     render(<ClubDetailScreen />);
-    expect(await screen.findByText('Your club')).toBeTruthy();
-    expect(screen.getByText('Riverside Mah Jongg')).toBeTruthy();
+    expect(await screen.findByText('Riverside Mah Jongg')).toBeTruthy();
     expect(screen.getByText('Thursday evenings')).toBeTruthy();
     // The bottom tab bar's own Profile tab is the way to profile now —
     // this header no longer draws its own avatar/profile control.

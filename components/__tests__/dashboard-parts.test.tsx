@@ -130,15 +130,13 @@ describe('DashboardHeader', () => {
     expect(screen.queryByTestId('scope-kicker')).toBeNull();
   });
 
+  // A kicker the flat layout can actually be given in production --
+  // app/clubs/[id]/venues.tsx passes the club's own name here. "Your club"
+  // is the one value that instead takes the variant below.
   it('still draws a kicker when it is given one', () => {
-    render(
-      <DashboardHeader
-        kicker="Your club"
-        name="Riverside Mah Jongg"
-        meta="Thursdays, 7pm"
-      />,
-    );
+    render(<DashboardHeader kicker="Riverside Mah Jongg" name="Venues" meta="" />);
     expect(screen.getByTestId('scope-kicker')).toBeTruthy();
+    expect(screen.getByText('Venues')).toBeTruthy();
   });
 
   it('shows the scope name and meta with no kicker', () => {
@@ -147,72 +145,7 @@ describe('DashboardHeader', () => {
     expect(screen.getByText('2 clubs')).toBeTruthy();
   });
 
-  it('leaves the scope inert when there is nothing to open', () => {
-    render(<DashboardHeader kicker="Your clubs" name="Your clubs" meta="2 clubs" />);
-    expect(screen.queryByRole('button', { name: /^Manage / })).toBeNull();
-    expect(screen.queryByTestId('scope-glyph')).toBeNull();
-  });
-
-  it('opens the club in scope when the scope is pressed', () => {
-    const onPressScope = vi.fn();
-    render(
-      <DashboardHeader
-        kicker="Your club"
-        name="Riverside Mah Jongg"
-        meta="Thursdays, 7pm"
-        onPressScope={onPressScope}
-      />,
-    );
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Manage Riverside Mah Jongg, Thursdays, 7pm' }),
-    );
-    expect(onPressScope).toHaveBeenCalled();
-    expect(screen.getByTestId('scope-glyph')).toBeTruthy();
-  });
-
-  it('folds the rhythm into the scope label when there is one', () => {
-    render(
-      <DashboardHeader
-        kicker="Your club"
-        name="Riverside Mah Jongg"
-        meta="Thursdays, 7pm"
-        onPressScope={() => {}}
-      />,
-    );
-    expect(
-      screen.getByRole('button', { name: 'Manage Riverside Mah Jongg, Thursdays, 7pm' }),
-    ).toBeTruthy();
-  });
-
-  it('leaves the scope label as just the name when there is no rhythm to lose', () => {
-    render(
-      <DashboardHeader
-        kicker="Your club"
-        name="Riverside Mah Jongg"
-        meta=""
-        onPressScope={() => {}}
-      />,
-    );
-    expect(
-      screen.getByRole('button', { name: 'Manage Riverside Mah Jongg' }),
-    ).toBeTruthy();
-  });
-
-  it('still shows the scope text when it is pressable', () => {
-    render(
-      <DashboardHeader
-        kicker="Your club"
-        name="Riverside Mah Jongg"
-        meta="Thursdays, 7pm"
-        onPressScope={() => {}}
-      />,
-    );
-    expect(screen.getByText('Your club')).toBeTruthy();
-    expect(screen.getByText('Riverside Mah Jongg')).toBeTruthy();
-    expect(screen.getByText('Thursdays, 7pm')).toBeTruthy();
-  });
-
-  it('starts a club from the header when it is given a way to', () => {
+  it('starts a club from the flat header when it is given a way to', () => {
     const onPressNew = vi.fn();
     render(<DashboardHeader kicker="" name="Your clubs" meta="2 clubs" onPressNew={onPressNew} />);
     fireEvent.click(screen.getByRole('button', { name: 'Start a club' }));
@@ -220,10 +153,102 @@ describe('DashboardHeader', () => {
   });
 
   it('draws no way to start a club unless it is given one', () => {
-    render(
-      <DashboardHeader kicker="Your club" name="Riverside Mah Jongg" meta="Thursdays, 7pm" />,
-    );
+    render(<DashboardHeader kicker="" name="Your clubs" meta="2 clubs" />);
     expect(screen.queryByRole('button', { name: 'Start a club' })).toBeNull();
+  });
+
+  describe('the "Your club" variant', () => {
+    it('shows the club’s avatar, name and rhythm instead of a kicker', () => {
+      render(
+        <DashboardHeader kicker="Your club" name="Riverside Mah Jongg" meta="Thursdays, 7pm" />,
+      );
+      expect(screen.getByTestId('thread-avatar-club')).toBeTruthy();
+      expect(screen.getByText('Riverside Mah Jongg')).toBeTruthy();
+      expect(screen.getByText('Thursdays, 7pm')).toBeTruthy();
+      expect(screen.queryByTestId('scope-kicker')).toBeNull();
+      expect(screen.queryByText('Your club')).toBeNull();
+    });
+
+    it('draws no rhythm line when there is none to show', () => {
+      render(<DashboardHeader kicker="Your club" name="Riverside Mah Jongg" meta="" />);
+      expect(screen.getByText('Riverside Mah Jongg')).toBeTruthy();
+      expect(screen.queryByText('Thursdays, 7pm')).toBeNull();
+    });
+
+    it('opens the club’s management screen when the name pill is pressed', () => {
+      const onPressScope = vi.fn();
+      render(
+        <DashboardHeader
+          kicker="Your club"
+          name="Riverside Mah Jongg"
+          meta="Thursdays, 7pm"
+          onPressScope={onPressScope}
+        />,
+      );
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Manage Riverside Mah Jongg, Thursdays, 7pm' }),
+      );
+      expect(onPressScope).toHaveBeenCalled();
+    });
+
+    it('folds the rhythm into the manage label, and drops it when there is none', () => {
+      render(
+        <DashboardHeader
+          kicker="Your club"
+          name="Riverside Mah Jongg"
+          meta=""
+          onPressScope={() => {}}
+        />,
+      );
+      expect(
+        screen.getByRole('button', { name: 'Manage Riverside Mah Jongg' }),
+      ).toBeTruthy();
+    });
+
+    it('draws no manage button unless it is given a way to manage', () => {
+      render(
+        <DashboardHeader kicker="Your club" name="Riverside Mah Jongg" meta="Thursdays, 7pm" />,
+      );
+      expect(screen.queryByRole('button', { name: /^Manage / })).toBeNull();
+      // The name still renders, as plain text this time.
+      expect(screen.getByText('Riverside Mah Jongg')).toBeTruthy();
+    });
+
+    it('clears the club filter when the back chevron is pressed', () => {
+      const onPressBack = vi.fn();
+      render(
+        <DashboardHeader
+          kicker="Your club"
+          name="Riverside Mah Jongg"
+          meta="Thursdays, 7pm"
+          onPressBack={onPressBack}
+        />,
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Clear club filter' }));
+      expect(onPressBack).toHaveBeenCalled();
+    });
+
+    it('draws no chevron unless it is given one', () => {
+      render(
+        <DashboardHeader kicker="Your club" name="Riverside Mah Jongg" meta="Thursdays, 7pm" />,
+      );
+      expect(screen.queryByRole('button', { name: 'Clear club filter' })).toBeNull();
+    });
+
+    it('still starts a club from this variant, beside the chevron', () => {
+      const onPressNew = vi.fn();
+      render(
+        <DashboardHeader
+          kicker="Your club"
+          name="Riverside Mah Jongg"
+          meta="Thursdays, 7pm"
+          onPressBack={() => {}}
+          onPressNew={onPressNew}
+        />,
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Start a club' }));
+      expect(onPressNew).toHaveBeenCalled();
+    });
   });
 });
 
