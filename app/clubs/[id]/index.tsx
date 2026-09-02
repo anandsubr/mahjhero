@@ -3,7 +3,6 @@ import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Platform,
-  Pressable,
   StyleSheet,
   Text,
   View,
@@ -12,7 +11,6 @@ import Button from '../../../components/Button';
 import Card from '../../../components/Card';
 import DashboardHeader from '../../../components/DashboardHeader';
 import ErrorBanner from '../../../components/ErrorBanner';
-import PlusButton from '../../../components/PlusButton';
 import Screen from '../../../components/Screen';
 import SkillLevelPips from '../../../components/SkillLevelPips';
 import Tag from '../../../components/Tag';
@@ -27,12 +25,6 @@ import {
 } from '../../../lib/clubs';
 import type { Club, ClubInvite, ClubMember } from '../../../lib/clubs';
 import { GENERIC_ERROR } from '../../../lib/constants';
-import {
-  eventStatusLine,
-  fetchUpcomingEvents,
-  formatEventWhen,
-} from '../../../lib/events';
-import type { ClubEvent } from '../../../lib/events';
 import { openThreadForClub } from '../../../lib/messages';
 import { useSession } from '../../../lib/session';
 import { colors, space, type } from '../../../lib/theme';
@@ -49,15 +41,8 @@ export default function ClubDetailScreen() {
   const [club, setClub] = useState<Club | null>(null);
   const [roster, setRoster] = useState<ClubMember[]>([]);
   const [invites, setInvites] = useState<ClubInvite[]>([]);
-  const [events, setEvents] = useState<ClubEvent[]>([]);
   const [ready, setReady] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
-  // Kept separate from `loadFailed`: that flag blanks the whole screen, which
-  // is right when the club/roster/invites fetch fails (there is nothing to
-  // show). A failed events fetch is different — the club name, roster and
-  // invites all still loaded fine, so only the Upcoming section should
-  // degrade, not the entire page.
-  const [eventsFailed, setEventsFailed] = useState(false);
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Written synchronously and cleared on every exit path, the same shape
@@ -85,11 +70,6 @@ export default function ClubDetailScreen() {
         setReady(true);
       },
     );
-    fetchUpcomingEvents(id).then((result) => {
-      if (cancelled) return;
-      if (result === null) setEventsFailed(true);
-      else setEvents(result);
-    });
     return () => {
       cancelled = true;
     };
@@ -207,87 +187,6 @@ export default function ClubDetailScreen() {
         name={club.name}
         meta={club.rhythm}
       />
-
-      <Text style={styles.sectionTitle}>Upcoming</Text>
-
-      {mayInvite ? (
-        <PlusButton
-          onPress={() => router.push(`/clubs/${id}/events/new`)}
-          accessibilityLabel="Add a game"
-        />
-      ) : null}
-
-      {eventsFailed ? (
-        <Text style={styles.help}>Could not load upcoming games.</Text>
-      ) : events.length === 0 ? (
-        <Text style={styles.help}>
-          {mayInvite
-            ? 'No games scheduled yet. Add one and everyone in the club will see it.'
-            : 'No games scheduled yet.'}
-        </Text>
-      ) : (
-        events.map((event) => (
-          <Link
-            key={event.id}
-            href={`/clubs/${id}/events/${event.id}`}
-            asChild
-          >
-            {/*
-              Pressable rather than Card, for the reason app/clubs/index.tsx
-              documents at length: Card is a plain function component that
-              neither declares accessibility props nor spreads unrecognised
-              ones onto its View, so `Link asChild` cloning onto it drops the
-              handler and leaves the card inert.
-            */}
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`${event.title}, ${formatEventWhen(
-                event.starts_at,
-                club.timezone,
-              )}`}
-            >
-              <Card>
-                <View style={styles.row}>
-                  <Text style={styles.memberName}>{event.title}</Text>
-                  {event.status === 'cancelled' ? (
-                    <Tag>Cancelled</Tag>
-                  ) : null}
-                </View>
-                <Text style={styles.help}>
-                  {formatEventWhen(event.starts_at, club.timezone)}
-                  {' · '}
-                  {event.venue_name}
-                </Text>
-                <Text style={styles.help}>
-                  {event.table_count}{' '}
-                  {event.table_count === 1 ? 'table' : 'tables'}
-                </Text>
-                {/*
-                  Task 14: where the viewer stands on THIS game — their own
-                  seat/waitlist place first, then a call for a fourth aimed
-                  at everybody who is not already in, then the plain seat
-                  count. Your own state always wins (see eventStatusLine's
-                  doc comment in lib/events.ts) — a member already seated is
-                  never told the table needs a fourth.
-                */}
-                <Text style={styles.help}>
-                  {eventStatusLine(
-                    {
-                      starts_at: event.starts_at,
-                      event_tables: event.event_tables,
-                      bookings: event.bookings,
-                      tables_labels: Object.fromEntries(
-                        event.event_tables.map((t) => [t.id, t.label]),
-                      ),
-                    },
-                    userId ?? '',
-                  )}
-                </Text>
-              </Card>
-            </Pressable>
-          </Link>
-        ))
-      )}
 
       {mayInvite ? (
         // "Message members" -- this button's label before it stopped
