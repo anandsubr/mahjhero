@@ -449,7 +449,8 @@ describe('dashboard artboard', () => {
     render(<ClubsScreen />);
     expect(await screen.findByRole('button', { name: 'Riverside Mah Jongg' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Harbour' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Start a club' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Start a club' }));
+    expect(push).toHaveBeenCalledWith('/clubs/new');
   });
 
   it('adds a game for the club in view from the header +', async () => {
@@ -473,7 +474,7 @@ describe('dashboard artboard', () => {
   // row at two clubs, with a New club tile" above) — only the header's own
   // + ("Add a game") is what an ambiguous scope withholds, for want of a
   // single club to add the game to.
-  it('offers no + at all while every club is in scope', async () => {
+  it('offers no header + while every club is in scope', async () => {
     fetchMyClubs.mockResolvedValue([CLUB, { ...CLUB, id: 'club-2', name: 'Harbour' }]);
     render(<ClubsScreen />);
     expect(await screen.findByText('Your clubs')).toBeTruthy();
