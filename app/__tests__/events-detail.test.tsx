@@ -287,14 +287,18 @@ describe('screen chrome', () => {
     expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
   });
 
-  // This screen's own back link goes to /clubs/club-1 -- a specific club,
-  // not the Club tab's own /clubs -- so it is a genuinely different
-  // destination and stays, the same reasoning venues.test.tsx documents for
-  // its own "Back to the club" button.
-  it('keeps its back link to the club, a different destination from the Club tab', async () => {
+  // This screen's back link now goes to /clubs -- the dashboard, not the
+  // specific club -- because the club management page no longer lists
+  // games (2026-09-02-club-page-games-and-back-links-design.md): the
+  // dashboard is the only real way into this screen left, so that is where
+  // back goes. The Club tab reaches the same /clubs route but renders as
+  // already-active here, which reads as "you are here" rather than "go
+  // back" -- the same reasoning every other back link on this branch
+  // documents -- so the explicit link still earns its place.
+  it('draws a back link to the dashboard', async () => {
     render(<EventScreen />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Back to the club' }));
-    expect(push).toHaveBeenCalledWith('/clubs/club-1');
+    fireEvent.click(await screen.findByRole('button', { name: 'Back to your clubs' }));
+    expect(push).toHaveBeenCalledWith('/clubs');
   });
 });
 

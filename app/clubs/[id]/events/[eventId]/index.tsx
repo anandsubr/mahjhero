@@ -657,22 +657,24 @@ export default function EventScreen() {
   return (
     <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="club" />}>
       {/*
-        Kept, not dropped: this goes to /clubs/${clubId}, a specific club,
-        which is a different destination from the Club tab's own /clubs (see
-        app/clubs/[id]/venues.tsx's identical "Back to the club" button, and
-        app/clubs/[id]/index.tsx for the contrasting case where a back link
-        WAS dropped because its destination and the tab's were the same
-        place).
+        Goes to /clubs, not /clubs/${clubId}: the club management page no
+        longer lists games (2026-09-02-club-page-games-and-back-links-
+        design.md deleted its own "Upcoming" section), so the dashboard is
+        the only real way into this screen left. The Club tab reaches the
+        same /clubs route but renders as already-active here, which reads
+        as "you are here" rather than "go back", so this explicit link
+        still earns its place — same reasoning every other back link on
+        this branch documents.
       */}
       <Button
         variant="ghost"
         big={false}
         icon={<ChevronLeftIcon color={colors.accentColor} />}
-        onPress={() => router.push(`/clubs/${clubId}`)}
-        accessibilityLabel="Back to the club"
+        onPress={() => router.push('/clubs')}
+        accessibilityLabel="Back to your clubs"
         style={styles.backButton}
       >
-        {club.name}
+        Clubs
       </Button>
 
       <View style={styles.row}>
