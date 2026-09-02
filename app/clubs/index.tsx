@@ -412,7 +412,37 @@ export default function ClubsScreen() {
   }
 
   const list = clubs ?? [];
-  const chips = buildChips(list);
+
+  // A member in no clubs has no clubs to filter, no games to list, and one
+  // thing to do. Returning early says that, instead of walking them past an
+  // empty "Your games" to reach it.
+  if (list.length === 0) {
+    const empty = headerScope(list, ALL_CLUBS);
+    return (
+      <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="club" />}>
+        <DashboardHeader
+          kicker={empty.kicker}
+          name={empty.name}
+          meta={empty.meta}
+          initials={initials}
+          onPressAvatar={() => router.push('/profile')}
+        />
+        <View style={styles.list}>
+          <Text style={styles.help}>
+            You are not in a club yet. Start one and invite the people you
+            already play with.
+          </Text>
+          <Button
+            onPress={() => router.push('/clubs/new')}
+            accessibilityLabel="Start a club"
+          >
+            Start a club
+          </Button>
+        </View>
+      </Screen>
+    );
+  }
+
   const scope = headerScope(list, selected);
   const rows = buildDashboardRows({
     bookings: bookings ?? [],
@@ -426,16 +456,22 @@ export default function ClubsScreen() {
     userId: userId ?? '',
   }).filter((alert) => inScope(alert.clubId, selected));
 
-  // Which club "Host a table" should create the game in — derived from the
-  // clubs themselves, NOT from the chip state. The chip row only renders
-  // above one club, so a one-club member's `selected` stays ALL_CLUBS
-  // forever; gating the button on `selected !== ALL_CLUBS` hid it from
-  // exactly the member most likely to want it, leaving them a dashed
-  // "Nothing else coming up." box with no action at all. With several clubs
-  // and no chip picked the target genuinely is ambiguous, so no button is
-  // drawn rather than one that guesses.
-  const hostClubId =
-    selected !== ALL_CLUBS ? selected : list.length === 1 ? list[0].id : null;
+  // The club in scope — what "Host a table" creates in, and what the header
+  // opens. Derived from the clubs themselves, NOT from the chip state: the
+  // chip row carries no filters below two clubs, so a one-club member's
+  // `selected` stays ALL_CLUBS forever, and gating on `selected !== ALL_CLUBS`
+  // would hide both affordances from exactly the member most likely to want
+  // them. With several clubs and no chip picked the scope genuinely is
+  // ambiguous, so neither is offered rather than one that guesses.
+  // `headerScope` resolves the lone club the same way, for the same reason.
+  // The lookup below also guards against a `selected` that no longer names a
+  // club in `list` — the same "left, removed, or the list reloaded" case
+  // `headerScope` (lib/dashboard.ts) validates against, for the same reason:
+  // trusting `selected` blindly would let the header read the all-clubs
+  // scope while still pushing a route built from a stale, non-existent id.
+  const scopeClubId =
+    list.find((club) => club.id === selected)?.id ??
+    (list.length === 1 ? list[0].id : null);
 
   return (
     <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="club" />}>
@@ -445,11 +481,25 @@ export default function ClubsScreen() {
         meta={scope.meta}
         initials={initials}
         onPressAvatar={() => router.push('/profile')}
+        onPressNew={() => router.push('/clubs/new')}
+        onPressScope={
+          scopeClubId ? () => router.push(`/clubs/${scopeClubId}`) : undefined
+        }
       />
 
+      {/*
+        Empty below two clubs: a lone "All clubs" pill beside a lone club
+        pill filters nothing, so a one-club member was shown a scrolling row
+        with nothing in it — roughly 20px of unexplained whitespace above
+        "Your games" and an empty overflow-x region in the DOM. It also no
+        longer has to be drawn for the action's sake: "+ New club" used to
+        live in this row, which is the only reason an earlier version of this
+        guard drew the row unconditionally, but that action is the header's
+        ⊕ now.
+      */}
       {list.length > 1 ? (
         <ClubChips
-          chips={chips}
+          chips={buildChips(list)}
           selected={selected}
           unreadByClub={unreadByClub}
           // A confirmation raised for a game at one club is not an answer to
@@ -485,11 +535,11 @@ export default function ClubsScreen() {
       ) : rows.length === 0 ? (
         <View style={styles.emptyCard}>
           <Text style={styles.help}>Nothing else coming up.</Text>
-          {hostClubId ? (
+          {scopeClubId ? (
             <Button
               variant="secondary"
               big={false}
-              onPress={() => router.push(`/clubs/${hostClubId}/events/new`)}
+              onPress={() => router.push(`/clubs/${scopeClubId}/events/new`)}
               accessibilityLabel="Host a table"
             >
               Host a table
@@ -512,58 +562,6 @@ export default function ClubsScreen() {
             onCheckIn={handleCheckIn}
           />
         ))
-      )}
-
-      <Text style={styles.sectionTitle}>Your clubs</Text>
-
-      {list.length === 0 ? (
-        <View style={styles.list}>
-          <Text style={styles.help}>
-            You are not in a club yet. Start one and invite the people you
-            already play with.
-          </Text>
-          <Button
-            onPress={() => router.push('/clubs/new')}
-            accessibilityLabel="Start a club"
-          >
-            Start a club
-          </Button>
-        </View>
-      ) : (
-        <View style={styles.list}>
-          {list.map((club) => (
-            // Card is a plain function component that neither declares
-            // accessibilityRole/accessibilityLabel in its prop type nor
-            // spreads unrecognised props onto its underlying View, and it
-            // isn't wrapped in forwardRef — so `Link asChild` cloning
-            // straight onto <Card> fails to typecheck (excess props) and,
-            // even past that, would silently drop the onPress/onClick Link
-            // injects, leaving the card inert. Pressable is what actually
-            // receives Link's injected handler and accessibility props;
-            // Card nests inside purely for its visual styling. See the
-            // Task 4 report for the full writeup of this deviation from the
-            // brief's literal composition. See the GameRow Link comment
-            // below for what this same `asChild` merge actually renders on
-            // the web — it isn't repeated here.
-            <Link key={club.id} href={`/clubs/${club.id}`} asChild>
-              <Pressable accessibilityRole="button" accessibilityLabel={club.name}>
-                <Card>
-                  <Text style={styles.clubName}>{club.name}</Text>
-                  {club.rhythm.length > 0 ? (
-                    <Text style={styles.help}>{club.rhythm}</Text>
-                  ) : null}
-                </Card>
-              </Pressable>
-            </Link>
-          ))}
-          <Button
-            variant="secondary"
-            onPress={() => router.push('/clubs/new')}
-            accessibilityLabel="Start another club"
-          >
-            Start another club
-          </Button>
-        </View>
       )}
     </Screen>
   );
@@ -611,12 +609,14 @@ function GameRow({
           left outside it: a row can carry a Join button, a Seated tag, offer
           accept/decline, leave-waitlist and a check-in control, and a
           card-wide press target would sit under all of them. Pressable
-          rather than Card for the `asChild` reason this file documents at
-          length for the club cards below — Card neither declares
+          rather than Card under `asChild` as well — Card neither declares
           accessibility props nor spreads unrecognised ones onto its View, so
-          cloning onto it drops the handler Link injects.
+          cloning onto it drops the handler Link injects. The club cards that
+          used to carry this same explanation are gone (the chip row is the
+          club list now), which leaves this the only `asChild` site on the
+          screen and this comment the only place the reasoning lives.
 
-          Worth recording once, here, what that `asChild` merge actually
+          Worth recording, then, what that `asChild` merge actually
           produces on the web: it does not wrap this Pressable in an <a> the
           way the JSX nesting implies. useLinkToPathProps merges `href`,
           `onPress`, and a raw `role: 'link'` straight onto the child through
@@ -857,8 +857,8 @@ const styles = StyleSheet.create({
     // Every other screen gets its side margins from its own `contentStyle`
     // padding — Screen itself has no default padding, each screen supplies
     // space[6] in its container style. This screen never did, so "Your
-    // clubs" and the cards sat flush with the viewport edge. See the
-    // "no page padding" item in todo.md.
+    // clubs" and the content below it sat flush with the viewport edge. See
+    // the "no page padding" item in todo.md.
     padding: space[6],
     gap: space[4],
   },
@@ -867,19 +867,14 @@ const styles = StyleSheet.create({
     fontSize: type.size.h2,
     color: colors.text,
   },
-  // The list container's own gap, distinct from `container`'s page-level
-  // gap between major sections — this is what puts space between the last
-  // club card (or the empty-state help text) and the "Start another club"
-  // / "Start a club" button below it, instead of them rendering as
-  // adjacent siblings with nothing between them. See the "no space between
-  // the last club and the button" item in todo.md.
+  // The empty state's own gap: what puts space between the "not in a club
+  // yet" help text and the "Start a club" button below it, instead of them
+  // rendering as adjacent siblings with nothing between them. The skeleton
+  // stack uses it too. It was the club list's gap before that list folded
+  // into the chip row — see the "no space between the last club and the
+  // button" item in todo.md for what it originally fixed.
   list: {
     gap: space[3],
-  },
-  clubName: {
-    fontFamily: type.bodyBold,
-    fontSize: type.size.body,
-    color: colors.text,
   },
   friendNote: {
     fontFamily: type.bodyRegular,

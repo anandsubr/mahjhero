@@ -94,16 +94,35 @@ describe('buildChips', () => {
 });
 
 describe('headerScope', () => {
-  it('counts clubs when the scope is all', () => {
+  // No kicker: the name is "Your clubs" now, and a "YOUR CLUBS" kicker above
+  // it is the same words twice. DashboardHeader guards on length, so an
+  // empty string draws nothing. The single-club scope below keeps its
+  // kicker — there "Your club" and the club's own name say different things.
+  it('names the whole list without repeating itself when the scope is all', () => {
     expect(headerScope(CLUBS, ALL_CLUBS)).toEqual({
-      kicker: 'Your clubs',
-      name: 'All your clubs',
+      kicker: '',
+      name: 'Your clubs',
       meta: '2 clubs',
     });
   });
 
-  it('singularises a lone club', () => {
-    expect(headerScope([CLUBS[0]], ALL_CLUBS).meta).toBe('1 club');
+  // A one-club member never picks a chip — the row that would set `selected`
+  // is not drawn for them — so their scope would otherwise read "All your
+  // clubs · 1 club" forever, and the header would have no club to open.
+  it('resolves a lone club to that club whatever the selection', () => {
+    expect(headerScope([CLUBS[0]], ALL_CLUBS)).toEqual({
+      kicker: 'Your club',
+      name: 'Riverside Mah Jongg',
+      meta: 'Thursdays, 7pm',
+    });
+  });
+
+  it('still counts an empty list rather than resolving to nothing', () => {
+    expect(headerScope([], ALL_CLUBS)).toEqual({
+      kicker: '',
+      name: 'Your clubs',
+      meta: '0 clubs',
+    });
   });
 
   it("uses the club's own rhythm when one is picked", () => {
@@ -115,7 +134,9 @@ describe('headerScope', () => {
   });
 
   it('falls back to the all-clubs scope for an unknown id', () => {
-    expect(headerScope(CLUBS, 'club-gone').name).toBe('All your clubs');
+    expect(headerScope(CLUBS, 'club-gone').name).toBe('Your clubs');
+    // …unless there is only one club it could have meant.
+    expect(headerScope([CLUBS[0]], 'club-gone').name).toBe('Riverside Mah Jongg');
   });
 });
 

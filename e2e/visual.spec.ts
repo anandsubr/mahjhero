@@ -230,13 +230,13 @@ test.describe('signed in', () => {
     test(`clubs at ${vp.name}`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/clubs');
-      // `.first()` — "Your clubs" now renders TWICE on this screen: once as
-      // DashboardHeader's kicker (headerScope's all-clubs scope, lib/dashboard.ts)
-      // and once as the club-list section title. Both are real, and Playwright's
-      // strict mode turns the bare locator into a hard failure rather than a
-      // stale baseline. The unit suite had to switch to `findAllByText` for
-      // exactly this reason; this line only needs to know the screen painted.
-      await expect(page.getByText('Your clubs').first()).toBeVisible();
+      // `{ exact: true }` — "Your clubs" is the header's NAME now
+      // (headerScope's all-clubs scope, lib/dashboard.ts), and that scope
+      // draws no kicker: "YOUR CLUBS" above "All your clubs" was the same
+      // words twice. Playwright's getByText does substring matching by
+      // default, so the bare locator would still be worth avoiding if the
+      // longer title ever comes back.
+      await expect(page.getByText('Your clubs', { exact: true })).toBeVisible();
       // The brief's literal snippet uses `toHaveScreenshot(..., { fullPage:
       // true })`, but `captureScreen`'s own doc comment above explains why
       // that option is a no-op against this app's ScrollView-based layout
@@ -289,25 +289,43 @@ test.describe('signed in', () => {
     });
 
     for (const vp of WIDTHS) {
-      // The clubs LIST with cards in it. Task 11 fixed the spacing bug
-      // todo.md reported — "no space between the last club and the Start
-      // another club button" — but could only regenerate the EMPTY-state
-      // baseline, because nothing seeded a club at that point. So the state
-      // the bug was actually reported against had never been screenshotted.
+      // The populated dashboard: the chip row (the only club list now), the
+      // header's ⊕ and pencil, and "Your games" underneath. This baseline's
+      // existence still traces back to Task 11's spacing fix — "no space
+      // between the last club and the Start another club button" (todo.md)
+      // — which could only regenerate the EMPTY-state baseline, because
+      // nothing seeded a club at that point, so the state that bug was
+      // actually reported against had never been screenshotted. The cards
+      // and that button are both gone from the screen since (the single-list
+      // rework folded the club list into the chip row and moved the action
+      // into the header), but this is still the one baseline that shoots a
+      // member's dashboard with a club on it.
       test(`clubs list with a club at ${vp.name}`, async ({ page }) => {
         await page.setViewportSize({ width: vp.width, height: vp.height });
         await page.goto('/clubs');
-        // `.first()` — Task 15's booking fixtures give the signed-in member
-        // a confirmed seat in this club's own seeded game, so "Riverside
-        // Mah Jongg" now also renders a second time as that booking's club
-        // name inside the "Your games" card above this list. Both are real;
-        // this line only needs to know the club list itself still has one.
+        // `.first()` — there is no club-list card left for this to anchor
+        // on; the club list is the chip row now, and "Riverside Mah Jongg"
+        // is one of its two chip labels (the seeded user belongs to both
+        // Riverside and Thursday Casuals). Task 15's booking fixtures give
+        // the signed-in member a confirmed seat in Riverside's own seeded
+        // game, so the name renders a second time as that booking's club
+        // name inside the "Your games" card below the chip row, and a third
+        // time on the row for Riverside's second occurrence, which
+        // `buildDashboardRows` (lib/dashboard.ts) now also lists as an open,
+        // joinable game the member is not in. All three are real; this line
+        // only needs to know the chip itself still has one.
         await expect(page.getByText('Riverside Mah Jongg').first()).toBeVisible();
+        // The action moved out of the chip row and into the header: at two
+        // clubs the trailing "+ New club" pill was scrolled off-screen
+        // entirely, and it was the only route to /clubs/new for a member who
+        // already had a club. The ⊕ beside the avatar does not scroll.
         await expect(
-          page.getByRole('button', { name: 'Start another club' }),
+          page.getByRole('button', { name: 'Start a club' }),
         ).toBeVisible();
-        // The "Your games" section above the club list: one game the
-        // member booked themselves (Riverside's own seeded event above)
+        await expect(page.getByText('+ New club')).toHaveCount(0);
+        // The "Your games" section below the chip row — the club list, once
+        // the section below it, is the chip row now: one game the member
+        // booked themselves (Riverside's own seeded event above)
         // and one a friend booked for them (`seedBookings`'s
         // `friendEventId`, under the second club). This is the same
         // `/clubs` page in the same seeded state a dedicated `your games`
@@ -612,10 +630,11 @@ test.describe('signed in', () => {
         // nested <Text> — react-native-web's aria-label REPLACES the
         // accessible name computed from children, it does not merge with
         // it, so the count never reached assistive tech any other way. That
-        // also settles the trap this comment used to record: the club LIST
-        // card below (line ~549) shares "Riverside Mah Jongg" with the chip,
-        // but only the chip carries a badge, so its composed name is unique
-        // on its own — `.first()` stays only as a defensive belt.
+        // also settles the trap this comment used to record: whatever else
+        // on the page renders the plain "Riverside Mah Jongg" text, only the
+        // chip's accessible name has "1 unread" composed into it, so that
+        // composed name is unique on its own — `.first()` stays only as a
+        // defensive belt.
         const clubChip = page
           .getByRole('button', { name: 'Riverside Mah Jongg, 1 unread', exact: true })
           .first();
