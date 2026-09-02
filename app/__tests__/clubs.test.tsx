@@ -396,6 +396,39 @@ describe('dashboard artboard', () => {
     expect(screen.getByRole('button', { name: /^Manage Harbour/ })).toBeTruthy();
   });
 
+  // The chevron is app/clubs/index.tsx's own wiring, not something
+  // dashboard-parts.test.tsx's DashboardHeader unit tests can see — this is
+  // what proves the screen actually passes onPressBack through, and that
+  // pressing it clears `selected` back to ALL_CLUBS rather than just
+  // rendering a dead control.
+  it('clears the club filter back to all clubs when the chevron is pressed', async () => {
+    fetchMyClubs.mockResolvedValue([CLUB, { ...CLUB, id: 'club-2', name: 'Harbour' }]);
+    render(<ClubsScreen />);
+
+    expect(await screen.findByRole('button', { name: 'Harbour' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Harbour' }));
+    expect(await screen.findByRole('button', { name: /^Manage Harbour/ })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear club filter' }));
+
+    expect(screen.getByText('Your clubs')).toBeTruthy();
+    expect(screen.getByText('2 clubs')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^Manage / })).toBeNull();
+  });
+
+  // A one-club member's `selected` never leaves ALL_CLUBS — the chip row
+  // that would move it off is not drawn below two clubs (see the "draws no
+  // chip row" test below) — so there is nothing for a chevron to clear.
+  // app/clubs/index.tsx gates onPressBack on `list.length > 1` for exactly
+  // this reason, and this is what proves the gate actually holds in the
+  // screen, not just in DashboardHeader's own unit tests.
+  it('draws no chevron for a one-club member', async () => {
+    fetchMyClubs.mockResolvedValueOnce([CLUB]);
+    render(<ClubsScreen />);
+    expect(await screen.findByText('Riverside Mah Jongg')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Clear club filter' })).toBeNull();
+  });
+
   // A lone "All clubs" pill beside a lone club pill filters nothing, so the
   // row is not drawn at all for a one-club member — not drawn empty, not
   // drawn at all. "All clubs" is the one chip that only ever exists when the

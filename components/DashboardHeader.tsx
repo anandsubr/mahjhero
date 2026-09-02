@@ -62,17 +62,18 @@ export default function DashboardHeader({
                 draws, so the ⊕ beside it stays in the same place either
                 way — app/clubs/index.tsx passes both together except for a
                 one-club member, who gets the ⊕ alone. */}
-            <View style={styles.clubBack}>
-              {onPressBack ? (
-                <Pressable
-                  onPress={onPressBack}
-                  accessibilityRole="button"
-                  accessibilityLabel="Clear club filter"
-                >
-                  <ChevronLeftIcon color={colors.text} size={22} />
-                </Pressable>
-              ) : null}
-            </View>
+            {onPressBack ? (
+              <Pressable
+                onPress={onPressBack}
+                accessibilityRole="button"
+                accessibilityLabel="Clear club filter"
+                style={styles.clubBack}
+              >
+                <ChevronLeftIcon color={colors.text} size={22} />
+              </Pressable>
+            ) : (
+              <View style={styles.clubBack} />
+            )}
             {onPressNew ? (
               <PlusButton onPress={onPressNew} accessibilityLabel="Start a club" />
             ) : null}
@@ -191,6 +192,8 @@ const styles = StyleSheet.create({
     fontFamily: type.bodySemiBold,
     fontSize: type.size.body,
     color: colors.text,
+    flexShrink: 1,
+    minWidth: 0,
   },
   clubMeta: {
     fontFamily: type.bodyRegular,
