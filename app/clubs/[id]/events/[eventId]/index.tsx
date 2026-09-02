@@ -1,6 +1,6 @@
-import { Link, Redirect, useLocalSearchParams, useRouter } from 'expo-router';
+import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import BringSomeoneSheet from '../../../../../components/BringSomeoneSheet';
 import Button from '../../../../../components/Button';
 import Card from '../../../../../components/Card';
@@ -12,7 +12,7 @@ import TabBar from '../../../../../components/TabBar';
 import TableCard from '../../../../../components/TableCard';
 import TierPicker from '../../../../../components/TierPicker';
 import WaitlistPanel from '../../../../../components/WaitlistPanel';
-import { ChevronLeftIcon } from '../../../../../components/icons';
+import { ChevronLeftIcon, PencilIcon } from '../../../../../components/icons';
 import {
   checkInOpen,
   clearAttendance,
@@ -678,7 +678,18 @@ export default function EventScreen() {
       </Button>
 
       <View style={styles.row}>
-        <Text style={styles.heading}>{event.title}</Text>
+        <View style={styles.titleRow}>
+          <Text style={styles.heading}>{event.title}</Text>
+          {isOrganizer && event.status !== 'cancelled' ? (
+            <Pressable
+              onPress={() => router.push(`/clubs/${clubId}/events/${eventId}/edit`)}
+              accessibilityRole="button"
+              accessibilityLabel={`Edit ${event.title}`}
+            >
+              <PencilIcon size={16} color={colors.accentColor} />
+            </Pressable>
+          ) : null}
+        </View>
         {event.status === 'cancelled' ? <Tag>Cancelled</Tag> : null}
       </View>
       {overridden('title') ? (
@@ -1061,13 +1072,6 @@ export default function EventScreen() {
               </Button>
             </>
           ) : null}
-
-          <Link
-            href={`/clubs/${clubId}/events/${eventId}/edit`}
-            style={styles.linkRow}
-          >
-            <Text style={styles.link}>Edit this game</Text>
-          </Link>
         </>
       ) : null}
 
@@ -1124,6 +1128,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: space[2],
   },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[2],
+    flexShrink: 1,
+  },
   when: {
     fontFamily: type.bodyBold,
     fontSize: type.size.bodyLarge,
@@ -1158,11 +1168,5 @@ const styles = StyleSheet.create({
     fontSize: type.size.helper,
     color: colors.textMuted,
     lineHeight: 24,
-  },
-  linkRow: { marginTop: space[4] },
-  link: {
-    fontFamily: type.bodySemiBold,
-    fontSize: type.size.body,
-    color: colors.accentColor,
   },
 });

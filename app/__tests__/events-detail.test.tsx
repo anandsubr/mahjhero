@@ -911,13 +911,22 @@ describe('organizer view', () => {
     await vi.waitFor(() => expect(removeEventTable).toHaveBeenCalledWith('table-1'));
   });
 
-  it('shows the edit link and offers cancellation', async () => {
+  it('shows the edit pencil and offers cancellation', async () => {
     render(<EventScreen />);
     await screen.findByText('Thursday Mahjong');
-    expect(screen.getByText('Edit this game')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Edit Thursday Mahjong' })).toBeTruthy();
 
     fireEvent.click(screen.getByText('Cancel this game'));
     await vi.waitFor(() => expect(cancelEvent).toHaveBeenCalledWith('event-1'));
+  });
+
+  // Nothing asserted this before -- the old plain `Link`'s `href` was never
+  // checked, only its visible text.
+  it('opens the edit screen when the pencil is pressed', async () => {
+    render(<EventScreen />);
+    await screen.findByText('Thursday Mahjong');
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Thursday Mahjong' }));
+    expect(push).toHaveBeenCalledWith('/clubs/club-1/events/event-1/edit');
   });
 
   it('removes organizer controls once the event reloads as cancelled', async () => {
@@ -930,7 +939,7 @@ describe('organizer view', () => {
     expect(await screen.findByText('Cancelled')).toBeTruthy();
     expect(screen.queryByText('Cancel this game')).toBeNull();
     expect(screen.queryByText('Add a table')).toBeNull();
-    expect(screen.queryByText('Edit this game')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Edit Thursday Mahjong' })).toBeNull();
   });
 });
 
