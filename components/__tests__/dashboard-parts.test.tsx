@@ -4,7 +4,6 @@ import { Animated } from 'react-native';
 import DateTile from '../DateTile';
 import Skeleton from '../Skeleton';
 import ClubChips from '../ClubChips';
-import { ALL_CLUBS } from '../../lib/dashboard';
 
 describe('DateTile', () => {
   it('shows the weekday and date in the club timezone', () => {
@@ -62,32 +61,28 @@ describe('Skeleton', () => {
 });
 
 const CHIPS = [
-  { id: ALL_CLUBS, label: 'All clubs' },
   { id: 'club-1', label: 'Riverside Mah Jongg' },
+  { id: 'club-2', label: 'Harbour Tiles' },
 ];
 
 describe('ClubChips', () => {
   it('marks the selected chip and only that one', () => {
     render(<ClubChips chips={CHIPS} selected="club-1" onSelect={() => {}} />);
-    // Plain getAttribute, not jest-dom's toHaveAttribute: this repo does not
-    // depend on @testing-library/jest-dom, and vitest.setup.ts records that
-    // `globals: true` is deliberately off so no matcher package can
-    // auto-extend `expect`.
     expect(
       screen
         .getByRole('button', { name: 'Riverside Mah Jongg' })
         .getAttribute('aria-selected'),
     ).toBe('true');
     expect(
-      screen.getByRole('button', { name: 'All clubs' }).getAttribute('aria-selected'),
+      screen.getByRole('button', { name: 'Harbour Tiles' }).getAttribute('aria-selected'),
     ).toBe('false');
   });
 
   it('reports the chip that was pressed', () => {
     const onSelect = vi.fn();
-    render(<ClubChips chips={CHIPS} selected={ALL_CLUBS} onSelect={onSelect} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Riverside Mah Jongg' }));
-    expect(onSelect).toHaveBeenCalledWith('club-1');
+    render(<ClubChips chips={CHIPS} selected="club-1" onSelect={onSelect} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Harbour Tiles' }));
+    expect(onSelect).toHaveBeenCalledWith('club-2');
   });
 
   // UnreadBadge's own <Text> never reaches assistive tech: this Pressable's
@@ -107,16 +102,33 @@ describe('ClubChips', () => {
     expect(
       screen.getByRole('button', { name: 'Riverside Mah Jongg, 4 unread' }),
     ).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'All clubs' })).toBeTruthy();
   });
 
-  it("shows each club's initials in its tile, and a people glyph - not initials - for All clubs", () => {
-    render(<ClubChips chips={CHIPS} selected={ALL_CLUBS} onSelect={() => {}} />);
+  it('shows each club’s initials in its tile', () => {
+    render(<ClubChips chips={CHIPS} selected="club-1" onSelect={() => {}} />);
     expect(screen.getByText('RM')).toBeTruthy();
-    // initialsFrom('All clubs') would compute 'AC' -- asserting its absence
-    // is what proves the ALL_CLUBS tile takes the glyph branch instead of
-    // initialling its own chip label like every other tile does.
-    expect(screen.queryByText('AC')).toBeNull();
+    expect(screen.getByText('HT')).toBeTruthy();
+  });
+
+  it('draws a trailing New club tile when given a way to start one', () => {
+    const onPressNewClub = vi.fn();
+    render(
+      <ClubChips
+        chips={CHIPS}
+        selected="club-1"
+        onSelect={() => {}}
+        onPressNewClub={onPressNewClub}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Start a club' }));
+    expect(onPressNewClub).toHaveBeenCalled();
+    expect(screen.getByText('New club')).toBeTruthy();
+  });
+
+  it('draws no New club tile unless it is given a way to start one', () => {
+    render(<ClubChips chips={CHIPS} selected="club-1" onSelect={() => {}} />);
+    expect(screen.queryByRole('button', { name: 'Start a club' })).toBeNull();
+    expect(screen.queryByText('New club')).toBeNull();
   });
 });
 

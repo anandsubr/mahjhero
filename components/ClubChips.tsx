@@ -1,39 +1,47 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { PeopleIcon } from './icons';
+import { PlusIcon } from './icons';
 import UnreadBadge from './UnreadBadge';
-import { ALL_CLUBS, initialsFrom } from '../lib/dashboard';
+import { initialsFrom } from '../lib/dashboard';
 import type { Chip } from '../lib/dashboard';
 import { unreadSuffix } from '../lib/messages';
-import { colors, space, type } from '../lib/theme';
+import { colors, control, space, type } from '../lib/theme';
 
 /**
- * The artboard's club switcher, restyled icon-over-label — the same shape
- * components/TabBar.tsx uses for every tab, and the one true icon-over-text
- * pattern this app already had. Each club gets a small avatar carrying its
- * initials (the same fill/initials treatment DashboardHeader's and
- * ThreadAvatar's own club avatars use); "All clubs" has no club to initial,
- * so it gets a generic people glyph instead, on the cooler accent2 fill
- * ThreadAvatar already reserves for "more than one person" (its `group`
- * kind).
+ * The artboard's club switcher, icon-over-label — the same shape
+ * components/TabBar.tsx uses for every tab. Each club gets a small avatar
+ * carrying its initials (the same fill/initials treatment DashboardHeader's
+ * and ThreadAvatar's own club avatars use).
  *
- * Selection reads as a ring around the avatar rather than the previous
- * leading dot, which had nowhere clean to sit on a tile.
+ * No "All clubs" chip: it never represented a real club, and the row's own
+ * visibility already carries that meaning (app/clubs/index.tsx draws it
+ * exactly when nothing is filtered in). A trailing "New club" tile takes
+ * its place at the end of the row — the outlined ⊕ treatment PlusButton
+ * uses, not a club's solid initials fill, so it reads as an action rather
+ * than a fourth club. `onPressNewClub` is optional so this component stays
+ * usable without it, but every real caller passes it.
+ *
+ * Selection reads as a ring around the avatar rather than a leading dot,
+ * which had nowhere clean to sit on a tile.
  *
  * Still wraps onto as many lines as it needs rather than scrolling
  * horizontally — selecting a chip is the only way to arm the header's
  * Manage control, so a chip clipped or scrolled off-screen would hide a
  * member's only route into that club. Wrapping means nothing is ever
- * hidden, at any club count.
+ * hidden, at any club count — the New club tile included, which was tried
+ * as a trailing chip once before and removed specifically because the row
+ * used to scroll and clip it; that reason no longer applies.
  */
 export default function ClubChips({
   chips,
   selected,
   onSelect,
+  onPressNewClub,
   unreadByClub,
 }: {
   chips: Chip[];
   selected: string;
   onSelect: (id: string) => void;
+  onPressNewClub?: () => void;
   unreadByClub?: Record<string, number>;
 }) {
   return (
@@ -57,17 +65,9 @@ export default function ClubChips({
           >
             <View style={styles.avatarWrap}>
               <View
-                style={[
-                  styles.avatar,
-                  chip.id === ALL_CLUBS ? styles.avatarAllClubs : styles.avatarClub,
-                  active ? styles.avatarActive : null,
-                ]}
+                style={[styles.avatar, styles.avatarClub, active ? styles.avatarActive : null]}
               >
-                {chip.id === ALL_CLUBS ? (
-                  <PeopleIcon size={16} color={colors.bg} />
-                ) : (
-                  <Text style={styles.avatarInitials}>{initialsFrom(chip.label)}</Text>
-                )}
+                <Text style={styles.avatarInitials}>{initialsFrom(chip.label)}</Text>
               </View>
               <View style={styles.badgeWrap}>
                 <UnreadBadge count={count} />
@@ -79,6 +79,21 @@ export default function ClubChips({
           </Pressable>
         );
       })}
+      {onPressNewClub ? (
+        <Pressable
+          onPress={onPressNewClub}
+          accessibilityRole="button"
+          accessibilityLabel="Start a club"
+          style={styles.tile}
+        >
+          <View style={[styles.avatar, styles.avatarNewClub]}>
+            <PlusIcon size={16} color={colors.text} />
+          </View>
+          <Text style={styles.label} numberOfLines={1}>
+            New club
+          </Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -106,12 +121,15 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: 'transparent',
   },
-  // Same club/group fill split ThreadAvatar's own kinds use (club: warm
-  // accent[700]; group/"more than one": cool accent2[600]) — "All clubs"
-  // is closer in meaning to a group than to any one club.
   avatarClub: { backgroundColor: colors.accent[700] },
-  avatarAllClubs: { backgroundColor: colors.accent2[600] },
   avatarActive: { borderColor: colors.accentColor },
+  // Outlined rather than filled — the same treatment PlusButton uses — so
+  // this tile reads as an action, not as a fourth club.
+  avatarNewClub: {
+    backgroundColor: 'transparent',
+    borderWidth: control.hairline,
+    borderColor: colors.textMuted,
+  },
   avatarInitials: {
     fontFamily: type.bodyBold,
     fontSize: 13,
