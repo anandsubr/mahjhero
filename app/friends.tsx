@@ -30,12 +30,15 @@ import { colors, radius, space, type } from '../lib/theme';
  * this screen hangs off Profile.
  *
  * Also carries an explicit back link to Profile
- * (2026-09-01-back-links-design.md), reinstating the artboard's own one —
- * an earlier version of this screen dropped it on the premise that the
- * Profile tab reaches the identical route, but that tab renders as already-
- * active here, which reads as "you are here" rather than "go back", the
- * same correction already made for the club detail, new-club, new-message
- * and check-in screens.
+ * (2026-09-02-edit-game-pencil-and-friends-back-link-design.md),
+ * reinstating the artboard's own one — an earlier version of this screen
+ * dropped it on the premise that the Profile tab reaches the identical
+ * route, but that tab renders as already-active here, which reads as "you
+ * are here" rather than "go back", the same correction
+ * 2026-09-01-back-links-design.md already made for the club detail,
+ * new-club, new-message and check-in screens — that document itself still
+ * lists this screen among ones that should NOT get a back link, a call
+ * this one revises.
  *
  * The "+ Invite someone by email" ghost button the artboard draws is
  * deliberately absent — it would need its own token, an acceptance path and
