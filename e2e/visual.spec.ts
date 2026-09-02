@@ -315,14 +315,15 @@ test.describe('signed in', () => {
         // joinable game the member is not in. All three are real; this line
         // only needs to know the chip itself still has one.
         await expect(page.getByText('Riverside Mah Jongg').first()).toBeVisible();
-        // The action moved out of the chip row and into the header: at two
-        // clubs the trailing "+ New club" pill was scrolled off-screen
-        // entirely, and it was the only route to /clubs/new for a member who
-        // already had a club. The ⊕ beside the avatar does not scroll.
+        // The action lives in the chip row again as a trailing "New club"
+        // tile — the row now wraps rather than scrolls, so unlike the pill
+        // this replaced, it is never clipped off-screen. The header's own ⊕
+        // is gone from this unfiltered view entirely; it only shows once a
+        // specific club is in view, as "Add a game" for that club.
         await expect(
           page.getByRole('button', { name: 'Start a club' }),
         ).toBeVisible();
-        await expect(page.getByText('+ New club')).toHaveCount(0);
+        await expect(page.getByText('New club')).toBeVisible();
         // The "Your games" section below the chip row — the club list, once
         // the section below it, is the chip row now: one game the member
         // booked themselves (Riverside's own seeded event above)

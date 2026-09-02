@@ -288,12 +288,14 @@ describe('clubs list', () => {
     expect(screen.getAllByRole('button', { name: 'Start a club' })).toHaveLength(1);
   });
 
-  // The club and its rhythm are read off the header now: with one club there
-  // is no chip row of filters and no card list, and the header is the club.
+  // The club and its rhythm are read off the header now. The chip row draws
+  // the same name a second time now (its own tile for this one club, per
+  // the "shows the chip row ... for a one-club member" test below), so the
+  // name is asserted with findAllByText rather than findByText.
   it('names the one club a member belongs to', async () => {
     fetchMyClubs.mockResolvedValueOnce([CLUB]);
     render(<ClubsScreen />);
-    expect(await screen.findByText('Riverside Mah Jongg')).toBeTruthy();
+    expect(await screen.findAllByText('Riverside Mah Jongg')).not.toHaveLength(0);
     expect(screen.getByText('Thursday evenings')).toBeTruthy();
   });
 
@@ -308,7 +310,7 @@ describe('clubs list', () => {
   it('lets the populated screen scroll', async () => {
     fetchMyClubs.mockResolvedValueOnce([CLUB]);
     render(<ClubsScreen />);
-    expect(await screen.findByText('Riverside Mah Jongg')).toBeTruthy();
+    expect(await screen.findAllByText('Riverside Mah Jongg')).not.toHaveLength(0);
     expect(screen.getByTestId('screen-scroll')).toBeTruthy();
   });
 
@@ -416,34 +418,77 @@ describe('dashboard artboard', () => {
     expect(screen.queryByRole('button', { name: /^Manage / })).toBeNull();
   });
 
-  // A one-club member's `selected` never leaves ALL_CLUBS — the chip row
-  // that would move it off is not drawn below two clubs (see the "draws no
-  // chip row" test below) — so there is nothing for a chevron to clear.
-  // app/clubs/index.tsx gates onPressBack on `list.length > 1` for exactly
-  // this reason, and this is what proves the gate actually holds in the
-  // screen, not just in DashboardHeader's own unit tests.
+  // A one-club member's `selected` defaults to ALL_CLUBS and nothing here
+  // moves it, so there is nothing for a chevron to clear yet.
+  // app/clubs/index.tsx gates onPressBack on `selected !== ALL_CLUBS`, and
+  // this is what proves the gate actually holds in the screen, not just in
+  // DashboardHeader's own unit tests. See "shows the chip row, with a New
+  // club tile, for a one-club member" below for what the row itself does in
+  // this same state.
   it('draws no chevron for a one-club member', async () => {
     fetchMyClubs.mockResolvedValueOnce([CLUB]);
     render(<ClubsScreen />);
-    expect(await screen.findByText('Riverside Mah Jongg')).toBeTruthy();
+    expect(await screen.findAllByText('Riverside Mah Jongg')).not.toHaveLength(0);
     expect(screen.queryByRole('button', { name: 'Clear club filter' })).toBeNull();
   });
 
-  // A lone "All clubs" pill beside a lone club pill filters nothing, so the
-  // row is not drawn at all for a one-club member — not drawn empty, not
-  // drawn at all. "All clubs" is the one chip that only ever exists when the
-  // row does, which is what makes it a fair stand-in for "is the row there".
-  it('draws no chip row for a one-club member', async () => {
+  // The row now draws for a one-club member too — their own club's tile
+  // plus a trailing New club tile, so starting a second club has a route
+  // that isn't the header (which no longer offers one at all).
+  it('shows the chip row, with a New club tile, for a one-club member', async () => {
     fetchMyClubs.mockResolvedValueOnce([CLUB]);
     render(<ClubsScreen />);
-    expect(await screen.findByText('Riverside Mah Jongg')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'All clubs' })).toBeNull();
+    expect(await screen.findAllByText('Riverside Mah Jongg')).not.toHaveLength(0);
+    expect(screen.getByRole('button', { name: 'Riverside Mah Jongg' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Start a club' })).toBeTruthy();
+    expect(screen.getByText('New club')).toBeTruthy();
   });
 
-  it('draws the chip row at two clubs', async () => {
+  it('draws the chip row at two clubs, with a New club tile', async () => {
     fetchMyClubs.mockResolvedValue([CLUB, { ...CLUB, id: 'club-2', name: 'Harbour' }]);
     render(<ClubsScreen />);
-    expect(await screen.findByRole('button', { name: 'All clubs' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Riverside Mah Jongg' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Harbour' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Start a club' })).toBeTruthy();
+  });
+
+  it('adds a game for the club in view from the header +', async () => {
+    fetchMyClubs.mockResolvedValue([CLUB, { ...CLUB, id: 'club-2', name: 'Harbour' }]);
+    render(<ClubsScreen />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Harbour' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Add a game' }));
+    expect(push).toHaveBeenCalledWith('/clubs/club-2/events/new');
+  });
+
+  it('adds a game for a one-club member’s own club from the header +, with no click needed', async () => {
+    fetchMyClubs.mockResolvedValueOnce([CLUB]);
+    render(<ClubsScreen />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Add a game' }));
+    expect(push).toHaveBeenCalledWith(`/clubs/${CLUB.id}/events/new`);
+  });
+
+  // "Start a club" is deliberately not asserted null here: the chip row's
+  // own New club tile carries that exact accessible name and is shown
+  // whenever nothing is filtered in, at any club count (see "draws the chip
+  // row at two clubs, with a New club tile" above) — only the header's own
+  // + ("Add a game") is what an ambiguous scope withholds, for want of a
+  // single club to add the game to.
+  it('offers no + at all while every club is in scope', async () => {
+    fetchMyClubs.mockResolvedValue([CLUB, { ...CLUB, id: 'club-2', name: 'Harbour' }]);
+    render(<ClubsScreen />);
+    expect(await screen.findByText('Your clubs')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Add a game' })).toBeNull();
+  });
+
+  it('hides the chip row once a club is filtered in, and shows it again via the chevron', async () => {
+    fetchMyClubs.mockResolvedValue([CLUB, { ...CLUB, id: 'club-2', name: 'Harbour' }]);
+    render(<ClubsScreen />);
+    expect(await screen.findByRole('button', { name: 'Harbour' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Harbour' }));
+    expect(screen.queryByRole('button', { name: 'Harbour' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Start a club' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Clear club filter' }));
+    expect(await screen.findByRole('button', { name: 'Harbour' })).toBeTruthy();
   });
 
   it('shows skeletons before the first load resolves', () => {
@@ -1004,10 +1049,9 @@ describe('dashboard artboard', () => {
     expect(push).toHaveBeenCalledWith('/clubs/club-2');
   });
 
-  // The chip row isn't even drawn for a one-club member (it would hold no
-  // filters), so the way to start another club cannot live in it. It is the
-  // header's ⊕ now.
-  it('keeps a way to start another club at one club', async () => {
+  // The header no longer offers a way to start a club at all — that's the
+  // chip row's New club tile now, which draws even for a one-club member.
+  it('keeps a way to start another club at one club, via the New club tile', async () => {
     fetchMyClubs.mockResolvedValueOnce([CLUB]);
     render(<ClubsScreen />);
     fireEvent.click(await screen.findByRole('button', { name: 'Start a club' }));
