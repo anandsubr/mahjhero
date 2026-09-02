@@ -119,7 +119,7 @@ export default function DashboardHeader({
   }
 
   return (
-    <>
+    <View>
       {kicker.length > 0 ? (
         <Text testID="scope-kicker" style={styles.kicker}>
           {kicker}
@@ -127,7 +127,7 @@ export default function DashboardHeader({
       ) : null}
       <Text style={styles.name}>{name}</Text>
       {meta.length > 0 ? <Text style={styles.meta}>{meta}</Text> : null}
-    </>
+    </View>
   );
 }
 

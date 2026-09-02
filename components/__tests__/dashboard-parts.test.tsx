@@ -157,6 +157,13 @@ describe('DashboardHeader', () => {
     expect(screen.getByText('2 clubs')).toBeTruthy();
   });
 
+  it('draws no way to add a game in the flat layout, even if given one', () => {
+    render(
+      <DashboardHeader kicker="" name="Your clubs" meta="2 clubs" onPressAddGame={() => {}} />,
+    );
+    expect(screen.queryByRole('button', { name: 'Add a game' })).toBeNull();
+  });
+
   describe('the "Your club" variant', () => {
     it('shows the club’s avatar, name and rhythm instead of a kicker', () => {
       render(
