@@ -19,9 +19,7 @@ export const ALL_CLUBS = 'all';
 export type Chip = { id: string; label: string };
 
 export function buildChips(clubs: Club[]): Chip[] {
-  return [{ id: ALL_CLUBS, label: 'All clubs' }].concat(
-    clubs.map((club) => ({ id: club.id, label: club.name })),
-  );
+  return clubs.map((club) => ({ id: club.id, label: club.name }));
 }
 
 export type HeaderScope = { kicker: string; name: string; meta: string };
@@ -45,11 +43,12 @@ export function headerScope(clubs: Club[], selected: string): HeaderScope {
     selected === ALL_CLUBS
       ? null
       : (clubs.find((candidate) => candidate.id === selected) ?? null);
-  // A one-club member's scope is never ambiguous, and their `selected` never
-  // moves off ALL_CLUBS — the chip row that would change it is not drawn
-  // below two clubs. Resolving the lone club here is what lets the header
-  // name it and be pressed into it. Same derivation, for the same reason, as
-  // the screen's own `scopeClubId`.
+  // A one-club member's scope is never ambiguous even if they tap their own
+  // chip: `selected` would carry that club's own id instead of ALL_CLUBS,
+  // but `picked` resolves to the identical club either way, so this branch
+  // returns the same result regardless of which one drew it. Resolving the
+  // lone club here is what lets the header name it and be pressed into it.
+  // Same derivation, for the same reason, as the screen's own `scopeClubId`.
   const club = picked ?? (clubs.length === 1 ? clubs[0] : null);
   if (!club) {
     return {
