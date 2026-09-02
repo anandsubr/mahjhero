@@ -217,11 +217,12 @@ afterEach(() => {
 });
 
 describe('Your games', () => {
-  // Task 8 made the "Your games" title unconditional: the dashboard's
-  // section is always there, with a dashed empty card under it when nothing
-  // is coming up. So the thing that must be absent when the member holds no
-  // seats is a *row*, not the heading — asserting on the heading now only
-  // tests that a title exists, which is not what this ever cared about.
+  // The "Your games" title itself is gone (2026-09-01-ui-tweaks-design.md,
+  // item 6) — the header above it already names the scope ("Your clubs" or
+  // a specific club), so a repeated "games" label added nothing. What must
+  // still be absent when the member holds no seats is a *row*, not a
+  // heading — this describe block is named for the section, not for text
+  // it asserts on.
   it('offers the empty state, not a row, when the member holds no seats', async () => {
     render(<ClubsScreen />);
     await waitFor(() => expect(fetchMyUpcomingBookings).toHaveBeenCalled());

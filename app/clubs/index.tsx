@@ -528,8 +528,6 @@ export default function ClubsScreen() {
         />
       ))}
 
-      <Text style={styles.sectionTitle}>Your games</Text>
-
       {bookingsFailed ? (
         <Text style={styles.help}>Could not load your games.</Text>
       ) : rows.length === 0 ? (
@@ -921,12 +919,6 @@ const styles = StyleSheet.create({
   },
   gameAction: {
     flexShrink: 0,
-  },
-  sectionTitle: {
-    fontFamily: type.bodyBold,
-    fontSize: type.size.body,
-    color: colors.text,
-    marginTop: space[2],
   },
   emptyCard: {
     flexDirection: 'row',

@@ -337,7 +337,6 @@ test.describe('signed in', () => {
         // the `event offer` test's own comment on why it has to be), not
         // a fixture bug, so this only anchors on the two rows the brief
         // actually asks for.
-        await expect(page.getByText('Your games')).toBeVisible();
         // `.first()`, for the same reason as the club name above. Riverside
         // seeds TWO occurrences of "Tuesday night mahjong" and the member is
         // booked on only the first; `buildDashboardRows` (lib/dashboard.ts)
