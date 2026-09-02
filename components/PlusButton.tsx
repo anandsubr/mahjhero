@@ -4,8 +4,8 @@ import { colors, control, radius } from '../lib/theme';
 
 /**
  * The circular icon-only "+" this app uses everywhere something new gets
- * created — starting a club (components/DashboardHeader.tsx), a new
- * message (app/messages/index.tsx), adding a game
+ * created — adding a game to the club in view (components/DashboardHeader.tsx),
+ * a new message (app/messages/index.tsx), adding a game
  * (app/clubs/[id]/index.tsx). One component rather than three copies of the
  * same 50x50-outlined-circle-plus-PlusIcon style block.
  */

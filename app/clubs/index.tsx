@@ -503,14 +503,19 @@ export default function ClubsScreen() {
       />
 
       {/*
-        Shown whenever nothing is filtered in — even for a member with just
-        one club, so the row (and its trailing "New club" tile) is where
-        starting another club lives now, not the header. Hidden the moment a
-        club IS filtered in, at any club count: the header's back chevron is
-        the way to see this row again, so there is no dead end even for a
-        one-club member who taps their own tile.
+        Shown whenever nothing REAL is filtered in — the ALL_CLUBS default,
+        and also a `selected` that no longer names a club in `list` (left,
+        removed, or the list reloaded), the same stale-id case `scopeClubId`
+        and `headerScope` (lib/dashboard.ts) both guard against. That keeps
+        the row (and its trailing "New club" tile, where starting another
+        club lives now, not the header) from vanishing outright in that
+        state — it recovers instead, the same way the old `list.length > 1`
+        guard this replaced would have. Hidden the moment a REAL club is
+        filtered in, at any club count: the header's back chevron is the way
+        to see this row again, so there is no dead end even for a one-club
+        member who taps their own tile.
       */}
-      {selected === ALL_CLUBS ? (
+      {list.some((club) => club.id === selected) ? null : (
         <ClubChips
           chips={buildChips(list)}
           selected={selected}
@@ -524,7 +529,7 @@ export default function ClubsScreen() {
           }}
           onPressNewClub={() => router.push('/clubs/new')}
         />
-      ) : null}
+      )}
 
       {notice ? (
         <NoticeBanner message={notice} onDismiss={() => setNotice(null)} />

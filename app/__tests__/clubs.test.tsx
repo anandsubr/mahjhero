@@ -295,7 +295,7 @@ describe('clubs list', () => {
   it('names the one club a member belongs to', async () => {
     fetchMyClubs.mockResolvedValueOnce([CLUB]);
     render(<ClubsScreen />);
-    expect(await screen.findAllByText('Riverside Mah Jongg')).not.toHaveLength(0);
+    expect(await screen.findAllByText('Riverside Mah Jongg')).toHaveLength(2);
     expect(screen.getByText('Thursday evenings')).toBeTruthy();
   });
 
@@ -310,7 +310,7 @@ describe('clubs list', () => {
   it('lets the populated screen scroll', async () => {
     fetchMyClubs.mockResolvedValueOnce([CLUB]);
     render(<ClubsScreen />);
-    expect(await screen.findAllByText('Riverside Mah Jongg')).not.toHaveLength(0);
+    expect(await screen.findAllByText('Riverside Mah Jongg')).toHaveLength(2);
     expect(screen.getByTestId('screen-scroll')).toBeTruthy();
   });
 
@@ -428,7 +428,7 @@ describe('dashboard artboard', () => {
   it('draws no chevron for a one-club member', async () => {
     fetchMyClubs.mockResolvedValueOnce([CLUB]);
     render(<ClubsScreen />);
-    expect(await screen.findAllByText('Riverside Mah Jongg')).not.toHaveLength(0);
+    expect(await screen.findAllByText('Riverside Mah Jongg')).toHaveLength(2);
     expect(screen.queryByRole('button', { name: 'Clear club filter' })).toBeNull();
   });
 
@@ -438,7 +438,7 @@ describe('dashboard artboard', () => {
   it('shows the chip row, with a New club tile, for a one-club member', async () => {
     fetchMyClubs.mockResolvedValueOnce([CLUB]);
     render(<ClubsScreen />);
-    expect(await screen.findAllByText('Riverside Mah Jongg')).not.toHaveLength(0);
+    expect(await screen.findAllByText('Riverside Mah Jongg')).toHaveLength(2);
     expect(screen.getByRole('button', { name: 'Riverside Mah Jongg' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Start a club' })).toBeTruthy();
     expect(screen.getByText('New club')).toBeTruthy();
@@ -869,12 +869,13 @@ describe('dashboard artboard', () => {
     expect(await screen.findByText('Nothing else coming up.')).toBeTruthy();
   });
 
-  // The chip row only renders above one club, so a one-club member's
-  // `selected` stays ALL_CLUBS forever. Gating "Host a table" on
-  // `selected !== ALL_CLUBS` therefore hid it from exactly the member most
-  // likely to want it: their empty state was a dashed box and nothing else.
-  // The test above seeds this same state and asserts only the copy, which is
-  // how it passed straight over the gap.
+  // Gated on `scopeClubId`, not `selected !== ALL_CLUBS`: nothing forces a
+  // one-club member to tap their own chip tile, so their `selected` typically
+  // stays ALL_CLUBS regardless of what the chip row itself renders. Gating on
+  // `selected` alone would therefore still hide "Host a table" from exactly
+  // the member most likely to want it: their empty state was a dashed box and
+  // nothing else. The test above seeds this same state and asserts only the
+  // copy, which is how it passed straight over the gap.
   it('offers Host a table to a one-club member with nothing coming up', async () => {
     fetchMyClubs.mockResolvedValue([CLUB]);
     fetchMyUpcomingBookings.mockResolvedValue([]);

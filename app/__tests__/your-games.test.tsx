@@ -356,7 +356,7 @@ describe('Your games', () => {
     // club in scope is what proves the clubs half was not blanked. Asserted
     // with findAllByText, not findByText: the chip row now draws this same
     // one club's name a second time, in its own tile.
-    expect(await screen.findAllByText(CLUB.name)).not.toHaveLength(0);
+    expect(await screen.findAllByText(CLUB.name)).toHaveLength(2);
     expect(screen.getByRole('button', { name: `Manage ${CLUB.name}, ${CLUB.rhythm}` })).toBeTruthy();
     expect(screen.getByText('Could not load your games.')).toBeTruthy();
   });

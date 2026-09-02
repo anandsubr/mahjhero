@@ -65,8 +65,10 @@ export default function DashboardHeader({
           <View style={styles.clubTopRow}>
             {/* Fixed 44x44 footprint whether or not the chevron itself
                 draws, so the ⊕ beside it stays in the same place either
-                way — app/clubs/index.tsx passes both together except for a
-                one-club member, who gets the ⊕ alone. */}
+                way — app/clubs/index.tsx passes both together except when
+                the scope resolves to a single club while `selected` is
+                still ALL_CLUBS (a one-club member who hasn't tapped
+                anything), where only the ⊕ is passed. */}
             <View style={styles.clubBack}>
               {onPressBack ? (
                 <Pressable
