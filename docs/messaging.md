@@ -199,7 +199,7 @@ behind a lying mock:
 tab focus. **Key on `session?.user.id`.** This is still live: four instances were
 fixed on this branch, once causing a Realtime crash, and three more remain —
 `app/clubs/[id]/broadcast.tsx`, `app/clubs/[id]/broadcasts.tsx`, and
-`app/messages/new.tsx` each still key an effect on `session` itself. `lib/use-viewer.ts`
+`app/messages/new.tsx` each still key an effect on `session` itself. `lib/use-unread.ts`
 and `app/profile.tsx` document the fix.
 
 **A guard read from render state.** `if (busy) return` is blind to a second

@@ -56,8 +56,8 @@ describe('useUnreadCounts', () => {
   // on the session object itself — rather than on the user id it carries —
   // treats that as a reason to refetch, hitting the RPC for a value that
   // only actually changes on a real account switch. This is the same trap
-  // this file's own docstring and app/profile.tsx (and, before them,
-  // app/friends.tsx) document and were fixed for.
+  // this file's own docstring (lib/use-unread.ts) and app/profile.tsx (and,
+  // before them, app/friends.tsx) document and were fixed for.
   it('does not refetch when a new session object arrives for the same user', async () => {
     const { rerender } = render(<Probe />);
     await waitFor(() => expect(fetchUnreadCounts).toHaveBeenCalledTimes(1));

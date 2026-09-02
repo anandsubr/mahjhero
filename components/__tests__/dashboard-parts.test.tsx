@@ -250,7 +250,7 @@ describe('DashboardHeader', () => {
       expect(onPressNew).toHaveBeenCalled();
     });
 
-    it('draws no way to start a club unless it is given one', () => {
+    it('draws no way to start a club in this variant unless it is given one', () => {
       render(
         <DashboardHeader kicker="Your club" name="Riverside Mah Jongg" meta="Thursdays, 7pm" onPressBack={() => {}} />,
       );
