@@ -113,11 +113,9 @@ export default function ClubDetailScreen() {
   // The roster is already loaded for the member list, so the viewer's role
   // costs nothing extra. `canInvite` is exactly the host-or-co-organizer
   // test the event functions enforce in SQL, so the UI and the database
-  // agree about who may invite, create games, and manage venues rather than
-  // each deciding separately. The brief for this task named a second,
-  // identically-computed `isOrganizer` for gating the events UI — same
-  // roster, same role, same `canInvite` call — so this reuses `mayInvite`
-  // instead of duplicating the lookup.
+  // agree about who may invite and manage venues rather than each deciding
+  // separately. Gates "Open the club thread", "Create an invite link" and
+  // "Import a roster" below.
   const mayInvite = me ? canInvite(me.role) : false;
 
   // `app/clubs/[id]/import.tsx` redirects here with `?imported=<n>` after a
