@@ -157,18 +157,6 @@ describe('DashboardHeader', () => {
     expect(screen.getByText('2 clubs')).toBeTruthy();
   });
 
-  it('starts a club from the flat header when it is given a way to', () => {
-    const onPressNew = vi.fn();
-    render(<DashboardHeader kicker="" name="Your clubs" meta="2 clubs" onPressNew={onPressNew} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Start a club' }));
-    expect(onPressNew).toHaveBeenCalled();
-  });
-
-  it('draws no way to start a club unless it is given one', () => {
-    render(<DashboardHeader kicker="" name="Your clubs" meta="2 clubs" />);
-    expect(screen.queryByRole('button', { name: 'Start a club' })).toBeNull();
-  });
-
   describe('the "Your club" variant', () => {
     it('shows the club’s avatar, name and rhythm instead of a kicker', () => {
       render(
@@ -247,26 +235,38 @@ describe('DashboardHeader', () => {
       expect(screen.queryByRole('button', { name: 'Clear club filter' })).toBeNull();
     });
 
-    it('still starts a club from this variant, beside the chevron', () => {
-      const onPressNew = vi.fn();
+    it('adds a game for this club when the + is pressed', () => {
+      const onPressAddGame = vi.fn();
+      render(
+        <DashboardHeader
+          kicker="Your club"
+          name="Riverside Mah Jongg"
+          meta="Thursdays, 7pm"
+          onPressAddGame={onPressAddGame}
+        />,
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Add a game' }));
+      expect(onPressAddGame).toHaveBeenCalled();
+    });
+
+    it('draws no way to add a game unless it is given one', () => {
       render(
         <DashboardHeader
           kicker="Your club"
           name="Riverside Mah Jongg"
           meta="Thursdays, 7pm"
           onPressBack={() => {}}
-          onPressNew={onPressNew}
         />,
       );
-      fireEvent.click(screen.getByRole('button', { name: 'Start a club' }));
-      expect(onPressNew).toHaveBeenCalled();
+      expect(screen.queryByRole('button', { name: 'Add a game' })).toBeNull();
     });
 
-    it('draws no way to start a club in this variant unless it is given one', () => {
+    it('draws no top row at all when given neither a chevron nor a way to add a game', () => {
       render(
-        <DashboardHeader kicker="Your club" name="Riverside Mah Jongg" meta="Thursdays, 7pm" onPressBack={() => {}} />,
+        <DashboardHeader kicker="Your club" name="Riverside Mah Jongg" meta="Thursdays, 7pm" />,
       );
-      expect(screen.queryByRole('button', { name: 'Start a club' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Clear club filter' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Add a game' })).toBeNull();
     });
   });
 });

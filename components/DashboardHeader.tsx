@@ -8,8 +8,9 @@ import { colors, radius, space, type } from '../lib/theme';
  * The artboard's dashboard header.
  *
  * Two shapes. The all-clubs scope and app/clubs/[id]/venues.tsx's "Venues"
- * scope draw a flat kicker/name/meta block, optionally with a ⊕ beside it
- * (`onPressNew`) for starting a club. The single-club scope —
+ * scope draw a flat kicker/name/meta block, with no ⊕ of any kind —
+ * starting a club lives in the chip row now (components/ClubChips.tsx's own
+ * trailing "New club" tile), not here. The single-club scope —
  * `kicker === 'Your club'`, the one value lib/dashboard.ts's `headerScope`
  * and app/clubs/[id]/index.tsx ever pass for it — instead centres the
  * club's own identity: an avatar and a name pill, the same treatment the
@@ -26,6 +27,13 @@ import { colors, radius, space, type } from '../lib/theme';
  * destination. The flat branch below never reads it, so passing it there
  * has no effect — no error, no control drawn.
  *
+ * `onPressAddGame`, also only meaningful in the "Your club" shape, draws the
+ * top row's ⊕ — "add a game to the club currently in view", not "start a
+ * new club" (that action lives in the chip row now, not here). Only
+ * app/clubs/index.tsx ever passes it, gated on the same `scopeClubId` that
+ * drives `onPressScope`, so a one-club member gets it too without any
+ * special-casing — their header always shows this shape.
+ *
  * `onPressBack`, also only meaningful in the "Your club" shape, draws a
  * chevron and is app/clubs/index.tsx's way to clear its club filter back to
  * "All clubs" — client state, not navigation. app/clubs/[id]/index.tsx
@@ -34,49 +42,45 @@ import { colors, radius, space, type } from '../lib/theme';
  * (2026-09-01-back-links-design.md), a real navigation rather than a filter
  * clear, so the two were kept apart rather than overloading one chevron
  * with both meanings.
- *
- * `onPressNew` draws the ⊕ "start a club" control in either shape. Omitted
- * at app/clubs/[id]/index.tsx and venues.tsx for the same reason
- * `onPressScope` is: there is no club list there to add to.
  */
 export default function DashboardHeader({
   kicker,
   name,
   meta,
-  onPressNew,
   onPressScope,
+  onPressAddGame,
   onPressBack,
 }: {
   kicker: string;
   name: string;
   meta: string;
-  onPressNew?: () => void;
   onPressScope?: () => void;
+  onPressAddGame?: () => void;
   onPressBack?: () => void;
 }) {
   if (kicker === 'Your club') {
     return (
       <View style={styles.clubHeader}>
-        {onPressBack || onPressNew ? (
+        {onPressBack || onPressAddGame ? (
           <View style={styles.clubTopRow}>
             {/* Fixed 44x44 footprint whether or not the chevron itself
                 draws, so the ⊕ beside it stays in the same place either
                 way — app/clubs/index.tsx passes both together except for a
                 one-club member, who gets the ⊕ alone. */}
-            {onPressBack ? (
-              <Pressable
-                onPress={onPressBack}
-                accessibilityRole="button"
-                accessibilityLabel="Clear club filter"
-                style={styles.clubBack}
-              >
-                <ChevronLeftIcon color={colors.text} size={22} />
-              </Pressable>
-            ) : (
-              <View style={styles.clubBack} />
-            )}
-            {onPressNew ? (
-              <PlusButton onPress={onPressNew} accessibilityLabel="Start a club" />
+            <View style={styles.clubBack}>
+              {onPressBack ? (
+                <Pressable
+                  onPress={onPressBack}
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear club filter"
+                  style={styles.clubBack}
+                >
+                  <ChevronLeftIcon color={colors.text} size={22} />
+                </Pressable>
+              ) : null}
+            </View>
+            {onPressAddGame ? (
+              <PlusButton onPress={onPressAddGame} accessibilityLabel="Add a game" />
             ) : null}
           </View>
         ) : null}
@@ -115,34 +119,19 @@ export default function DashboardHeader({
   }
 
   return (
-    <View style={styles.row}>
-      <View style={styles.scope}>
-        {kicker.length > 0 ? (
-          <Text testID="scope-kicker" style={styles.kicker}>
-            {kicker}
-          </Text>
-        ) : null}
-        <Text style={styles.name}>{name}</Text>
-        {meta.length > 0 ? <Text style={styles.meta}>{meta}</Text> : null}
-      </View>
-      {onPressNew ? (
-        <PlusButton onPress={onPressNew} accessibilityLabel="Start a club" />
+    <>
+      {kicker.length > 0 ? (
+        <Text testID="scope-kicker" style={styles.kicker}>
+          {kicker}
+        </Text>
       ) : null}
-    </View>
+      <Text style={styles.name}>{name}</Text>
+      {meta.length > 0 ? <Text style={styles.meta}>{meta}</Text> : null}
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: space[3],
-  },
-  scope: {
-    flex: 1,
-    minWidth: 0,
-  },
   kicker: {
     fontFamily: type.bodySemiBold,
     fontSize: type.size.helper,
