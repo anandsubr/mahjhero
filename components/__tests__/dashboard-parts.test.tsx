@@ -95,7 +95,7 @@ describe('ClubChips', () => {
   // the accessible name computed from children (the badge included) rather
   // than merging with it. The count has to be composed into the chip's own
   // label for a screen-reader user to ever hear it.
-  it("composes the unread count into the chip's accessible name", () => {
+  it('composes the unread count into the chip’s accessible name', () => {
     render(
       <ClubChips
         chips={CHIPS}
