@@ -328,17 +328,15 @@ describe('clubs list', () => {
 });
 
 describe('dashboard artboard', () => {
-  it('heads the page with the club count and the profile avatar', async () => {
+  it('heads the page with the club count', async () => {
     fetchMyClubs.mockResolvedValue([CLUB, { ...CLUB, id: 'club-2', name: 'Harbour' }]);
     fetchMyUpcomingBookings.mockResolvedValue([]);
     fetchUpcomingEvents.mockResolvedValue([]);
-    fetchProfile.mockResolvedValue({ id: 'test-user', display_name: 'Jean Wu', skill_level: null, avatar_url: null, timezone: 'America/New_York' });
 
     render(<ClubsScreen />);
 
     expect(await screen.findByText('Your clubs')).toBeTruthy();
     expect(screen.getByText('2 clubs')).toBeTruthy();
-    expect(screen.getByText('JW')).toBeTruthy();
   });
 
   // The rows were inert: the one thing a member wants from a game they can
@@ -1202,21 +1200,14 @@ describe('club detail screen', () => {
     expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
   });
 
-  it('names the club in the dashboard header, with the avatar to profile', async () => {
-    fetchProfile.mockResolvedValue({
-      id: 'test-user',
-      display_name: 'Pat Chen',
-      skill_level: 'intermediate',
-      avatar_url: null,
-      timezone: 'America/New_York',
-    });
+  it('names the club in the dashboard header', async () => {
     render(<ClubDetailScreen />);
     expect(await screen.findByText('Your club')).toBeTruthy();
     expect(screen.getByText('Riverside Mah Jongg')).toBeTruthy();
     expect(screen.getByText('Thursday evenings')).toBeTruthy();
-    expect(await screen.findByText('PC')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Your profile' }));
-    expect(push).toHaveBeenCalledWith('/profile');
+    // The bottom tab bar's own Profile tab is the way to profile now —
+    // this header no longer draws its own avatar/profile control.
+    expect(screen.queryByRole('button', { name: 'Your profile' })).toBeNull();
   });
 
   // Removed with the tab bar's arrival: the Club tab is the same

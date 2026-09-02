@@ -48,7 +48,6 @@ import type { ClubEvent } from '../../lib/events';
 import { useSession } from '../../lib/session';
 import { colors, radius, space, type } from '../../lib/theme';
 import { useUnreadCounts } from '../../lib/use-unread';
-import { useViewerInitials } from '../../lib/use-viewer';
 
 /**
  * The waitlist half of a `commit_booking` outcome, worded as the event screen
@@ -124,7 +123,6 @@ export default function ClubsScreen() {
   const [events, setEvents] = useState<ClubEvent[]>([]);
   const [selected, setSelected] = useState<string>(ALL_CLUBS);
   const [notice, setNotice] = useState<string | null>(null);
-  const initials = useViewerInitials();
   const { byClub: unreadByClub } = useUnreadCounts();
 
   // Every write below awaits the network and then calls setState. Nothing
@@ -424,8 +422,6 @@ export default function ClubsScreen() {
           kicker={empty.kicker}
           name={empty.name}
           meta={empty.meta}
-          initials={initials}
-          onPressAvatar={() => router.push('/profile')}
         />
         <View style={styles.list}>
           <Text style={styles.help}>
@@ -479,8 +475,6 @@ export default function ClubsScreen() {
         kicker={scope.kicker}
         name={scope.name}
         meta={scope.meta}
-        initials={initials}
-        onPressAvatar={() => router.push('/profile')}
         onPressNew={() => router.push('/clubs/new')}
         onPressScope={
           scopeClubId ? () => router.push(`/clubs/${scopeClubId}`) : undefined

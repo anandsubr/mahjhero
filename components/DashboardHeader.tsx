@@ -1,6 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { PencilIcon, PersonIcon, PlusIcon } from './icons';
-import { colors, radius, space, type } from '../lib/theme';
+import { PencilIcon } from './icons';
+import PlusButton from './PlusButton';
+import { colors, space, type } from '../lib/theme';
 
 /**
  * The artboard's dashboard header: scope on the left, the member on the
@@ -31,16 +32,12 @@ export default function DashboardHeader({
   kicker,
   name,
   meta,
-  initials,
-  onPressAvatar,
   onPressNew,
   onPressScope,
 }: {
   kicker: string;
   name: string;
   meta: string;
-  initials: string;
-  onPressAvatar: () => void;
   /** Draws the "start a club" control. Omitted where there is no club list
    *  to add to — the club detail and venues screens render this same header. */
   onPressNew?: () => void;
@@ -93,32 +90,9 @@ export default function DashboardHeader({
       ) : (
         <View style={styles.scope}>{scope}</View>
       )}
-      <View style={styles.actions}>
-        {onPressNew ? (
-          <Pressable
-            onPress={onPressNew}
-            accessibilityRole="button"
-            accessibilityLabel="Start a club"
-            style={styles.newClub}
-          >
-            <PlusIcon size={24} color={colors.text} />
-          </Pressable>
-        ) : null}
-        <Pressable
-          onPress={onPressAvatar}
-          accessibilityRole="button"
-          accessibilityLabel="Your profile"
-          style={styles.avatar}
-        >
-          {initials.length > 0 ? (
-            <Text style={styles.initials}>{initials}</Text>
-          ) : (
-            <View testID="avatar-fallback">
-              <PersonIcon size={26} color={colors.bg} />
-            </View>
-          )}
-        </Pressable>
-      </View>
+      {onPressNew ? (
+        <PlusButton onPress={onPressNew} accessibilityLabel="Start a club" />
+      ) : null}
     </View>
   );
 }
@@ -162,48 +136,5 @@ const styles = StyleSheet.create({
     fontSize: type.size.helper,
     color: colors.textMuted,
     marginTop: 3,
-  },
-  // The header's right-hand controls. `flexShrink: 0` so a long club name in
-  // the scope block on the left cannot squeeze them — `scope` is the flexible
-  // half, these are fixed.
-  actions: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    flexShrink: 0,
-    gap: space[2],
-  },
-  // The avatar's shape, outlined rather than filled: it sits beside the
-  // avatar and must not read as a second member. textMuted for the boundary
-  // — #676158 on the page background measures 5.15:1 (lib/theme.ts records
-  // the ratio), past the 3:1 a control boundary needs.
-  newClub: {
-    width: 50,
-    height: 50,
-    flexShrink: 0,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.textMuted,
-    backgroundColor: 'transparent',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatar: {
-    width: 50,
-    height: 50,
-    flexShrink: 0,
-    borderRadius: radius.pill,
-    // `accent2[700]`, not the artboard's `accent2[500]`: cream initials on
-    // accent2-500 measure 2.37:1, and these are 18px bold text (AA needs
-    // 4.5:1) with a PersonIcon fallback that needs 3:1 as a graphic.
-    // accent2-700 brings the same cream to 5.43:1. Same failure, and the same
-    // fix, as components/NeedAFourthCard.tsx's own card background.
-    backgroundColor: colors.accent2[700],
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  initials: {
-    fontFamily: type.bodyBold,
-    fontSize: type.size.body,
-    color: colors.bg,
   },
 });

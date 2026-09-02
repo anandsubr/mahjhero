@@ -35,7 +35,6 @@ import type { ClubEvent } from '../../../lib/events';
 import { openThreadForClub } from '../../../lib/messages';
 import { useSession } from '../../../lib/session';
 import { colors, space, type } from '../../../lib/theme';
-import { useViewerInitials } from '../../../lib/use-viewer';
 
 export default function ClubDetailScreen() {
   const { id, imported } = useLocalSearchParams<{
@@ -45,7 +44,6 @@ export default function ClubDetailScreen() {
   const { session, loading } = useSession();
   const userId = session?.user.id;
   const router = useRouter();
-  const initials = useViewerInitials();
 
   const [club, setClub] = useState<Club | null>(null);
   const [roster, setRoster] = useState<ClubMember[]>([]);
@@ -196,8 +194,6 @@ export default function ClubDetailScreen() {
         kicker="Your club"
         name={club.name}
         meta={club.rhythm}
-        initials={initials}
-        onPressAvatar={() => router.push('/profile')}
       />
 
       <Text style={styles.sectionTitle}>Upcoming</Text>
