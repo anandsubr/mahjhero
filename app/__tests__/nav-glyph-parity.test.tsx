@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import TabBar, { suitFor, type TabKey } from '../../components/TabBar';
 import type { MahjongSuit } from '../../components/MahjongTile';
+import { fetchMyClubs } from '../../lib/clubs';
 import ClubsScreen from '../clubs/index';
 import MessagesScreen from '../messages/index';
 import ProfileScreen from '../profile';
@@ -139,6 +140,32 @@ describe('nav glyph parity', () => {
       expect(within(tile).getByTestId(`glyph-${expectedSuit}`)).toBeTruthy();
     },
   );
+
+  // The `club` row above only ever exercises ClubsScreen's EMPTY-clubs
+  // branch (`fetchMyClubs` mocked to `[]` for every row, shared setup
+  // above) -- a different `<MahjongTile suit="dots" ...>` call site than
+  // the screen's own main branch, the one any member with at least one
+  // club actually sees (app/clubs/index.tsx, ~line 515). A suit typo there
+  // specifically would leave the whole suite -- this file included --
+  // green. Overrides `fetchMyClubs` for this one test only, to a single
+  // club, matching the minimal fixture clubs.test.tsx's own "dashboard
+  // artboard" tests use to reach the same branch.
+  it("ClubsScreen's own main (populated) branch also renders the dots suit", async () => {
+    vi.mocked(fetchMyClubs).mockResolvedValueOnce([
+      {
+        id: 'club-1',
+        name: 'Riverside Mah Jongg',
+        slug: 'riverside',
+        rhythm: 'Thursday evenings',
+        visibility: 'private',
+        timezone: 'America/New_York',
+      },
+    ]);
+
+    render(<ClubsScreen />);
+    const tile = await screen.findByTestId('section-tile');
+    expect(within(tile).getByTestId('glyph-dots')).toBeTruthy();
+  });
 
   // Sanity check on the bar itself: renders all four tabs with the same
   // fixed mapping the table above pins, so a reader can see TabBar's actual

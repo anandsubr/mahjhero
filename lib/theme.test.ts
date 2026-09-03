@@ -24,8 +24,11 @@ function contrast(a: string, b: string): number {
   return (hi + 0.05) / (lo + 0.05);
 }
 
-/** WCAG AA for body text. The app's smallest text is 16pt, so the large-text
- *  allowance of 3:1 never applies to it. */
+/** WCAG AA for body text. Most of the app's text is 16pt or larger, so the
+ *  large-text allowance of 3:1 does not apply -- the one known exception is
+ *  components/MahjongTile.tsx's tab label, at 12pt, which is still checked
+ *  against this same 4.5:1 bar below ("selected tab tile clears AA on its
+ *  fill") rather than the weaker one it would technically be entitled to. */
 const AA = 4.5;
 
 describe('contrast', () => {
@@ -210,8 +213,12 @@ describe('seat grid round badge and point chips clear AA on their fill', () => {
 // so the raised-edge illusion TileHero's own accent tile (app/welcome.tsx)
 // established still reads. Given its own describe block, same reasoning as
 // the alerts avatar and seat grid blocks above -- so a future palette change
-// (or a MahjongTile edit that reverts to `accentColor`) fails a test named
-// for the primary navigation it actually breaks.
+// to accent[700] itself fails a test named for the primary navigation it
+// actually breaks. This assertion only re-checks the raw token pair, though
+// -- it neither imports nor renders MahjongTile, so it would NOT catch
+// MahjongTile.tsx's own `styles.selected.backgroundColor` being edited back
+// to `colors.accentColor` directly; only a change to the `accent[700]` token
+// itself trips it, same as every other pin in this file.
 describe('selected tab tile clears AA on its fill', () => {
   it('clears AA on accent[700] (selected tile glyph/label)', () => {
     expect(contrast(colors.bg, colors.accent[700])).toBeGreaterThanOrEqual(AA);
