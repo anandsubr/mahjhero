@@ -404,6 +404,10 @@ describe('screen chrome', () => {
     expect(
       screen.getByTestId('section-tile').querySelector('[aria-hidden="true"]'),
     ).toBeTruthy();
+    // The chip form (glyph + initials), the SAME tile every other
+    // club-identity header already uses — not the small, label-less
+    // decorative form the four nav landing pages use.
+    expect(screen.getByTestId('thread-avatar-club-tile')).toBeTruthy();
   });
 });
 

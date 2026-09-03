@@ -6,11 +6,11 @@ import Button from '../../../../../components/Button';
 import Card from '../../../../../components/Card';
 import CheckInControl from '../../../../../components/CheckInControl';
 import ErrorBanner from '../../../../../components/ErrorBanner';
-import MahjongTile from '../../../../../components/MahjongTile';
 import Screen from '../../../../../components/Screen';
 import Tag from '../../../../../components/Tag';
 import TabBar from '../../../../../components/TabBar';
 import TableCard from '../../../../../components/TableCard';
+import ThreadAvatar from '../../../../../components/ThreadAvatar';
 import WaitlistPanel from '../../../../../components/WaitlistPanel';
 import { ChevronLeftIcon, PencilIcon } from '../../../../../components/icons';
 import {
@@ -23,7 +23,6 @@ import {
 import { canInvite, fetchClub, fetchRoster } from '../../../../../lib/clubs';
 import type { Club, ClubMember } from '../../../../../lib/clubs';
 import { GENERIC_ERROR } from '../../../../../lib/constants';
-import { glyphForClub } from '../../../../../lib/dashboard';
 import {
   acceptPromotionOffer,
   callForAFourth,
@@ -743,7 +742,7 @@ export default function EventScreen() {
           app/alerts.tsx, app/profile.tsx, app/messages/index.tsx).
         */}
         <View testID="section-tile">
-          <MahjongTile suit={glyphForClub(clubId)} size="section" />
+          <ThreadAvatar kind="club" name={club.name} clubId={clubId} asTile />
         </View>
         <Text style={styles.clubKicker}>{club.name}</Text>
       </View>
