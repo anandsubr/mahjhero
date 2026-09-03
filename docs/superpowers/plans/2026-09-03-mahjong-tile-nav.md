@@ -1535,7 +1535,7 @@ git commit -m "feat(nav): the club's own edit page gets the tile too"
 
 ---
 
-## Task 12: The two club-messages screens get the tile
+## Task 12: The two club-messages screens get the tile, and a top-right + replaces "New post"
 
 **Files:**
 - Modify: `app/messages/club/[threadId]/index.tsx`
@@ -1544,11 +1544,11 @@ git commit -m "feat(nav): the club's own edit page gets the tile too"
 - Modify: its own test file (search for it)
 
 **Interfaces:**
-- Consumes: `ThreadAvatar`'s `asTile`/`clubId` props from Task 8.
+- Consumes: `ThreadAvatar`'s `asTile`/`clubId` props from Task 8; `components/PlusButton.tsx` (an existing, already-shared circular "+" control — the same one `DashboardHeader`'s centred shape uses for "Add a game", `app/messages/index.tsx` uses for its own new-thread action, and `app/clubs/[id]/index.tsx` uses for adding a game).
 
 - [ ] **Step 1: Read both current files**
 
-Read `app/messages/club/[threadId]/index.tsx`'s header section and `app/messages/club/new.tsx`'s header section in full (both already shown earlier in this plan's own research). Confirm `thread.club_id` (the first file) and `clubId` (the second, an existing local variable from `useLocalSearchParams`) are both genuinely available at the point each `<ThreadAvatar ... />` call sits.
+Read `app/messages/club/[threadId]/index.tsx`'s header section AND its full-width "New post" `Button` (further down the same file, between the header and the post list) in full, plus `app/messages/club/new.tsx`'s header section (both partially shown earlier in this plan's own research). Confirm `thread.club_id` (the first file) and `clubId` (the second, an existing local variable from `useLocalSearchParams`) are both genuinely available at the point each `<ThreadAvatar ... />` call sits. Also read `components/PlusButton.tsx` (a small, already-shared component — `onPress`/`accessibilityLabel` props, a 44×44-ish outlined circle with a plus glyph) to confirm its exact signature before using it.
 
 - [ ] **Step 2: Write the failing tests**
 
@@ -1562,9 +1562,26 @@ For each screen's own test file, add a test in the same shape as Task 11's:
   });
 ```
 
-- [ ] **Step 3: Run both test files to verify they fail**
+Additionally, for `app/messages/club/[threadId]/index.tsx`'s own test file only, add:
 
-Expected: FAIL — `asTile`/`clubId` not yet passed.
+```tsx
+  it('moves New post into a top-right + button, off its own full-width row', async () => {
+    // render with whatever fixture already reaches a loaded thread
+    await screen.findByTestId('thread-avatar-club-tile');
+    expect(screen.getByRole('button', { name: 'New post' })).toBeTruthy();
+    // The old full-width Button read "New post" as its own visible label;
+    // the replacement is icon-only, same accessible name, no visible text
+    // node of its own — this is the one part of the old control that
+    // should be genuinely gone, not just restyled.
+    expect(screen.queryByText('New post')).toBeNull();
+  });
+```
+
+(Adapt the exact query for "icon-only, no visible text" to whatever this codebase's own established convention is for asserting that — check how `PlusButton`'s existing callers are tested elsewhere, e.g. `app/messages/index.tsx`'s own test file, for the idiom to reuse rather than inventing a new one.)
+
+- [ ] **Step 3: Run both test files to verify the new/changed tests fail**
+
+Expected: FAIL — `asTile`/`clubId` not yet passed; the New-post button is still full-width with a visible label.
 
 - [ ] **Step 4: Pass `asTile`/`clubId` at both call sites**
 
@@ -1598,21 +1615,67 @@ In `app/messages/club/new.tsx` (this one's `kind` is always the literal `'club'`
 
 (`clubId` here is the screen's own existing `useLocalSearchParams` variable, already confirmed available.)
 
-- [ ] **Step 5: Run both test files to verify they pass**
+- [ ] **Step 5: Move "New post" into a top-right `+`, `app/messages/club/[threadId]/index.tsx` only**
+
+This screen's header (`styles.header`) is `position: 'relative'` with `alignItems: 'center'`, and its back button is positioned `position: 'absolute', top: 0, left: 0, width: 44, height: 44` within it — a different layout mechanism than `DashboardHeader`'s flex-row `clubTopRow` (Task 9), but the same *idea*: a fixed-size control anchored to one corner while the centred content lays out normally. Add a symmetric right-anchored `PlusButton` the same way, and delete the old full-width `Button` entirely:
+
+```tsx
+        <Pressable
+          onPress={() => router.push('/messages')}
+          accessibilityRole="button"
+          accessibilityLabel="Back to Messages"
+          style={styles.backButton}
+        >
+          <ChevronLeftIcon color={colors.text} size={22} />
+        </Pressable>
+
+        <View style={styles.newPostButton}>
+          <PlusButton
+            onPress={() =>
+              router.push(
+                `/messages/club/new?threadId=${threadId}&clubId=${thread?.club_id ?? ''}`,
+              )
+            }
+            accessibilityLabel="New post"
+          />
+        </View>
+```
+
+(Same `onPress` expression the old `Button` already used — copy it verbatim, don't re-derive it. Place this new `View` as a sibling of the existing back-`Pressable`, both direct children of `styles.header`.)
+
+Add the mirrored positioning style:
+
+```ts
+  newPostButton: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+  },
+```
+
+Delete the old full-width `<Button onPress={...} accessibilityLabel="New post">New post</Button>` block further down the file (between the header and the post list) entirely — both the JSX and, if this was its only use, the now-unused `Button` import (check whether `Button` is used anywhere else in this file before removing the import).
+
+`app/messages/club/new.tsx` is **not** touched by this step — only its own tile (Step 4 above). The user's request was specifically about the club *board* screen's own "New post" affordance; the composer screen (`new.tsx`) has no equivalent button to move.
+
+- [ ] **Step 6: Run both test files to verify they pass**
 
 Expected: PASS.
 
-- [ ] **Step 6: Run the full suite and the type checker**
+- [ ] **Step 7: Run the full suite and the type checker**
 
 Run: `npm test && npx tsc --noEmit`
 Expected: PASS, clean.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Visually verify in the browser**
+
+View `app/messages/club/[threadId]/index.tsx` at mobile width (a temporary debug route or a reachable fixture, per this branch's established pattern). Confirm the top-right `+` sits at a sensible size/position relative to the back chevron and the centred tile+pill beneath it, and that removing the full-width button didn't leave an awkward gap where it used to sit (the empty-state card or post list should now flow directly under the header with reasonable spacing — adjust `styles.header`'s own `paddingBottom` or whatever spacing depended on the removed button's presence, if it reads wrong).
+
+- [ ] **Step 9: Commit**
 
 ```bash
 git add "app/messages/club/[threadId]/index.tsx" <its test file> \
   app/messages/club/new.tsx <its test file>
-git commit -m "feat(nav): the club messages board and new-thread composer get the tile"
+git commit -m "feat(nav): club board gets the tile and a top-right + for New post"
 ```
 
 ---
