@@ -489,6 +489,28 @@ describe('dashboard artboard', () => {
     expect(screen.getByText('7:00 pm')).toBeTruthy();
   });
 
+  it('shows a fee line only when a fee or minimum spend is set', async () => {
+    fetchMyClubs.mockResolvedValueOnce([CLUB]);
+    fetchMyUpcomingBookings.mockResolvedValueOnce([BOOKING]);
+    render(<ClubsScreen />);
+    await screen.findAllByText('Riverside Mah Jongg');
+    // The default fixture carries no fee — confirmed absent first, so the
+    // next case (a fee actually set) is a real contrast, not a tautology.
+    expect(screen.queryByText(/to play/)).toBeNull();
+    expect(screen.queryByText(/min spend/)).toBeNull();
+  });
+
+  it('joins cost-to-play and minimum-spend when both are set on the same game', async () => {
+    fetchMyClubs.mockResolvedValueOnce([CLUB]);
+    fetchMyUpcomingBookings.mockResolvedValue([
+      { ...BOOKING, fee_cents: 1500, min_spend_cents: 2000 },
+    ]);
+    render(<ClubsScreen />);
+    expect(
+      await screen.findByText('$15 to play · $20 min spend'),
+    ).toBeTruthy();
+  });
+
   it('narrows the games list to the picked club', async () => {
     fetchMyClubs.mockResolvedValue([CLUB, { ...CLUB, id: 'club-2', name: 'Harbour' }]);
     fetchMyUpcomingBookings.mockResolvedValue([

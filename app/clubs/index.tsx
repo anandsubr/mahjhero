@@ -47,7 +47,7 @@ import {
   needAFourthAlerts,
 } from '../../lib/dashboard';
 import type { DashboardRow, FourthAlert } from '../../lib/dashboard';
-import { fetchUpcomingEvents, formatEventTime, formatEventWhen } from '../../lib/events';
+import { fetchUpcomingEvents, formatEventTime, formatFeeCents, formatEventWhen } from '../../lib/events';
 import type { ClubEvent } from '../../lib/events';
 import { useSession } from '../../lib/session';
 import { colors, radius, space, type } from '../../lib/theme';
@@ -708,6 +708,18 @@ function GameRow({
                 {formatEventTime(row.startsAt, row.timezone)}
               </Text>
               <Text style={styles.gameVenue}>{row.venueName}</Text>
+              {row.feeCents > 0 || row.minSpendCents > 0 ? (
+                <Text style={styles.gameFee}>
+                  {[
+                    row.feeCents > 0 ? `${formatFeeCents(row.feeCents)} to play` : null,
+                    row.minSpendCents > 0
+                      ? `${formatFeeCents(row.minSpendCents)} min spend`
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </Text>
+              ) : null}
             </View>
           </Pressable>
         </Link>
@@ -1006,6 +1018,12 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   gameVenue: {
+    fontFamily: type.bodyRegular,
+    fontSize: type.size.helper,
+    color: colors.textMuted,
+    marginTop: 1,
+  },
+  gameFee: {
     fontFamily: type.bodyRegular,
     fontSize: type.size.helper,
     color: colors.textMuted,
