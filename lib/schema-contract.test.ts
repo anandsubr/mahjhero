@@ -527,7 +527,8 @@ describe.runIf(reachable || required)('events schema contract', () => {
       [
         'id', 'club_id', 'series_id', 'title', 'venue_id', 'notes',
         'starts_at', 'ends_at', 'status', 'occurrence_date', 'overrides',
-        'check_in_required', 'venues', 'event_tables', 'bookings',
+        'check_in_required', 'fee_cents', 'min_spend_cents', 'venues',
+        'event_tables', 'bookings',
       ].sort(),
     );
     expect(row.title).toBe('Tuesday Mahjong');
@@ -572,7 +573,7 @@ describe.runIf(reachable || required)('events schema contract', () => {
         'id', 'club_id', 'title', 'venue_id', 'notes', 'frequency',
         'weekday', 'nth_week', 'start_time', 'duration_minutes',
         'table_count', 'starts_on', 'ends_on', 'ended_at',
-        'check_in_required', 'venues',
+        'check_in_required', 'fee_cents', 'min_spend_cents', 'venues',
       ].sort(),
     );
     expect(row.ends_on).toBe('2027-12-31');
@@ -778,6 +779,8 @@ describe.runIf(reachable || required)(
             durationMinutes: 180,
             tableCount: 2,
             checkInRequired: false,
+            feeCents: 0,
+            minSpendCents: 0,
           }),
       },
       {
@@ -817,6 +820,8 @@ describe.runIf(reachable || required)(
             startsOn: '2027-01-01',
             endsOn: null,
             checkInRequired: false,
+            feeCents: 0,
+            minSpendCents: 0,
           }),
       },
       {
@@ -1026,6 +1031,8 @@ describe.runIf(reachable || required)(
         durationMinutes: input.durationMinutes,
         tableCount: 1,
         checkInRequired: false,
+        feeCents: 0,
+        minSpendCents: 0,
       });
       expect(error, `createEvent reported: ${error}`).toBeNull();
       expect(eventId).not.toBeNull();
@@ -1179,6 +1186,8 @@ describe.runIf(reachable || required)(
         durationMinutes: 180,
         tableCount: 1,
         checkInRequired: false,
+        feeCents: 0,
+        minSpendCents: 0,
       });
       expect(error).toBeNull();
       createdEventIds.push(eventId!);
@@ -1212,6 +1221,8 @@ describe.runIf(reachable || required)(
         durationMinutes: 180,
         tableCount: 1,
         checkInRequired: false,
+        feeCents: 0,
+        minSpendCents: 0,
       });
       expect(error).toBeNull();
       createdEventIds.push(eventId!);
@@ -1244,6 +1255,8 @@ describe.runIf(reachable || required)(
         durationMinutes: 180,
         tableCount: 1,
         checkInRequired: false,
+        feeCents: 0,
+        minSpendCents: 0,
       });
       expect(error).toBeNull();
       createdEventIds.push(eventId!);
@@ -1363,6 +1376,8 @@ describe.runIf(reachable || required)('deliberate refusals reach the host as ref
       durationMinutes: 180,
       tableCount: 1,
       checkInRequired: false,
+      feeCents: 0,
+      minSpendCents: 0,
     });
     expect(createError, `seeding event failed: ${createError}`).toBeNull();
     eventId = created!;
@@ -1413,6 +1428,8 @@ describe.runIf(reachable || required)('deliberate refusals reach the host as ref
       durationMinutes: 180,
       tableCount: 1,
       checkInRequired: false,
+      feeCents: 0,
+      minSpendCents: 0,
     });
     expect(created).toBeNull();
     expect(error).toBe('That start time has already passed. Pick a later one.');
@@ -1470,6 +1487,8 @@ describe.runIf(reachable || required)('deliberate refusals reach the host as ref
       startsOn: '2020-01-01',
       endsOn: '2020-02-01',
       checkInRequired: false,
+      feeCents: 0,
+      minSpendCents: 0,
     });
     expect(created).toBeNull();
     expect(error).toBe('No games would be created before that end date.');

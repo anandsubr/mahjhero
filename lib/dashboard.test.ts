@@ -52,6 +52,8 @@ function event(over: Partial<ClubEvent> = {}): ClubEvent {
     event_tables: [{ id: 'table-1', capacity: 4, label: 'Table 1' }],
     bookings: [],
     check_in_required: false,
+    fee_cents: 0,
+    min_spend_cents: 0,
     ...over,
   };
 }
@@ -80,6 +82,8 @@ function booking(over: Partial<MyBooking> = {}): MyBooking {
     check_in_state: null,
     check_in_opens_at: null,
     check_in_closes_at: null,
+    fee_cents: 0,
+    min_spend_cents: 0,
     ...over,
   };
 }
@@ -389,6 +393,34 @@ describe('buildDashboardRows', () => {
       now: NOW,
     });
     expect(rows.map((r) => r.eventId)).toEqual(['sooner', 'later']);
+  });
+
+  it('carries fee_cents and min_spend_cents from a booking-sourced row', () => {
+    const rows = buildDashboardRows({
+      bookings: [booking({ fee_cents: 1500, min_spend_cents: 2000 })],
+      events: [],
+      clubs: CLUBS,
+      userId: 'me',
+      now: NOW,
+    });
+    expect(rows[0].feeCents).toBe(1500);
+    expect(rows[0].minSpendCents).toBe(2000);
+  });
+
+  it('carries fee_cents and min_spend_cents from an event-sourced (joinable) row', () => {
+    // Same now/starts_at as the "adds an open event the viewer is not in as
+    // joinable" test above -- event()'s own defaults already satisfy
+    // hasFreeSeat and the not-yet-started window relative to NOW.
+    const rows = buildDashboardRows({
+      bookings: [],
+      events: [event({ fee_cents: 1000, min_spend_cents: 0 })],
+      clubs: CLUBS,
+      userId: 'me',
+      now: NOW,
+    });
+    expect(rows[0].joinable).toBe(true);
+    expect(rows[0].feeCents).toBe(1000);
+    expect(rows[0].minSpendCents).toBe(0);
   });
 });
 

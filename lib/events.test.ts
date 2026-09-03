@@ -31,8 +31,10 @@ import {
   fetchEvent,
   formatEventTime,
   formatEventWhen,
+  formatFeeCents,
   frequencyLabel,
   nextOccurrences,
+  parseDollarsToCents,
   removeEventTable,
   resetEventToSeries,
   updateEvent,
@@ -267,6 +269,43 @@ describe('formatEventTime', () => {
   });
 });
 
+describe('formatFeeCents', () => {
+  it('formats a whole-dollar amount with no cents', () => {
+    expect(formatFeeCents(1500)).toBe('$15');
+  });
+
+  it('formats an amount with cents', () => {
+    expect(formatFeeCents(1550)).toBe('$15.50');
+  });
+
+  it('formats zero', () => {
+    expect(formatFeeCents(0)).toBe('$0');
+  });
+});
+
+describe('parseDollarsToCents', () => {
+  it('parses a plain dollar amount', () => {
+    expect(parseDollarsToCents('15')).toBe(1500);
+  });
+
+  it('parses a dollar amount with cents', () => {
+    expect(parseDollarsToCents('15.5')).toBe(1550);
+  });
+
+  it('treats a blank string as zero', () => {
+    expect(parseDollarsToCents('')).toBe(0);
+    expect(parseDollarsToCents('   ')).toBe(0);
+  });
+
+  it('treats unparseable text as zero', () => {
+    expect(parseDollarsToCents('free')).toBe(0);
+  });
+
+  it('clamps a negative amount to zero', () => {
+    expect(parseDollarsToCents('-5')).toBe(0);
+  });
+});
+
 describe('eventStartTimeInZone', () => {
   it('reads the wall-clock time in the club timezone, not the device one', () => {
     // 2027-09-08 00:00 UTC is 20:00 the evening before in New York (EDT,
@@ -361,6 +400,8 @@ describe('createEvent', () => {
     durationMinutes: 180,
     tableCount: 2,
     checkInRequired: false,
+    feeCents: 0,
+    minSpendCents: 0,
   };
 
   /*
@@ -390,6 +431,8 @@ describe('createEvent', () => {
       duration_minutes: 180,
       table_count: 2,
       check_in: false,
+      fee_cents: 0,
+      min_spend_cents: 0,
     });
   });
 
@@ -427,6 +470,15 @@ describe('createEvent', () => {
       expect.objectContaining({ check_in: true }),
     );
   });
+
+  it('sends fee_cents and min_spend_cents on create', async () => {
+    rpcMock.mockResolvedValueOnce({ data: 'event-1', error: null });
+    await createEvent({ ...validInput, feeCents: 1500, minSpendCents: 2000 });
+    expect(rpcMock).toHaveBeenCalledWith(
+      'create_event',
+      expect.objectContaining({ fee_cents: 1500, min_spend_cents: 2000 }),
+    );
+  });
 });
 
 describe('updateEvent', () => {
@@ -460,6 +512,8 @@ describe('updateEvent', () => {
       new_start_time: '19:00',
       new_duration_minutes: 240,
       new_check_in_required: null,
+      new_fee_cents: null,
+      new_min_spend_cents: null,
     });
   });
 
@@ -476,6 +530,8 @@ describe('updateEvent', () => {
       new_start_time: null,
       new_duration_minutes: null,
       new_check_in_required: null,
+      new_fee_cents: null,
+      new_min_spend_cents: null,
     });
   });
 
@@ -488,6 +544,15 @@ describe('updateEvent', () => {
     expect(rpcMock).toHaveBeenCalledWith(
       'update_event',
       expect.objectContaining({ new_check_in_required: false }),
+    );
+  });
+
+  it('sends new_fee_cents and new_min_spend_cents on update', async () => {
+    rpcMock.mockResolvedValueOnce({ data: true, error: null });
+    await updateEvent('event-1', { feeCents: 1500, minSpendCents: 2000 });
+    expect(rpcMock).toHaveBeenCalledWith(
+      'update_event',
+      expect.objectContaining({ new_fee_cents: 1500, new_min_spend_cents: 2000 }),
     );
   });
 });
@@ -515,6 +580,8 @@ describe('updateEventSeries', () => {
       include_overridden: false,
       clear_ends_on: false,
       new_check_in_required: null,
+      new_fee_cents: null,
+      new_min_spend_cents: null,
     });
   });
 
@@ -541,6 +608,8 @@ describe('updateEventSeries', () => {
       include_overridden: false,
       clear_ends_on: true,
       new_check_in_required: null,
+      new_fee_cents: null,
+      new_min_spend_cents: null,
     });
   });
 
@@ -553,6 +622,15 @@ describe('updateEventSeries', () => {
     expect(rpcMock).toHaveBeenCalledWith(
       'update_event_series',
       expect.objectContaining({ new_check_in_required: true }),
+    );
+  });
+
+  it('sends new_fee_cents and new_min_spend_cents on update series', async () => {
+    rpcMock.mockResolvedValueOnce({ data: true, error: null });
+    await updateEventSeries('series-1', { feeCents: 1500, minSpendCents: 2000 });
+    expect(rpcMock).toHaveBeenCalledWith(
+      'update_event_series',
+      expect.objectContaining({ new_fee_cents: 1500, new_min_spend_cents: 2000 }),
     );
   });
 });
@@ -576,6 +654,8 @@ describe('createEventSeries', () => {
     startsOn: '2027-01-01',
     endsOn: null,
     checkInRequired: false,
+    feeCents: 0,
+    minSpendCents: 0,
   };
 
   it('rejects a blank title with a friendly message, before ever calling the RPC', async () => {
@@ -602,6 +682,15 @@ describe('createEventSeries', () => {
     expect(rpcMock).toHaveBeenCalledWith(
       'create_event_series',
       expect.objectContaining({ check_in: true }),
+    );
+  });
+
+  it('sends fee_cents and min_spend_cents on create series', async () => {
+    rpcMock.mockResolvedValueOnce({ data: 'series-1', error: null });
+    await createEventSeries({ ...validInput, feeCents: 1500, minSpendCents: 2000 });
+    expect(rpcMock).toHaveBeenCalledWith(
+      'create_event_series',
+      expect.objectContaining({ fee_cents: 1500, min_spend_cents: 2000 }),
     );
   });
 });
@@ -732,6 +821,8 @@ describe('deliberate refusals are reported as refusals, not as network failures'
       durationMinutes: 180,
       tableCount: 1,
       checkInRequired: false,
+      feeCents: 0,
+      minSpendCents: 0,
     });
     expect(result.error).toBe('That start time has already passed. Pick a later one.');
     expect(result.error).not.toBe(GENERIC_ERROR);
@@ -790,6 +881,8 @@ describe('deliberate refusals are reported as refusals, not as network failures'
       startsOn: '2020-01-01',
       endsOn: '2020-01-02',
       checkInRequired: false,
+      feeCents: 0,
+      minSpendCents: 0,
     });
     // Word-for-word the create screen's own preview copy for the same
     // situation.
@@ -812,6 +905,8 @@ describe('deliberate refusals are reported as refusals, not as network failures'
       startsOn: '2027-06-01',
       endsOn: '2027-01-01',
       checkInRequired: false,
+      feeCents: 0,
+      minSpendCents: 0,
     });
     expect(result.error).toBe('That end date is before the series starts.');
   });
@@ -845,6 +940,8 @@ describe('deliberate refusals are reported as refusals, not as network failures'
       durationMinutes: 180,
       tableCount: 1,
       checkInRequired: false,
+      feeCents: 0,
+      minSpendCents: 0,
     });
     expect(result.error).toBe('Give the game a date and a start time.');
   });
@@ -864,8 +961,24 @@ describe('deliberate refusals are reported as refusals, not as network failures'
       durationMinutes: 180,
       tableCount: 99,
       checkInRequired: false,
+      feeCents: 0,
+      minSpendCents: 0,
     });
     expect(result.error).toBe('Choose between 1 and 20 tables.');
+  });
+
+  it('updateEvent: a negative fee says so, not that the connection failed', async () => {
+    // Task 11's addendum: create_event/update_event/create_event_series/
+    // update_event_series now raise 'fee cannot be negative' — pinned here
+    // the same way 'duration out of range' is above.
+    rpcMock.mockResolvedValueOnce({
+      error: { code: '23514', message: 'fee cannot be negative' },
+    });
+    await expect(
+      updateEvent('event-1', { feeCents: -100 }),
+    ).resolves.toEqual({
+      error: 'The cost to play cannot be negative.',
+    });
   });
 
   it('updateEvent: an end time before the start says so', async () => {

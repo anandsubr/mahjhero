@@ -150,6 +150,11 @@ export type DashboardRow = {
    * `buildDashboardRows`' own doc comment for why this exists.
    */
   organizing: boolean;
+  /** Integer cents, copied from whichever source (MyBooking or ClubEvent)
+   *  built this row. `0` means "no fee set". */
+  feeCents: number;
+  /** Integer cents. `0` means "no minimum spend set". */
+  minSpendCents: number;
 };
 
 /** Live means it holds or is queued for a seat; declined and cancelled do not. */
@@ -222,6 +227,8 @@ export function buildDashboardRows(input: {
     booking,
     joinable: false,
     organizing: false,
+    feeCents: booking.fee_cents,
+    minSpendCents: booking.min_spend_cents,
   }));
 
   const seen = new Set(rows.map((row) => row.eventId));
@@ -260,6 +267,8 @@ export function buildDashboardRows(input: {
       booking: null,
       joinable: !started,
       organizing: started && !ended,
+      feeCents: event.fee_cents,
+      minSpendCents: event.min_spend_cents,
     });
   }
 

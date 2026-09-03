@@ -413,6 +413,10 @@ describe('BOOKING_REFUSALS (self-audit against the migrations)', () => {
       'raised by add_event_table — mapped by lib/events.ts’s own RPC_ERROR_MESSAGES, not this module’s',
     'venue not available to this club':
       'raised (via assert_venue_available) by create_event/update_event/update_event_series — mapped by lib/events.ts’s own RPC_ERROR_MESSAGES, not this module’s',
+    'fee cannot be negative':
+      'raised by create_event/update_event/create_event_series/update_event_series — mapped by lib/events.ts’s own RPC_ERROR_MESSAGES, not this module’s',
+    'minimum spend cannot be negative':
+      'raised by create_event/update_event/create_event_series/update_event_series — mapped by lib/events.ts’s own RPC_ERROR_MESSAGES, not this module’s',
     // 'not an organizer of this club' (assert_club_organizer) used to be
     // allowlisted here on the claim that lib/events.ts alone mapped it. That
     // was false: call_for_a_fourth (lib/bookings.ts's own callForAFourth)
