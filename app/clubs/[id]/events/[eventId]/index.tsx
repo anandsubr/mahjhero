@@ -6,6 +6,7 @@ import Button from '../../../../../components/Button';
 import Card from '../../../../../components/Card';
 import CheckInControl from '../../../../../components/CheckInControl';
 import ErrorBanner from '../../../../../components/ErrorBanner';
+import MahjongTile from '../../../../../components/MahjongTile';
 import Screen from '../../../../../components/Screen';
 import Tag from '../../../../../components/Tag';
 import TabBar from '../../../../../components/TabBar';
@@ -22,6 +23,7 @@ import {
 import { canInvite, fetchClub, fetchRoster } from '../../../../../lib/clubs';
 import type { Club, ClubMember } from '../../../../../lib/clubs';
 import { GENERIC_ERROR } from '../../../../../lib/constants';
+import { glyphForClub } from '../../../../../lib/dashboard';
 import {
   acceptPromotionOffer,
   callForAFourth,
@@ -732,6 +734,17 @@ export default function EventScreen() {
         >
           <ChevronLeftIcon color={colors.accentColor} />
         </Pressable>
+        {/*
+          Wrapped in its own testID'd View, not bare -- TabBar (carried by
+          every state of this screen) renders its own `aria-hidden` tiles
+          too, so a test scoping past them needs a wrapper to key off of.
+          Same `testID="section-tile"` convention every other landing
+          screen's own decorative tile already uses (app/clubs/index.tsx,
+          app/alerts.tsx, app/profile.tsx, app/messages/index.tsx).
+        */}
+        <View testID="section-tile">
+          <MahjongTile suit={glyphForClub(clubId)} size="section" />
+        </View>
         <Text style={styles.clubKicker}>{club.name}</Text>
       </View>
       <View style={styles.row}>

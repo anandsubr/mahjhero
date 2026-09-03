@@ -387,6 +387,24 @@ describe('screen chrome', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Back to your clubs' }));
     expect(push).toHaveBeenCalledWith('/clubs');
   });
+
+  // Task 13: this screen's own small decorative club tile, between the back
+  // chevron and the club-name kicker -- the same `size="section"` treatment
+  // every other landing screen in this plan already carries, here showing
+  // THIS club's own stable glyph via `glyphForClub`. TabBar (carried by
+  // every state of this screen) renders its own `aria-hidden` tiles too, so
+  // a bare `document.querySelector('[aria-hidden="true"]')` would already
+  // pass without this tile existing -- scoped through `testID="section-tile"`
+  // first, the same wrapper convention every other landing screen's own test
+  // already uses (app/__tests__/clubs.test.tsx, messages.test.tsx,
+  // profile.test.tsx, alerts.test.tsx) for this exact false-positive risk.
+  it("shows a small mahjong tile before the club name, matching that club's own glyph elsewhere", async () => {
+    render(<EventScreen />);
+    await screen.findByText(CLUB.name);
+    expect(
+      screen.getByTestId('section-tile').querySelector('[aria-hidden="true"]'),
+    ).toBeTruthy();
+  });
 });
 
 describe('a section that fails does not blank the rest of the screen', () => {
