@@ -90,12 +90,14 @@ vi.mock('../../lib/use-notifications-unread', () => ({
 }));
 
 const fetchMyClubs = vi.fn();
+const fetchMyRoles = vi.fn();
 
 vi.mock('../../lib/clubs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../lib/clubs')>();
   return {
     ...actual,
     fetchMyClubs: (...args: unknown[]) => fetchMyClubs(...args),
+    fetchMyRoles: (...args: unknown[]) => fetchMyRoles(...args),
   };
 });
 
@@ -191,10 +193,14 @@ beforeEach(() => {
   recordAttendance.mockReset();
   clearAttendance.mockReset();
   fetchMyClubs.mockReset();
+  fetchMyRoles.mockReset();
   fetchUpcomingEvents.mockReset();
   fetchProfile.mockReset();
   fetchMyUpcomingBookings.mockResolvedValue([]);
   fetchMyClubs.mockResolvedValue([CLUB]);
+  // This file is about a member's own bookings, not organizing -- an empty
+  // roles list is the correct, uninvolved default.
+  fetchMyRoles.mockResolvedValue([]);
   // No open games beyond whatever the bookings themselves describe: this
   // file is about the seats a member holds, not the ones they could still
   // join.

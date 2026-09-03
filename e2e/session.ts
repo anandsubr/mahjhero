@@ -90,7 +90,7 @@ export async function mintSession(
  *
  * Hard-coded rather than derived from `Date.now()`, because a baseline whose
  * date text changes every run is a baseline that diffs every run. Both are
- * Tuesdays in 2099 — far enough out that `fetchUpcomingEvents`' `starts_at >=
+ * Tuesdays in 2099 — far enough out that `fetchUpcomingEvents`' `ends_at >=
  * now()` filter will still include them long after everyone reading this has
  * stopped caring, and matching the weekly-Tuesday series they belong to.
  *

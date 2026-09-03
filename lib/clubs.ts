@@ -258,6 +258,39 @@ export async function fetchClub(clubId: string): Promise<Club | null> {
 }
 
 /**
+ * The viewer's own role in every club they belong to — cheap and narrow on
+ * purpose. `fetchRoster` returns the whole membership list and exists for
+ * screens that need everyone; the dashboard (`app/clubs/index.tsx`) is the
+ * first screen that needs only "am I an organizer here", for every club at
+ * once, without the roster at all.
+ *
+ * `club_members_select_member`'s existing policy (`is_club_member(club_id)`,
+ * 20260822033527_create_clubs.sql) already permits a member reading their
+ * own row — this is a plain select, no new grant and no new policy.
+ */
+export async function fetchMyRoles(
+  userId: string,
+): Promise<{ club_id: string; role: ClubRole }[] | null> {
+  try {
+    const { data, error } = await supabase
+      .from('club_members')
+      .select('club_id, role')
+      .eq('profile_id', userId)
+      .eq('status', 'active')
+      .order('club_id');
+
+    if (error) {
+      console.error('fetchMyRoles failed', error);
+      return null;
+    }
+    return (data ?? []) as { club_id: string; role: ClubRole }[];
+  } catch (cause) {
+    console.error('fetchMyRoles failed', cause);
+    return null;
+  }
+}
+
+/**
  * Reads the roster through the `club_roster` security definer function rather
  * than selecting `club_members` with an embedded `profiles(...)` join.
  *

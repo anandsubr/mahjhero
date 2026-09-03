@@ -17,7 +17,7 @@ type DateFieldProps = {
    *
    * Every caller in the app passes today, because a game dated in the past
    * saves fine and then appears nowhere: `fetchUpcomingEvents` filters
-   * `starts_at >= now()` and is the only events listing there is, so a
+   * `ends_at >= now()` and is the only events listing there is, so a
    * mistyped year used to give a host a success redirect and an invisible
    * game. This is the cheap, helpful half of that fix -- the picker simply
    * does not offer the day. The guarantee is

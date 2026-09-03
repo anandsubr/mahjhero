@@ -170,7 +170,7 @@ export default function NewEventScreen() {
    * The floor under both date fields on this screen.
    *
    * A game dated in the past saves fine and then appears nowhere:
-   * `fetchUpcomingEvents` filters `starts_at >= now()` and is the only events
+   * `fetchUpcomingEvents` filters `ends_at >= now()` and is the only events
    * listing the app has, so a mistyped year used to give a host a success
    * redirect and a game that exists only in the database. Snapshotted once
    * per mount rather than recomputed on every render -- it is a floor, not a
