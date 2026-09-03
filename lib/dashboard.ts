@@ -30,9 +30,10 @@ export type HeaderScope = { kicker: string; name: string; meta: string };
  * removed, or the list reloaded), and the honest answer to "show me a club
  * you are no longer in" is the whole list.
  *
- * The artboard's meta is "N clubs · M members". `fetchMyClubs` returns no
- * member counts, so the count half is dropped rather than faked — see the
- * spec's deferred item 4.
+ * The artboard's meta was originally "N clubs · M members" here — both
+ * halves are gone now: the member count was already dropped as faked (see
+ * the spec's deferred item 4), and the club count itself was a redundant
+ * subtitle under "Your clubs", so this scope now carries no meta at all.
  *
  * One club is the exception to both fallbacks. There is nothing to disambiguate
  * and no chip row to pick with, so a single-club list resolves to that club
@@ -57,9 +58,7 @@ export function headerScope(clubs: Club[], selected: string): HeaderScope {
       // kicker: there "Your club" and the club's own name differ.
       kicker: '',
       name: 'Your clubs',
-      // Always plural: this branch is reached only by an empty list ("0
-      // clubs") or by two or more. A one-club list resolves above.
-      meta: `${clubs.length} clubs`,
+      meta: '',
     };
   }
   return { kicker: 'Your club', name: club.name, meta: club.rhythm };

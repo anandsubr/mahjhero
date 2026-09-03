@@ -335,7 +335,7 @@ describe('clubs list', () => {
 });
 
 describe('dashboard artboard', () => {
-  it('heads the page with the club count', async () => {
+  it('heads the page with "Your clubs" and no club-count subtitle', async () => {
     fetchMyClubs.mockResolvedValue([CLUB, { ...CLUB, id: 'club-2', name: 'Harbour' }]);
     fetchMyUpcomingBookings.mockResolvedValue([]);
     fetchUpcomingEvents.mockResolvedValue([]);
@@ -343,7 +343,7 @@ describe('dashboard artboard', () => {
     render(<ClubsScreen />);
 
     expect(await screen.findByText('Your clubs')).toBeTruthy();
-    expect(screen.getByText('2 clubs')).toBeTruthy();
+    expect(screen.queryByText('2 clubs')).toBeNull();
   });
 
   // The rows were inert: the one thing a member wants from a game they can
@@ -420,7 +420,6 @@ describe('dashboard artboard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Clear club filter' }));
 
     expect(screen.getByText('Your clubs')).toBeTruthy();
-    expect(screen.getByText('2 clubs')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /^Manage / })).toBeNull();
   });
 

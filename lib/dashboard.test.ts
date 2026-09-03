@@ -101,7 +101,7 @@ describe('headerScope', () => {
     expect(headerScope(CLUBS, ALL_CLUBS)).toEqual({
       kicker: '',
       name: 'Your clubs',
-      meta: '2 clubs',
+      meta: '',
     });
   });
 
@@ -116,11 +116,11 @@ describe('headerScope', () => {
     });
   });
 
-  it('still counts an empty list rather than resolving to nothing', () => {
+  it('resolves an empty list to the all-clubs scope rather than nothing', () => {
     expect(headerScope([], ALL_CLUBS)).toEqual({
       kicker: '',
       name: 'Your clubs',
-      meta: '0 clubs',
+      meta: '',
     });
   });
 
