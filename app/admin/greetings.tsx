@@ -17,7 +17,7 @@ import {
   type Greeting,
 } from '../../lib/greetings';
 import { useSession } from '../../lib/session';
-import { colors, radius, space, type } from '../../lib/theme';
+import { colors, space, type } from '../../lib/theme';
 
 /**
  * The admin-only screen behind Profile's "Greetings" card
