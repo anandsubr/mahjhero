@@ -28,7 +28,11 @@ import { colors, radius, space, type } from '../lib/theme';
  */
 function formatReceivedAt(createdAt: string): string {
   const when = new Date(createdAt);
-  if (Number.isNaN(when.getTime())) return '';
+  // Same RangeError guard, and same fallback string, as lib/events.ts's
+  // formatEventWhen: an empty string still leaves blank vertical space under
+  // the margin above, which reads as a rendering glitch rather than an
+  // honest "we don't know".
+  if (Number.isNaN(when.getTime())) return 'Date unavailable';
   return new Intl.DateTimeFormat('en-GB', {
     weekday: 'short',
     day: 'numeric',
@@ -48,7 +52,6 @@ function formatReceivedAt(createdAt: string): string {
  */
 export default function AlertsScreen() {
   const { session, loading } = useSession();
-  const router = useRouter();
 
   const [rows, setRows] = useState<NotificationRow[] | null>(null);
   const [ready, setReady] = useState(false);
@@ -174,7 +177,11 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: colors.accent[500],
+    // accent[700], not the lighter accent[500]: this circle carries real
+    // text (club initials), which needs AA's 4.5:1, not a decorative fill's
+    // 3:1 -- the same reasoning components/ThreadRow.tsx's own initials
+    // avatars already follow. Pinned in lib/theme.test.ts.
+    backgroundColor: colors.accent[700],
     alignItems: 'center',
     justifyContent: 'center',
   },

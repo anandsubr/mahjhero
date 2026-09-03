@@ -161,3 +161,21 @@ describe('thread row avatars clear contrast on their own fill', () => {
     expect(contrast(colors.bg, colors.accent2[600])).toBeGreaterThanOrEqual(NON_TEXT);
   });
 });
+
+// app/alerts.tsx's own club-initials avatar first shipped with accent[500]
+// filling the circle behind colors.bg text -- 2.52:1, well under AA. Real
+// text (club initials, same as ThreadRow's club/direct avatars above) needs
+// the 4.5:1 bar, not a decorative fill's 3:1. Fixed to accent[700] -- the
+// exact same pairing already measured at 5.72:1 above ("unread badge text
+// clears AA on its background"), not a new number. Given its own describe
+// block anyway, rather than left to be found by inference from an unrelated
+// component's test: a future change to this avatar's fill (or a palette
+// change to accent[700] itself) should fail a test named for the avatar it
+// actually breaks, not force someone hunting for "why is my alerts avatar
+// suddenly unreadable" to realize the relevant assertion lives under a
+// badge's own describe block three components away.
+describe('alerts feed avatar initials clear AA on their fill', () => {
+  it('clears AA on accent[700]', () => {
+    expect(contrast(colors.bg, colors.accent[700])).toBeGreaterThanOrEqual(AA);
+  });
+});

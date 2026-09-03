@@ -106,6 +106,37 @@ describe('alerts screen', () => {
     ).toBeTruthy();
   });
 
+  // The one deliberately novel behavior on this screen: every other date in
+  // this app renders in the CLUB's timezone (lib/events.ts's
+  // formatEventWhen), but a notification's timestamp renders in the
+  // DEVICE's own local zone instead -- no `timeZone` override. This repo's
+  // suite runs pinned to TZ=America/New_York (see the `test` script).
+  //
+  // The fixture's `club_timezone` is deliberately overridden to
+  // America/Los_Angeles here -- NOT America/New_York, which the shared
+  // BOOKED_BY_FRIEND fixture above uses and which would make a club-timezone
+  // regression invisible (device and club zone would coincide). And
+  // `created_at` is chosen to cross the UTC/America-New-York day boundary:
+  // 2026-09-02T02:30:00.000Z is Wed 2:30am in UTC, Tue 10:30pm in
+  // America/New_York (device, EDT, UTC-4 in September), and Tue 7:30pm in
+  // America/Los_Angeles (the row's own, wrong, club_timezone) -- three
+  // different renderings, so this one assertion catches a regression to
+  // either UTC or club_timezone, not only one of them. Expected string
+  // computed the same way `formatReceivedAt` computes it
+  // (Intl.DateTimeFormat, 'en-GB', weekday/day/month/hour/minute, hour12, no
+  // timeZone key).
+  it("renders the notification's timestamp in the device's local timezone, not UTC or the club's own", async () => {
+    fetchMyNotifications.mockResolvedValueOnce([
+      {
+        ...BOOKED_BY_FRIEND,
+        club_timezone: 'America/Los_Angeles',
+        created_at: '2026-09-02T02:30:00.000Z',
+      },
+    ]);
+    render(<AlertsScreen />);
+    expect(await screen.findByText('Tue 1 Sept, 10:30 pm')).toBeTruthy();
+  });
+
   it('navigates to the notification href on tap', async () => {
     fetchMyNotifications.mockResolvedValueOnce([BOOKED_BY_FRIEND]);
     render(<AlertsScreen />);
