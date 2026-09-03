@@ -71,6 +71,7 @@ const fetchMyClubs = vi.fn();
 const fetchClub = vi.fn();
 const fetchRoster = vi.fn();
 const fetchPendingInvites = vi.fn();
+const fetchMyRoles = vi.fn();
 const importRoster = vi.fn();
 const fetchUpcomingEvents = vi.fn();
 const fetchMyUpcomingBookings = vi.fn();
@@ -93,6 +94,7 @@ vi.mock('../../lib/clubs', async (importOriginal) => {
     fetchClub: (...args: unknown[]) => fetchClub(...args),
     fetchRoster: (...args: unknown[]) => fetchRoster(...args),
     fetchPendingInvites: (...args: unknown[]) => fetchPendingInvites(...args),
+    fetchMyRoles: (...args: unknown[]) => fetchMyRoles(...args),
     importRoster: (...args: unknown[]) => importRoster(...args),
   };
 });
@@ -262,6 +264,7 @@ beforeEach(() => {
   fetchRoster.mockResolvedValue([]);
   fetchPendingInvites.mockResolvedValue([]);
   fetchUpcomingEvents.mockResolvedValue([]);
+  fetchMyRoles.mockResolvedValue([]);
   importRoster.mockResolvedValue({ created: 2, error: null });
   // Before Task 8 nothing mocked lib/bookings or lib/profile, so every test
   // in this file let the real fetch fail against the placeholder Supabase env
@@ -1063,6 +1066,62 @@ describe('dashboard artboard', () => {
     render(<ClubsScreen />);
     fireEvent.click(await screen.findByRole('button', { name: 'Start a club' }));
     expect(push).toHaveBeenCalledWith('/clubs/new');
+  });
+});
+
+describe('organizing an unbooked, in-progress game', () => {
+  // Relative to the real clock, matching EVENT's own convention in this
+  // file (fake timers are deliberately not installed here) -- a fixed
+  // calendar timestamp would silently stop being "in progress" the moment
+  // it passed.
+  const inProgressStart = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const inProgressEnd = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+
+  function liveUnbookedGame() {
+    return {
+      ...EVENT,
+      id: 'live-game',
+      club_id: CLUB.id,
+      title: 'In progress now',
+      starts_at: inProgressStart,
+      ends_at: inProgressEnd,
+    };
+  }
+
+  it("shows a Hosting tag and no Join button for the organizer's own unbooked, in-progress game", async () => {
+    fetchMyClubs.mockResolvedValue([CLUB]);
+    fetchMyRoles.mockResolvedValue([{ club_id: CLUB.id, role: 'host' }]);
+    fetchUpcomingEvents.mockResolvedValue([liveUnbookedGame()]);
+
+    render(<ClubsScreen />);
+
+    expect(await screen.findByText('In progress now')).toBeTruthy();
+    expect(screen.getByText('Hosting')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Join/ })).toBeNull();
+  });
+
+  it('does not show an in-progress unbooked game to a plain member', async () => {
+    fetchMyClubs.mockResolvedValue([CLUB]);
+    fetchMyRoles.mockResolvedValue([]); // organizer nowhere
+    fetchUpcomingEvents.mockResolvedValue([liveUnbookedGame()]);
+
+    render(<ClubsScreen />);
+
+    expect(await screen.findByRole('button', { name: 'Club' })).toBeTruthy();
+    expect(screen.queryByText('In progress now')).toBeNull();
+  });
+
+  it('opens the event screen when the organizing row is tapped', async () => {
+    fetchMyClubs.mockResolvedValue([CLUB]);
+    fetchMyRoles.mockResolvedValue([{ club_id: CLUB.id, role: 'host' }]);
+    fetchUpcomingEvents.mockResolvedValue([liveUnbookedGame()]);
+
+    render(<ClubsScreen />);
+
+    const link = (await screen.findByText('In progress now')).closest('a');
+    expect(link?.getAttribute('data-href')).toBe(
+      `/clubs/${CLUB.id}/events/live-game`,
+    );
   });
 });
 

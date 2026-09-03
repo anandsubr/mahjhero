@@ -31,8 +31,8 @@ import {
   waitlistLabel,
 } from '../../lib/bookings';
 import type { BookingOutcome, MyBooking } from '../../lib/bookings';
-import { fetchMyClubs } from '../../lib/clubs';
-import type { Club } from '../../lib/clubs';
+import { canInvite, fetchMyClubs, fetchMyRoles } from '../../lib/clubs';
+import type { Club, ClubRole } from '../../lib/clubs';
 import { GENERIC_ERROR } from '../../lib/constants';
 import {
   ALL_CLUBS,
@@ -88,6 +88,13 @@ export default function ClubsScreen() {
   // app/clubs/[id]/index.tsx's `eventsFailed`.
   const [bookings, setBookings] = useState<MyBooking[] | null>(null);
   const [bookingsFailed, setBookingsFailed] = useState(false);
+  // The viewer's own role in every club they belong to, used only to
+  // compute which clubs they organize (see `organizerClubIds` below).
+  // Deliberately NOT paired with a `rolesFailed` boolean the way
+  // `bookings`/`bookingsFailed` are: a failed or empty read both resolve to
+  // "no organizing rows" with no error banner, so there is nothing a
+  // separate failed-state would let this screen say differently.
+  const [roles, setRoles] = useState<{ club_id: string; role: ClubRole }[]>([]);
   // One flag for every booking write — take, join, decline, accept-offer,
   // decline-offer, leave-waitlist — held across the write AND its reload,
   // not just the write. These used to be two independent flags (`takeBusy`
@@ -162,6 +169,10 @@ export default function ClubsScreen() {
         setBookings(result);
         setBookingsFailed(false);
       }
+    });
+    fetchMyRoles(userId).then((result) => {
+      if (cancelled) return;
+      setRoles(result ?? []);
     });
     return () => {
       cancelled = true;
@@ -440,11 +451,15 @@ export default function ClubsScreen() {
   }
 
   const scope = headerScope(list, selected);
+  const organizerClubIds = new Set(
+    roles.filter((r) => canInvite(r.role)).map((r) => r.club_id),
+  );
   const rows = buildDashboardRows({
     bookings: bookings ?? [],
     events,
     clubs: list,
     userId: userId ?? '',
+    organizerClubIds,
   }).filter((row) => inScope(row.clubId, selected));
   const alerts = needAFourthAlerts({
     events,
@@ -586,8 +601,10 @@ export default function ClubsScreen() {
 
 /**
  * One row of "Your games": the artboard's date tile, the club and title, and
- * a single right-hand affordance — Join for an open game the member is not in
- * yet, "Seated" for one they hold.
+ * a single right-hand affordance — Join for an open game the member is not
+ * in yet, "Seated" for one they hold, "Hosting" for an in-progress game they
+ * organize but have not booked (`row.organizing` — see buildDashboardRows'
+ * own doc comment in lib/dashboard.ts).
  *
  * A joinable row carries no booking, so none of the seat-management controls
  * apply to it; everything they need lives in `BookingSeatControls` below,
@@ -664,16 +681,20 @@ function GameRow({
           </Pressable>
         </Link>
         {booking === null ? (
-          <Button
-            variant="secondary"
-            big={false}
-            disabled={busy}
-            onPress={() => onJoin(row)}
-            accessibilityLabel={`Join ${row.title}`}
-            style={styles.gameAction}
-          >
-            Join
-          </Button>
+          row.organizing ? (
+            <Tag variant="accent">Hosting</Tag>
+          ) : (
+            <Button
+              variant="secondary"
+              big={false}
+              disabled={busy}
+              onPress={() => onJoin(row)}
+              accessibilityLabel={`Join ${row.title}`}
+              style={styles.gameAction}
+            >
+              Join
+            </Button>
+          )
         ) : booking.status === 'confirmed' ? (
           <Tag variant="accent2">Seated</Tag>
         ) : null}
