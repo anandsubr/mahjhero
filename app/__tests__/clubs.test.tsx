@@ -1378,13 +1378,25 @@ describe('club detail screen', () => {
     render(<ClubDetailScreen />);
     expect(await screen.findByText('Riverside Mah Jongg')).toBeTruthy();
     expect(screen.getByText('Thursday evenings')).toBeTruthy();
-    // Pins this to the "Your club" avatar/pill variant specifically — the
-    // name and rhythm text alone would pass identically for the flat
-    // branch, so they don't prove which shape actually rendered.
-    expect(screen.getByTestId('thread-avatar-club')).toBeTruthy();
+    // Pins this to the "Your club" tile variant specifically — the name and
+    // rhythm text alone would pass identically for the flat branch, so they
+    // don't prove which shape actually rendered.
+    expect(screen.getByTestId('thread-avatar-club-tile')).toBeTruthy();
     // The bottom tab bar's own Profile tab is the way to profile now —
     // this header no longer draws its own avatar/profile control.
     expect(screen.queryByRole('button', { name: 'Your profile' })).toBeNull();
+  });
+
+  // This screen never had the combined back/tile/plus row Task 9/10 built
+  // for the Clubs dashboard specifically — its own separate "← Clubs" ghost
+  // button (below) is the only way back, and it never gains "Clear club
+  // filter" or "Add a game" alongside the tile.
+  it('shows the club as a tile, still with its own separate back button unchanged', async () => {
+    render(<ClubDetailScreen />);
+    expect(await screen.findByTestId('thread-avatar-club-tile')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Back to your clubs' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Clear club filter' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Add a game' })).toBeNull();
   });
 
   // The tab bar's Club tab reaches the identical /clubs route, but renders
