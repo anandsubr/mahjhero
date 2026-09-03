@@ -98,6 +98,15 @@ so the other two screens that render that same component are untouched.
 | 6 | Tab bar tiles stay upright — no rotation. Rotation is `TileHero`'s decorative-hero-only treatment. |
 | 7 | Selected-tab styling moves from a tint swap to `TileHero`'s solid accent-tile treatment (whole tile re-colors, not just the glyph/text). |
 
+> **Superseded for the Clubs section (Addendum 2):** decision #5 no longer
+> holds for Clubs specifically. Addendum 2 replaced the fixed "dots" glyph
+> at the top of the Clubs section with a per-club glyph (`glyphForClub`),
+> shown only in the single-club scope, while the flat all-clubs scope shows
+> no header tile at all — so there is no longer one fixed tile face shared
+> between the Clubs tab and every Clubs screen's own heading. Messages,
+> Profile, and Alerts are unaffected; decision #5 still holds for those
+> three sections as originally written.
+
 ## Open items for the implementation plan to resolve
 
 - Exact glyph/label sizing inside the 70×77 tile (tested visually in

@@ -13,11 +13,13 @@ import { colors, radius, space, type } from '../lib/theme';
  * starting a club lives in the chip row now (components/ClubChips.tsx's own
  * trailing "New club" tile), not here. The single-club scope —
  * `kicker === 'Your club'`, the one value lib/dashboard.ts's `headerScope`
- * and app/clubs/[id]/index.tsx ever pass for it — instead centres the
- * club's own identity: an avatar and a name pill, the same treatment the
- * messages board header uses for a club thread (app/messages/club/new.tsx).
- * venues.tsx passes the club's own name as its kicker, never the literal
- * string 'Your club', so it always draws the flat shape.
+ * and app/clubs/[id]/index.tsx ever pass for it — instead draws the club's
+ * own identity: its mahjong tile sits in the top row (`clubTopRow`),
+ * flanked by the back chevron and the ⊕, the same treatment the messages
+ * board header uses for a club thread (app/messages/club/new.tsx); a
+ * centred name pill and meta line (`clubCenter`) sit below that row. venues.tsx
+ * passes the club's own name as its kicker, never the literal string 'Your
+ * club', so it always draws the flat shape.
  *
  * `onPressScope`, only meaningful in the "Your club" shape, draws a pencil
  * beside the name and opens the club's roster, invites, venues and import —
@@ -48,12 +50,11 @@ import { colors, radius, space, type } from '../lib/theme';
  * optional element rendered inline immediately before `name` (e.g. the
  * clubs dashboard's own small decorative tile-before-the-title, matching
  * every other tab-root screen's inline treatment). The "Your club" shape
- * ignores it entirely -- app/clubs/index.tsx keeps that shape's own
- * accessory rendered as a separate sibling above this component instead,
- * since a name PILL centred under a tile has no comparable "inline before
- * the title" slot to fill -- app/clubs/index.tsx's empty-clubs-list branch
- * is the only current caller. Optional and defaulting to nothing rendered,
- * so app/clubs/[id]/index.tsx and venues.tsx -- which never pass it -- are
+ * ignores it entirely -- that shape draws its own tile itself, in
+ * `clubTopRow` above, so there is nothing left for a second, inline
+ * accessory to add. app/clubs/index.tsx's empty-clubs-list branch is the
+ * only current caller. Optional and defaulting to nothing rendered, so
+ * app/clubs/[id]/index.tsx and venues.tsx -- which never pass it -- are
  * completely unaffected either way.
  */
 export default function DashboardHeader({

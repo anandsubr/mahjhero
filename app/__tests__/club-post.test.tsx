@@ -1,8 +1,9 @@
 import { useEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import PostScreen from '../messages/club/[threadId]/[postId]';
 import { GENERIC_ERROR } from '../../lib/constants';
+import { glyphForClub } from '../../lib/dashboard';
 
 const push = vi.fn();
 
@@ -277,6 +278,20 @@ describe('a club post', () => {
       render(<PostScreen />);
       expect(await screen.findByText('Cedar Falls Mah Jongg')).toBeTruthy();
       expect(screen.getByTestId('thread-header-avatar-club')).toBeTruthy();
+    });
+
+    // This screen's own copy of the bug the board screen fixed (Task 8/9):
+    // its ThreadAvatar call had no `asTile`/`clubId` of its own, so the same
+    // club showed a mahjong tile on the board and a plain circle one tap
+    // deeper, on its own post. Same idiom the board's own test uses (see its
+    // comment above the matching test there): an explicit testID is passed
+    // at this call site too, so it can't distinguish tile mode from the
+    // plain circle on its own -- look for the glyph MahjongTile itself
+    // renders inside the avatar container instead.
+    it('shows the club as a mahjong tile, not a plain circle, on its own post', async () => {
+      render(<PostScreen />);
+      const tile = await screen.findByTestId('thread-header-avatar-club');
+      expect(within(tile).getByTestId(`glyph-${glyphForClub('c1')}`)).toBeTruthy();
     });
 
     it('shows a back chevron, distinct from the Messages tab, that returns to the board', async () => {

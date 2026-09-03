@@ -55,7 +55,7 @@ describe('ThreadAvatar', () => {
     expect(screen.getByText('RM')).toBeTruthy();
   });
 
-  it('gives the same club id the same glyph as asTile=false does not need to care about, but stays stable across renders', () => {
+  it('renders the same glyph for the same club id across re-renders', () => {
     const { rerender } = render(
       <ThreadAvatar kind="club" name="Riverside Mah Jongg" clubId="club-1" asTile size={72} />,
     );
@@ -70,5 +70,20 @@ describe('ThreadAvatar', () => {
     render(<ThreadAvatar kind="direct" name="Ada" asTile />);
     // Still the plain circle -- asTile only ever does anything for kind="club".
     expect(screen.getByTestId('thread-avatar-direct')).toBeTruthy();
+  });
+
+  // Minor #6 from the final whole-branch review: `asTile` needs a `clubId`
+  // to derive a glyph from (see the component's own guard, `kind === 'club'
+  // && asTile && clubId`) -- a caller that passes `asTile` without one must
+  // not crash, and must not silently render nothing either. It falls
+  // through to the very next branch, the OLD plain circle, same as
+  // `asTile={false}` would.
+  it('falls back to the plain circle when asTile is true but clubId is missing, without crashing', () => {
+    expect(() =>
+      render(<ThreadAvatar kind="club" name="Riverside Mah Jongg" asTile />),
+    ).not.toThrow();
+    expect(screen.getByTestId('thread-avatar-club')).toBeTruthy();
+    expect(screen.queryByTestId('thread-avatar-club-tile')).toBeNull();
+    expect(screen.getByText('RM')).toBeTruthy();
   });
 });

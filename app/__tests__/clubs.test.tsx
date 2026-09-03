@@ -449,6 +449,13 @@ describe('dashboard artboard', () => {
     expect(await screen.findByRole('button', { name: 'Harbour' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Harbour' }));
     expect(await screen.findByRole('button', { name: /^Manage Harbour/ })).toBeTruthy();
+    // The centred "Your club" header draws Harbour's own mahjong tile in its
+    // top row (components/DashboardHeader.tsx) -- this is the one place a
+    // real "several clubs, tap a chip, see the centred header" flow actually
+    // asserts that tile shows up, rather than leaving it covered only
+    // piecemeal, across DashboardHeader's own unit tests and
+    // nav-glyph-parity.test.tsx's synthetic renders.
+    expect(await screen.findByTestId('thread-avatar-club-tile')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Clear club filter' }));
 

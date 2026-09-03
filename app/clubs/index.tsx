@@ -919,11 +919,15 @@ const styles = StyleSheet.create({
     fontSize: type.size.h2,
     color: colors.text,
   },
-  // Used only by the `loadFailed` branch, since the other two heading sites
-  // just place the section tile as a plain preceding sibling of
-  // `DashboardHeader` -- that component's own layout already reads fine with
-  // a tile above it, but the plain `<Text style={styles.heading}>` branch has
-  // no wrapping row of its own to sit the tile beside otherwise.
+  // Used only by the `loadFailed` branch. The other two places this screen
+  // could show a section tile don't need a row of their own for it: the
+  // empty-clubs-list branch passes it as `DashboardHeader`'s own
+  // `titleAccessory` (rendered inline, before the name, by that component
+  // itself), and the main populated branch's flat "all clubs" scope has no
+  // header -- and so no section tile -- at all, removed entirely once the
+  // chip row took over as that scope's own heading. Only the plain
+  // `<Text style={styles.heading}>` branch below has no wrapping row of its
+  // own to sit a tile beside, hence this one.
   titleRow: {
     flexDirection: 'row',
     alignItems: 'center',

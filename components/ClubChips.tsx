@@ -9,10 +9,10 @@ import { colors, control, space, type } from '../lib/theme';
 
 /**
  * The artboard's club switcher, icon-over-label — the same shape
- * components/TabBar.tsx uses for every tab, and the same `MahjongTile`
- * (`size="chip"`, 48x60) TabBar itself draws. Each club gets its own
- * `glyphForClub`-derived suit on the tile face, with its initials as the
- * tile's label underneath.
+ * components/TabBar.tsx uses for every tab, but drawn with `MahjongTile`'s
+ * own `size="chip"` variant (48x60), distinct from TabBar's `size="tab"`
+ * (70x77). Each club gets its own `glyphForClub`-derived suit on the tile
+ * face, with its initials as the tile's label underneath.
  *
  * No "All clubs" chip: it never represented a real club, and the row's own
  * visibility already carries that meaning (app/clubs/index.tsx draws it

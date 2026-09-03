@@ -23,8 +23,8 @@ type Props = {
   size: 'tab' | 'section' | 'chip';
   /** `TileHero`'s (app/welcome.tsx) accent-tile treatment: solid
    *  `accentColor` fill, `accent[700]` lip, glyph/label in `colors.bg`.
-   *  Only meaningful for `size="tab"` -- the section tile is always the
-   *  plain, decorative surface-fill tile. */
+   *  Meaningful for `size="tab"` and `size="chip"` -- never `"section"`,
+   *  which is always the plain, decorative surface-fill tile. */
   selected?: boolean;
   /** Rendered for `size="tab"` and `size="chip"`; never for `"section"`. */
   label?: string;
@@ -107,6 +107,14 @@ function Glyph({ suit, color }: { suit: MahjongSuit; color: string }) {
  *
  * Unlike `TileHero`'s three tiles, this one is always upright -- rotation
  * is that hero's own decorative-only treatment, not this shared tile's.
+ *
+ * Consumers: the bottom tab bar (components/TabBar.tsx, size `"tab"`, one
+ * per tab, `selected` on the active one); the clubs dashboard's chip row
+ * (components/ClubChips.tsx, size `"chip"`, `selected` on the chosen club);
+ * a club thread's own avatar (components/ThreadAvatar.tsx's `asTile`
+ * branch, size `"chip"`); and each of the four landing screens' own
+ * headings (size `"section"`, purely decorative, no label, never
+ * `selected`).
  */
 export default function MahjongTile({ suit, size, selected = false, label }: Props) {
   const glyphColor = selected ? colors.bg : GLYPH_COLOR[suit];
