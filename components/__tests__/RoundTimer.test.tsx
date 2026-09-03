@@ -20,17 +20,23 @@ describe('RoundTimer', () => {
     ).toBeTruthy();
   });
 
-  it('counts down once started', () => {
+  it('goes straight to a full-screen overlay once started, and counts down', () => {
     render(<RoundTimer tableLabel="Table 1" />);
     fireEvent.click(
       screen.getByRole('button', { name: 'Start a 15-minute timer for Table 1' }),
     );
-    expect(screen.getByText('15:00')).toBeTruthy();
+
+    const overlay = screen.getByTestId('timer-overlay');
+    expect(within(overlay).getByText('15:00')).toBeTruthy();
+    // No smaller inline state left behind -- the duration picker is gone.
+    expect(
+      screen.queryByRole('button', { name: 'Start a 15-minute timer for Table 1' }),
+    ).toBeNull();
 
     act(() => {
       vi.advanceTimersByTime(60_000);
     });
-    expect(screen.getByText('14:00')).toBeTruthy();
+    expect(within(overlay).getByText('14:00')).toBeTruthy();
   });
 
   it('says time is up at zero, not a negative number', () => {
@@ -52,66 +58,69 @@ describe('RoundTimer', () => {
     expect(screen.getByText("Time's up")).toBeTruthy();
   });
 
-  it('resets back to the duration picker', () => {
+  it('stops and returns to the duration picker, with the timer gone entirely', () => {
     render(<RoundTimer tableLabel="Table 1" />);
     fireEvent.click(
       screen.getByRole('button', { name: 'Start a 10-minute timer for Table 1' }),
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Stop timer' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+
+    expect(screen.queryByTestId('timer-overlay')).toBeNull();
     expect(
       screen.getByRole('button', { name: 'Start a 10-minute timer for Table 1' }),
     ).toBeTruthy();
-  });
 
-  it('opens a full-screen overlay when the running countdown is tapped', () => {
-    render(<RoundTimer tableLabel="Table 1" />);
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Start a 15-minute timer for Table 1' }),
-    );
-    fireEvent.click(screen.getByText('15:00'));
-    // The overlay shows the same value, in whatever larger-scale element
-    // you build -- assert something that only exists once the overlay is
-    // open (a testID, an accessibility role/label specific to the overlay
-    // itself) rather than re-querying '15:00' alone, since that text may
-    // legitimately appear in both the inline and overlay views at once.
-    expect(screen.getByTestId('timer-overlay')).toBeTruthy();
-  });
-
-  it('shows "Time\'s up" in the overlay too, not a frozen 0:00', () => {
-    render(<RoundTimer tableLabel="Table 1" />);
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Start a 10-minute timer for Table 1' }),
-    );
-    fireEvent.click(screen.getByText('10:00'));
-    const overlay = screen.getByTestId('timer-overlay');
-    expect(within(overlay).getByText('10:00')).toBeTruthy();
-
+    // Genuinely gone, not just hidden -- letting time pass raises nothing.
     act(() => {
-      vi.advanceTimersByTime(10 * 60_000);
+      vi.advanceTimersByTime(60_000);
     });
-
-    // The overlay stayed open across expiry (no auto-close) -- its clock
-    // must switch to "Time's up" the same way the inline view already does,
-    // not keep showing "0:00" forever.
-    expect(within(overlay).getByText("Time's up")).toBeTruthy();
-    expect(within(overlay).queryByText('0:00')).toBeNull();
+    expect(screen.queryByText('9:00')).toBeNull();
   });
 
-  it('closes the overlay without affecting the underlying countdown', () => {
+  it('pauses the countdown, then resumes it from where it left off', () => {
     render(<RoundTimer tableLabel="Table 1" />);
     fireEvent.click(
       screen.getByRole('button', { name: 'Start a 15-minute timer for Table 1' }),
     );
-    fireEvent.click(screen.getByText('15:00'));
-    expect(screen.getByTestId('timer-overlay')).toBeTruthy();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
-    expect(screen.queryByTestId('timer-overlay')).toBeNull();
-    expect(screen.getByText('15:00')).toBeTruthy();
-
     act(() => {
       vi.advanceTimersByTime(60_000);
     });
     expect(screen.getByText('14:00')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
+    act(() => {
+      vi.advanceTimersByTime(30_000);
+    });
+    // Frozen -- time passing while paused does not decrement it.
+    expect(screen.getByText('14:00')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Resume' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Pause' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Resume' }));
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(screen.getByText('13:00')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeTruthy();
   });
+
+  it('offers no Pause once time is up -- only Stop', () => {
+    render(<RoundTimer tableLabel="Table 1" />);
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Start a 10-minute timer for Table 1' }),
+    );
+    act(() => {
+      vi.advanceTimersByTime(10 * 60_000);
+    });
+
+    expect(screen.queryByRole('button', { name: 'Pause' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Resume' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Stop' })).toBeTruthy();
+  });
+
+  // `onRequestClose` (Escape / Android back) is wired to `stop`, same as the
+  // Stop button -- not exercised here because react-native-web's Modal only
+  // engages that listener once a real CSS `animationend` event fires marking
+  // it "active", which jsdom never dispatches on its own; verified live in
+  // a real browser instead (fires correctly on Escape, matches Stop).
 });
