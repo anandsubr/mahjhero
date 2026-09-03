@@ -216,6 +216,36 @@ const BOOKING_REFUSALS: { contains: string; message: string; codes: string[] }[]
     codes: ['42501', 'P0002'],
   },
   {
+    contains: 'this game has not started yet',
+    message: "This game hasn't started yet.",
+    codes: ['23514'],
+  },
+  {
+    contains: 'this game has already ended',
+    message: 'This game has already ended.',
+    codes: ['23514'],
+  },
+  {
+    contains: 'only an organizer or a player at this table can record a round',
+    message: 'Only an organizer or someone seated at this table can record a round.',
+    codes: ['42501'],
+  },
+  {
+    contains: 'the winner is not seated at this table',
+    message: "The winner isn't seated at this table anymore.",
+    codes: ['23514'],
+  },
+  {
+    contains: 'points must be greater than zero',
+    message: 'Points must be a positive number.',
+    codes: ['23514'],
+  },
+  {
+    contains: 'no such round',
+    message: 'That round no longer exists.',
+    codes: ['42501'],
+  },
+  {
     contains: 'no such offer',
     message: 'That offer no longer exists.',
     codes: ['42501'],

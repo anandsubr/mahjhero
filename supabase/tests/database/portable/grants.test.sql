@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(104);
+select plan(110);
 
 /*
  * Guards the privileges themselves, not the policies.
@@ -998,6 +998,50 @@ select ok(
   has_function_privilege(
     'authenticated', 'public.thread_roster(uuid)', 'EXECUTE'),
   'authenticated can execute thread_roster'
+);
+
+
+-- ---------------------------------------------------------------------------
+-- Table rounds (2026-09-02 spec). table_rounds is select-only for
+-- authenticated; the two write functions are asserted in the mutations
+-- migration's own task.
+-- ---------------------------------------------------------------------------
+
+select ok(
+  not has_table_privilege('authenticated', 'public.table_rounds', 'TRUNCATE'),
+  'authenticated cannot TRUNCATE table_rounds'
+);
+
+-- record_round and delete_round are table_rounds' only writers.
+-- assert_round_writable is the internal ladder rung both would otherwise
+-- duplicate for record_round's own tenancy/state check; it is granted to
+-- nobody and gets a named negative assertion here, the same treatment
+-- assert_attendance_writable already got.
+
+select ok(
+  has_function_privilege(
+    'authenticated', 'public.record_round(uuid, uuid, int)', 'EXECUTE'),
+  'authenticated can execute record_round'
+);
+select ok(
+  has_function_privilege(
+    'authenticated', 'public.delete_round(uuid)', 'EXECUTE'),
+  'authenticated can execute delete_round'
+);
+select ok(
+  not has_function_privilege(
+    'anon', 'public.record_round(uuid, uuid, int)', 'EXECUTE'),
+  'anon cannot execute record_round'
+);
+select ok(
+  not has_function_privilege(
+    'anon', 'public.delete_round(uuid)', 'EXECUTE'),
+  'anon cannot execute delete_round'
+);
+select ok(
+  not has_function_privilege(
+    'authenticated', 'public.assert_round_writable(uuid)', 'EXECUTE'),
+  'authenticated cannot execute assert_round_writable directly'
 );
 
 select * from finish();

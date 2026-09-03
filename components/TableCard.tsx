@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Card from './Card';
+import RoundLog, { type DisplayRound } from './RoundLog';
+import RoundTimer from './RoundTimer';
 import SeatGrid from './SeatGrid';
 import SkillTierPips from './SkillTierPips';
 import Tag from './Tag';
@@ -43,6 +45,18 @@ type Props = {
   onLeaveSeat?: (bookingId: string) => void;
   openBookingId?: string | null;
   onToggleManage?: (bookingId: string) => void;
+  /**
+   * Round recording -- omitted entirely (not merely gated false) hides the
+   * whole section, matching `otherTables`/`onMove`/`onRemove`'s own
+   * all-or-nothing bundle above. Supplied by the event screen with rounds
+   * already joined against the roster for display names (see RoundLog's
+   * own docstring for why TableCard never resolves ids to names itself).
+   */
+  rounds?: DisplayRound[];
+  canRecordRound?: boolean;
+  canDeleteRound?: boolean;
+  onRecordRound?: (winnerProfileId: string, points: number) => void;
+  onDeleteRound?: (roundId: string) => void;
 };
 
 /**
@@ -74,6 +88,11 @@ export default function TableCard({
   onLeaveSeat,
   openBookingId,
   onToggleManage,
+  rounds,
+  canRecordRound = false,
+  canDeleteRound = false,
+  onRecordRound,
+  onDeleteRound,
 }: Props) {
   const seated = occupants.filter((o) => o.status === 'confirmed');
   const free = seatsRemaining(table.capacity, seated.length);
@@ -121,6 +140,29 @@ export default function TableCard({
       />
 
       <Text style={styles.free}>{seatsFreeLabel(free)}</Text>
+
+      {rounds ? (
+        <RoundLog
+          rounds={rounds}
+          players={seated.map((o) => ({
+            profileId: o.profile_id,
+            name: o.profile_id === youId ? 'You' : o.display_name,
+          }))}
+          canRecord={canRecordRound}
+          canDelete={canDeleteRound}
+          busy={busy}
+          onRecord={(winnerId, points) => onRecordRound?.(winnerId, points)}
+          onDelete={(roundId) => onDeleteRound?.(roundId)}
+        />
+      ) : null}
+
+      {/*
+        RoundTimer is pure local UI state with no dependence on whether the
+        rounds fetch succeeded -- it stays available even when `rounds` is
+        undefined (a transient fetch failure), unlike RoundLog above which
+        genuinely needs `rounds` data to render.
+      */}
+      <RoundTimer tableLabel={table.label} />
 
       {bookedForYou ? (
         <Text style={styles.help}>

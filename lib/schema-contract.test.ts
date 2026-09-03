@@ -100,6 +100,8 @@ import {
   THREAD_COLUMNS,
 } from './messages';
 import type { ThreadDetail, ThreadMessage } from './messages';
+import { fetchTableRounds } from './rounds';
+import type { TableRound } from './rounds';
 
 const SKILL_LEVELS = ['beginner', 'intermediate', 'advanced'];
 const NOTIFY_CHANNELS = ['push', 'email', 'both'];
@@ -2108,6 +2110,190 @@ describe.runIf(reachable || required)('attendance schema contract', () => {
         row!.check_in_closes_at as string,
       ),
     ).toBe(true);
+  });
+});
+
+describe.runIf(reachable || required)('table_rounds contract', () => {
+  let admin: SupabaseClient;
+  let userId: string;
+  let clubId: string;
+  let venueId: string;
+  let eventId: string;
+  let tableId: string;
+
+  beforeAll(async () => {
+    expect(
+      reachable,
+      `Local Supabase stack not reachable at ${local.url}. Run \`npx supabase start\`.`,
+    ).toBe(true);
+    // A signed-in caller: record_round's assert_round_writable and its own
+    // organizer-or-seated-player gate both run as this same session below.
+    ({ admin, userId } = await signInFreshUser());
+
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    const { data: club, error: clubError } = await admin
+      .from('clubs')
+      .insert({
+        name: 'Table Rounds Contract Club',
+        slug: `table-rounds-contract-${suffix}`,
+        timezone: 'America/New_York',
+        created_by: userId,
+      })
+      .select('id')
+      .single();
+    expect(clubError, `seeding club failed: ${clubError?.message}`).toBeNull();
+    clubId = club!.id;
+
+    // 'host': record_round accepts either a club organizer or a player
+    // seated at the table (is_club_organizer / bookings check inside the
+    // RPC). Seeding this session as the organizer AND, below, as the
+    // confirmed booking at the table it will record a round for satisfies
+    // both gates with a single profile, the same simplification the
+    // event_attendance fixture makes for its own signed-in caller.
+    const { error: memberError } = await admin.from('club_members').insert({
+      club_id: clubId,
+      profile_id: userId,
+      role: 'host',
+      status: 'active',
+    });
+    expect(memberError, `seeding host failed: ${memberError?.message}`).toBeNull();
+
+    const { data: venue, error: venueError } = await admin
+      .from('venues')
+      .insert({
+        name: 'Table Rounds Hall',
+        visibility: 'club',
+        added_by_club_id: clubId,
+        created_by: userId,
+      })
+      .select('id')
+      .single();
+    expect(venueError, `seeding venue failed: ${venueError?.message}`).toBeNull();
+    venueId = venue!.id;
+
+    // starts_at 30 minutes AGO, ends_at 2.5 hours from now -- record_round's
+    // assert_round_writable refuses a table whose event has not started yet
+    // (starts_at > now) or has already ended (ends_at <= now), so like the
+    // attendance fixture above (and unlike most other seeds in this file,
+    // which sit safely in the future) this one has to straddle the wall
+    // clock rather than just be well-formed.
+    const now = Date.now();
+    const startsAt = new Date(now - 30 * 60 * 1000).toISOString();
+    const endsAt = new Date(now + 150 * 60 * 1000).toISOString();
+
+    const { data: event, error: eventError } = await admin
+      .from('events')
+      .insert({
+        club_id: clubId,
+        title: 'Table rounds contract game',
+        venue_id: venueId,
+        notes: '',
+        starts_at: startsAt,
+        ends_at: endsAt,
+        created_by: userId,
+      })
+      .select('id')
+      .single();
+    expect(eventError, `seeding event failed: ${eventError?.message}`).toBeNull();
+    eventId = event!.id;
+
+    const { data: table, error: tableError } = await admin
+      .from('event_tables')
+      .insert({ event_id: eventId, club_id: clubId, label: 'Table 1', position: 1 })
+      .select('id')
+      .single();
+    expect(tableError, `seeding table failed: ${tableError?.message}`).toBeNull();
+    tableId = table!.id;
+
+    const { data: group, error: groupError } = await admin
+      .from('booking_groups')
+      .insert({
+        event_id: eventId,
+        club_id: clubId,
+        created_by: userId,
+        preferred_table_id: tableId,
+        status: 'confirmed',
+      })
+      .select('id')
+      .single();
+    expect(groupError, `seeding booking group failed: ${groupError?.message}`).toBeNull();
+
+    // Also the round's winner-to-be: record_round re-derives who is seated
+    // from bookings itself, never trusting the client, so the winner needs
+    // its own confirmed booking at this table -- here that is the same
+    // profile as the caller, doubling as both recorder and winner.
+    const { error: bookingError } = await admin.from('bookings').insert({
+      group_id: group!.id,
+      event_id: eventId,
+      club_id: clubId,
+      event_table_id: tableId,
+      profile_id: userId,
+      booked_by: userId,
+      status: 'confirmed',
+    });
+    expect(bookingError, `seeding booking failed: ${bookingError?.message}`).toBeNull();
+  });
+
+  afterAll(async () => {
+    await supabase.auth.signOut();
+    if (admin) {
+      if (eventId) {
+        // table_rounds' own foreign keys cascade off event_tables/events,
+        // but this suite deletes it explicitly first anyway, matching the
+        // attendance fixture's explicit check_ins delete above rather than
+        // relying on cascade to do cleanup unremarked.
+        await admin.from('table_rounds').delete().eq('event_id', eventId);
+        await admin.from('bookings').delete().eq('event_id', eventId);
+        await admin.from('booking_groups').delete().eq('event_id', eventId);
+        await admin.from('event_tables').delete().eq('event_id', eventId);
+        await admin.from('events').delete().eq('id', eventId);
+      }
+      if (venueId) await admin.from('venues').delete().eq('id', venueId);
+      if (clubId) await admin.from('club_members').delete().eq('club_id', clubId);
+      if (clubId) await admin.from('clubs').delete().eq('id', clubId);
+    }
+    if (admin && userId) await admin.auth.admin.deleteUser(userId);
+  });
+
+  it('record_round returns a row the client can read back as TableRound', async () => {
+    const { data, error } = await supabase.rpc('record_round', {
+      target_table: tableId,
+      winner_profile: userId,
+      target_points: 8,
+    });
+    expect(error, `record_round failed: ${error?.message}`).toBeNull();
+
+    // Cast to the client's own type -- a column record_round stops
+    // returning, or a type that drifts from what the RPC actually sends
+    // back (e.g. points arriving as a numeric string rather than a
+    // number), would type-check here regardless and only be caught by the
+    // assertions below, at runtime.
+    const round = data as TableRound;
+    expect(round).toMatchObject({
+      event_table_id: tableId,
+      winner_profile_id: userId,
+      points: 8,
+      recorded_by: userId,
+    });
+    expect(typeof round.id).toBe('string');
+    expect(Number.isNaN(Date.parse(round.created_at))).toBe(false);
+
+    // fetchTableRounds (lib/rounds.ts) is a plain RLS-scoped select, not an
+    // RPC -- this is the other half of the boundary record_round's own
+    // response already crossed: the row this table's SELECT grant and
+    // table_rounds_select_member policy actually let an ordinary club
+    // member read back has to agree with the same TableRound shape too.
+    const rounds = await fetchTableRounds(eventId);
+    expect(rounds).toEqual([
+      expect.objectContaining({
+        id: round.id,
+        event_table_id: tableId,
+        winner_profile_id: userId,
+        points: 8,
+        recorded_by: userId,
+      }),
+    ]);
   });
 });
 

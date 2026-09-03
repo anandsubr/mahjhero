@@ -56,6 +56,12 @@ import {
   type EventTable,
 } from '../../../../../lib/events';
 import { openThreadForEvent } from '../../../../../lib/messages';
+import {
+  deleteRound,
+  fetchTableRounds,
+  recordRound,
+  type TableRound,
+} from '../../../../../lib/rounds';
 import { useSession } from '../../../../../lib/session';
 import { addHours } from '../../../../../lib/time';
 import { colors, space, type } from '../../../../../lib/theme';
@@ -152,6 +158,13 @@ export default function EventScreen() {
   const [seating, setSeating] = useState<SeatOccupant[]>([]);
   const [seatingFailed, setSeatingFailed] = useState(false);
 
+  // Every round across every table of this event, newest first, plus
+  // whether the fetch itself failed -- kept separate from `tablesFailed`
+  // for the same reason `seatingFailed` is: a failed rounds fetch must not
+  // read as "no rounds have been played."
+  const [rounds, setRounds] = useState<TableRound[]>([]);
+  const [roundsFailed, setRoundsFailed] = useState(false);
+
   // The roster BringSomeoneSheet's picker offers, kept separate from the
   // organizer-only `isOrganizer`/`mySkillLevel` derivation the roster fetch
   // already fed below. `rosterFailed` matters for the same reason
@@ -218,16 +231,25 @@ export default function EventScreen() {
   const me = session?.user.id ?? '';
 
   async function load() {
-    const [loadedClub, loadedEvent, loadedTables, rosterRows, seatingRows, openOffer, myCheckInState] =
-      await Promise.all([
-        fetchClub(clubId),
-        fetchEvent(eventId),
-        fetchEventTables(eventId),
-        fetchRoster(clubId),
-        fetchEventSeating(eventId),
-        fetchOpenOffer(eventId),
-        fetchMyCheckIn(eventId),
-      ]);
+    const [
+      loadedClub,
+      loadedEvent,
+      loadedTables,
+      rosterRows,
+      seatingRows,
+      openOffer,
+      myCheckInState,
+      loadedRounds,
+    ] = await Promise.all([
+      fetchClub(clubId),
+      fetchEvent(eventId),
+      fetchEventTables(eventId),
+      fetchRoster(clubId),
+      fetchEventSeating(eventId),
+      fetchOpenOffer(eventId),
+      fetchMyCheckIn(eventId),
+      fetchTableRounds(eventId),
+    ]);
 
     setClub(loadedClub);
     setEvent(loadedEvent);
@@ -241,6 +263,9 @@ export default function EventScreen() {
     // getting it wrong) — this game's guest list gets the same treatment.
     setSeatingFailed(seatingRows === null);
     setSeating(seatingRows ?? []);
+
+    setRoundsFailed(loadedRounds === null);
+    setRounds(loadedRounds ?? []);
 
     // `fetchOpenOffer` returns null both on failure and on "no open offer" —
     // unlike seating there is no third failed-vs-empty state to preserve
@@ -399,6 +424,17 @@ export default function EventScreen() {
       ).length;
       return seatsRemaining(t.capacity, confirmedHere) === 0;
     });
+
+  // The opposite window from `canBook`: rounds can only be recorded once
+  // the game has actually started and before it ends, matching the guard
+  // ladder `assert_round_writable` enforces server-side
+  // (20260902070000_table_rounds_mutations.sql). `canBook` alone would let
+  // this render before the game starts; its own gate is "not yet started",
+  // exactly the case a round must refuse.
+  const gameLive =
+    event.status === 'published' &&
+    new Date(event.starts_at) <= now &&
+    new Date(event.ends_at) > now;
 
   // This member's own live booking, if any — the thing a seat tap now needs
   // to route on. `myHoldsSeat` below is just this narrowed to a boolean;
@@ -640,6 +676,18 @@ export default function EventScreen() {
     await run(() => callForAFourth(tableId));
   }
 
+  async function recordTableRound(
+    tableId: string,
+    winnerProfileId: string,
+    points: number,
+  ) {
+    await run(() => recordRound({ tableId, winnerProfileId, points }));
+  }
+
+  async function removeTableRound(roundId: string) {
+    await run(() => deleteRound(roundId));
+  }
+
   function openBringSomeone() {
     setIsBringingSomeone(true);
   }
@@ -757,6 +805,22 @@ export default function EventScreen() {
             (o) => o.status === 'confirmed',
           );
           const confirmedHere = confirmedAtTable.length;
+          const displayRounds = rounds
+            .filter((r) => r.event_table_id === table.id)
+            .map((r) => ({
+              id: r.id,
+              winner_profile_id: r.winner_profile_id,
+              winner_name:
+                roster.find((m) => m.profile_id === r.winner_profile_id)
+                  ?.display_name ?? 'Unknown',
+              points: r.points,
+            }));
+          const iAmSeatedHere = seating.some(
+            (o) =>
+              o.profile_id === me &&
+              o.status === 'confirmed' &&
+              o.event_table_id === table.id,
+          );
           return (
             <TableCard
               key={table.id}
@@ -820,6 +884,13 @@ export default function EventScreen() {
               onLeaveSeat={canBook ? leaveSeat : undefined}
               openBookingId={openBookingId}
               onToggleManage={toggleManageSeat}
+              rounds={roundsFailed ? undefined : displayRounds}
+              canRecordRound={gameLive && (isOrganizer || iAmSeatedHere)}
+              canDeleteRound={isOrganizer}
+              onRecordRound={(winnerId, points) =>
+                void recordTableRound(table.id, winnerId, points)
+              }
+              onDeleteRound={(roundId) => void removeTableRound(roundId)}
             >
               {isOrganizer ? (
                 <>
@@ -894,6 +965,10 @@ export default function EventScreen() {
       ) : !tablesFailed &&
         seating.filter((o) => o.status === 'confirmed').length === 0 ? (
         <Text style={styles.help}>Nobody has booked yet.</Text>
+      ) : null}
+
+      {roundsFailed ? (
+        <Text style={styles.help}>Could not load rounds for this game.</Text>
       ) : null}
 
       {pendingTier ? (

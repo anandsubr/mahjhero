@@ -111,6 +111,22 @@ vi.mock('../../lib/attendance', async (importOriginal) => {
   };
 });
 
+// Task 9 added a `fetchTableRounds` call to this screen's own `load()`. Left
+// unmocked, it would hit the real `lib/rounds.ts` -> real supabase client
+// and fail closed over this sandbox's blocked network, slowly -- the exact
+// same trap `fetchMyCheckIn` above already documents. None of this file's
+// tests exercise round recording, so `fetchTableRounds` resolving `[]` is
+// all any test here needs.
+const fetchTableRounds = vi.fn();
+
+vi.mock('../../lib/rounds', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/rounds')>();
+  return {
+    ...actual,
+    fetchTableRounds: (...args: unknown[]) => fetchTableRounds(...args),
+  };
+});
+
 // TabBar (now carried by this screen) calls `useUnreadCounts`, which reaches
 // `fetchUnreadCounts` -- `openThreadForEvent` stays real via the spread (the
 // "Open the game thread" button is never clicked in this file).
@@ -204,6 +220,8 @@ beforeEach(() => {
   fetchOpenOffer.mockResolvedValue(null);
   fetchMyCheckIn.mockReset();
   fetchMyCheckIn.mockResolvedValue(null);
+  fetchTableRounds.mockReset();
+  fetchTableRounds.mockResolvedValue([]);
   acceptPromotionOffer.mockReset();
   acceptPromotionOffer.mockResolvedValue({ error: null });
   declinePromotionOffer.mockReset();

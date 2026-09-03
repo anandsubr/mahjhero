@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 const push = vi.fn();
 const replace = vi.fn();
@@ -130,6 +130,20 @@ vi.mock('../../lib/attendance', async (importOriginal) => {
   };
 });
 
+const fetchTableRounds = vi.fn();
+const recordRound = vi.fn();
+const deleteRound = vi.fn();
+
+vi.mock('../../lib/rounds', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/rounds')>();
+  return {
+    ...actual,
+    fetchTableRounds: (...args: unknown[]) => fetchTableRounds(...args),
+    recordRound: (...args: unknown[]) => recordRound(...args),
+    deleteRound: (...args: unknown[]) => deleteRound(...args),
+  };
+});
+
 // TabBar (now carried by this screen) calls `useUnreadCounts`, which reaches
 // `fetchUnreadCounts` -- `openThreadForEvent` (used by the "Open the game
 // thread" button, never clicked in this file) stays real via the spread.
@@ -200,6 +214,65 @@ const HOST_ROLE = [
   { profile_id: 'test-user', role: 'host' as const, display_name: 'Ada', skill_level: null },
 ];
 
+const SEATED_ADA = {
+  booking_id: 'b1',
+  group_id: 'g1',
+  profile_id: 'test-user',
+  display_name: 'Ada',
+  skill_level: null,
+  event_table_id: 'table-1',
+  status: 'confirmed' as const,
+  booked_by: 'test-user',
+  booked_by_name: 'Ada',
+  group_status: 'confirmed' as const,
+  waitlist_position: null,
+  created_at: '2026-08-20T10:00:00Z',
+};
+
+const SEATED_RAVI = {
+  ...SEATED_ADA,
+  booking_id: 'b2',
+  profile_id: 'p1',
+  display_name: 'Ravi K.',
+  booked_by: 'p1',
+  booked_by_name: 'Ravi K.',
+};
+
+const ROSTER_WITH_RAVI = [
+  ...MEMBER_ROLE,
+  { profile_id: 'p1', role: 'member' as const, display_name: 'Ravi K.', skill_level: null },
+];
+
+const HOST_ROSTER_WITH_RAVI = [
+  ...HOST_ROLE,
+  { profile_id: 'p1', role: 'member' as const, display_name: 'Ravi K.', skill_level: null },
+];
+
+const ROUND_1 = {
+  id: 'r1',
+  event_table_id: 'table-1',
+  winner_profile_id: 'p1',
+  points: 8,
+  recorded_by: 'p1',
+  created_at: '2026-09-02T20:00:00Z',
+};
+
+/**
+ * EVENT's own fixture starts in the future (2026-09-03), the "not yet
+ * started" case `canBook` already exercises elsewhere in this file. Round
+ * recording needs the opposite window -- started, not yet ended -- so this
+ * computes it relative to the real clock at test-run time rather than a
+ * second hardcoded date that would eventually go stale the same way a
+ * fixed past date would.
+ */
+function liveEvent() {
+  return {
+    ...EVENT,
+    starts_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+    ends_at: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   for (const key of Object.keys(searchParams)) delete searchParams[key];
@@ -230,6 +303,10 @@ beforeEach(() => {
   fetchMyCheckIn.mockResolvedValue(null);
   recordAttendance.mockResolvedValue({ error: null });
   clearAttendance.mockResolvedValue({ error: null });
+  fetchTableRounds.mockReset();
+  fetchTableRounds.mockResolvedValue([]);
+  recordRound.mockResolvedValue({ round: null, error: null });
+  deleteRound.mockResolvedValue({ error: null });
 });
 
 // A guard-ordering regression this repo has already hit on the club detail
@@ -1188,5 +1265,74 @@ describe('Reset to the series', () => {
     render(<EventScreen />);
     await screen.findByText('Thursday Mahjong');
     expect(screen.queryByText('Reset to the series')).toBeNull();
+  });
+});
+
+describe('table rounds', () => {
+  it("shows a table's recorded rounds", async () => {
+    fetchRoster.mockResolvedValue(ROSTER_WITH_RAVI);
+    fetchEventSeating.mockResolvedValue([SEATED_RAVI]);
+    fetchTableRounds.mockResolvedValue([ROUND_1]);
+
+    render(<EventScreen />);
+
+    expect(await screen.findByText('Ravi K. · 8 pts')).toBeTruthy();
+  });
+
+  it('lets an organizer record a round while the game is live', async () => {
+    fetchRoster.mockResolvedValue(HOST_ROSTER_WITH_RAVI);
+    fetchEvent.mockResolvedValue(liveEvent());
+    fetchEventSeating.mockResolvedValue([SEATED_ADA, SEATED_RAVI]);
+    fetchTableRounds.mockResolvedValue([]);
+    recordRound.mockResolvedValue({ round: ROUND_1, error: null });
+
+    render(<EventScreen />);
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Winner: Ravi K.' }),
+    );
+    fireEvent.change(screen.getByLabelText('Points'), {
+      target: { value: '8' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Record a round' }));
+
+    await waitFor(() =>
+      expect(recordRound).toHaveBeenCalledWith({
+        tableId: 'table-1',
+        winnerProfileId: 'p1',
+        points: 8,
+      }),
+    );
+  });
+
+  it('hides the record form before the game has started', async () => {
+    // EVENT's default fixture starts in the future, so gameLive is false --
+    // the same guard assert_round_writable enforces server-side ("this
+    // game has not started yet").
+    fetchRoster.mockResolvedValue(HOST_ROSTER_WITH_RAVI);
+    fetchEventSeating.mockResolvedValue([SEATED_ADA, SEATED_RAVI]);
+    fetchTableRounds.mockResolvedValue([]);
+
+    render(<EventScreen />);
+
+    await screen.findByText('Thursday Mahjong');
+    expect(
+      screen.queryByRole('button', { name: 'Record a round' }),
+    ).toBeNull();
+  });
+
+  it('lets only the organizer delete a round', async () => {
+    fetchRoster.mockResolvedValue(ROSTER_WITH_RAVI); // 'member', not organizer
+    fetchEventSeating.mockResolvedValue([SEATED_RAVI]);
+    fetchTableRounds.mockResolvedValue([ROUND_1]);
+
+    render(<EventScreen />);
+
+    await screen.findByText('Ravi K. · 8 pts');
+    expect(
+      screen.queryByRole('button', {
+        name: "Delete Ravi K.'s round for 8 points",
+      }),
+    ).toBeNull();
   });
 });

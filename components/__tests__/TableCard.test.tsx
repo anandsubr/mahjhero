@@ -117,4 +117,92 @@ describe('TableCard', () => {
     );
     expect(screen.getByText('Needs a 4th')).toBeTruthy();
   });
+
+  it('omits the rounds section when rounds is not supplied', () => {
+    render(
+      <TableCard
+        table={table}
+        occupants={occupants}
+        youId="p9"
+        onTakeSeat={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText('No rounds recorded yet.')).toBeNull();
+  });
+
+  it('still offers a round timer when rounds is not supplied', () => {
+    // RoundTimer is pure local UI state, independent of whether the rounds
+    // fetch succeeded -- a transient fetch failure (rounds undefined)
+    // should not take away an otherwise-workable, unrelated control.
+    render(
+      <TableCard
+        table={table}
+        occupants={occupants}
+        youId="p9"
+        onTakeSeat={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByRole('button', {
+        name: 'Start a 15-minute timer for Table 2',
+      }),
+    ).toBeTruthy();
+  });
+
+  it('shows the round log when rounds is supplied', () => {
+    render(
+      <TableCard
+        table={table}
+        occupants={occupants}
+        youId="p9"
+        onTakeSeat={vi.fn()}
+        rounds={[
+          { id: 'r1', winner_profile_id: 'p1', winner_name: 'Ravi K.', points: 8 },
+        ]}
+        canRecordRound={false}
+        canDeleteRound={false}
+        onRecordRound={vi.fn()}
+        onDeleteRound={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('Ravi K. · 8 pts')).toBeTruthy();
+  });
+
+  it('offers the record form only when canRecordRound is true', () => {
+    render(
+      <TableCard
+        table={table}
+        occupants={occupants}
+        youId="p9"
+        onTakeSeat={vi.fn()}
+        rounds={[]}
+        canRecordRound
+        canDeleteRound={false}
+        onRecordRound={vi.fn()}
+        onDeleteRound={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'Winner: Ravi K.' })).toBeTruthy();
+  });
+
+  it('offers a round timer', () => {
+    render(
+      <TableCard
+        table={table}
+        occupants={occupants}
+        youId="p9"
+        onTakeSeat={vi.fn()}
+        rounds={[]}
+        canRecordRound={false}
+        canDeleteRound={false}
+        onRecordRound={vi.fn()}
+        onDeleteRound={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByRole('button', {
+        name: 'Start a 15-minute timer for Table 2',
+      }),
+    ).toBeTruthy();
+  });
 });

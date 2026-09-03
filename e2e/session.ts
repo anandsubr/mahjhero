@@ -1718,6 +1718,138 @@ export async function seedPopulatedBoard(
 }
 
 /**
+ * Seeds a LIVE event -- published, already under way at the suite's frozen
+ * clock -- with one table, two confirmed players, and one round already
+ * recorded for it, so the event screen's rounds section (RoundLog's totals
+ * line and round row, RoundTimer's duration pills) has something real to
+ * picture. Nothing else in this file reaches that state:
+ * `seedClubWithEvent`'s own occurrences sit in 2099 (FIRST_OCCURRENCE /
+ * SECOND_OCCURRENCE above), and its four booking-state games all end well
+ * before or start well after the frozen clock -- every one of them reads as
+ * upcoming or past, never live, to `gameLive`
+ * (app/clubs/[id]/events/[eventId]/index.tsx). RoundLog's own record form
+ * and RoundTimer's start buttons both gate on that same window, so a
+ * baseline built on any of those events would picture the rounds section
+ * with its live-only affordances silently missing, not because of anything
+ * this task changed.
+ *
+ * Takes an already-seeded club and its host's profile id rather than
+ * seeding its own club -- called from the `with a seeded club` describe
+ * block in e2e/visual.spec.ts, so the viewer is already that club's host
+ * (`seedClubWithEvent`'s own `club_members` insert) and needs no roster
+ * fetch of its own to appear as `isOrganizer` on this event too.
+ *
+ * The window (15 minutes before the frozen clock, four hours after) mirrors
+ * `CHECK_IN_GAME` above for the same reason: fixed relative to
+ * `page.clock.setFixedTime(new Date('2026-08-22T16:00:00Z'))`
+ * (e2e/visual.spec.ts), not `new Date()`, so "live" here never ages into
+ * "upcoming" or "past" on a future run.
+ *
+ * The winner is inserted into `club_members`, not just seated at the table
+ * — `roster.find(...)` (the event screen's own winner-name lookup, since
+ * RoundLog is handed a display name rather than an id — see its own
+ * docstring) reads the CLUB roster fetched by `fetchRoster`, a different
+ * query from the one that names seat occupants. A winner who is only ever a
+ * `bookings` row would render as "Unknown" on the round line, same as a
+ * departed member would.
+ *
+ * The round itself is written directly into `table_rounds`, the same
+ * service-role, no-RPC pattern `seatBooking` above uses and for the same
+ * reason: `record_round` derives `recorded_by` from `auth.uid()`, and
+ * service_role carries no JWT for that to read.
+ */
+export async function seedTableWithRound(
+  clubId: string,
+  hostProfileId: string,
+  suffix: string,
+): Promise<{ eventId: string; tableId: string; winnerName: string; points: number }> {
+  const admin = adminClient('seed table with a round');
+
+  const need = <T>(what: string, result: { data: unknown; error: unknown }): T => {
+    if (result.error || result.data == null) {
+      throw new Error(`seedTableWithRound: ${what} failed: ${JSON.stringify(result.error)}`);
+    }
+    return result.data as T;
+  };
+
+  const venue = need<{ id: string }>(
+    'venue insert',
+    await admin
+      .from('venues')
+      .insert({
+        name: 'Elm Street Hall',
+        address_line: '4 Elm Street',
+        locality: 'Newton',
+        added_by_club_id: clubId,
+        created_by: hostProfileId,
+      })
+      .select('id')
+      .single(),
+  );
+
+  // 15 minutes before FROZEN_NOW, ending nearly 4h after it -- inside the
+  // event screen's own `gameLive` window (starts_at <= now < ends_at) at
+  // FROZEN_NOW with margin either side, so a slow CI run settling a few
+  // seconds late is nowhere near either boundary.
+  const event = need<{ id: string }>(
+    'live event insert',
+    await admin
+      .from('events')
+      .insert({
+        club_id: clubId,
+        title: 'Live scoring night',
+        venue_id: venue.id,
+        notes: '',
+        starts_at: '2026-08-22T15:45:00Z',
+        ends_at: '2026-08-22T19:45:00Z',
+        created_by: hostProfileId,
+      })
+      .select('id')
+      .single(),
+  );
+  const eventId = event.id;
+
+  const table = need<{ id: string }>(
+    'table insert',
+    await admin
+      .from('event_tables')
+      .insert({ event_id: eventId, club_id: clubId, label: 'Table 1', position: 1 })
+      .select('id')
+      .single(),
+  );
+  const tableId = table.id;
+
+  const winnerId = await seedFillerProfile(admin, 'Amara Whitfield', 'round-winner', suffix);
+  const runnerUpId = await seedFillerProfile(admin, 'Deepak Rao', 'round-runner-up', suffix);
+
+  const { error: rosterError } = await admin.from('club_members').insert([
+    { club_id: clubId, profile_id: winnerId, role: 'member' },
+    { club_id: clubId, profile_id: runnerUpId, role: 'member' },
+  ]);
+  if (rosterError) {
+    throw new Error(`seedTableWithRound: roster insert failed: ${JSON.stringify(rosterError)}`);
+  }
+
+  await seatBooking(admin, need, { eventId, clubId, profileId: winnerId, tableId });
+  await seatBooking(admin, need, { eventId, clubId, profileId: runnerUpId, tableId });
+
+  const points = 8;
+  const { error: roundError } = await admin.from('table_rounds').insert({
+    event_table_id: tableId,
+    event_id: eventId,
+    club_id: clubId,
+    winner_profile_id: winnerId,
+    points,
+    recorded_by: hostProfileId,
+  });
+  if (roundError) {
+    throw new Error(`seedTableWithRound: round insert failed: ${JSON.stringify(roundError)}`);
+  }
+
+  return { eventId, tableId, winnerName: 'Amara Whitfield', points };
+}
+
+/**
  * Two friends and two club-mates for `app/messages/new.tsx`'s picker, in a
  * club of its own rather than added to `seedClubWithEvent`'s Riverside —
  * that club's roster is what the club-detail, roster and booking baselines
