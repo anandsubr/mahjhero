@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(29);
+select plan(36);
 
 insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-000000000001', 'alice@example.com'),
@@ -371,8 +371,8 @@ set local request.jwt.claims =
 select throws_ok(
   $$select public.place_booking('b00c0000-0000-0000-0000-000000000009', null)$$,
   '23514',
-  'event already started',
-  'a booking at a game that has started cannot be placed');
+  'this game has already ended',
+  'a booking at a game that has ended cannot be placed');
 
 select throws_ok(
   $$select public.place_booking('b00c0000-0000-0000-0000-000000000020',
@@ -445,6 +445,137 @@ select lives_ok(
   $$select public.place_booking('b00c0000-0000-0000-0000-000000000020',
       '7ab1e000-0000-0000-0000-000000000001')$$,
   'an organizer may place another member''s booking');
+
+-- ---------------------------------------------------------------------
+-- Placement during a live game (started, not yet ended). This is the
+-- exact case that was broken: an "any table" confirmed booking, or an
+-- already-seated one wanting to move, had no way to ever be placed once
+-- starts_at passed -- forever, for the rest of the game.
+-- ---------------------------------------------------------------------
+insert into public.events
+  (id, club_id, title, venue_id, starts_at, ends_at, created_by) values
+  ('e4e4e4e4-0000-0000-0000-000000000004',
+   'c1c1c1c1-0000-0000-0000-000000000001', 'Right now',
+   '11111111-0000-0000-0000-000000000001',
+   now() - interval '1 hour', now() + interval '2 hours',
+   'aaaaaaaa-0000-0000-0000-000000000001');
+
+insert into public.event_tables
+  (id, event_id, club_id, label, capacity, position) values
+  ('7ab1e000-0000-0000-0000-000000000004',
+   'e4e4e4e4-0000-0000-0000-000000000004',
+   'c1c1c1c1-0000-0000-0000-000000000001', 'Table 1', 4, 1),
+  ('7ab1e000-0000-0000-0000-000000000005',
+   'e4e4e4e4-0000-0000-0000-000000000004',
+   'c1c1c1c1-0000-0000-0000-000000000001', 'Table 2', 4, 1);
+
+-- Carol is already seated at Table 1 (to exercise a table-to-table move).
+insert into public.booking_groups
+  (id, event_id, club_id, created_by, preferred_table_id) values
+  ('9909aaaa-0000-0000-0000-000000000010',
+   'e4e4e4e4-0000-0000-0000-000000000004',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   'cccccccc-0000-0000-0000-000000000003',
+   '7ab1e000-0000-0000-0000-000000000004');
+insert into public.bookings
+  (id, group_id, event_id, club_id, event_table_id, profile_id, booked_by) values
+  ('b00c0000-0000-0000-0000-000000000030',
+   '9909aaaa-0000-0000-0000-000000000010',
+   'e4e4e4e4-0000-0000-0000-000000000004',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   '7ab1e000-0000-0000-0000-000000000004',
+   'cccccccc-0000-0000-0000-000000000003',
+   'cccccccc-0000-0000-0000-000000000003');
+
+-- Dan is confirmed but unplaced ("any table") -- the exact bug scenario.
+insert into public.booking_groups
+  (id, event_id, club_id, created_by, preferred_table_id) values
+  ('9909aaaa-0000-0000-0000-000000000011',
+   'e4e4e4e4-0000-0000-0000-000000000004',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   'dddddddd-0000-0000-0000-000000000004', null);
+insert into public.bookings
+  (id, group_id, event_id, club_id, profile_id, booked_by) values
+  ('b00c0000-0000-0000-0000-000000000031',
+   '9909aaaa-0000-0000-0000-000000000011',
+   'e4e4e4e4-0000-0000-0000-000000000004',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   'dddddddd-0000-0000-0000-000000000004',
+   'dddddddd-0000-0000-0000-000000000004');
+
+-- Erin is waiting -- to prove a live-game move does NOT promote her.
+insert into public.booking_groups
+  (id, event_id, club_id, created_by, preferred_table_id, status,
+   waitlisted_at) values
+  ('9909aaaa-0000-0000-0000-000000000012',
+   'e4e4e4e4-0000-0000-0000-000000000004',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   'eeeeeeee-0000-0000-0000-000000000005',
+   null, 'waitlisted', now());
+insert into public.bookings
+  (id, group_id, event_id, club_id, profile_id, booked_by, status) values
+  ('b00c0000-0000-0000-0000-000000000032',
+   '9909aaaa-0000-0000-0000-000000000012',
+   'e4e4e4e4-0000-0000-0000-000000000004',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   'eeeeeeee-0000-0000-0000-000000000005',
+   'eeeeeeee-0000-0000-0000-000000000005', 'waitlisted');
+
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "dddddddd-0000-0000-0000-000000000004", "role": "authenticated"}';
+
+select lives_ok(
+  $$select public.place_booking('b00c0000-0000-0000-0000-000000000031',
+      '7ab1e000-0000-0000-0000-000000000004')$$,
+  'an unplaced confirmed booking can be seated on a game that has already started');
+
+reset role;
+select is(
+  (select event_table_id from public.bookings
+    where id = 'b00c0000-0000-0000-0000-000000000031'),
+  '7ab1e000-0000-0000-0000-000000000004'::uuid,
+  'and the table is actually recorded');
+
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "cccccccc-0000-0000-0000-000000000003", "role": "authenticated"}';
+
+select lives_ok(
+  $$select public.place_booking('b00c0000-0000-0000-0000-000000000030',
+      '7ab1e000-0000-0000-0000-000000000005')$$,
+  'an already-seated member can move to a different table on a live game');
+
+reset role;
+select is(
+  (select event_table_id from public.bookings
+    where id = 'b00c0000-0000-0000-0000-000000000030'),
+  '7ab1e000-0000-0000-0000-000000000005'::uuid,
+  'and their booking now shows the new table');
+select is(
+  (select status::text from public.bookings
+    where id = 'b00c0000-0000-0000-0000-000000000032'),
+  'waitlisted',
+  'the seat Carol''s move freed at Table 1 does not promote the waitlisted group -- promote_waitlist''s own starts_at guard holds');
+
+-- An organizer may also move somebody else's booking on a live game --
+-- the same permission split place_booking already has, now unblocked by
+-- time.
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "aaaaaaaa-0000-0000-0000-000000000001", "role": "authenticated"}';
+
+select lives_ok(
+  $$select public.place_booking('b00c0000-0000-0000-0000-000000000031',
+      '7ab1e000-0000-0000-0000-000000000005')$$,
+  'an organizer may move another member''s booking on a live game');
+
+reset role;
+select is(
+  (select event_table_id from public.bookings
+    where id = 'b00c0000-0000-0000-0000-000000000031'),
+  '7ab1e000-0000-0000-0000-000000000005'::uuid,
+  'and that move is recorded too');
 
 select * from finish();
 rollback;
