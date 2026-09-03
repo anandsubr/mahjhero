@@ -3,6 +3,19 @@ import { useFocusEffect } from 'expo-router';
 import { fetchNotificationUnreadCount } from './notifications';
 import { useSession } from './session';
 
+// Every mounted useNotificationsUnread instance's own refetch callback.
+// app/alerts.tsx calls notifyNotificationsRead() right after
+// markNotificationsRead() succeeds so the badge clears immediately, even
+// though TabBar (rendered inside that very screen's own tree) already
+// fetched the stale, pre-read count before the mark-read call resolved --
+// a real focus event never fires in that case, since the member never
+// left the screen.
+const listeners = new Set<() => void>();
+
+export function notifyNotificationsRead(): void {
+  for (const listener of listeners) listener();
+}
+
 /**
  * The Alerts tab's own badge -- a live count, not cached, matching
  * lib/use-unread.ts's own reasoning for messages: refetched on focus
@@ -26,13 +39,19 @@ export function useNotificationsUnread(): number {
       }
       let cancelled = false;
 
-      void fetchNotificationUnreadCount().then((result) => {
-        if (cancelled) return;
-        setCount(result);
-      });
+      const refetch = () => {
+        void fetchNotificationUnreadCount().then((result) => {
+          if (cancelled) return;
+          setCount(result);
+        });
+      };
+
+      refetch();
+      listeners.add(refetch);
 
       return () => {
         cancelled = true;
+        listeners.delete(refetch);
       };
     }, [userId]),
   );

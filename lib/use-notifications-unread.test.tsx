@@ -33,7 +33,7 @@ const NO_SESSION = { session: null, loading: false };
 let current: typeof SESSION_A | typeof NO_SESSION = SESSION_A;
 vi.mock('./session', () => ({ useSession: () => current }));
 
-import { useNotificationsUnread } from './use-notifications-unread';
+import { notifyNotificationsRead, useNotificationsUnread } from './use-notifications-unread';
 
 /** A probe rather than renderHook: this repo has no
  *  @testing-library/react-hooks, and the hook's whole contract is a plain
@@ -74,6 +74,42 @@ describe('useNotificationsUnread', () => {
 
     // Give any spurious effect a chance to fire before asserting it didn't.
     await waitFor(() => expect(screen.getByTestId('count')).toBeTruthy());
+    expect(fetchNotificationUnreadCount).toHaveBeenCalledTimes(1);
+  });
+
+  // app/alerts.tsx calls this right after markNotificationsRead() succeeds,
+  // to clear a mounted badge with no real focus event to trigger the
+  // useFocusEffect above -- see that screen's own comment on `load`. This
+  // proves the pub/sub half of the contract on its own, independent of that
+  // screen's markup.
+  it('refetches a mounted instance when notifyNotificationsRead is called, with no focus event', async () => {
+    fetchNotificationUnreadCount.mockResolvedValueOnce(3);
+    render(<Probe />);
+    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('3'));
+    expect(fetchNotificationUnreadCount).toHaveBeenCalledTimes(1);
+
+    fetchNotificationUnreadCount.mockResolvedValueOnce(0);
+    notifyNotificationsRead();
+
+    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('0'));
+    expect(fetchNotificationUnreadCount).toHaveBeenCalledTimes(2);
+  });
+
+  // A listener that has already unmounted (e.g. TabBar on a screen the
+  // member has since left) must not be notified -- its cleanup removes it
+  // from the module-scoped `listeners` set on unmount.
+  it('does not refetch an unmounted instance', async () => {
+    fetchNotificationUnreadCount.mockResolvedValueOnce(3);
+    const { unmount } = render(<Probe />);
+    await waitFor(() => expect(fetchNotificationUnreadCount).toHaveBeenCalledTimes(1));
+    unmount();
+
+    notifyNotificationsRead();
+
+    // Nothing async to await for a negative assertion -- a flush of pending
+    // microtasks is enough to let a spurious call land if the cleanup didn't
+    // run.
+    await Promise.resolve();
     expect(fetchNotificationUnreadCount).toHaveBeenCalledTimes(1);
   });
 });

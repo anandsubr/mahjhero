@@ -43,6 +43,13 @@ vi.mock('../../lib/messages', async (importOriginal) => {
 
 const fetchMyNotifications = vi.fn();
 const markNotificationsRead = vi.fn();
+// TabBar itself now also reaches this module, via `useNotificationsUnread`
+// -> `fetchNotificationUnreadCount` -- the same reason `fetchUnreadCounts`
+// is doubled above for `useUnreadCounts`. Without this, TabBar's own
+// fetch call falls through to the real, unmocked implementation. Hoisted to
+// module scope (not left inline in the factory below) so individual tests
+// can control what each call resolves to -- see the badge-clearing test.
+const fetchNotificationUnreadCount = vi.fn(async () => 0);
 
 vi.mock('../../lib/notifications', async () => {
   // describeNotification is pure and already covered in
@@ -55,11 +62,7 @@ vi.mock('../../lib/notifications', async () => {
     describeNotification: actual.describeNotification,
     fetchMyNotifications: (...a: unknown[]) => fetchMyNotifications(...a),
     markNotificationsRead: (...a: unknown[]) => markNotificationsRead(...a),
-    // TabBar itself now also reaches this module, via `useNotificationsUnread`
-    // -> `fetchNotificationUnreadCount` -- the same reason `fetchUnreadCounts`
-    // is doubled above for `useUnreadCounts`. Without this, TabBar's own
-    // fetch call falls through to the real, unmocked implementation.
-    fetchNotificationUnreadCount: vi.fn(async () => 0),
+    fetchNotificationUnreadCount: () => fetchNotificationUnreadCount(),
   };
 });
 
@@ -161,6 +164,45 @@ describe('alerts screen', () => {
     render(<AlertsScreen />);
     await screen.findByText(/Could not reach MahjHero/);
     expect(markNotificationsRead).not.toHaveBeenCalled();
+  });
+
+  // TabBar (rendered inside this very screen's tree) fetches its badge count
+  // as a child effect, before this screen's own load() has even called
+  // markNotificationsRead() -- so the badge's FIRST fetch always sees the
+  // stale, pre-read count. Nothing about staying on this screen fires a real
+  // focus event, so without notifyNotificationsRead() the badge would only
+  // ever clear on a navigate-away-and-back. This test never triggers a
+  // rerender or refocus itself -- the badge dropping its "unread" suffix has
+  // to come from the pub/sub alone.
+  it('clears the alerts badge once mark-read succeeds, with no refocus', async () => {
+    fetchMyNotifications.mockResolvedValueOnce([BOOKED_BY_FRIEND]);
+    fetchNotificationUnreadCount.mockResolvedValueOnce(3).mockResolvedValueOnce(0);
+
+    // markNotificationsRead is held open rather than left to resolve on its
+    // own tick: with everything else mocked to resolve immediately, its
+    // real (fast) resolution and the badge's own initial fetch would settle
+    // in the same microtask flush, and this test would never observe the
+    // "3 unread" state in between -- only ever the end state. Holding this
+    // one promise open gives a deterministic window to assert it.
+    let resolveMarkRead: (result: { error: string | null }) => void;
+    markNotificationsRead.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveMarkRead = resolve;
+        }),
+    );
+
+    render(<AlertsScreen />);
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Alerts, 3 unread' })).toBeTruthy(),
+    );
+
+    resolveMarkRead!({ error: null });
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Alerts' })).toBeTruthy(),
+    );
   });
 
   it('carries the tab bar with Alerts marked', async () => {

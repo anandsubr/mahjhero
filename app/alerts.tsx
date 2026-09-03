@@ -15,6 +15,7 @@ import {
 } from '../lib/notifications';
 import { useSession } from '../lib/session';
 import { colors, radius, space, type } from '../lib/theme';
+import { notifyNotificationsRead } from '../lib/use-notifications-unread';
 
 /**
  * A notification's own "when" is about the moment it reached this device,
@@ -69,7 +70,17 @@ export default function AlertsScreen() {
     // batch -- fire-and-forget, off the render path: a failed read-mark just
     // means the badge doesn't clear this time, which isn't worth an error
     // banner of its own, and isn't worth making the member wait for either.
-    if (next !== null) void markNotificationsRead();
+    // TabBar's own badge (useNotificationsUnread) is rendered inside this
+    // very screen's tree, so its child effect fires -- and fetches the
+    // stale, pre-read count -- before this mark-read call even resolves; no
+    // real focus event follows, since the member never left the screen. On
+    // success, notifyNotificationsRead() tells every mounted badge instance
+    // to refetch so it clears without requiring a refocus.
+    if (next !== null) {
+      void markNotificationsRead().then(({ error: markError }) => {
+        if (!markError) notifyNotificationsRead();
+      });
+    }
   }, []);
 
   /*
