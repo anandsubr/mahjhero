@@ -251,3 +251,142 @@ keeps its header exactly as the earlier section of this spec left it.
   row at a plausible club count (e.g. 3-4 clubs plus the New Club tile),
   confirming legibility of glyph+initials together at the small tile
   size and that wrapping still behaves sensibly at various widths.
+
+## Addendum 2: the club's own tile representation, everywhere a club is shown large
+
+The addendum above covers the *chip* (club switcher) size. This one
+carries the same idea — a mahjong tile with the club's own stable glyph
+plus its initials — to every place a club gets a large, header-sized
+circular avatar today, and tightens one layout that reads oddly once a
+tile sits inside it.
+
+### Where a large club avatar exists today
+
+Every one of these renders `ThreadAvatar` with `kind="club"` at
+`size={72}` (a `72px` circle, `colors.accent[700]` fill, plain
+initials — confirmed by reading `components/ThreadAvatar.tsx` and every
+call site directly, not assumed):
+
+1. `components/DashboardHeader.tsx`'s own centred "Your club" shape
+   (`kicker === 'Your club'`) — reached via `app/clubs/index.tsx` (a
+   member's own single club, whether because they have only one or have
+   filtered into one) **and** `app/clubs/[id]/index.tsx` (the club's own
+   detail/management page, reached via the pencil — this addendum's
+   "club edit page").
+2. `app/messages/club/[threadId]/index.tsx`'s own header (the ongoing
+   club message board — this addendum's "club messages page").
+3. `app/messages/club/new.tsx`'s header (the new-club-thread composer) —
+   not explicitly named in the request, included here for consistency
+   since it is architecturally the same call (same component, same
+   size, same `kind`) as (2); flag during spec review if this one should
+   stay circular instead.
+
+`ThreadAvatar` is **also** used at its smaller `52px` default by
+`components/ThreadRow.tsx` for every thread row in the Messages list
+(club threads included) — this is a *different, much smaller* context
+where several avatar kinds sit side by side in a scrollable list, and
+turning club rows there into tiles was not requested and is explicitly
+**out of scope**: only the three `size={72}` header uses above change.
+
+### The mechanism: an opt-in `asTile` treatment on `ThreadAvatar`, not a new component
+
+`ThreadAvatar`'s `kind === 'club'` branch gains an additional, **opt-in**
+tile rendering — a `colors.surface`-filled tile (`TileHero`'s chrome
+family, same as every other tile in this spec) showing the club's own
+stable glyph (Addendum 1's 8-glyph, hash-of-`id` set — the *same*
+glyph a club's chip already shows, computed the *same* way, so a
+member sees one consistent face for "this club" everywhere) above its
+initials, matching Addendum 1's chip content shape but at a larger,
+header-appropriate size.
+
+- Default behavior is **unchanged** for every existing caller —
+  `ThreadRow.tsx`'s list rows, and any future caller that doesn't ask
+  for the tile, keep the plain circle exactly as today. This is an
+  additive, opt-in prop, not a redefinition of what `kind="club"` means.
+- The three header call sites above pass whatever new prop(s) turn this
+  on, plus the club's own `id` (needed for the glyph hash — `name` alone
+  isn't enough, unlike the plain circle which only ever needed initials).
+  `DashboardHeader.tsx` itself doesn't currently receive a club id at
+  all — it will need one threaded in from both of its "Your club"-shape
+  callers to pass down to its own internal `ThreadAvatar` call.
+- The `direct`/`game`/`group` kinds are untouched — this only ever
+  branches inside the existing `kind === 'club'` case.
+
+### Tighter top row for `app/clubs/index.tsx`'s single-club header
+
+The exact layout the request's screenshot flagged as odd: today, when a
+member's own single club resolves into view on the Clubs *dashboard*
+(not the club's own detail page), the page stacks — a decorative tile
+(Task 3 of this same plan's own sibling-tile-above-the-centred-shape
+choice) — *then*, on its own row below that, a back-chevron and a ⊕
+"add a game" button — *then* the circular avatar — *then* the name pill
+— *then* the meta line. Four stacked rows before any real content,
+with the tile floating disconnected above the back/plus row it has
+nothing to do with.
+
+**New layout, this screen only:** one row — back-chevron (left) → the
+club's own tile, now carrying the glyph+initials this addendum adds
+(centre) → ⊕ "add a game" (right) — replacing all of the above. Name
+pill and meta stay below that row, as today. This absorbs Task 3's
+separate sibling tile entirely (it's now *inside* the same row as the
+back/plus controls, not a disconnected element above them) and replaces
+the plain circular avatar with the tile.
+
+This is scoped to `app/clubs/index.tsx`'s own single-club state
+specifically — confirmed during brainstorming that `app/clubs/[id]/index.tsx`
+(the "club edit" page) keeps its current structure (its own separate "←
+Clubs" ghost button above the header, per its own established, unrelated
+design) and only swaps its avatar for the tile — it does not gain this
+tighter combined row, since that page never had a back/plus row inside
+`DashboardHeader` to begin with (it passes neither `onPressBack` nor
+`onPressAddGame` today).
+
+### The "club game page": a new small tile, not a modified avatar
+
+`app/clubs/[id]/events/[eventId]/index.tsx` (a single game's own
+screen — round timer, seat tiles, the works) shows the club's name today
+as plain kicker text (`styles.clubKicker`, added earlier in this
+session's own separate game-screen-cleanup work) with **no avatar of any
+kind**. "Carrying the representation" here means adding a small
+decorative tile before that existing text — the same `MahjongTile`
+`size="section"` treatment the four nav landing pages already use, with
+this specific club's own stable glyph (via the same hash-of-`id`
+function Addendum 1 introduced) rather than one of the four fixed
+nav-section glyphs. No initials here — matching the nav section tiles'
+own "just the glyph, the real text carries the name" precedent, not the
+chip/header tiles' "glyph plus initials" combination (there's no room
+for both at this small, purely-decorative size, and the club's full name
+is already right next to it).
+
+### Open items for the implementation plan to resolve
+
+- The exact new prop name(s) on `ThreadAvatar` (e.g. `asTile` +
+  `clubId`) and on `DashboardHeader` (e.g. `clubId`) — functionally
+  specified above, naming left to the plan.
+- The large tile's exact pixel size (72px circle replaced by a tile —
+  probably close to, not necessarily identical to, Addendum 1's 48×60
+  chip size; needs a live check, not an assumption, the same way every
+  other size in this spec was tested before being locked in).
+- Whether `app/messages/club/new.tsx` gets the tile treatment (see
+  above — included by default for consistency, flag during spec review
+  to exclude it instead).
+- Confirm `app/clubs/[id]/index.tsx`'s own `club` object (fetched
+  elsewhere in that file) already carries an `id` field ready to pass
+  through — expected, given `[id]` is the route's own club id, but worth
+  a one-line confirmation rather than an assumption.
+
+### Testing
+
+- `ThreadRow.tsx`'s existing tests (list-row rendering, all four kinds)
+  must keep passing unchanged — the opt-in prop's default path is
+  exactly today's behavior.
+- Each of the three (or four, pending the open item above) header call
+  sites gets a test confirming the tile — and the correct, *stable*
+  glyph for a given club id — renders instead of the plain circle.
+- A test that two DIFFERENT club ids can (not must, given only 8
+  buckets) resolve to different glyphs, and that the SAME club id always
+  resolves to the same glyph as its own chip elsewhere (Addendum 1) —
+  the one-club-one-face guarantee this whole addendum exists to keep.
+- A live visual check of `app/clubs/index.tsx`'s new combined top row
+  (back/tile/plus in one row) at mobile width, and of the game screen's
+  new small club tile sitting next to its existing kicker text.
