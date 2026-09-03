@@ -308,6 +308,14 @@ describe('clubs list', () => {
     expect(screen.getByText('Thursday evenings')).toBeTruthy();
   });
 
+  it('shows the club as a tile in the combined top row, for the single-club scope', async () => {
+    // Reuse whichever existing fixture already reaches the centred
+    // "Your club" shape (a one-club member, or a filtered-in club).
+    fetchMyClubs.mockResolvedValueOnce([CLUB]);
+    render(<ClubsScreen />);
+    await screen.findByTestId('thread-avatar-club-tile');
+  });
+
   // "Your games" (Task 13) stacked a whole section below the header and chip
   // row with no `scroll` prop on Screen, unlike every other list screen
   // (app/clubs/[id]/index.tsx, the event screen). A member with a few games

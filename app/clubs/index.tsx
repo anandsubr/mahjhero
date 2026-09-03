@@ -498,25 +498,12 @@ export default function ClubsScreen() {
 
   return (
     <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="club" />}>
-      {/*
-        DashboardHeader's "Your club" shape (kicker === 'Your club') centres
-        an avatar and name pill, with no single title LINE a tile could sit
-        inline before -- so that shape keeps its own tile as a separate,
-        centred sibling above the whole block (confirmed clean with a live
-        render). The flat kicker/name/meta shape — several clubs, none
-        resolved — renders no header at all any more: the chip row below is
-        the first content on the page in that state (see its own comment).
-      */}
-      {scope.kicker === 'Your club' ? (
-        <View testID="section-tile" style={styles.sectionTileCentered}>
-          <MahjongTile suit="dots" size="section" />
-        </View>
-      ) : null}
       {scope.kicker === 'Your club' ? (
         <DashboardHeader
           kicker={scope.kicker}
           name={scope.name}
           meta={scope.meta}
+          clubId={scopeClubId ?? undefined}
           onPressScope={
             scopeClubId ? () => router.push(`/clubs/${scopeClubId}`) : undefined
           }
@@ -941,12 +928,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: space[2],
-  },
-  // Only applied in the main branch, and only while `scope.kicker ===
-  // 'Your club'` -- see that branch's own comment for why the tile needs
-  // centring there but not against the flat kicker/name/meta shape.
-  sectionTileCentered: {
-    alignItems: 'center',
   },
   // The empty state's own gap: what puts space between the "not in a club
   // yet" help text and the "Start a club" button below it, instead of them
