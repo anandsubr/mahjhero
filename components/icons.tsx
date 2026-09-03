@@ -1,3 +1,4 @@
+import type { StyleProp, ViewStyle } from 'react-native';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
 import { colors } from '../lib/theme';
 
@@ -138,6 +139,25 @@ export function SendIcon({ size = 22, color = colors.bg }: { size?: number; colo
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.75} strokeLinecap="round" strokeLinejoin="round">
       <Path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z" />
       <Path d="m21.854 2.147-10.94 10.939" />
+    </Svg>
+  );
+}
+
+/** Filled star, for the leading player's point badge on a seat tile
+ *  (components/SeatGrid.tsx). Filled, not stroked, unlike every other icon
+ *  in this file -- a badge needs a solid shape to sit text on top of. */
+export function StarIcon({
+  size = 24,
+  color = colors.accentColor,
+  style,
+}: {
+  size?: number;
+  color?: string;
+  style?: StyleProp<ViewStyle>;
+}) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill={color} style={style}>
+      <Path d="M12 2l2.9 6.9L22 9.6l-5.5 4.9L18 22l-6-3.9L6 22l1.5-7.5L2 9.6l7.1-.7z" />
     </Svg>
   );
 }

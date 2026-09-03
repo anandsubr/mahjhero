@@ -185,6 +185,26 @@ describe('TableCard', () => {
     expect(screen.getByRole('button', { name: 'Winner: Ravi K.' })).toBeTruthy();
   });
 
+  it('shows a round badge for a seated player with recorded points, and a star for the leader', () => {
+    render(
+      <TableCard
+        table={table}
+        occupants={occupants}
+        youId="p9"
+        onTakeSeat={vi.fn()}
+        rounds={[
+          { id: 'r1', winner_profile_id: 'p1', winner_name: 'Ravi K.', points: 30 },
+        ]}
+        canRecordRound={false}
+        canDeleteRound={false}
+        onRecordRound={vi.fn()}
+        onDeleteRound={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId('badge-star-b1')).toBeTruthy();
+    expect(screen.getByText('30')).toBeTruthy();
+  });
+
   it('offers a round timer', () => {
     render(
       <TableCard

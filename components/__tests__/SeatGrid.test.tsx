@@ -4,9 +4,9 @@ import { describe, expect, it, vi } from 'vitest';
 import SeatGrid from '../SeatGrid';
 
 const seats = [
-  { bookingId: 'b1', name: 'Jane P.', isYou: false },
-  { bookingId: 'b2', name: 'Mei L.', isYou: false },
-  { bookingId: 'b3', name: 'You', isYou: true },
+  { bookingId: 'b1', profileId: 'p1', name: 'Jane P.', isYou: false },
+  { bookingId: 'b2', profileId: 'p2', name: 'Mei L.', isYou: false },
+  { bookingId: 'b3', profileId: 'p3', name: 'You', isYou: true },
 ];
 
 describe('SeatGrid', () => {
@@ -277,8 +277,8 @@ describe('SeatGrid: member self-service (leave own seat)', () => {
   // accessibility label here is built from `seat.name`, exactly like the
   // organizer panel's, so a realistic name keeps the assertions readable.
   const selfSeats = [
-    { bookingId: 'b1', name: 'Jane P.', isYou: false },
-    { bookingId: 'b3', name: 'Ada', isYou: true },
+    { bookingId: 'b1', profileId: 'p1', name: 'Jane P.', isYou: false },
+    { bookingId: 'b3', profileId: 'p3', name: 'Ada', isYou: true },
   ];
 
   function Harness({
@@ -357,5 +357,48 @@ describe('SeatGrid: member self-service (leave own seat)', () => {
       />,
     );
     expect(screen.queryByLabelText("Manage Ada's seat")).toBeNull();
+  });
+});
+
+// Each occupied seat's own running point total, plus a star badge for
+// whoever is currently tied for the lead. Display-only -- see TableCard's
+// own tests for how the totals/leader are actually computed from rounds.
+describe('SeatGrid: the point badge', () => {
+  it('shows no badge for a seat with no recorded points', () => {
+    render(
+      <SeatGrid
+        tableLabel="Table 1"
+        capacity={4}
+        seats={[{ bookingId: 'b1', profileId: 'p1', name: 'Jane P.', isYou: false, points: null, isLeader: false }]}
+      />,
+    );
+    // No badge means no point number is rendered at all.
+    expect(screen.queryByText('0')).toBeNull();
+  });
+
+  it('shows a plain round badge with the point total for a non-leading winner', () => {
+    render(
+      <SeatGrid
+        tableLabel="Table 1"
+        capacity={4}
+        seats={[{ bookingId: 'b1', profileId: 'p1', name: 'Jane P.', isYou: false, points: 30, isLeader: false }]}
+      />,
+    );
+    expect(screen.getByText('30')).toBeTruthy();
+  });
+
+  it('shows a star badge for the current leader', () => {
+    render(
+      <SeatGrid
+        tableLabel="Table 1"
+        capacity={4}
+        seats={[{ bookingId: 'b1', profileId: 'p1', name: 'Jane P.', isYou: false, points: 75, isLeader: true }]}
+      />,
+    );
+    expect(screen.getByText('75')).toBeTruthy();
+    // The star and plain-round badges are distinct testIDs -- this fails if
+    // the star path were ever removed or collapsed into the round one.
+    expect(screen.getByTestId('badge-star-b1')).toBeTruthy();
+    expect(screen.queryByTestId('badge-round-b1')).toBeNull();
   });
 });

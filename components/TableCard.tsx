@@ -8,6 +8,7 @@ import SkillTierPips from './SkillTierPips';
 import Tag from './Tag';
 import type { SeatOccupant, SkillTier } from '../lib/bookings';
 import { seatsFreeLabel, seatsRemaining } from '../lib/bookings';
+import { roundTotals } from '../lib/rounds';
 import { colors, space, type } from '../lib/theme';
 
 /** Only what SeatGrid's "Move to {table}" buttons need — not the full EventTable. */
@@ -100,6 +101,10 @@ export default function TableCard({
     (o) => o.profile_id === youId && o.booked_by !== youId,
   );
 
+  const totals = rounds ? roundTotals(rounds) : [];
+  const totalsByProfile = new Map(totals.map((t) => [t.profileId, t.points]));
+  const maxPoints = totals.length > 0 ? Math.max(...totals.map((t) => t.points)) : null;
+
   return (
     <Card>
       <View style={styles.row}>
@@ -123,11 +128,17 @@ export default function TableCard({
       <SeatGrid
         tableLabel={table.label}
         capacity={table.capacity}
-        seats={seated.map((o) => ({
-          bookingId: o.booking_id,
-          name: o.display_name,
-          isYou: o.profile_id === youId,
-        }))}
+        seats={seated.map((o) => {
+          const points = totalsByProfile.get(o.profile_id) ?? null;
+          return {
+            bookingId: o.booking_id,
+            profileId: o.profile_id,
+            name: o.display_name,
+            isYou: o.profile_id === youId,
+            points,
+            isLeader: points !== null && points === maxPoints,
+          };
+        })}
         onTakeSeat={onTakeSeat}
         busy={busy}
         needsFourth={needsFourth}

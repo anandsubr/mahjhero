@@ -1,13 +1,46 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Button from './Button';
+import { StarIcon } from './icons';
 import { seatsRemaining } from '../lib/bookings';
 import { colors, radius, space, type } from '../lib/theme';
 
 export type Seat = {
   bookingId: string;
+  /** Needed for `onRecordRound` (Task 4) -- record_round takes a winner's
+   *  profile id, not a booking id. */
+  profileId: string;
   name: string;
   isYou: boolean;
+  /** This seat's running point total at this table, or null/omitted if
+   *  they have never won a round here -- no badge renders in that case.
+   *  Optional (not just nullable) so every existing test fixture that
+   *  predates scoring keeps compiling unchanged -- TableCard's own
+   *  mapping (Step 6 below) always sets this explicitly. */
+  points?: number | null;
+  /** True if tied for (or alone in) the current lead among this table's
+   *  occupants who have won at least one round. Ties: everyone tied for
+   *  the lead gets the star, not just whoever reached it first. Optional,
+   *  same reasoning as `points` -- defaults to false when omitted. */
+  isLeader?: boolean;
 };
+
+function SeatBadge({ seat }: { seat: Seat }) {
+  const points = seat.points ?? null;
+  if (points === null) return null;
+  if (seat.isLeader) {
+    return (
+      <View style={styles.badge} testID={`badge-star-${seat.bookingId}`}>
+        <StarIcon size={40} color={colors.accent[400]} style={styles.badgeStarIcon} />
+        <Text style={[styles.badgeText, styles.badgeTextStar]}>{points}</Text>
+      </View>
+    );
+  }
+  return (
+    <View style={[styles.badge, styles.badgeRound]} testID={`badge-round-${seat.bookingId}`}>
+      <Text style={styles.badgeText}>{points}</Text>
+    </View>
+  );
+}
 
 /** Only what a "Move to {table}" button needs — not the full EventTable. */
 type SeatableTable = { id: string; label: string };
@@ -225,11 +258,12 @@ export default function SeatGrid({
           return (
             <View
               key={seat.bookingId}
-              style={[styles.seat, seat.isYou && styles.seatYou]}
+              style={[styles.seat, seat.isYou && styles.seatYou, styles.seatRow]}
             >
               <Text style={[styles.name, seat.isYou && styles.nameYou]}>
                 {displayName}
               </Text>
+              <SeatBadge seat={seat} />
             </View>
           );
         }
@@ -271,6 +305,7 @@ export default function SeatGrid({
                     and aria-expanded already say everything a screen reader
                     needs; this glyph is purely the sighted hint. */}
                 <Text aria-hidden style={[styles.chevron, seat.isYou && styles.chevronYou]}>▾</Text>
+                <SeatBadge seat={seat} />
               </View>
             </Pressable>
           );
@@ -294,6 +329,7 @@ export default function SeatGrid({
                   {displayName}
                 </Text>
                 <Text aria-hidden style={[styles.chevron, seat.isYou && styles.chevronYou]}>▴</Text>
+                <SeatBadge seat={seat} />
               </View>
             </Pressable>
 
@@ -400,6 +436,35 @@ const styles = StyleSheet.create({
     gap: space[2],
   },
   seatYou: { backgroundColor: colors.accent2Color },
+  // Read-only occupied seats have no nameRow of their own (that wrapper is
+  // only used by the manageable Pressable/open-panel branches) -- this puts
+  // the name and the trailing badge on the same row for that plain case.
+  seatRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  badge: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  badgeRound: {
+    backgroundColor: colors.accentColor,
+  },
+  badgeStarIcon: {
+    position: 'absolute',
+  },
+  badgeText: {
+    fontFamily: type.bodyBold,
+    fontSize: type.size.helper,
+    color: colors.bg,
+  },
+  badgeTextStar: {
+    color: colors.accent[900],
+  },
   empty: {
     backgroundColor: 'transparent',
     borderWidth: 2,
