@@ -90,6 +90,7 @@ import {
   updateVenue,
   VENUE_COLUMNS,
 } from './venues';
+import { GREETING_COLUMNS } from './greetings';
 import {
   createGroupThread,
   fetchThread,
@@ -2751,5 +2752,45 @@ describe.runIf(reachable || required)('messages schema contract', () => {
     ).toBeDefined();
     expect(otherMessage!.author_id).toBe(otherId);
     expect(otherMessage!.profiles?.display_name).toBe('Contract Other');
+  });
+});
+
+describe.runIf(reachable || required)('greetings schema contract', () => {
+  let admin: SupabaseClient;
+  let userId: string;
+
+  beforeAll(async () => {
+    const signedIn = await signInFreshUser();
+    admin = signedIn.admin;
+    userId = signedIn.userId;
+  });
+
+  afterAll(async () => {
+    await supabase.auth.signOut();
+    if (admin && userId) await admin.auth.admin.deleteUser(userId);
+  });
+
+  it('refuses a write from a non-admin member', async () => {
+    const { error } = await supabase.from('greetings').insert({ text: 'Hi {name}' });
+    expect(error).not.toBeNull();
+  });
+
+  it('lets any signed-in member read the list', async () => {
+    const { error } = await supabase.from('greetings').select(GREETING_COLUMNS);
+    expect(error).toBeNull();
+  });
+
+  it('lets an admin write, and the write round-trips with the right columns', async () => {
+    await admin.from('profiles').update({ is_admin: true }).eq('id', userId);
+    const { data, error } = await supabase
+      .from('greetings')
+      .insert({ text: 'Contract test greeting {name}' })
+      .select(GREETING_COLUMNS)
+      .single();
+    expect(error).toBeNull();
+    const row = data as unknown as Record<string, unknown>;
+    expect(Object.keys(row).sort()).toEqual(['created_at', 'id', 'text'].sort());
+    expect(row.text).toBe('Contract test greeting {name}');
+    await admin.from('greetings').delete().eq('id', row.id as string);
   });
 });
