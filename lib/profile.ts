@@ -9,6 +9,11 @@ export type Profile = {
   skill_level: SkillLevel | null;
   avatar_url: string | null;
   timezone: string;
+  /** Optional so every existing test fixture/mock that builds a
+   *  Profile-shaped literal without it still type-checks — a real fetch
+   *  always includes it (the column is `not null default false`), so
+   *  read it everywhere as `profile.is_admin ?? false`, never bare. */
+  is_admin?: boolean;
 };
 
 /**
@@ -18,7 +23,7 @@ export type Profile = {
  * arriving as `21:00:00` where the client assumed `21:00` — was invisible to
  * both existing suites precisely because nothing crossed this boundary.
  */
-export const PROFILE_COLUMNS = 'id, display_name, skill_level, avatar_url, timezone';
+export const PROFILE_COLUMNS = 'id, display_name, skill_level, avatar_url, timezone, is_admin';
 export const PREFERENCE_COLUMNS =
   'notify_channel, mute_need_a_fourth, quiet_hours_enabled, quiet_hours_start, quiet_hours_end';
 

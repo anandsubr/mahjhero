@@ -269,7 +269,7 @@ describe.runIf(reachable || required)('profiles schema contract', () => {
     // Exact key set, not a subset: an added column is drift too, and a
     // removed one must not be papered over by an optional-property check.
     expect(Object.keys(row).sort()).toEqual(
-      ['avatar_url', 'display_name', 'id', 'skill_level', 'timezone'].sort(),
+      ['avatar_url', 'display_name', 'id', 'is_admin', 'skill_level', 'timezone'].sort(),
     );
 
     expect(typeof row.id).toBe('string');
@@ -359,6 +359,7 @@ describe.runIf(reachable || required)('profiles schema contract', () => {
       skill_level: SEEDED.skill_level,
       avatar_url: null,
       timezone: SEEDED.timezone,
+      is_admin: false,
     });
   });
 
