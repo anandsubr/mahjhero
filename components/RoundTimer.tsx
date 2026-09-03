@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import Button from './Button';
 import { colors, space, type } from '../lib/theme';
 
@@ -23,6 +23,7 @@ function formatClock(totalSeconds: number): string {
 export default function RoundTimer({ tableLabel }: { tableLabel: string }) {
   const [durationMinutes, setDurationMinutes] = useState<number | null>(null);
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
+  const [overlayOpen, setOverlayOpen] = useState(false);
 
   // One interval per `durationMinutes` change (start or reset), not one
   // per tick -- decrementing via the functional setState form below means
@@ -72,19 +73,45 @@ export default function RoundTimer({ tableLabel }: { tableLabel: string }) {
   const expired = secondsLeft === 0;
 
   return (
-    <View style={styles.row}>
-      <Text style={[styles.clock, expired ? styles.expired : null]}>
-        {expired ? "Time's up" : formatClock(secondsLeft)}
-      </Text>
-      <Button
-        variant="ghost"
-        big={false}
-        onPress={reset}
-        accessibilityLabel={expired ? 'Reset timer' : 'Stop timer'}
-      >
-        {expired ? 'Reset timer' : 'Stop timer'}
-      </Button>
-    </View>
+    <>
+      <View style={styles.row}>
+        <Pressable
+          onPress={expired ? undefined : () => setOverlayOpen(true)}
+          accessibilityRole={expired ? undefined : 'button'}
+          accessibilityLabel={expired ? undefined : 'Show the timer full-screen'}
+        >
+          <Text style={[styles.clock, expired ? styles.expired : null]}>
+            {expired ? "Time's up" : formatClock(secondsLeft)}
+          </Text>
+        </Pressable>
+        <Button
+          variant="ghost"
+          big={false}
+          onPress={reset}
+          accessibilityLabel={expired ? 'Reset timer' : 'Stop timer'}
+        >
+          {expired ? 'Reset timer' : 'Stop timer'}
+        </Button>
+      </View>
+      {overlayOpen ? (
+        <Modal
+          visible
+          animationType="fade"
+          onRequestClose={() => setOverlayOpen(false)}
+        >
+          <View style={styles.overlay} testID="timer-overlay">
+            <Text style={styles.overlayClock}>{formatClock(secondsLeft)}</Text>
+            <Button
+              variant="secondary"
+              onPress={() => setOverlayOpen(false)}
+              accessibilityLabel="Close"
+            >
+              Close
+            </Button>
+          </View>
+        </Modal>
+      ) : null}
+    </>
   );
 }
 
@@ -103,5 +130,17 @@ const styles = StyleSheet.create({
   },
   expired: {
     color: colors.accent[700],
+  },
+  overlay: {
+    flex: 1,
+    backgroundColor: colors.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: space[6],
+  },
+  overlayClock: {
+    fontFamily: type.heading,
+    fontSize: 96,
+    color: colors.text,
   },
 });
