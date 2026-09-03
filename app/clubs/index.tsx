@@ -8,6 +8,7 @@ import ClubChips from '../../components/ClubChips';
 import DashboardHeader from '../../components/DashboardHeader';
 import DateTile from '../../components/DateTile';
 import ErrorBanner from '../../components/ErrorBanner';
+import MahjongTile from '../../components/MahjongTile';
 import NeedAFourthCard from '../../components/NeedAFourthCard';
 import NoticeBanner from '../../components/NoticeBanner';
 import Screen from '../../components/Screen';
@@ -414,7 +415,10 @@ export default function ClubsScreen() {
   if (loadFailed) {
     return (
       <Screen contentStyle={styles.container} tabBar={<TabBar active="club" />}>
-        <Text style={styles.heading}>Your clubs</Text>
+        <View style={styles.titleRow} testID="section-tile">
+          <MahjongTile suit="dots" size="section" />
+          <Text style={styles.heading}>Your clubs</Text>
+        </View>
         <ErrorBanner message={GENERIC_ERROR} />
       </Screen>
     );
@@ -429,6 +433,9 @@ export default function ClubsScreen() {
     const empty = headerScope(list, ALL_CLUBS);
     return (
       <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="club" />}>
+        <View testID="section-tile">
+          <MahjongTile suit="dots" size="section" />
+        </View>
         <DashboardHeader
           kicker={empty.kicker}
           name={empty.name}
@@ -487,6 +494,24 @@ export default function ClubsScreen() {
 
   return (
     <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="club" />}>
+      {/*
+        DashboardHeader's "Your club" shape (kicker === 'Your club') centres
+        an avatar and name pill; its flat kicker/name/meta shape left-aligns
+        instead. A plain sibling tile above it inherits neither -- it's a
+        fixed 30px-wide block that defaults to the container's own
+        stretch/start alignment, which read fine against the flat shape's
+        own left-aligned text but left the tile stranded at the far left,
+        disconnected from the centred avatar below it, in the "Your club"
+        shape (confirmed with a live render of both, per the plan's own
+        unverified-until-checked flag). Centring the wrapper only in that
+        shape fixes the second case without disturbing the first.
+      */}
+      <View
+        testID="section-tile"
+        style={scope.kicker === 'Your club' ? styles.sectionTileCentered : undefined}
+      >
+        <MahjongTile suit="dots" size="section" />
+      </View>
       <DashboardHeader
         kicker={scope.kicker}
         name={scope.name}
@@ -904,6 +929,22 @@ const styles = StyleSheet.create({
     fontFamily: type.heading,
     fontSize: type.size.h2,
     color: colors.text,
+  },
+  // Used only by the `loadFailed` branch, since the other two heading sites
+  // just place the section tile as a plain preceding sibling of
+  // `DashboardHeader` -- that component's own layout already reads fine with
+  // a tile above it, but the plain `<Text style={styles.heading}>` branch has
+  // no wrapping row of its own to sit the tile beside otherwise.
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[2],
+  },
+  // Only applied in the main branch, and only while `scope.kicker ===
+  // 'Your club'` -- see that branch's own comment for why the tile needs
+  // centring there but not against the flat kicker/name/meta shape.
+  sectionTileCentered: {
+    alignItems: 'center',
   },
   // The empty state's own gap: what puts space between the "not in a club
   // yet" help text and the "Start a club" button below it, instead of them

@@ -335,6 +335,28 @@ describe('clubs list', () => {
     expect(await screen.findByText(/Could not reach MahjHero/)).toBeTruthy();
     expect(screen.queryByText(/not in a club yet/i)).toBeNull();
   });
+
+  // The tile is purely decorative -- scoped to a wrapping testID rather than
+  // a bare `[aria-hidden="true"]` query, since TabBar (carried by every
+  // screen) already renders one such tile per tab and a bare query would
+  // pass whether or not this screen's own section tile exists.
+  it('shows a decorative dots tile before the heading when clubs fail to load', async () => {
+    fetchMyClubs.mockResolvedValue(null);
+    render(<ClubsScreen />);
+    await screen.findByText('Your clubs');
+    expect(
+      screen.getByTestId('section-tile').querySelector('[aria-hidden="true"]'),
+    ).toBeTruthy();
+  });
+
+  it('shows a decorative dots tile before the heading with no clubs', async () => {
+    fetchMyClubs.mockResolvedValue([]);
+    render(<ClubsScreen />);
+    await screen.findByText('Start a club');
+    expect(
+      screen.getByTestId('section-tile').querySelector('[aria-hidden="true"]'),
+    ).toBeTruthy();
+  });
 });
 
 describe('dashboard artboard', () => {
@@ -347,6 +369,13 @@ describe('dashboard artboard', () => {
 
     expect(await screen.findByText('Your clubs')).toBeTruthy();
     expect(screen.queryByText('2 clubs')).toBeNull();
+    // Same decorative dots tile as the load-failed and empty-clubs states
+    // (see "shows a decorative dots tile ..." in the block above), scoped
+    // via testID for the same reason -- TabBar already renders its own
+    // aria-hidden tiles.
+    expect(
+      screen.getByTestId('section-tile').querySelector('[aria-hidden="true"]'),
+    ).toBeTruthy();
   });
 
   // The rows were inert: the one thing a member wants from a game they can
