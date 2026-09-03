@@ -55,6 +55,11 @@ vi.mock('../../lib/notifications', async () => {
     describeNotification: actual.describeNotification,
     fetchMyNotifications: (...a: unknown[]) => fetchMyNotifications(...a),
     markNotificationsRead: (...a: unknown[]) => markNotificationsRead(...a),
+    // TabBar itself now also reaches this module, via `useNotificationsUnread`
+    // -> `fetchNotificationUnreadCount` -- the same reason `fetchUnreadCounts`
+    // is doubled above for `useUnreadCounts`. Without this, TabBar's own
+    // fetch call falls through to the real, unmocked implementation.
+    fetchNotificationUnreadCount: vi.fn(async () => 0),
   };
 });
 
