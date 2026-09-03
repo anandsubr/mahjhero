@@ -3,6 +3,7 @@ import {
   ALL_CLUBS,
   buildChips,
   buildDashboardRows,
+  glyphForClub,
   headerScope,
   initialsFrom,
   inScope,
@@ -547,5 +548,36 @@ describe('needAFourthAlerts', () => {
       now: NOW,
     });
     expect(alerts).toEqual([]);
+  });
+});
+
+describe('glyphForClub', () => {
+  it('is stable for the same id across repeated calls', () => {
+    const id = 'club-riverside-mahjong-abc123';
+    expect(glyphForClub(id)).toBe(glyphForClub(id));
+  });
+
+  it('returns a value from the fixed 8-glyph set for a range of ids', () => {
+    const valid = new Set([
+      'dots', 'bamboo', 'red-dragon', 'green-dragon',
+      'east-wind', 'south-wind', 'west-wind', 'north-wind',
+    ]);
+    const sampleIds = [
+      'a', 'b', 'club-1', 'club-2', '00000000-0000-0000-0000-000000000000',
+      'ffffffff-ffff-ffff-ffff-ffffffffffff', 'z'.repeat(40), '',
+    ];
+    for (const id of sampleIds) {
+      expect(valid.has(glyphForClub(id))).toBe(true);
+    }
+  });
+
+  it('two different ids can resolve to different glyphs', () => {
+    // Not a fairness/distribution test (8 buckets, no uniformity
+    // requirement) -- just confirms the hash isn't a constant that always
+    // returns the same glyph regardless of input.
+    const glyphs = new Set(
+      ['club-1', 'club-2', 'club-3', 'club-4', 'club-5', 'club-6'].map(glyphForClub),
+    );
+    expect(glyphs.size).toBeGreaterThan(1);
   });
 });

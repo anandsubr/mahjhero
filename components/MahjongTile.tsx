@@ -2,20 +2,31 @@ import { StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 import { colors, shadow, space, type } from '../lib/theme';
 
-export type MahjongSuit = 'dots' | 'bamboo' | 'red-dragon' | 'green-dragon';
+export type MahjongSuit =
+  | 'dots'
+  | 'bamboo'
+  | 'red-dragon'
+  | 'green-dragon'
+  | 'east-wind'
+  | 'south-wind'
+  | 'west-wind'
+  | 'north-wind';
 
 type Props = {
   suit: MahjongSuit;
-  /** `"tab"`: the bottom tab bar's own tile (70x77), carries `label`.
-   *  `"section"`: the small tile before a landing screen's own heading
-   *  (30x40) -- no label, the real heading already says the words. */
-  size: 'tab' | 'section';
+  /** `"tab"`: the bottom tab bar's own tile (70x77), carries `label` (the
+   *  tab's full word). `"section"`: the small tile before a landing
+   *  screen's own heading (30x40) -- no label, ever, even if one is
+   *  passed. `"chip"`: a club's own tile (48x60, `ClubChips.tsx` and the
+   *  large club-header treatment) -- carries `label` too, but as the
+   *  club's initials, not a full word. */
+  size: 'tab' | 'section' | 'chip';
   /** `TileHero`'s (app/welcome.tsx) accent-tile treatment: solid
    *  `accentColor` fill, `accent[700]` lip, glyph/label in `colors.bg`.
    *  Only meaningful for `size="tab"` -- the section tile is always the
    *  plain, decorative surface-fill tile. */
   selected?: boolean;
-  /** Only rendered for `size="tab"`. */
+  /** Rendered for `size="tab"` and `size="chip"`; never for `"section"`. */
   label?: string;
 };
 
@@ -28,22 +39,39 @@ const GLYPH_COLOR: Record<MahjongSuit, string> = {
   bamboo: colors.accent2[600],
   'red-dragon': colors.accentColor,
   'green-dragon': colors.accent2[700],
+  // Real mahjong sets print the wind tiles in plain black ink, not the
+  // suit/dragon colors -- colors.text is this palette's nearest match,
+  // same reasoning every other glyph's color already follows here.
+  'east-wind': colors.text,
+  'south-wind': colors.text,
+  'west-wind': colors.text,
+  'north-wind': colors.text,
 };
 
 const GLYPH_HEIGHT = 24;
 
+const CHARACTER_GLYPHS: Partial<Record<MahjongSuit, string>> = {
+  'red-dragon': '中',
+  'green-dragon': '發',
+  'east-wind': '東',
+  'south-wind': '南',
+  'west-wind': '西',
+  'north-wind': '北',
+};
+
 function Glyph({ suit, color }: { suit: MahjongSuit; color: string }) {
   // `testID={`glyph-${suit}`}` on every branch, not only dots/bamboo's SVGs:
   // a suit-parity test (app/__tests__/nav-glyph-parity.test.tsx) needs one
-  // uniform, suit-distinguishing selector across all four suits -- dots and
+  // uniform, suit-distinguishing selector across all suits -- dots and
   // bamboo render an SVG with no text to key off of, so this is that
-  // signal's single source, reused by the two character glyphs too rather
-  // than mixing a testID lookup for two suits with a getByText lookup for
-  // the other two.
-  if (suit === 'red-dragon' || suit === 'green-dragon') {
+  // signal's single source, reused by every character glyph too rather
+  // than mixing a testID lookup for some suits with a getByText lookup for
+  // the rest.
+  const character = CHARACTER_GLYPHS[suit];
+  if (character) {
     return (
       <Text testID={`glyph-${suit}`} style={[styles.character, { color }]}>
-        {suit === 'red-dragon' ? '中' : '發'}
+        {character}
       </Text>
     );
   }
@@ -83,20 +111,20 @@ function Glyph({ suit, color }: { suit: MahjongSuit; color: string }) {
 export default function MahjongTile({ suit, size, selected = false, label }: Props) {
   const glyphColor = selected ? colors.bg : GLYPH_COLOR[suit];
   const labelColor = selected ? colors.bg : colors.neutral[800];
+  const showsLabel = size === 'tab' || size === 'chip';
+
+  const sizeStyle =
+    size === 'tab' ? styles.tab : size === 'chip' ? styles.chip : styles.section;
 
   return (
     <View
-      style={[
-        styles.tile,
-        size === 'tab' ? styles.tab : styles.section,
-        selected ? styles.selected : null,
-      ]}
+      style={[styles.tile, sizeStyle, selected ? styles.selected : null]}
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
       aria-hidden={true}
     >
       <Glyph suit={suit} color={glyphColor} />
-      {size === 'tab' && label ? (
+      {showsLabel && label ? (
         <Text style={[styles.label, { color: labelColor }]}>{label}</Text>
       ) : null}
     </View>
@@ -124,6 +152,14 @@ const styles = StyleSheet.create({
     height: 40,
     borderBottomWidth: 3,
     justifyContent: 'center',
+  },
+  chip: {
+    width: 48,
+    height: 60,
+    justifyContent: 'flex-end',
+    paddingBottom: space[1],
+    gap: 2,
+    borderBottomWidth: 3,
   },
   // accent[700] fill / accent[800] lip -- one step darker each than
   // TileHero's own accent tile (app/welcome.tsx: accentColor fill,

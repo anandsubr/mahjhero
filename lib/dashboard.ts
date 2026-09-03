@@ -89,6 +89,49 @@ export function inScope(clubId: string, selected: string): boolean {
   return selected === ALL_CLUBS || clubId === selected;
 }
 
+// Mirrors components/MahjongTile.tsx's MahjongSuit type, deliberately
+// duplicated rather than imported -- this file stays free of any
+// components/ dependency (see this file's own header comment), and
+// TypeScript's structural typing still checks every call site for real:
+// a ClubGlyph value is assignable anywhere a MahjongSuit is expected, and
+// vice versa, because the two lists have identical members. Keep them
+// byte-identical if either ever changes.
+export type ClubGlyph =
+  | 'dots'
+  | 'bamboo'
+  | 'red-dragon'
+  | 'green-dragon'
+  | 'east-wind'
+  | 'south-wind'
+  | 'west-wind'
+  | 'north-wind';
+
+const CLUB_GLYPHS: ClubGlyph[] = [
+  'dots',
+  'bamboo',
+  'red-dragon',
+  'green-dragon',
+  'east-wind',
+  'south-wind',
+  'west-wind',
+  'north-wind',
+];
+
+/**
+ * A club's own tile face, stable for a given id -- every member sees the
+ * same glyph for the same club, everywhere it's shown (its chip, its
+ * header, the game screen's small tile), not a fresh pick per render.
+ * No fairness/collision-resistance requirement: a plain string hash into
+ * 8 buckets is enough, this is decoration, not a security boundary.
+ */
+export function glyphForClub(clubId: string): ClubGlyph {
+  let hash = 0;
+  for (let i = 0; i < clubId.length; i++) {
+    hash = (hash * 31 + clubId.charCodeAt(i)) | 0;
+  }
+  return CLUB_GLYPHS[Math.abs(hash) % CLUB_GLYPHS.length];
+}
+
 export type DashboardRow = {
   eventId: string;
   clubId: string;

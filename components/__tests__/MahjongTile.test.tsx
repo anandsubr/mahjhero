@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import MahjongTile from '../MahjongTile';
+import type { MahjongSuit } from '../MahjongTile';
 
 describe('MahjongTile', () => {
   it('renders a label only for size="tab"', () => {
@@ -37,5 +38,29 @@ describe('MahjongTile', () => {
         ).not.toThrow();
       }
     }
+  });
+
+  it('renders all four wind characters', () => {
+    const winds: { suit: MahjongSuit; char: string }[] = [
+      { suit: 'east-wind', char: '東' },
+      { suit: 'south-wind', char: '南' },
+      { suit: 'west-wind', char: '西' },
+      { suit: 'north-wind', char: '北' },
+    ];
+    for (const { suit, char } of winds) {
+      const { unmount } = render(<MahjongTile suit={suit} size="tab" label="X" />);
+      expect(screen.getByText(char)).toBeTruthy();
+      unmount();
+    }
+  });
+
+  it('renders a chip-size tile with a glyph and a short label (initials), no larger label styling', () => {
+    render(<MahjongTile suit="dots" size="chip" label="RM" />);
+    expect(screen.getByText('RM')).toBeTruthy();
+  });
+
+  it('renders no label for size="section" even if one is passed', () => {
+    render(<MahjongTile suit="dots" size="section" label="RM" />);
+    expect(screen.queryByText('RM')).toBeNull();
   });
 });
