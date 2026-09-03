@@ -415,8 +415,10 @@ export default function ClubsScreen() {
   if (loadFailed) {
     return (
       <Screen contentStyle={styles.container} tabBar={<TabBar active="club" />}>
-        <View style={styles.titleRow} testID="section-tile">
-          <MahjongTile suit="dots" size="section" />
+        <View style={styles.titleRow}>
+          <View testID="section-tile">
+            <MahjongTile suit="dots" size="section" />
+          </View>
           <Text style={styles.heading}>Your clubs</Text>
         </View>
         <ErrorBanner message={GENERIC_ERROR} />

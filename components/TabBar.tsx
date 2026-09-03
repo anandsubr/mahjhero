@@ -16,7 +16,11 @@ const TABS: { key: TabKey; label: string; href: string }[] = [
   { key: 'alerts', label: 'Alerts', href: '/alerts' },
 ];
 
-function suitFor(key: TabKey): MahjongSuit {
+// Exported so app/__tests__/nav-glyph-parity.test.tsx can check the bar's own
+// mapping against the suit prop each landing screen's own section tile
+// carries, rather than duplicating this mapping as a second hardcoded list
+// that could itself drift from this one.
+export function suitFor(key: TabKey): MahjongSuit {
   if (key === 'club') return 'dots';
   if (key === 'messages') return 'bamboo';
   if (key === 'profile') return 'red-dragon';

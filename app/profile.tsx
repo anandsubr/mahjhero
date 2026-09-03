@@ -154,8 +154,10 @@ export default function ProfileScreen() {
 
   return (
     <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="profile" />}>
-      <View style={styles.titleRow} testID="section-tile">
-        <MahjongTile suit="red-dragon" size="section" />
+      <View style={styles.titleRow}>
+        <View testID="section-tile">
+          <MahjongTile suit="red-dragon" size="section" />
+        </View>
         <Text style={styles.heading}>Your profile</Text>
       </View>
       <Text style={styles.subheading}>Two things and you're ready to sit down at a table.</Text>

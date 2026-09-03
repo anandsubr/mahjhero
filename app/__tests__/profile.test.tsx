@@ -179,7 +179,7 @@ describe('profile screen', () => {
 
   // The tile is purely decorative -- scoped to a wrapping testID rather than
   // a bare `[aria-hidden="true"]` query, since TabBar (carried by every
-  // screen) renders its own five `aria-hidden` tiles too, which would let a
+  // screen) renders its own four `aria-hidden` tiles too, which would let a
   // bare query pass whether or not this screen's own section tile exists.
   it('shows a decorative red-dragon tile before the heading', async () => {
     fetchProfile.mockResolvedValueOnce({

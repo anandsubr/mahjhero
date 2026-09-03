@@ -218,7 +218,7 @@ describe('alerts screen', () => {
 
   // The tile is purely decorative -- scoped to a wrapping testID rather than
   // a bare `[aria-hidden="true"]` query, since TabBar (carried by every
-  // screen) renders its own five `aria-hidden` tiles too, which would let a
+  // screen) renders its own four `aria-hidden` tiles too, which would let a
   // bare query pass whether or not this screen's own section tile exists.
   // Waits on the empty-state text, not the heading text `Alerts` itself --
   // TabBar's own Alerts tab carries that exact label too, which makes

@@ -140,8 +140,10 @@ export default function MessagesScreen() {
       tabBar={<TabBar active="messages" />}
     >
       <View style={styles.header}>
-        <View style={styles.titleRow} testID="section-tile">
-          <MahjongTile suit="bamboo" size="section" />
+        <View style={styles.titleRow}>
+          <View testID="section-tile">
+            <MahjongTile suit="bamboo" size="section" />
+          </View>
           <Text style={styles.heading}>Messages</Text>
         </View>
         <PlusButton

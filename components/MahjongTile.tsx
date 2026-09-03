@@ -33,9 +33,16 @@ const GLYPH_COLOR: Record<MahjongSuit, string> = {
 const GLYPH_HEIGHT = 24;
 
 function Glyph({ suit, color }: { suit: MahjongSuit; color: string }) {
+  // `testID={`glyph-${suit}`}` on every branch, not only dots/bamboo's SVGs:
+  // a suit-parity test (app/__tests__/nav-glyph-parity.test.tsx) needs one
+  // uniform, suit-distinguishing selector across all four suits -- dots and
+  // bamboo render an SVG with no text to key off of, so this is that
+  // signal's single source, reused by the two character glyphs too rather
+  // than mixing a testID lookup for two suits with a getByText lookup for
+  // the other two.
   if (suit === 'red-dragon' || suit === 'green-dragon') {
     return (
-      <Text style={[styles.character, { color }]}>
+      <Text testID={`glyph-${suit}`} style={[styles.character, { color }]}>
         {suit === 'red-dragon' ? '中' : '發'}
       </Text>
     );
@@ -46,7 +53,7 @@ function Glyph({ suit, color }: { suit: MahjongSuit; color: string }) {
   const width = Math.round(GLYPH_HEIGHT * 0.67);
   if (suit === 'dots') {
     return (
-      <Svg width={width} height={GLYPH_HEIGHT} viewBox="0 0 26 40" fill="none" stroke={color} strokeWidth={3}>
+      <Svg testID={`glyph-${suit}`} width={width} height={GLYPH_HEIGHT} viewBox="0 0 26 40" fill="none" stroke={color} strokeWidth={3}>
         <Circle cx={13} cy={8} r={4.5} />
         <Circle cx={13} cy={20} r={4.5} />
         <Circle cx={13} cy={32} r={4.5} />
@@ -54,7 +61,7 @@ function Glyph({ suit, color }: { suit: MahjongSuit; color: string }) {
     );
   }
   return (
-    <Svg width={width} height={GLYPH_HEIGHT} viewBox="0 0 26 40" fill="none" stroke={color} strokeWidth={3} strokeLinecap="round">
+    <Svg testID={`glyph-${suit}`} width={width} height={GLYPH_HEIGHT} viewBox="0 0 26 40" fill="none" stroke={color} strokeWidth={3} strokeLinecap="round">
       <Path d="M7 6v28M13 6v28M19 6v28" />
       <Path d="M4 14h6M10 14h6M16 14h6M4 26h6M10 26h6M16 26h6" />
     </Svg>
@@ -118,9 +125,18 @@ const styles = StyleSheet.create({
     borderBottomWidth: 3,
     justifyContent: 'center',
   },
+  // accent[700] fill / accent[800] lip -- one step darker each than
+  // TileHero's own accent tile (app/welcome.tsx: accentColor fill,
+  // accent[700] lip), which keeps the same raised-edge relationship. Not
+  // TileHero's own accentColor: colors.bg text/glyph on accentColor measures
+  // 3.03:1, well under AA's 4.5:1 -- a documented, already-fixed failure
+  // (lib/theme.test.ts's "unread badge text clears AA on its background"),
+  // and this tile's label is 12px, never large enough for the 3:1 allowance.
+  // accent[700] clears it at 5.72:1 (see this file's own pin in
+  // lib/theme.test.ts).
   selected: {
-    backgroundColor: colors.accentColor,
-    borderBottomColor: colors.accent[700],
+    backgroundColor: colors.accent[700],
+    borderBottomColor: colors.accent[800],
   },
   character: {
     fontSize: 21,

@@ -112,8 +112,10 @@ export default function AlertsScreen() {
 
   return (
     <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="alerts" />}>
-      <View style={styles.titleRow} testID="section-tile">
-        <MahjongTile suit="green-dragon" size="section" />
+      <View style={styles.titleRow}>
+        <View testID="section-tile">
+          <MahjongTile suit="green-dragon" size="section" />
+        </View>
         <Text style={styles.heading}>Alerts</Text>
       </View>
 

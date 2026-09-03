@@ -198,3 +198,22 @@ describe('seat grid round badge and point chips clear AA on their fill', () => {
     expect(contrast(colors.bg, colors.accent[700])).toBeGreaterThanOrEqual(AA);
   });
 });
+
+// components/MahjongTile.tsx's selected tab tile (the bottom bar's own
+// highlighted tab, active on every one of the app's 24 screens) first
+// shipped with the same failing pair this file already pins a regression
+// against above ("unread badge text clears AA on its background") --
+// `colors.bg` glyph/label directly on `colors.accentColor`, 3.03:1, and this
+// text is 12px, nowhere near the 3:1 large-text allowance. Fixed the same
+// way: the tile's fill moved to `colors.accent[700]` (5.72:1, reused rather
+// than re-pinned) and its lip one step darker still, to `colors.accent[800]`,
+// so the raised-edge illusion TileHero's own accent tile (app/welcome.tsx)
+// established still reads. Given its own describe block, same reasoning as
+// the alerts avatar and seat grid blocks above -- so a future palette change
+// (or a MahjongTile edit that reverts to `accentColor`) fails a test named
+// for the primary navigation it actually breaks.
+describe('selected tab tile clears AA on its fill', () => {
+  it('clears AA on accent[700] (selected tile glyph/label)', () => {
+    expect(contrast(colors.bg, colors.accent[700])).toBeGreaterThanOrEqual(AA);
+  });
+});
