@@ -245,7 +245,7 @@ describe('Your games', () => {
   it('lists a seat with when, where and which table', async () => {
     fetchMyUpcomingBookings.mockResolvedValue([booking()]);
     render(<ClubsScreen />);
-    expect(await screen.findByText('Tuesday game')).toBeTruthy();
+    expect(await screen.findByText("St Mary's Hall")).toBeTruthy();
     expect(screen.getByText('Table 2')).toBeTruthy();
     // Task 8's row puts the formatted time and the venue on one meta line
     // separated by a middle dot, so the venue is no longer an element of its
@@ -267,7 +267,7 @@ describe('Your games', () => {
   it('offers no decline on a seat you booked yourself', async () => {
     fetchMyUpcomingBookings.mockResolvedValue([booking()]);
     render(<ClubsScreen />);
-    await screen.findByText('Tuesday game');
+    await screen.findByText("St Mary's Hall");
     expect(screen.queryByText(/booked this for you/)).toBeNull();
   });
 
@@ -350,7 +350,7 @@ describe('Your games', () => {
   it('does not offer to leave the waitlist on a confirmed, seated row', async () => {
     fetchMyUpcomingBookings.mockResolvedValue([booking()]);
     render(<ClubsScreen />);
-    await screen.findByText('Tuesday game');
+    await screen.findByText("St Mary's Hall");
     expect(screen.queryByText('Leave the waitlist')).toBeNull();
     expect(
       screen.queryByLabelText('Leave the waitlist for Tuesday game'),
@@ -461,10 +461,10 @@ describe('Your games', () => {
       }),
     ]);
     render(<ClubsScreen />);
-    // Regex, not exact: each row's meta line is "<when> · <venue>" since
-    // Task 8, so the formatted time is a substring of its element's text.
-    expect(await screen.findByText(/Tue 25 Aug, 6:30 pm/)).toBeTruthy();
-    expect(await screen.findByText(/Wed 26 Aug, 7:30 am/)).toBeTruthy();
+    // Time-only display in the game row (date is shown in the DateTile tile
+    // beside it). Each timezone shows the same instant differently.
+    expect(await screen.findByText(/6:30 pm/)).toBeTruthy();
+    expect(await screen.findByText(/7:30 am/)).toBeTruthy();
   });
 });
 
@@ -494,7 +494,7 @@ describe('Check-in', () => {
       }),
     ]);
     render(<ClubsScreen />);
-    await screen.findByText('Tuesday game');
+    await screen.findByText("St Mary's Hall");
     expect(screen.queryByRole('button', { name: /here/i })).toBeNull();
   });
 
@@ -507,7 +507,7 @@ describe('Check-in', () => {
       }),
     ]);
     render(<ClubsScreen />);
-    await screen.findByText('Tuesday game');
+    await screen.findByText("St Mary's Hall");
     expect(screen.queryByRole('button', { name: /here/i })).toBeNull();
   });
 
@@ -527,7 +527,7 @@ describe('Check-in', () => {
       }),
     ]);
     render(<ClubsScreen />);
-    await screen.findByText('Tuesday game');
+    await screen.findByText("St Mary's Hall");
     expect(screen.queryByRole('button', { name: /here/i })).toBeNull();
   });
 
@@ -600,7 +600,7 @@ describe('Check-in', () => {
       }),
     ]);
     render(<ClubsScreen />);
-    await screen.findByText('Tuesday game');
+    await screen.findByText("St Mary's Hall");
     expect(screen.queryByText('Leave the waitlist')).toBeNull();
     expect(
       screen.queryByLabelText('Leave the waitlist for Tuesday game'),
