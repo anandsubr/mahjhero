@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import MahjongTile, { type MahjongSuit } from './MahjongTile';
 import UnreadBadge from './UnreadBadge';
 import { unreadSuffix } from '../lib/messages';
-import { colors, space } from '../lib/theme';
+import { space } from '../lib/theme';
 import { useNotificationsUnread } from '../lib/use-notifications-unread';
 import { useUnreadCounts } from '../lib/use-unread';
 
@@ -110,7 +110,6 @@ export default function TabBar({ active }: { active: TabKey }) {
 const styles = StyleSheet.create({
   bar: {
     flexDirection: 'row',
-    backgroundColor: colors.surface,
     paddingTop: space[2],
     paddingBottom: space[3],
   },

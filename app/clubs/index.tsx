@@ -435,13 +435,15 @@ export default function ClubsScreen() {
     const empty = headerScope(list, ALL_CLUBS);
     return (
       <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="club" />}>
-        <View testID="section-tile">
-          <MahjongTile suit="dots" size="section" />
-        </View>
         <DashboardHeader
           kicker={empty.kicker}
           name={empty.name}
           meta={empty.meta}
+          titleAccessory={
+            <View testID="section-tile">
+              <MahjongTile suit="dots" size="section" />
+            </View>
+          }
         />
         <View style={styles.list}>
           <Text style={styles.help}>
@@ -498,26 +500,30 @@ export default function ClubsScreen() {
     <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="club" />}>
       {/*
         DashboardHeader's "Your club" shape (kicker === 'Your club') centres
-        an avatar and name pill; its flat kicker/name/meta shape left-aligns
-        instead. A plain sibling tile above it inherits neither -- it's a
-        fixed 30px-wide block that defaults to the container's own
-        stretch/start alignment, which read fine against the flat shape's
-        own left-aligned text but left the tile stranded at the far left,
-        disconnected from the centred avatar below it, in the "Your club"
-        shape (confirmed with a live render of both, per the plan's own
-        unverified-until-checked flag). Centring the wrapper only in that
-        shape fixes the second case without disturbing the first.
+        an avatar and name pill, with no single title LINE a tile could sit
+        inline before -- so that shape keeps its own tile as a separate,
+        centred sibling above the whole block (confirmed clean with a live
+        render). The flat kicker/name/meta shape has a real title line
+        (`name`), so its tile rides inline via DashboardHeader's own
+        `titleAccessory` prop instead, matching every other tab-root
+        screen's tile-before-the-title treatment.
       */}
-      <View
-        testID="section-tile"
-        style={scope.kicker === 'Your club' ? styles.sectionTileCentered : undefined}
-      >
-        <MahjongTile suit="dots" size="section" />
-      </View>
+      {scope.kicker === 'Your club' ? (
+        <View testID="section-tile" style={styles.sectionTileCentered}>
+          <MahjongTile suit="dots" size="section" />
+        </View>
+      ) : null}
       <DashboardHeader
         kicker={scope.kicker}
         name={scope.name}
         meta={scope.meta}
+        titleAccessory={
+          scope.kicker === 'Your club' ? undefined : (
+            <View testID="section-tile">
+              <MahjongTile suit="dots" size="section" />
+            </View>
+          )
+        }
         onPressScope={
           scopeClubId ? () => router.push(`/clubs/${scopeClubId}`) : undefined
         }
