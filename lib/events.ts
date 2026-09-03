@@ -282,6 +282,26 @@ export function formatEventWhen(
   }).format(when);
 }
 
+/**
+ * The time-only half of formatEventWhen, for a context that already shows
+ * the date another way (app/clubs/index.tsx's own DateTile badge) — showing
+ * both was a literal repeat of the same date on the same row.
+ */
+export function formatEventTime(
+  startsAt: string,
+  timezone: string,
+  locale?: string,
+): string {
+  const when = new Date(startsAt);
+  if (Number.isNaN(when.getTime())) return 'Time unavailable';
+  return new Intl.DateTimeFormat(locale ?? 'en-GB', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: timezone,
+  }).format(when);
+}
+
 /** The rhythm, in words a host would use rather than enum values. */
 export function frequencyLabel(
   frequency: SeriesFrequency,

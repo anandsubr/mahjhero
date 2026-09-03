@@ -44,7 +44,7 @@ import {
   needAFourthAlerts,
 } from '../../lib/dashboard';
 import type { DashboardRow, FourthAlert } from '../../lib/dashboard';
-import { fetchUpcomingEvents, formatEventWhen } from '../../lib/events';
+import { fetchUpcomingEvents, formatEventTime, formatEventWhen } from '../../lib/events';
 import type { ClubEvent } from '../../lib/events';
 import { useSession } from '../../lib/session';
 import { colors, radius, space, type } from '../../lib/theme';
@@ -684,13 +684,11 @@ function GameRow({
           >
             <DateTile startsAt={row.startsAt} timezone={row.timezone} />
             <View style={styles.gameBody}>
-              <Text style={styles.gameKicker}>{row.clubName}</Text>
-              <Text style={styles.gameTitle}>{row.title}</Text>
-              <Text style={styles.help}>
-                {formatEventWhen(row.startsAt, row.timezone)}
-                {' · '}
-                {row.venueName}
+              <Text style={styles.gameClubName}>{row.clubName}</Text>
+              <Text style={styles.gameTime}>
+                {formatEventTime(row.startsAt, row.timezone)}
               </Text>
+              <Text style={styles.gameVenue}>{row.venueName}</Text>
             </View>
           </Pressable>
         </Link>
@@ -972,17 +970,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: space[3],
   },
-  gameKicker: {
+  gameClubName: {
     fontFamily: type.bodySemiBold,
     fontSize: type.size.helper,
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
     color: colors.textMuted,
   },
-  gameTitle: {
+  gameTime: {
     fontFamily: type.bodyBold,
     fontSize: type.size.body,
     color: colors.text,
+    marginTop: 1,
+  },
+  gameVenue: {
+    fontFamily: type.bodyRegular,
+    fontSize: type.size.helper,
+    color: colors.textMuted,
     marginTop: 1,
   },
   gameAction: {

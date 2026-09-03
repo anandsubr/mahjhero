@@ -411,26 +411,51 @@ describe('dashboard artboard', () => {
     expect(join.closest('a')).toBeNull();
   });
 
+  it('shows the game row as club name, time only, and venue — not the event title', async () => {
+    fetchMyClubs.mockResolvedValueOnce([CLUB]);
+    fetchMyUpcomingBookings.mockResolvedValueOnce([]);
+    fetchUpcomingEvents.mockResolvedValueOnce([
+      {
+        ...EVENT,
+        id: 'test',
+        club_id: CLUB.id,
+        title: 'Test game',
+        starts_at: '2027-09-08T23:00:00Z',
+        bookings: [
+          { profile_id: 'a', status: 'confirmed', event_table_id: 'table-1' },
+        ],
+      },
+    ]);
+    render(<ClubsScreen />);
+    // The club name and venue are already asserted by neighboring tests
+    // using this same fixture — this test's own job is the shape: the
+    // event's own title text must be gone, and the time-only label must
+    // appear without a repeated date.
+    await screen.findByText("Sara's place");
+    expect(screen.queryByText('Test game')).toBeNull();
+    expect(screen.getByText('7:00 pm')).toBeTruthy();
+  });
+
   it('narrows the games list to the picked club', async () => {
     fetchMyClubs.mockResolvedValue([CLUB, { ...CLUB, id: 'club-2', name: 'Harbour' }]);
     fetchMyUpcomingBookings.mockResolvedValue([
-      { ...BOOKING, event_id: 'e1', club_id: CLUB.id, club_name: CLUB.name, event_title: 'Riverside game' },
-      { ...BOOKING, booking_id: 'b2', event_id: 'e2', club_id: 'club-2', club_name: 'Harbour', event_title: 'Harbour game' },
+      { ...BOOKING, event_id: 'e1', club_id: CLUB.id, club_name: CLUB.name, venue_name: 'Riverside hall' },
+      { ...BOOKING, booking_id: 'b2', event_id: 'e2', club_id: 'club-2', club_name: 'Harbour', venue_name: 'Harbour hall' },
     ]);
     fetchUpcomingEvents.mockResolvedValue([]);
     fetchProfile.mockResolvedValue(null);
 
     render(<ClubsScreen />);
 
-    expect(await screen.findByText('Riverside game')).toBeTruthy();
-    expect(screen.getByText('Harbour game')).toBeTruthy();
+    expect(await screen.findByText('Riverside hall')).toBeTruthy();
+    expect(screen.getByText('Harbour hall')).toBeTruthy();
 
     // One "Harbour" button now: the chip. The club's own card in "Your
     // clubs" is gone — the chip row is the whole club list.
     fireEvent.click(screen.getByRole('button', { name: 'Harbour' }));
 
-    expect(screen.queryByText('Riverside game')).toBeNull();
-    expect(screen.getByText('Harbour game')).toBeTruthy();
+    expect(screen.queryByText('Riverside hall')).toBeNull();
+    expect(screen.getByText('Harbour hall')).toBeTruthy();
     // The header switched to Harbour's own scope. Role-based, not
     // getByText('Harbour') — that text is now ambiguous, since Harbour's
     // own chip tile renders the same label alongside the header.
@@ -1146,7 +1171,7 @@ describe('organizing an unbooked, in-progress game', () => {
 
     render(<ClubsScreen />);
 
-    expect(await screen.findByText('In progress now')).toBeTruthy();
+    expect(await screen.findByText("Sara's place")).toBeTruthy();
     expect(screen.getByText('Hosting')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Join/ })).toBeNull();
   });
@@ -1159,7 +1184,7 @@ describe('organizing an unbooked, in-progress game', () => {
     render(<ClubsScreen />);
 
     expect(await screen.findByRole('button', { name: 'Club' })).toBeTruthy();
-    expect(screen.queryByText('In progress now')).toBeNull();
+    expect(screen.queryByText("Sara's place")).toBeNull();
   });
 
   it('opens the event screen when the organizing row is tapped', async () => {
@@ -1169,7 +1194,7 @@ describe('organizing an unbooked, in-progress game', () => {
 
     render(<ClubsScreen />);
 
-    const link = (await screen.findByText('In progress now')).closest('a');
+    const link = (await screen.findByText("Sara's place")).closest('a');
     expect(link?.getAttribute('data-href')).toBe(
       `/clubs/${CLUB.id}/events/live-game`,
     );

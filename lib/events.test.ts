@@ -29,6 +29,7 @@ import {
   endEventSeries,
   eventStartTimeInZone,
   fetchEvent,
+  formatEventTime,
   formatEventWhen,
   frequencyLabel,
   nextOccurrences,
@@ -243,6 +244,25 @@ describe('formatEventWhen', () => {
   it('says so rather than throwing when the date cannot be read', () => {
     expect(formatEventWhen('not-a-date', 'America/New_York')).toBe(
       'Date unavailable',
+    );
+  });
+});
+
+describe('formatEventTime', () => {
+  it('renders only the time, in the club timezone', () => {
+    const label = formatEventTime('2027-09-08T23:00:00Z', 'America/New_York');
+    expect(label).toBe('7:00 pm');
+  });
+
+  it('renders the same instant differently in a different timezone', () => {
+    const ny = formatEventTime('2027-09-08T23:00:00Z', 'America/New_York');
+    const la = formatEventTime('2027-09-08T23:00:00Z', 'America/Los_Angeles');
+    expect(ny).not.toBe(la);
+  });
+
+  it('degrades to a placeholder on an invalid date rather than throwing', () => {
+    expect(formatEventTime('not-a-date', 'America/New_York')).toBe(
+      'Time unavailable',
     );
   });
 });
