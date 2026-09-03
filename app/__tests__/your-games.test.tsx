@@ -159,6 +159,8 @@ const base: MyBooking = {
   check_in_state: null,
   check_in_opens_at: null,
   check_in_closes_at: null,
+  fee_cents: 0,
+  min_spend_cents: 0,
 };
 
 // The club every fixture booking above belongs to. This file used to seed
