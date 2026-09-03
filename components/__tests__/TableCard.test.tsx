@@ -169,23 +169,6 @@ describe('TableCard', () => {
     expect(screen.getByText('Ravi K. · 8 pts')).toBeTruthy();
   });
 
-  it('offers the record form only when canRecordRound is true', () => {
-    render(
-      <TableCard
-        table={table}
-        occupants={occupants}
-        youId="p9"
-        onTakeSeat={vi.fn()}
-        rounds={[]}
-        canRecordRound
-        canDeleteRound={false}
-        onRecordRound={vi.fn()}
-        onDeleteRound={vi.fn()}
-      />,
-    );
-    expect(screen.getByRole('button', { name: 'Winner: Ravi K.' })).toBeTruthy();
-  });
-
   it('shows a round badge for a seated player with recorded points, and a star for the leader', () => {
     render(
       <TableCard

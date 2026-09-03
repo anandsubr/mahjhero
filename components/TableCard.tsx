@@ -157,14 +157,8 @@ export default function TableCard({
       {rounds ? (
         <RoundLog
           rounds={rounds}
-          players={seated.map((o) => ({
-            profileId: o.profile_id,
-            name: o.profile_id === youId ? 'You' : o.display_name,
-          }))}
-          canRecord={canRecordRound}
           canDelete={canDeleteRound}
           busy={busy}
-          onRecord={(winnerId, points) => onRecordRound?.(winnerId, points)}
           onDelete={(roundId) => onDeleteRound?.(roundId)}
         />
       ) : null}

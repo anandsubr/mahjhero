@@ -1354,6 +1354,12 @@ describe('table rounds', () => {
   });
 
   it('lets an organizer record a round while the game is live', async () => {
+    // Recording now happens through the seat's own tap panel (SeatGrid,
+    // Tasks 3-4), not a picker inside RoundLog (Task 5 removed that
+    // entirely) -- so this opens Ravi's seat panel, taps "Record a win",
+    // then taps one of the seven fixed point chips, matching how SeatGrid
+    // itself is exercised elsewhere in this file (e.g. "Manage Ravi K.'s
+    // seat" / "Move Ravi K. to Table 2" above).
     fetchRoster.mockResolvedValue(HOST_ROSTER_WITH_RAVI);
     fetchEvent.mockResolvedValue(liveEvent());
     fetchEventSeating.mockResolvedValue([SEATED_ADA, SEATED_RAVI]);
@@ -1362,24 +1368,22 @@ describe('table rounds', () => {
 
     render(<EventScreen />);
 
+    fireEvent.click(await screen.findByLabelText("Manage Ravi K.'s seat"));
+    fireEvent.click(screen.getByLabelText('Record a win for Ravi K.'));
     fireEvent.click(
-      await screen.findByRole('button', { name: 'Winner: Ravi K.' }),
+      screen.getByLabelText("Record Ravi K.'s win for 30 points"),
     );
-    fireEvent.change(screen.getByLabelText('Points'), {
-      target: { value: '8' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Record a round' }));
 
     await waitFor(() =>
       expect(recordRound).toHaveBeenCalledWith({
         tableId: 'table-1',
         winnerProfileId: 'p1',
-        points: 8,
+        points: 30,
       }),
     );
   });
 
-  it('hides the record form before the game has started', async () => {
+  it('hides the "Record a win" control before the game has started', async () => {
     // EVENT's default fixture starts in the future, so gameLive is false --
     // the same guard assert_round_writable enforces server-side ("this
     // game has not started yet").
@@ -1389,9 +1393,9 @@ describe('table rounds', () => {
 
     render(<EventScreen />);
 
-    await screen.findByText('Thursday Mahjong');
+    fireEvent.click(await screen.findByLabelText("Manage Ravi K.'s seat"));
     expect(
-      screen.queryByRole('button', { name: 'Record a round' }),
+      screen.queryByLabelText('Record a win for Ravi K.'),
     ).toBeNull();
   });
 

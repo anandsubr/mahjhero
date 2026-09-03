@@ -2,206 +2,43 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import RoundLog from '../RoundLog';
 
-const players = [
-  { profileId: 'p1', name: 'Ann' },
-  { profileId: 'p2', name: 'You' },
-];
-
 const rounds = [
-  { id: 'r2', winner_profile_id: 'p2', winner_name: 'You', points: 5 },
-  { id: 'r1', winner_profile_id: 'p1', winner_name: 'Ann', points: 8 },
+  { id: 'r2', winner_profile_id: 'p2', winner_name: 'You', points: 25 },
+  { id: 'r1', winner_profile_id: 'p1', winner_name: 'Ann', points: 30 },
 ];
 
 describe('RoundLog', () => {
   it('says nothing has been recorded yet when the log is empty', () => {
-    render(
-      <RoundLog
-        rounds={[]}
-        players={players}
-        canRecord={false}
-        canDelete={false}
-        onRecord={vi.fn()}
-        onDelete={vi.fn()}
-      />,
-    );
+    render(<RoundLog rounds={[]} canDelete={false} onDelete={vi.fn()} />);
     expect(screen.getByText('No rounds recorded yet.')).toBeTruthy();
   });
 
   it('lists rounds newest first with the winner and points', () => {
-    render(
-      <RoundLog
-        rounds={rounds}
-        players={players}
-        canRecord={false}
-        canDelete={false}
-        onRecord={vi.fn()}
-        onDelete={vi.fn()}
-      />,
-    );
-    expect(screen.getByText('You · 5 pts')).toBeTruthy();
-    expect(screen.getByText('Ann · 8 pts')).toBeTruthy();
-  });
-
-  it('shows a running total per player', () => {
-    render(
-      <RoundLog
-        rounds={[
-          ...rounds,
-          { id: 'r3', winner_profile_id: 'p1', winner_name: 'Ann', points: 2 },
-        ]}
-        players={players}
-        canRecord={false}
-        canDelete={false}
-        onRecord={vi.fn()}
-        onDelete={vi.fn()}
-      />,
-    );
-    expect(screen.getByText('Ann: 10 · You: 5')).toBeTruthy();
-  });
-
-  it('uses the round\'s own winner_name for the totals line, not players\' label for that id', () => {
-    // p2 is 'You' in `players` (TableCard's currently-seated occupants, which
-    // rewrites the viewer's own name), but this round's `winner_name` is
-    // 'Ada' -- the roster's raw display_name. The totals line must read from
-    // `winner_name`, matching the round row, not disagree with it.
-    render(
-      <RoundLog
-        rounds={[
-          { id: 'r1', winner_profile_id: 'p2', winner_name: 'Ada', points: 8 },
-        ]}
-        players={players}
-        canRecord={false}
-        canDelete={false}
-        onRecord={vi.fn()}
-        onDelete={vi.fn()}
-      />,
-    );
-    expect(screen.getByText('Ada · 8 pts')).toBeTruthy();
-    expect(screen.getByText('Ada: 8')).toBeTruthy();
-    expect(screen.queryByText('You: 8')).toBeNull();
-  });
-
-  it('shows a departed winner\'s real name in the totals line, not "?"', () => {
-    // p3 is not seated at the table any more, so it is absent from
-    // `players` entirely -- the totals line must still resolve their name
-    // from the round's own `winner_name`.
-    render(
-      <RoundLog
-        rounds={[
-          { id: 'r1', winner_profile_id: 'p3', winner_name: 'Zed', points: 4 },
-        ]}
-        players={players}
-        canRecord={false}
-        canDelete={false}
-        onRecord={vi.fn()}
-        onDelete={vi.fn()}
-      />,
-    );
-    expect(screen.getByText('Zed · 4 pts')).toBeTruthy();
-    expect(screen.getByText('Zed: 4')).toBeTruthy();
-    expect(screen.queryByText('?: 4')).toBeNull();
-  });
-
-  it('hides the record form when canRecord is false', () => {
-    render(
-      <RoundLog
-        rounds={[]}
-        players={players}
-        canRecord={false}
-        canDelete={false}
-        onRecord={vi.fn()}
-        onDelete={vi.fn()}
-      />,
-    );
-    expect(screen.queryByText('Record a round')).toBeNull();
-  });
-
-  it('records a round for the tapped winner with the entered points', () => {
-    const onRecord = vi.fn();
-    render(
-      <RoundLog
-        rounds={[]}
-        players={players}
-        canRecord
-        canDelete={false}
-        onRecord={onRecord}
-        onDelete={vi.fn()}
-      />,
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: 'Winner: Ann' }));
-    fireEvent.change(screen.getByLabelText('Points'), {
-      target: { value: '8' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Record a round' }));
-
-    expect(onRecord).toHaveBeenCalledWith('p1', 8);
-  });
-
-  it('disables the record button until a winner and valid points are set', () => {
-    render(
-      <RoundLog
-        rounds={[]}
-        players={players}
-        canRecord
-        canDelete={false}
-        onRecord={vi.fn()}
-        onDelete={vi.fn()}
-      />,
-    );
-    expect(
-      screen.getByRole('button', { name: 'Record a round' }),
-    ).toHaveProperty('disabled', true);
+    render(<RoundLog rounds={rounds} canDelete={false} onDelete={vi.fn()} />);
+    expect(screen.getByText('You · 25 pts')).toBeTruthy();
+    expect(screen.getByText('Ann · 30 pts')).toBeTruthy();
   });
 
   it('shows delete affordances only when canDelete is true', () => {
-    render(
-      <RoundLog
-        rounds={rounds}
-        players={players}
-        canRecord={false}
-        canDelete
-        onRecord={vi.fn()}
-        onDelete={vi.fn()}
-      />,
-    );
+    render(<RoundLog rounds={rounds} canDelete onDelete={vi.fn()} />);
     expect(
-      screen.getByRole('button', { name: "Delete You's round for 5 points" }),
+      screen.getByRole('button', { name: "Delete You's round for 25 points" }),
     ).toBeTruthy();
+  });
+
+  it('hides delete affordances when canDelete is false', () => {
+    render(<RoundLog rounds={rounds} canDelete={false} onDelete={vi.fn()} />);
+    expect(
+      screen.queryByRole('button', { name: "Delete You's round for 25 points" }),
+    ).toBeNull();
   });
 
   it('calls onDelete with the round id', () => {
     const onDelete = vi.fn();
-    render(
-      <RoundLog
-        rounds={rounds}
-        players={players}
-        canRecord={false}
-        canDelete
-        onRecord={vi.fn()}
-        onDelete={onDelete}
-      />,
-    );
+    render(<RoundLog rounds={rounds} canDelete onDelete={onDelete} />);
     fireEvent.click(
-      screen.getByRole('button', { name: "Delete You's round for 5 points" }),
+      screen.getByRole('button', { name: "Delete You's round for 25 points" }),
     );
     expect(onDelete).toHaveBeenCalledWith('r2');
-  });
-
-  it('explains why recording is unavailable when nobody is seated yet', () => {
-    render(
-      <RoundLog
-        rounds={[]}
-        players={[]}
-        canRecord
-        canDelete={false}
-        onRecord={vi.fn()}
-        onDelete={vi.fn()}
-      />,
-    );
-    expect(
-      screen.getByText('Seat players before recording a round.'),
-    ).toBeTruthy();
-    expect(screen.queryByLabelText('Points')).toBeNull();
   });
 });
