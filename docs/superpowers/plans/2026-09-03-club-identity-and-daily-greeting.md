@@ -3969,6 +3969,100 @@ git commit -m "fix(events): game screen's club header genuinely reuses Dashboard
 
 ---
 
+### Task 17: Show the fee on the game's own screen too
+
+**Added after the final whole-branch review flagged it as a plan gap** (not an implementation miss — the spec only ever asked for the Dashboard tile): a member sees "$15 to play" on the Dashboard row, taps through to decide whether to take a seat, and the price disappears from the one screen where that decision is actually made. `check_in_required` — the precedent this whole feature already follows — *is* surfaced on this screen (the door-list link, the check-in control); the fee should be too. The user confirmed this should be added now.
+
+**Files:**
+- Modify: `app/clubs/[id]/events/[eventId]/index.tsx`
+- Modify: `app/__tests__/events-detail.test.tsx`
+
+**Interfaces:**
+- Consumes: `event.fee_cents`/`event.min_spend_cents` (already fetched — both are in `EVENT_COLUMNS`, and `ClubEvent` already carries them); `formatFeeCents` from `lib/events.ts`.
+- Produces: nothing new.
+
+- [ ] **Step 1: Write the failing tests**
+
+Add to `app/__tests__/events-detail.test.tsx`, near the other tests that render the info card (search for `'The Annexe'`, the `EVENT` fixture's venue name, to find them):
+
+```tsx
+  it('shows no fee line when neither a fee nor a minimum spend is set', async () => {
+    render(<EventScreen />);
+    await screen.findByText('The Annexe');
+    expect(screen.queryByText(/to play/)).toBeNull();
+    expect(screen.queryByText(/min spend/)).toBeNull();
+  });
+
+  it('shows the fee line, joining cost-to-play and minimum-spend, when both are set', async () => {
+    fetchEvent.mockResolvedValue({ ...EVENT, fee_cents: 1500, min_spend_cents: 2000 });
+    render(<EventScreen />);
+    expect(
+      await screen.findByText('$15 to play · $20 min spend'),
+    ).toBeTruthy();
+  });
+```
+
+(This file's `EVENT` fixture has no `fee_cents`/`min_spend_cents` fields today — that's fine, `undefined > 0` is `false` in JavaScript, so the first test's "no fee line" case already holds true against the existing fixture with no changes needed there. The second test overrides both fields explicitly via spread, matching how other tests in this file already override one field at a time, e.g. `{ ...EVENT, check_in_required: true }`.)
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `TZ=America/New_York npx vitest run app/__tests__/events-detail.test.tsx -t "fee line"`
+Expected: the first test passes trivially (nothing renders a fee line yet, so there's nothing to find — this is expected and fine, it's establishing the baseline); the second test FAILS — no element with the joined fee text exists yet.
+
+- [ ] **Step 3: Write minimal implementation**
+
+In `app/clubs/[id]/events/[eventId]/index.tsx`, add `formatFeeCents` to the existing `lib/events` import (this file already imports several named exports from `../../../../../lib/events` — add it to that same import statement).
+
+In the `<Card>` that shows `when`/`where`/series info (search for `styles.when`/`styles.where` to find it), add a new conditional line right after the venue block (after the `{overridden('venue_id') ? ... : null}` line, before the `{series ? ... : null}` block):
+
+```tsx
+        {event.fee_cents > 0 || event.min_spend_cents > 0 ? (
+          <Text style={styles.fee}>
+            {[
+              event.fee_cents > 0 ? `${formatFeeCents(event.fee_cents)} to play` : null,
+              event.min_spend_cents > 0
+                ? `${formatFeeCents(event.min_spend_cents)} min spend`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+          </Text>
+        ) : null}
+```
+
+Add the style, matching `where`'s own weight (this is decision-relevant information, not muted helper text — the same reasoning that keeps `where` itself prominent):
+
+```tsx
+  fee: {
+    fontFamily: type.bodyRegular,
+    fontSize: type.size.body,
+    color: colors.text,
+    marginTop: space[2],
+  },
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `TZ=America/New_York npx vitest run app/__tests__/events-detail.test.tsx`
+Expected: PASS (all tests)
+
+- [ ] **Step 5: Run the full unit suite and tsc**
+
+Run: `TZ=America/New_York npm test`
+Expected: PASS (all tests across the whole repo)
+
+Run: `npx tsc --noEmit`
+Expected: 0 errors
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add "app/clubs/[id]/events/[eventId]/index.tsx" app/__tests__/events-detail.test.tsx
+git commit -m "feat(events): show cost-to-play and minimum-spend on the game's own screen"
+```
+
+---
+
 ## Self-Review Notes
 
 - **Spec coverage:** Part A (Home truncation → Task 1; Club Edit consolidation → Task 2; message board already consistent, no task; game screen tile → Task 3) — covered. Part B (live-only rounds/timer) → Task 4 — covered. Part C (three-line game row) → Task 5 — covered. Part D (admin flag, greetings table, daily pick, personalization, display, admin UI) → Tasks 6-9 — covered.
