@@ -1,8 +1,25 @@
-import { describe, expect, it } from 'vitest';
+// fetchMyRoles' read path is `.from('club_members').select(...).eq(...).eq(...).order(...)`
+// — the same eq-then-eq-then-terminal shape other lib/*.test.ts files already
+// model for a plain filtered select with no .single()/.maybeSingle().
+const orderAfterEq = vi.fn();
+vi.mock('./supabase', () => ({
+  supabase: {
+    from: vi.fn(() => ({
+      select: vi.fn(() => ({
+        eq: vi.fn(() => ({
+          eq: vi.fn(() => ({ order: orderAfterEq })),
+        })),
+      })),
+    })),
+  },
+}));
+
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   MAX_ROSTER_ROWS,
   canAnnounce,
   canInvite,
+  fetchMyRoles,
   importRoster,
   parseRoster,
   slugify,
@@ -51,6 +68,33 @@ describe('canAnnounce', () => {
 
   it('refuses a plain member', () => {
     expect(canAnnounce('member')).toBe(false);
+  });
+});
+
+describe('fetchMyRoles', () => {
+  beforeEach(() => {
+    orderAfterEq.mockReset();
+  });
+
+  it('returns the rows on success', async () => {
+    orderAfterEq.mockResolvedValue({
+      data: [{ club_id: 'club-1', role: 'host' }],
+      error: null,
+    });
+    const result = await fetchMyRoles('user-1');
+    expect(result).toEqual([{ club_id: 'club-1', role: 'host' }]);
+  });
+
+  it('returns an empty array, not null, when the member is in no clubs', async () => {
+    orderAfterEq.mockResolvedValue({ data: [], error: null });
+    const result = await fetchMyRoles('user-1');
+    expect(result).toEqual([]);
+  });
+
+  it('returns null on a failed read', async () => {
+    orderAfterEq.mockResolvedValue({ data: null, error: { message: 'boom' } });
+    const result = await fetchMyRoles('user-1');
+    expect(result).toBeNull();
   });
 });
 
