@@ -360,22 +360,15 @@ describe('clubs list', () => {
 });
 
 describe('dashboard artboard', () => {
-  it('heads the page with "Your clubs" and no club-count subtitle', async () => {
+  it('leads with the club chips, no header line, when several clubs and none is selected', async () => {
     fetchMyClubs.mockResolvedValue([CLUB, { ...CLUB, id: 'club-2', name: 'Harbour' }]);
     fetchMyUpcomingBookings.mockResolvedValue([]);
     fetchUpcomingEvents.mockResolvedValue([]);
 
     render(<ClubsScreen />);
 
-    expect(await screen.findByText('Your clubs')).toBeTruthy();
-    expect(screen.queryByText('2 clubs')).toBeNull();
-    // Same decorative dots tile as the load-failed and empty-clubs states
-    // (see "shows a decorative dots tile ..." in the block above), scoped
-    // via testID for the same reason -- TabBar already renders its own
-    // aria-hidden tiles.
-    expect(
-      screen.getByTestId('section-tile').querySelector('[aria-hidden="true"]'),
-    ).toBeTruthy();
+    await screen.findByRole('button', { name: /Riverside/ }); // a chip has rendered
+    expect(screen.queryByText('Your clubs')).toBeNull();
   });
 
   // The rows were inert: the one thing a member wants from a game they can
@@ -451,7 +444,7 @@ describe('dashboard artboard', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Clear club filter' }));
 
-    expect(screen.getByText('Your clubs')).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Harbour' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /^Manage / })).toBeNull();
   });
 
@@ -514,7 +507,7 @@ describe('dashboard artboard', () => {
   it('offers no header + while every club is in scope', async () => {
     fetchMyClubs.mockResolvedValue([CLUB, { ...CLUB, id: 'club-2', name: 'Harbour' }]);
     render(<ClubsScreen />);
-    expect(await screen.findByText('Your clubs')).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Riverside Mah Jongg' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Add a game' })).toBeNull();
   });
 
@@ -1076,7 +1069,7 @@ describe('dashboard artboard', () => {
   it('offers no way in while every club is in scope', async () => {
     fetchMyClubs.mockResolvedValue([CLUB, { ...CLUB, id: 'club-2', name: 'Harbour' }]);
     render(<ClubsScreen />);
-    expect(await screen.findByText('Your clubs')).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Riverside Mah Jongg' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /^Manage / })).toBeNull();
   });
 

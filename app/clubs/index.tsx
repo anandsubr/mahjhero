@@ -503,52 +503,46 @@ export default function ClubsScreen() {
         an avatar and name pill, with no single title LINE a tile could sit
         inline before -- so that shape keeps its own tile as a separate,
         centred sibling above the whole block (confirmed clean with a live
-        render). The flat kicker/name/meta shape has a real title line
-        (`name`), so its tile rides inline via DashboardHeader's own
-        `titleAccessory` prop instead, matching every other tab-root
-        screen's tile-before-the-title treatment.
+        render). The flat kicker/name/meta shape — several clubs, none
+        resolved — renders no header at all any more: the chip row below is
+        the first content on the page in that state (see its own comment).
       */}
       {scope.kicker === 'Your club' ? (
         <View testID="section-tile" style={styles.sectionTileCentered}>
           <MahjongTile suit="dots" size="section" />
         </View>
       ) : null}
-      <DashboardHeader
-        kicker={scope.kicker}
-        name={scope.name}
-        meta={scope.meta}
-        titleAccessory={
-          scope.kicker === 'Your club' ? undefined : (
-            <View testID="section-tile">
-              <MahjongTile suit="dots" size="section" />
-            </View>
-          )
-        }
-        onPressScope={
-          scopeClubId ? () => router.push(`/clubs/${scopeClubId}`) : undefined
-        }
-        // Same club the pencil opens — a member looking at one club's games
-        // reaches for the header's + expecting "add a game here", not
-        // "start an unrelated club". `scopeClubId` already resolves both the
-        // ways a single club ends up in view: an explicit chip pick, and a
-        // one-club member's own club, which `headerScope` shows regardless
-        // of `selected` — so this covers both with no special-casing.
-        onPressAddGame={
-          scopeClubId ? () => router.push(`/clubs/${scopeClubId}/events/new`) : undefined
-        }
-        // Shown exactly when the chip row is hidden (see the row's own
-        // guard below) — the chevron is the way back once a club is
-        // filtered in, whether that happened at two clubs or a member
-        // redundantly tapped their own single tile.
-        onPressBack={
-          selected !== ALL_CLUBS
-            ? () => {
-                setSelected(ALL_CLUBS);
-                setNotice(null);
-              }
-            : undefined
-        }
-      />
+      {scope.kicker === 'Your club' ? (
+        <DashboardHeader
+          kicker={scope.kicker}
+          name={scope.name}
+          meta={scope.meta}
+          onPressScope={
+            scopeClubId ? () => router.push(`/clubs/${scopeClubId}`) : undefined
+          }
+          // Same club the pencil opens — a member looking at one club's games
+          // reaches for the header's + expecting "add a game here", not
+          // "start an unrelated club". `scopeClubId` already resolves both the
+          // ways a single club ends up in view: an explicit chip pick, and a
+          // one-club member's own club, which `headerScope` shows regardless
+          // of `selected` — so this covers both with no special-casing.
+          onPressAddGame={
+            scopeClubId ? () => router.push(`/clubs/${scopeClubId}/events/new`) : undefined
+          }
+          // Shown exactly when the chip row is hidden (see the row's own
+          // guard below) — the chevron is the way back once a club is
+          // filtered in, whether that happened at two clubs or a member
+          // redundantly tapped their own single tile.
+          onPressBack={
+            selected !== ALL_CLUBS
+              ? () => {
+                  setSelected(ALL_CLUBS);
+                  setNotice(null);
+                }
+              : undefined
+          }
+        />
+      ) : null}
 
       {/*
         Shown whenever nothing REAL is filtered in — the ALL_CLUBS default,
