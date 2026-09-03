@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Redirect } from 'expo-router';
+import { Redirect, useRouter } from 'expo-router';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import Button from '../components/Button';
 import Card from '../components/Card';
 import ErrorBanner from '../components/ErrorBanner';
 import Screen from '../components/Screen';
 import TabBar from '../components/TabBar';
+import { ChevronLeftIcon } from '../components/icons';
 import { GENERIC_ERROR } from '../lib/constants';
 import { initialsFrom } from '../lib/dashboard';
 import {
@@ -26,10 +27,18 @@ import { colors, radius, space, type } from '../lib/theme';
  * Not one of the four tabs itself, but `appScreens` in the design still
  * renders the bar as a sibling of every signed-in screen, this one included
  * — the design source has no per-screen gate. It carries `active="profile"`:
- * this screen hangs off Profile. The artboard's own back link, pointing at
- * that same Profile screen, is gone now that the Profile tab reaches the
- * identical route — the same call already made once for the club detail
- * screen (`app/clubs/[id]/index.tsx`'s own docstring).
+ * this screen hangs off Profile.
+ *
+ * Also carries an explicit back link to Profile
+ * (2026-09-02-edit-game-pencil-and-friends-back-link-design.md),
+ * reinstating the artboard's own one — an earlier version of this screen
+ * dropped it on the premise that the Profile tab reaches the identical
+ * route, but that tab renders as already-active here, which reads as "you
+ * are here" rather than "go back", the same correction
+ * 2026-09-01-back-links-design.md already made for the club detail,
+ * new-club, new-message and check-in screens — that document itself still
+ * lists this screen among ones that should NOT get a back link, a call
+ * this one revises.
  *
  * The "+ Invite someone by email" ghost button the artboard draws is
  * deliberately absent — it would need its own token, an acceptance path and
@@ -39,6 +48,7 @@ import { colors, radius, space, type } from '../lib/theme';
  */
 export default function FriendsScreen() {
   const { session, loading } = useSession();
+  const router = useRouter();
 
   const [friends, setFriends] = useState<Friend[] | null>(null);
   const [people, setPeople] = useState<AddablePerson[] | null>(null);
@@ -109,6 +119,17 @@ export default function FriendsScreen() {
 
   return (
     <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="profile" />}>
+      <Button
+        variant="ghost"
+        big={false}
+        icon={<ChevronLeftIcon color={colors.accentColor} />}
+        onPress={() => router.push('/profile')}
+        accessibilityLabel="Back to profile"
+        style={styles.backButton}
+      >
+        Profile
+      </Button>
+
       <Text style={styles.heading}>Friends</Text>
       <Text style={styles.intro}>
         These are the people you can hold seats with when you join a table.
@@ -183,6 +204,7 @@ export default function FriendsScreen() {
 const styles = StyleSheet.create({
   container: { padding: space[6], gap: space[3] },
   centered: { alignItems: 'center' },
+  backButton: { alignSelf: 'flex-start' },
   heading: {
     fontFamily: type.heading,
     fontSize: type.size.h1,

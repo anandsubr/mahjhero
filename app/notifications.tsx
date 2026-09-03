@@ -80,7 +80,7 @@ export default function NotificationSettings() {
   // and a signed-out member belongs at sign-in, not in a tab bar.
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="alerts" />}>
+      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="profile" />}>
         <ActivityIndicator />
       </Screen>
     );
@@ -90,7 +90,7 @@ export default function NotificationSettings() {
 
   if (!ready) {
     return (
-      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="alerts" />}>
+      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="profile" />}>
         <ActivityIndicator />
       </Screen>
     );
@@ -98,7 +98,7 @@ export default function NotificationSettings() {
 
   if (!prefs) {
     return (
-      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="alerts" />}>
+      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="profile" />}>
         <Text style={styles.error}>{GENERIC_ERROR}</Text>
       </Screen>
     );
@@ -154,7 +154,7 @@ export default function NotificationSettings() {
   }
 
   return (
-    <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="alerts" />}>
+    <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="profile" />}>
       {/* Without this the screen was a dead end on native: nothing else on
           it navigates away, so a member who opened it had no way off short
           of the OS back gesture (web) or force-quitting (there is no

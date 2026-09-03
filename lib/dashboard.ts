@@ -19,9 +19,7 @@ export const ALL_CLUBS = 'all';
 export type Chip = { id: string; label: string };
 
 export function buildChips(clubs: Club[]): Chip[] {
-  return [{ id: ALL_CLUBS, label: 'All clubs' }].concat(
-    clubs.map((club) => ({ id: club.id, label: club.name })),
-  );
+  return clubs.map((club) => ({ id: club.id, label: club.name }));
 }
 
 export type HeaderScope = { kicker: string; name: string; meta: string };
@@ -32,9 +30,10 @@ export type HeaderScope = { kicker: string; name: string; meta: string };
  * removed, or the list reloaded), and the honest answer to "show me a club
  * you are no longer in" is the whole list.
  *
- * The artboard's meta is "N clubs · M members". `fetchMyClubs` returns no
- * member counts, so the count half is dropped rather than faked — see the
- * spec's deferred item 4.
+ * The artboard's meta was originally "N clubs · M members" here — both
+ * halves are gone now: the member count was already dropped as faked (see
+ * the spec's deferred item 4), and the club count itself was a redundant
+ * subtitle under "Your clubs", so this scope now carries no meta at all.
  *
  * One club is the exception to both fallbacks. There is nothing to disambiguate
  * and no chip row to pick with, so a single-club list resolves to that club
@@ -45,23 +44,21 @@ export function headerScope(clubs: Club[], selected: string): HeaderScope {
     selected === ALL_CLUBS
       ? null
       : (clubs.find((candidate) => candidate.id === selected) ?? null);
-  // A one-club member's scope is never ambiguous, and their `selected` never
-  // moves off ALL_CLUBS — the chip row that would change it is not drawn
-  // below two clubs. Resolving the lone club here is what lets the header
-  // name it and be pressed into it. Same derivation, for the same reason, as
-  // the screen's own `scopeClubId`.
+  // A one-club member's scope is never ambiguous even if they tap their own
+  // chip: `selected` would carry that club's own id instead of ALL_CLUBS,
+  // but `picked` resolves to the identical club either way, so this branch
+  // returns the same result regardless of which one drew it. Resolving the
+  // lone club here is what lets the header name it and be pressed into it.
+  // Same derivation, for the same reason, as the screen's own `scopeClubId`.
   const club = picked ?? (clubs.length === 1 ? clubs[0] : null);
   if (!club) {
     return {
       // No kicker, and a shorter name. "YOUR CLUBS" above "All your clubs"
-      // was the same words twice, and the width it cost is what the header's
-      // "start a club" control now uses. The single-club scope below keeps
-      // its kicker: there "Your club" and the club's own name differ.
+      // was the same words twice. The single-club scope below keeps its
+      // kicker: there "Your club" and the club's own name differ.
       kicker: '',
       name: 'Your clubs',
-      // Always plural: this branch is reached only by an empty list ("0
-      // clubs") or by two or more. A one-club list resolves above.
-      meta: `${clubs.length} clubs`,
+      meta: '',
     };
   }
   return { kicker: 'Your club', name: club.name, meta: club.rhythm };

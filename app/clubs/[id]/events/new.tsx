@@ -2,6 +2,7 @@ import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import Button from '../../../../components/Button';
+import { ChevronLeftIcon } from '../../../../components/icons';
 import DateField from '../../../../components/DateField';
 import ErrorBanner from '../../../../components/ErrorBanner';
 import Screen from '../../../../components/Screen';
@@ -145,6 +146,14 @@ const chipStyles = StyleSheet.create({
  * Club tab goes to the clubs dashboard (`/clubs`) — different destinations,
  * unlike the `newclub` screen's dropped `← Clubs` link, which pointed at the
  * same place its tab does.
+ *
+ * Also carries an explicit top-of-screen back link to `/clubs`
+ * (2026-09-02-club-page-games-and-back-links-design.md) — the Club tab
+ * reaches that same route but renders as already-active here, which reads
+ * as "you are here" rather than "go back", the same reasoning every other
+ * back link on this branch documents. This is a different control from the
+ * Cancel button above: "I didn't mean to be here" versus "abandon this
+ * draft".
  */
 export default function NewEventScreen() {
   const { id: clubId } = useLocalSearchParams<{ id: string }>();
@@ -312,6 +321,17 @@ export default function NewEventScreen() {
 
   return (
     <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="club" />}>
+      <Button
+        variant="ghost"
+        big={false}
+        icon={<ChevronLeftIcon color={colors.accentColor} />}
+        onPress={() => router.push('/clubs')}
+        accessibilityLabel="Back to your clubs"
+        style={styles.backButton}
+      >
+        Clubs
+      </Button>
+
       <Text style={styles.heading}>Add a game</Text>
 
       {error ? <ErrorBanner message={error} /> : null}
@@ -467,6 +487,7 @@ export default function NewEventScreen() {
 const styles = StyleSheet.create({
   container: { padding: space[6], gap: space[4] },
   centered: { alignItems: 'center' },
+  backButton: { alignSelf: 'flex-start' },
   heading: {
     fontFamily: type.heading,
     fontSize: type.size.h2,

@@ -88,6 +88,12 @@ vi.mock('../../lib/messages', async (importOriginal) => {
   };
 });
 
+// TabBar also now calls useNotificationsUnread for its Alerts badge --
+// without this it falls through to a real, unmocked RPC call.
+vi.mock('../../lib/use-notifications-unread', () => ({
+  useNotificationsUnread: () => 0,
+}));
+
 import CheckInScreen from '../clubs/[id]/events/[eventId]/check-in';
 import type { AttendanceRow } from '../../lib/attendance';
 
@@ -145,13 +151,20 @@ beforeEach(() => {
 // Redirect, so the history stack is typically one deep -- a state without
 // the bar strands a host with no way out but relaunching the app. See
 // clubs.test.tsx's and venues.test.tsx's identical rationale. This screen
-// draws no back link of its own, so there is nothing to check for
-// redundancy here.
+// also carries its own explicit back link to the game it is checking in
+// for (2026-09-01-back-links-design.md) -- unlike the club/messages
+// screens, nothing in the tab bar reaches that destination at all.
 describe('screen chrome', () => {
   it('carries the tab bar once ready', async () => {
     render(<CheckInScreen />);
     expect(await screen.findByRole('button', { name: 'Club' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Messages' })).toBeTruthy();
+  });
+
+  it('draws a back link to the game', async () => {
+    render(<CheckInScreen />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Back to the game' }));
+    expect(push).toHaveBeenCalledWith('/clubs/club-1/events/event-1');
   });
 
   it('carries the tab bar while the event is still loading', () => {

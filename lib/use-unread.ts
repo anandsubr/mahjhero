@@ -26,12 +26,12 @@ const EMPTY: UnreadCounts = { total: 0, byClub: {} };
  */
 export function useUnreadCounts(): UnreadCounts {
   const { session } = useSession();
-  // Keyed on the user id, NOT on `session` — see lib/use-viewer.ts's
-  // docstring and app/profile.tsx's identical comment. lib/session.tsx hands
-  // out a fresh Session object on every onAuthStateChange (TOKEN_REFRESHED
-  // included, which fires within the hour and on web tab focus); depending
-  // on the object itself would refire this focus effect, and the RPC behind
-  // it, for a value that only changes on a real account switch.
+  // Keyed on the user id, NOT on `session` — see app/profile.tsx's identical
+  // comment on its own fetch effect. lib/session.tsx hands out a fresh
+  // Session object on every onAuthStateChange (TOKEN_REFRESHED included,
+  // which fires within the hour and on web tab focus); depending on the
+  // object itself would refire this focus effect, and the RPC behind it, for
+  // a value that only changes on a real account switch.
   const userId = session?.user.id;
   const [counts, setCounts] = useState<UnreadCounts>(EMPTY);
 

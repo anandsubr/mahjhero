@@ -12,8 +12,9 @@ vi.mock('expo-router', () => ({
   Redirect: () => null,
   Link: ({ children }: { children: React.ReactNode }) => children,
   useRouter: () => ({ push, back: vi.fn() }),
-  // TabBar's own Alerts tab route: this screen IS /notifications, so its
-  // highlighted Alerts button stays the documented no-op.
+  // This screen is reached only from Profile (see the back button below),
+  // and highlights Profile in the tab bar accordingly -- it is not the
+  // Alerts tab's own route.
   usePathname: () => '/notifications',
   // Wrapped in a real `useEffect` keyed on the callback's identity, not
   // called inline on every render: `(cb) => cb()` fires on every render,
@@ -46,6 +47,12 @@ vi.mock('../../lib/messages', async (importOriginal) => {
     fetchUnreadCounts: vi.fn(async () => []),
   };
 });
+
+// TabBar also now calls useNotificationsUnread for its Alerts badge --
+// without this it falls through to a real, unmocked RPC call.
+vi.mock('../../lib/use-notifications-unread', () => ({
+  useNotificationsUnread: () => 0,
+}));
 
 vi.mock('../../lib/profile', () => ({
   fetchPreferences: vi.fn(async () => ({
@@ -96,10 +103,10 @@ describe('notifications screen', () => {
     expect(pushOnly.getAttribute('aria-selected')).toBe('false');
   });
 
-  it('carries the tab bar with Alerts marked', async () => {
+  it('carries the tab bar with Profile marked', async () => {
     render(<NotificationSettings />);
     expect(
-      (await screen.findByRole('button', { name: 'Alerts' })).getAttribute(
+      (await screen.findByRole('button', { name: 'Profile' })).getAttribute(
         'aria-selected',
       ),
     ).toBe('true');

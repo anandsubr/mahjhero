@@ -85,6 +85,12 @@ vi.mock('../../lib/messages', async (importOriginal) => {
   };
 });
 
+// TabBar also now calls useNotificationsUnread for its Alerts badge --
+// without this it falls through to a real, unmocked RPC call.
+vi.mock('../../lib/use-notifications-unread', () => ({
+  useNotificationsUnread: () => 0,
+}));
+
 import VenuesScreen from '../clubs/[id]/venues';
 
 const CLUB = {
@@ -361,18 +367,11 @@ describe('screen chrome', () => {
   });
 
   it('heads the screen with the club as kicker and Venues as the name', async () => {
-    fetchProfile.mockResolvedValue({
-      id: 'test-user',
-      display_name: 'Pat Chen',
-      skill_level: 'intermediate',
-      avatar_url: null,
-      timezone: 'America/New_York',
-    });
     render(<VenuesScreen />);
     expect(await screen.findByText('Venues')).toBeTruthy();
-    expect(await screen.findByText('PC')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Your profile' }));
-    expect(push).toHaveBeenCalledWith('/profile');
+    // The bottom tab bar's own Profile tab is the way to profile now —
+    // this header no longer draws its own avatar/profile control.
+    expect(screen.queryByRole('button', { name: 'Your profile' })).toBeNull();
   });
 
   // Kept, unlike the club screen's: no tab reaches a specific club, so the

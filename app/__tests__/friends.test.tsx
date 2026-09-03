@@ -3,10 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import FriendsScreen from '../friends';
 
+const push = vi.fn();
+
 vi.mock('expo-router', () => ({
   Redirect: () => null,
   Link: ({ children }: { children: React.ReactNode }) => children,
-  useRouter: () => ({ push: vi.fn(), back: vi.fn() }),
+  useRouter: () => ({ push, back: vi.fn() }),
   usePathname: () => '/friends',
   // Wrapped in a real `useEffect` keyed on the callback's identity, not
   // called inline on every render: `(cb) => cb()` fires on every render,
@@ -39,6 +41,12 @@ vi.mock('../../lib/messages', async (importOriginal) => {
   };
 });
 
+// TabBar also now calls useNotificationsUnread for its Alerts badge --
+// without this it falls through to a real, unmocked RPC call.
+vi.mock('../../lib/use-notifications-unread', () => ({
+  useNotificationsUnread: () => 0,
+}));
+
 const fetchFriends = vi.fn();
 const fetchAddablePeople = vi.fn();
 const addFriend = vi.fn();
@@ -70,6 +78,13 @@ describe('friends screen', () => {
     fetchAddablePeople.mockResolvedValue([]);
     addFriend.mockResolvedValue({ error: null });
     removeFriend.mockResolvedValue({ error: null });
+  });
+
+  it('draws a back link to profile', async () => {
+    render(<FriendsScreen />);
+    await screen.findByText('Friends');
+    fireEvent.click(screen.getByRole('button', { name: 'Back to profile' }));
+    expect(push).toHaveBeenCalledWith('/profile');
   });
 
   it('lists a friend with the clubs they still share', async () => {
@@ -184,17 +199,4 @@ describe('friends screen', () => {
     ).toBe('true');
   });
 
-  // Removed with the tab bar's arrival: the Profile tab reaches the
-  // identical route (`/profile`) this screen's own back link used to, so the
-  // ghost button above the heading was a second way to do one thing -- the
-  // same reasoning the club detail screen's own "no longer draws its own
-  // back link" test already records. Pinned as a count rather than a
-  // `queryByRole` miss: this control shared its accessible name ("Profile")
-  // with TabBar's own tab, so a stray second one would otherwise pass a
-  // `queryByRole(..., { name: 'Profile' })` check silently.
-  it('no longer draws its own back link', async () => {
-    render(<FriendsScreen />);
-    await screen.findByText('Friends');
-    expect(screen.getAllByRole('button', { name: 'Profile' })).toHaveLength(1);
-  });
 });

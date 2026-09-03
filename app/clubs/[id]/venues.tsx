@@ -21,7 +21,6 @@ import {
 } from '../../../lib/venues';
 import { useSession } from '../../../lib/session';
 import { colors, space, type } from '../../../lib/theme';
-import { useViewerInitials } from '../../../lib/use-viewer';
 
 /**
  * The fix for a typeahead that can only create: a host who fat-fingers a
@@ -38,7 +37,6 @@ export default function VenuesScreen() {
   const { session, loading } = useSession();
   const userId = session?.user.id;
   const router = useRouter();
-  const initials = useViewerInitials();
 
   const [club, setClub] = useState<Club | null>(null);
   const [isOrganizer, setIsOrganizer] = useState(false);
@@ -197,8 +195,6 @@ export default function VenuesScreen() {
         kicker={club.name}
         name="Venues"
         meta=""
-        initials={initials}
-        onPressAvatar={() => router.push('/profile')}
       />
       <Text style={styles.help}>
         Places this club plays. Add a new one while creating a game — this

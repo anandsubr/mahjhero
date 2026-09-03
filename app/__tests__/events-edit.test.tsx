@@ -124,6 +124,12 @@ vi.mock('../../lib/messages', async (importOriginal) => {
   };
 });
 
+// TabBar also now calls useNotificationsUnread for its Alerts badge --
+// without this it falls through to a real, unmocked RPC call.
+vi.mock('../../lib/use-notifications-unread', () => ({
+  useNotificationsUnread: () => 0,
+}));
+
 import EditEventScreen from '../clubs/[id]/events/[eventId]/edit';
 
 // Deliberately NOT America/New_York, the value TZ is pinned to for the whole

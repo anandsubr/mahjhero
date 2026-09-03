@@ -139,6 +139,12 @@ vi.mock('../../lib/messages', async (importOriginal) => {
   };
 });
 
+// TabBar also now calls useNotificationsUnread for its Alerts badge --
+// without this it falls through to a real, unmocked RPC call.
+vi.mock('../../lib/use-notifications-unread', () => ({
+  useNotificationsUnread: () => 0,
+}));
+
 const CLUB = {
   id: 'club-1',
   name: 'Riverside Mah Jongg',
@@ -288,14 +294,15 @@ describe('clubs list', () => {
     expect(screen.getAllByRole('button', { name: 'Start a club' })).toHaveLength(1);
   });
 
-  // The club and its rhythm are read off the header now: with one club there
-  // is no chip row of filters and no card list, and the header is the club.
+  // The club and its rhythm are read off the header now. The chip row draws
+  // the same name a second time now (its own tile for this one club, per
+  // the "shows the chip row ... for a one-club member" test below), so the
+  // name is asserted with findAllByText rather than findByText.
   it('names the one club a member belongs to', async () => {
     fetchMyClubs.mockResolvedValueOnce([CLUB]);
     render(<ClubsScreen />);
-    expect(await screen.findByText('Riverside Mah Jongg')).toBeTruthy();
+    expect(await screen.findAllByText('Riverside Mah Jongg')).toHaveLength(2);
     expect(screen.getByText('Thursday evenings')).toBeTruthy();
-    expect(screen.getByText('Your club')).toBeTruthy();
   });
 
   // "Your games" (Task 13) stacked a whole section below the header and chip
@@ -309,7 +316,7 @@ describe('clubs list', () => {
   it('lets the populated screen scroll', async () => {
     fetchMyClubs.mockResolvedValueOnce([CLUB]);
     render(<ClubsScreen />);
-    expect(await screen.findByText('Riverside Mah Jongg')).toBeTruthy();
+    expect(await screen.findAllByText('Riverside Mah Jongg')).toHaveLength(2);
     expect(screen.getByTestId('screen-scroll')).toBeTruthy();
   });
 
@@ -328,17 +335,15 @@ describe('clubs list', () => {
 });
 
 describe('dashboard artboard', () => {
-  it('heads the page with the club count and the profile avatar', async () => {
+  it('heads the page with "Your clubs" and no club-count subtitle', async () => {
     fetchMyClubs.mockResolvedValue([CLUB, { ...CLUB, id: 'club-2', name: 'Harbour' }]);
     fetchMyUpcomingBookings.mockResolvedValue([]);
     fetchUpcomingEvents.mockResolvedValue([]);
-    fetchProfile.mockResolvedValue({ id: 'test-user', display_name: 'Jean Wu', skill_level: null, avatar_url: null, timezone: 'America/New_York' });
 
     render(<ClubsScreen />);
 
     expect(await screen.findByText('Your clubs')).toBeTruthy();
-    expect(screen.getByText('2 clubs')).toBeTruthy();
-    expect(screen.getByText('JW')).toBeTruthy();
+    expect(screen.queryByText('2 clubs')).toBeNull();
   });
 
   // The rows were inert: the one thing a member wants from a game they can
@@ -393,24 +398,103 @@ describe('dashboard artboard', () => {
 
     expect(screen.queryByText('Riverside game')).toBeNull();
     expect(screen.getByText('Harbour game')).toBeTruthy();
-    expect(screen.getByText('Your club')).toBeTruthy();
+    // The header switched to Harbour's own scope. Role-based, not
+    // getByText('Harbour') — that text is now ambiguous, since Harbour's
+    // own chip tile renders the same label alongside the header.
+    expect(screen.getByRole('button', { name: /^Manage Harbour/ })).toBeTruthy();
   });
 
-  // A lone "All clubs" pill beside a lone club pill filters nothing, so the
-  // row is not drawn at all for a one-club member — not drawn empty, not
-  // drawn at all. "All clubs" is the one chip that only ever exists when the
-  // row does, which is what makes it a fair stand-in for "is the row there".
-  it('draws no chip row for a one-club member', async () => {
-    fetchMyClubs.mockResolvedValueOnce([CLUB]);
-    render(<ClubsScreen />);
-    expect(await screen.findByText('Riverside Mah Jongg')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'All clubs' })).toBeNull();
-  });
-
-  it('draws the chip row at two clubs', async () => {
+  // The chevron is app/clubs/index.tsx's own wiring, not something
+  // dashboard-parts.test.tsx's DashboardHeader unit tests can see — this is
+  // what proves the screen actually passes onPressBack through, and that
+  // pressing it clears `selected` back to ALL_CLUBS rather than just
+  // rendering a dead control.
+  it('clears the club filter back to all clubs when the chevron is pressed', async () => {
     fetchMyClubs.mockResolvedValue([CLUB, { ...CLUB, id: 'club-2', name: 'Harbour' }]);
     render(<ClubsScreen />);
-    expect(await screen.findByRole('button', { name: 'All clubs' })).toBeTruthy();
+
+    expect(await screen.findByRole('button', { name: 'Harbour' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Harbour' }));
+    expect(await screen.findByRole('button', { name: /^Manage Harbour/ })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear club filter' }));
+
+    expect(screen.getByText('Your clubs')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^Manage / })).toBeNull();
+  });
+
+  // A one-club member's `selected` defaults to ALL_CLUBS and nothing here
+  // moves it, so there is nothing for a chevron to clear yet.
+  // app/clubs/index.tsx gates onPressBack on `selected !== ALL_CLUBS`, and
+  // this is what proves the gate actually holds in the screen, not just in
+  // DashboardHeader's own unit tests. See "shows the chip row, with a New
+  // club tile, for a one-club member" below for what the row itself does in
+  // this same state.
+  it('draws no chevron for a one-club member', async () => {
+    fetchMyClubs.mockResolvedValueOnce([CLUB]);
+    render(<ClubsScreen />);
+    expect(await screen.findAllByText('Riverside Mah Jongg')).toHaveLength(2);
+    expect(screen.queryByRole('button', { name: 'Clear club filter' })).toBeNull();
+  });
+
+  // The row now draws for a one-club member too — their own club's tile
+  // plus a trailing New club tile, so starting a second club has a route
+  // that isn't the header (which no longer offers one at all).
+  it('shows the chip row, with a New club tile, for a one-club member', async () => {
+    fetchMyClubs.mockResolvedValueOnce([CLUB]);
+    render(<ClubsScreen />);
+    expect(await screen.findAllByText('Riverside Mah Jongg')).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Riverside Mah Jongg' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Start a club' })).toBeTruthy();
+    expect(screen.getByText('New club')).toBeTruthy();
+  });
+
+  it('draws the chip row at two clubs, with a New club tile', async () => {
+    fetchMyClubs.mockResolvedValue([CLUB, { ...CLUB, id: 'club-2', name: 'Harbour' }]);
+    render(<ClubsScreen />);
+    expect(await screen.findByRole('button', { name: 'Riverside Mah Jongg' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Harbour' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Start a club' }));
+    expect(push).toHaveBeenCalledWith('/clubs/new');
+  });
+
+  it('adds a game for the club in view from the header +', async () => {
+    fetchMyClubs.mockResolvedValue([CLUB, { ...CLUB, id: 'club-2', name: 'Harbour' }]);
+    render(<ClubsScreen />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Harbour' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Add a game' }));
+    expect(push).toHaveBeenCalledWith('/clubs/club-2/events/new');
+  });
+
+  it('adds a game for a one-club member’s own club from the header +, with no click needed', async () => {
+    fetchMyClubs.mockResolvedValueOnce([CLUB]);
+    render(<ClubsScreen />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Add a game' }));
+    expect(push).toHaveBeenCalledWith(`/clubs/${CLUB.id}/events/new`);
+  });
+
+  // "Start a club" is deliberately not asserted null here: the chip row's
+  // own New club tile carries that exact accessible name and is shown
+  // whenever nothing is filtered in, at any club count (see "draws the chip
+  // row at two clubs, with a New club tile" above) — only the header's own
+  // + ("Add a game") is what an ambiguous scope withholds, for want of a
+  // single club to add the game to.
+  it('offers no header + while every club is in scope', async () => {
+    fetchMyClubs.mockResolvedValue([CLUB, { ...CLUB, id: 'club-2', name: 'Harbour' }]);
+    render(<ClubsScreen />);
+    expect(await screen.findByText('Your clubs')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Add a game' })).toBeNull();
+  });
+
+  it('hides the chip row once a club is filtered in, and shows it again via the chevron', async () => {
+    fetchMyClubs.mockResolvedValue([CLUB, { ...CLUB, id: 'club-2', name: 'Harbour' }]);
+    render(<ClubsScreen />);
+    expect(await screen.findByRole('button', { name: 'Harbour' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Harbour' }));
+    expect(screen.queryByRole('button', { name: 'Harbour' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Start a club' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Clear club filter' }));
+    expect(await screen.findByRole('button', { name: 'Harbour' })).toBeTruthy();
   });
 
   it('shows skeletons before the first load resolves', () => {
@@ -790,12 +874,13 @@ describe('dashboard artboard', () => {
     expect(await screen.findByText('Nothing else coming up.')).toBeTruthy();
   });
 
-  // The chip row only renders above one club, so a one-club member's
-  // `selected` stays ALL_CLUBS forever. Gating "Host a table" on
-  // `selected !== ALL_CLUBS` therefore hid it from exactly the member most
-  // likely to want it: their empty state was a dashed box and nothing else.
-  // The test above seeds this same state and asserts only the copy, which is
-  // how it passed straight over the gap.
+  // Gated on `scopeClubId`, not `selected !== ALL_CLUBS`: nothing forces a
+  // one-club member to tap their own chip tile, so their `selected` typically
+  // stays ALL_CLUBS regardless of what the chip row itself renders. Gating on
+  // `selected` alone would therefore still hide "Host a table" from exactly
+  // the member most likely to want it: their empty state was a dashed box and
+  // nothing else. The test above seeds this same state and asserts only the
+  // copy, which is how it passed straight over the gap.
   it('offers Host a table to a one-club member with nothing coming up', async () => {
     fetchMyClubs.mockResolvedValue([CLUB]);
     fetchMyUpcomingBookings.mockResolvedValue([]);
@@ -961,7 +1046,6 @@ describe('dashboard artboard', () => {
     render(<ClubsScreen />);
     expect(await screen.findByText('Your clubs')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /^Manage / })).toBeNull();
-    expect(screen.queryByTestId('scope-glyph')).toBeNull();
   });
 
   it('opens the club the chips picked', async () => {
@@ -972,10 +1056,9 @@ describe('dashboard artboard', () => {
     expect(push).toHaveBeenCalledWith('/clubs/club-2');
   });
 
-  // The chip row isn't even drawn for a one-club member (it would hold no
-  // filters), so the way to start another club cannot live in it. It is the
-  // header's ⊕ now.
-  it('keeps a way to start another club at one club', async () => {
+  // The header no longer offers a way to start a club at all — that's the
+  // chip row's New club tile now, which draws even for a one-club member.
+  it('keeps a way to start another club at one club, via the New club tile', async () => {
     fetchMyClubs.mockResolvedValueOnce([CLUB]);
     render(<ClubsScreen />);
     fireEvent.click(await screen.findByRole('button', { name: 'Start a club' }));
@@ -1045,7 +1128,7 @@ describe('roster import', () => {
 });
 
 import ClubDetailScreen from '../clubs/[id]/index';
-import { eventStatusLine, formatEventWhen } from '../../lib/events';
+import { eventStatusLine } from '../../lib/events';
 
 // A guard-ordering regression: the club detail screen used to check
 // `if (loading || !ready) return <spinner>` before `if (!session) return
@@ -1202,245 +1285,27 @@ describe('club detail screen', () => {
     expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
   });
 
-  it('names the club in the dashboard header, with the avatar to profile', async () => {
-    fetchProfile.mockResolvedValue({
-      id: 'test-user',
-      display_name: 'Pat Chen',
-      skill_level: 'intermediate',
-      avatar_url: null,
-      timezone: 'America/New_York',
-    });
+  it('names the club in the dashboard header', async () => {
     render(<ClubDetailScreen />);
-    expect(await screen.findByText('Your club')).toBeTruthy();
-    expect(screen.getByText('Riverside Mah Jongg')).toBeTruthy();
+    expect(await screen.findByText('Riverside Mah Jongg')).toBeTruthy();
     expect(screen.getByText('Thursday evenings')).toBeTruthy();
-    expect(await screen.findByText('PC')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Your profile' }));
-    expect(push).toHaveBeenCalledWith('/profile');
+    // Pins this to the "Your club" avatar/pill variant specifically — the
+    // name and rhythm text alone would pass identically for the flat
+    // branch, so they don't prove which shape actually rendered.
+    expect(screen.getByTestId('thread-avatar-club')).toBeTruthy();
+    // The bottom tab bar's own Profile tab is the way to profile now —
+    // this header no longer draws its own avatar/profile control.
+    expect(screen.queryByRole('button', { name: 'Your profile' })).toBeNull();
   });
 
-  // Removed with the tab bar's arrival: the Club tab is the same
-  // destination, so the chevron was a second way to do one thing.
-  it('no longer draws its own back link', async () => {
+  // The tab bar's Club tab reaches the identical /clubs route, but renders
+  // as *already active* on this screen — which reads as "you are here",
+  // not "go back" — so this screen carries its own explicit back link
+  // (2026-09-01-back-links-design.md).
+  it('draws a back link to the dashboard', async () => {
     render(<ClubDetailScreen />);
-    expect(await screen.findByText('Upcoming')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Back to your clubs' })).toBeNull();
-  });
-});
-
-function escapeForRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-describe('club detail screen upcoming events', () => {
-  // This club's timezone is Asia/Tokyo, deliberately NOT America/New_York —
-  // the value `TZ` is pinned to for the whole suite (package.json's `test`
-  // script). If the screen ever stopped threading `club.timezone` through to
-  // `formatEventWhen` and fell back to whatever timezone the process (or a
-  // bare `toLocaleString()`) resolves to by default, Node would render this
-  // event in the suite's own America/New_York timezone instead — a
-  // completely different clock hour and, for this instant, a different
-  // calendar day too. A same-timezone fixture (e.g. reusing plain `CLUB`,
-  // whose timezone already happens to be America/New_York) would pass either
-  // way and prove nothing; that is the trap this branch's report already
-  // flagged twice. Checked concretely below by asserting the Tokyo and
-  // New-York renderings of the same instant actually differ, and separately
-  // by rerunning this file with `TZ=Pacific/Auckland npm test -- clubs.test`
-  // (a third timezone, matching neither the club's nor the default suite
-  // env) — still green, because the expected string is computed through the
-  // real `formatEventWhen('Asia/Tokyo')` call, never off the process clock.
-  const TOKYO_CLUB = { ...CLUB, timezone: 'Asia/Tokyo' };
-
-  const EVENT = {
-    id: 'event-1',
-    club_id: 'club-1',
-    series_id: null,
-    title: 'Thursday Mahjong',
-    venue_id: 'venue-1',
-    venue_name: 'The Annexe',
-    notes: '',
-    starts_at: '2026-09-03T13:00:00.000Z',
-    ends_at: '2026-09-03T16:00:00.000Z',
-    status: 'published' as const,
-    occurrence_date: null,
-    overrides: [],
-    table_count: 3,
-    // Defaults so every test below can render the card without crashing on
-    // eventStatusLine's undefined-array access — a table nobody has booked,
-    // for a member other than the fixed test-user. Tests that care about a
-    // specific status line override these explicitly (see the dedicated
-    // "says where you stand" test and the eventStatusLine block below).
-    event_tables: [{ id: 't1', capacity: 4, label: 'Table 1' }],
-    bookings: [] as {
-      profile_id: string;
-      status: 'confirmed' | 'waitlisted' | 'cancelled' | 'declined';
-      event_table_id: string | null;
-    }[],
-  };
-
-  beforeEach(() => {
-    fetchClub.mockResolvedValue(TOKYO_CLUB);
-  });
-
-  it('renders the event start time in the club timezone, not the device/process one', async () => {
-    fetchRoster.mockResolvedValue([
-      { profile_id: 'test-user', role: 'member', display_name: 'Ada', skill_level: null },
-    ]);
-    fetchUpcomingEvents.mockResolvedValue([EVENT]);
-
-    const tokyoWhen = formatEventWhen(EVENT.starts_at, 'Asia/Tokyo');
-    const newYorkWhen = formatEventWhen(EVENT.starts_at, 'America/New_York');
-    // Guards the fixture itself: if these ever matched, the assertion below
-    // would pass regardless of which timezone the screen actually used.
-    expect(tokyoWhen).not.toBe(newYorkWhen);
-
-    render(<ClubDetailScreen />);
-
-    expect(await screen.findByText('Thursday Mahjong')).toBeTruthy();
-    expect(
-      screen.getByText(new RegExp(escapeForRegExp(tokyoWhen))),
-    ).toBeTruthy();
-    expect(screen.queryByText(new RegExp(escapeForRegExp(newYorkWhen)))).toBeNull();
-  });
-
-  it('gives the event card an accessible name including the club-timezone time', async () => {
-    fetchRoster.mockResolvedValue([
-      { profile_id: 'test-user', role: 'member', display_name: 'Ada', skill_level: null },
-    ]);
-    fetchUpcomingEvents.mockResolvedValue([EVENT]);
-    render(<ClubDetailScreen />);
-
-    const tokyoWhen = formatEventWhen(EVENT.starts_at, 'Asia/Tokyo');
-    expect(
-      await screen.findByRole('button', {
-        name: new RegExp(`Thursday Mahjong, ${escapeForRegExp(tokyoWhen)}`),
-      }),
-    ).toBeTruthy();
-  });
-
-  it('hides the add-game control and the venues link from a plain member', async () => {
-    fetchRoster.mockResolvedValue([
-      { profile_id: 'test-user', role: 'member', display_name: 'Ada', skill_level: null },
-    ]);
-    fetchUpcomingEvents.mockResolvedValue([]);
-    render(<ClubDetailScreen />);
-
-    await screen.findByText(/No games scheduled yet\.$/);
-    expect(screen.queryByText('Add a game')).toBeNull();
-    expect(screen.queryByText('Venues')).toBeNull();
-  });
-
-  it('shows the host the add-game control and the venues link', async () => {
-    fetchRoster.mockResolvedValue([
-      { profile_id: 'test-user', role: 'host', display_name: 'Ada', skill_level: null },
-    ]);
-    fetchUpcomingEvents.mockResolvedValue([]);
-    render(<ClubDetailScreen />);
-
-    expect(
-      await screen.findByText('No games scheduled yet. Add one and everyone in the club will see it.'),
-    ).toBeTruthy();
-    expect(screen.getByText('Add a game')).toBeTruthy();
-    expect(screen.getByText('Venues')).toBeTruthy();
-  });
-
-  // The third line of each card, which nothing asserted before Task 17. It
-  // is the only place the club screen reports how big a game is, and it is
-  // read straight off the embedded `event_tables` count in
-  // `lib/events.ts`'s `toClubEvent` -- a mapper that has already been caught
-  // once on this branch going unexercised.
-  it('names how many tables each game has, singular and plural', async () => {
-    fetchRoster.mockResolvedValue([
-      { profile_id: 'test-user', role: 'member', display_name: 'Ada', skill_level: null },
-    ]);
-    fetchUpcomingEvents.mockResolvedValue([
-      { ...EVENT, table_count: 3 },
-      {
-        ...EVENT,
-        id: 'event-2',
-        title: 'Sunday Mahjong',
-        starts_at: '2026-09-06T13:00:00.000Z',
-        ends_at: '2026-09-06T16:00:00.000Z',
-        table_count: 1,
-      },
-    ]);
-    render(<ClubDetailScreen />);
-
-    expect(await screen.findByText('3 tables')).toBeTruthy();
-    expect(screen.getByText('1 table')).toBeTruthy();
-  });
-
-  it('marks a cancelled event without implying it can still be booked', async () => {
-    fetchRoster.mockResolvedValue([
-      { profile_id: 'test-user', role: 'host', display_name: 'Ada', skill_level: null },
-    ]);
-    fetchUpcomingEvents.mockResolvedValue([{ ...EVENT, status: 'cancelled' as const }]);
-    render(<ClubDetailScreen />);
-
-    expect(await screen.findByText('Cancelled')).toBeTruthy();
-  });
-
-  // Seat booking is a later plan, not this one. A member reading the list
-  // and tapping through to the event screen is the whole interaction this
-  // task builds — no "Book a seat" affordance and no "coming soon" badge
-  // should appear anywhere, for an organizer or a member.
-  it('offers no booking affordance and no coming-soon badge', async () => {
-    fetchRoster.mockResolvedValue([
-      { profile_id: 'test-user', role: 'host', display_name: 'Ada', skill_level: null },
-    ]);
-    fetchUpcomingEvents.mockResolvedValue([EVENT]);
-    render(<ClubDetailScreen />);
-
-    await screen.findByText('Thursday Mahjong');
-    expect(screen.queryByText(/book/i)).toBeNull();
-    expect(screen.queryByText(/coming soon/i)).toBeNull();
-  });
-
-  // The bug this branch's review flagged: `fetchUpcomingEvents` failing
-  // alone (club, roster and invites all load fine) used to set the same
-  // `loadFailed` flag as the Promise.all above it, so the top-level
-  // `if (loadFailed || !club) return <ErrorBanner/>` guard blanked the
-  // *entire* screen — a member lost the roster and the invite controls
-  // because one list, the games, could not load. Both halves matter: a test
-  // that only checked the failure line would still pass on the old code
-  // (the whole screen was replaced by an ErrorBanner containing similar
-  // text), so this also asserts the roster is still on screen.
-  it('degrades only the Upcoming section when the events fetch fails, leaving the roster on screen', async () => {
-    fetchRoster.mockResolvedValue([
-      { profile_id: 'test-user', role: 'host', display_name: 'Ada', skill_level: null },
-    ]);
-    fetchUpcomingEvents.mockResolvedValue(null);
-    render(<ClubDetailScreen />);
-
-    expect(await screen.findByText('Could not load upcoming games.')).toBeTruthy();
-    // The rest of the screen is unaffected: club name, roster, and the
-    // member count heading all still render.
-    expect(screen.getByText('Riverside Mah Jongg')).toBeTruthy();
-    expect(screen.getByText('Ada')).toBeTruthy();
-    expect(screen.getByText('1 member')).toBeTruthy();
-    expect(screen.queryByText(/Could not reach MahjHero/)).toBeNull();
-  });
-
-  // Task 14: one line per card reporting where the viewer stands. Rendered
-  // through the real `eventStatusLine`, not asserted separately from the
-  // card — the point is that the screen actually calls it with the event's
-  // own bookings/tables, not just that the function works in isolation.
-  it('says where you stand on each game, right on the card', async () => {
-    fetchRoster.mockResolvedValue([
-      { profile_id: 'test-user', role: 'member', display_name: 'Ada', skill_level: null },
-    ]);
-    fetchUpcomingEvents.mockResolvedValue([
-      {
-        ...EVENT,
-        event_tables: [{ id: 't1', capacity: 4, label: 'Table 1' }],
-        bookings: [
-          { profile_id: 'test-user', status: 'confirmed', event_table_id: 't1' },
-        ],
-      },
-    ]);
-    render(<ClubDetailScreen />);
-
-    expect(await screen.findByText("You're in · Table 1")).toBeTruthy();
+    fireEvent.click(await screen.findByRole('button', { name: 'Back to your clubs' }));
+    expect(push).toHaveBeenCalledWith('/clubs');
   });
 });
 

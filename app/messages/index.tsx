@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { Redirect, useFocusEffect, useRouter } from 'expo-router';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
-import Button from '../../components/Button';
+import PlusButton from '../../components/PlusButton';
 import ErrorBanner from '../../components/ErrorBanner';
 import Screen from '../../components/Screen';
 import TabBar from '../../components/TabBar';
@@ -140,13 +140,10 @@ export default function MessagesScreen() {
     >
       <View style={styles.header}>
         <Text style={styles.heading}>Messages</Text>
-        <Button
-          big={false}
-          accessibilityLabel="New"
+        <PlusButton
           onPress={() => router.push('/messages/new')}
-        >
-          New
-        </Button>
+          accessibilityLabel="New message"
+        />
       </View>
 
       {error ? <ErrorBanner message={error} /> : null}
@@ -156,7 +153,7 @@ export default function MessagesScreen() {
       ) : rows !== null && ordered.length === 0 ? (
         <View style={styles.emptyCard}>
           <Text style={styles.emptyText}>
-            No conversations yet. Start one with New.
+            No conversations yet. Start one with the + above.
           </Text>
         </View>
       ) : (

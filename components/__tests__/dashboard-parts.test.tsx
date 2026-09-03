@@ -4,7 +4,6 @@ import { Animated } from 'react-native';
 import DateTile from '../DateTile';
 import Skeleton from '../Skeleton';
 import ClubChips from '../ClubChips';
-import { ALL_CLUBS } from '../../lib/dashboard';
 
 describe('DateTile', () => {
   it('shows the weekday and date in the club timezone', () => {
@@ -62,32 +61,28 @@ describe('Skeleton', () => {
 });
 
 const CHIPS = [
-  { id: ALL_CLUBS, label: 'All clubs' },
   { id: 'club-1', label: 'Riverside Mah Jongg' },
+  { id: 'club-2', label: 'Harbour Tiles' },
 ];
 
 describe('ClubChips', () => {
   it('marks the selected chip and only that one', () => {
     render(<ClubChips chips={CHIPS} selected="club-1" onSelect={() => {}} />);
-    // Plain getAttribute, not jest-dom's toHaveAttribute: this repo does not
-    // depend on @testing-library/jest-dom, and vitest.setup.ts records that
-    // `globals: true` is deliberately off so no matcher package can
-    // auto-extend `expect`.
     expect(
       screen
         .getByRole('button', { name: 'Riverside Mah Jongg' })
         .getAttribute('aria-selected'),
     ).toBe('true');
     expect(
-      screen.getByRole('button', { name: 'All clubs' }).getAttribute('aria-selected'),
+      screen.getByRole('button', { name: 'Harbour Tiles' }).getAttribute('aria-selected'),
     ).toBe('false');
   });
 
   it('reports the chip that was pressed', () => {
     const onSelect = vi.fn();
-    render(<ClubChips chips={CHIPS} selected={ALL_CLUBS} onSelect={onSelect} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Riverside Mah Jongg' }));
-    expect(onSelect).toHaveBeenCalledWith('club-1');
+    render(<ClubChips chips={CHIPS} selected="club-1" onSelect={onSelect} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Harbour Tiles' }));
+    expect(onSelect).toHaveBeenCalledWith('club-2');
   });
 
   // UnreadBadge's own <Text> never reaches assistive tech: this Pressable's
@@ -107,216 +102,179 @@ describe('ClubChips', () => {
     expect(
       screen.getByRole('button', { name: 'Riverside Mah Jongg, 4 unread' }),
     ).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'All clubs' })).toBeTruthy();
+  });
+
+  it('shows each club’s initials in its tile', () => {
+    render(<ClubChips chips={CHIPS} selected="club-1" onSelect={() => {}} />);
+    expect(screen.getByText('RM')).toBeTruthy();
+    expect(screen.getByText('HT')).toBeTruthy();
+  });
+
+  it('draws a trailing New club tile when given a way to start one', () => {
+    const onPressNewClub = vi.fn();
+    render(
+      <ClubChips
+        chips={CHIPS}
+        selected="club-1"
+        onSelect={() => {}}
+        onPressNewClub={onPressNewClub}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Start a club' }));
+    expect(onPressNewClub).toHaveBeenCalled();
+    expect(screen.getByText('New club')).toBeTruthy();
+  });
+
+  it('draws no New club tile unless it is given a way to start one', () => {
+    render(<ClubChips chips={CHIPS} selected="club-1" onSelect={() => {}} />);
+    expect(screen.queryByRole('button', { name: 'Start a club' })).toBeNull();
+    expect(screen.queryByText('New club')).toBeNull();
   });
 });
 
 import DashboardHeader from '../DashboardHeader';
 
 describe('DashboardHeader', () => {
-  // headerScope's all-clubs scope shortens its name to "Your clubs", which
-  // makes a "YOUR CLUBS" kicker above it the same words twice — so that
-  // scope passes no kicker at all. An empty string must draw nothing rather
-  // than an empty line, the same way `meta` already does.
   it('draws no kicker when it is given none', () => {
-    render(
-      <DashboardHeader
-        kicker=""
-        name="Your clubs"
-        meta="2 clubs"
-        initials="JW"
-        onPressAvatar={() => {}}
-      />,
-    );
+    render(<DashboardHeader kicker="" name="Your clubs" meta="2 clubs" />);
     expect(screen.getByText('Your clubs')).toBeTruthy();
     expect(screen.getByText('2 clubs')).toBeTruthy();
     expect(screen.queryByTestId('scope-kicker')).toBeNull();
   });
 
+  // A kicker the flat layout can actually be given in production --
+  // app/clubs/[id]/venues.tsx passes the club's own name here. "Your club"
+  // is the one value that instead takes the variant below.
   it('still draws a kicker when it is given one', () => {
-    render(
-      <DashboardHeader
-        kicker="Your club"
-        name="Riverside Mah Jongg"
-        meta="Thursdays, 7pm"
-        initials="JW"
-        onPressAvatar={() => {}}
-      />,
-    );
+    render(<DashboardHeader kicker="Riverside Mah Jongg" name="Venues" meta="" />);
     expect(screen.getByTestId('scope-kicker')).toBeTruthy();
+    expect(screen.getByText('Venues')).toBeTruthy();
   });
 
-  // The all-clubs scope: `headerScope` returns no kicker for it, "Your
-  // clubs" for the name, and a plural count for the meta — `kicker="Your
-  // clubs"` alongside `name="All your clubs"` was never a shape this screen
-  // can actually produce.
-  it('shows the scope name, meta and initials with no kicker', () => {
-    render(
-      <DashboardHeader
-        kicker=""
-        name="Your clubs"
-        meta="2 clubs"
-        initials="JW"
-        onPressAvatar={() => {}}
-      />,
-    );
+  it('shows the scope name and meta with no kicker', () => {
+    render(<DashboardHeader kicker="" name="Your clubs" meta="2 clubs" />);
     expect(screen.getByText('Your clubs')).toBeTruthy();
     expect(screen.getByText('2 clubs')).toBeTruthy();
-    expect(screen.getByText('JW')).toBeTruthy();
   });
 
-  it('routes to the profile from the avatar', () => {
-    const onPressAvatar = vi.fn();
+  it('draws no way to add a game in the flat layout, even if given one', () => {
     render(
-      <DashboardHeader
-        kicker="Your club"
-        name="Riverside Mah Jongg"
-        meta="Thursdays, 7pm"
-        initials="JW"
-        onPressAvatar={onPressAvatar}
-      />,
+      <DashboardHeader kicker="" name="Your clubs" meta="2 clubs" onPressAddGame={() => {}} />,
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Your profile' }));
-    expect(onPressAvatar).toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Add a game' })).toBeNull();
   });
 
-  it('falls back to a glyph rather than inventing a letter', () => {
-    render(
-      <DashboardHeader
-        kicker="Your clubs"
-        name="Your clubs"
-        meta="2 clubs"
-        initials=""
-        onPressAvatar={() => {}}
-      />,
-    );
-    expect(screen.getByTestId('avatar-fallback')).toBeTruthy();
-  });
+  describe('the "Your club" variant', () => {
+    it('shows the club’s avatar, name and rhythm instead of a kicker', () => {
+      render(
+        <DashboardHeader kicker="Your club" name="Riverside Mah Jongg" meta="Thursdays, 7pm" />,
+      );
+      expect(screen.getByTestId('thread-avatar-club')).toBeTruthy();
+      expect(screen.getByText('Riverside Mah Jongg')).toBeTruthy();
+      expect(screen.getByText('Thursdays, 7pm')).toBeTruthy();
+      expect(screen.queryByTestId('scope-kicker')).toBeNull();
+      expect(screen.queryByText('Your club')).toBeNull();
+    });
 
-  it('leaves the scope inert when there is nothing to open', () => {
-    render(
-      <DashboardHeader
-        kicker="Your clubs"
-        name="Your clubs"
-        meta="2 clubs"
-        initials="JW"
-        onPressAvatar={() => {}}
-      />,
-    );
-    // The avatar is still a button; the scope is not.
-    expect(screen.getByRole('button', { name: 'Your profile' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /^Manage / })).toBeNull();
-    expect(screen.queryByTestId('scope-glyph')).toBeNull();
-  });
+    it('draws no rhythm line when there is none to show', () => {
+      render(<DashboardHeader kicker="Your club" name="Riverside Mah Jongg" meta="" />);
+      expect(screen.getByText('Riverside Mah Jongg')).toBeTruthy();
+      expect(screen.queryByText('Thursdays, 7pm')).toBeNull();
+    });
 
-  it('opens the club in scope when the scope is pressed', () => {
-    const onPressScope = vi.fn();
-    render(
-      <DashboardHeader
-        kicker="Your club"
-        name="Riverside Mah Jongg"
-        meta="Thursdays, 7pm"
-        initials="JW"
-        onPressAvatar={() => {}}
-        onPressScope={onPressScope}
-      />,
-    );
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Manage Riverside Mah Jongg, Thursdays, 7pm' }),
-    );
-    expect(onPressScope).toHaveBeenCalled();
-    expect(screen.getByTestId('scope-glyph')).toBeTruthy();
-  });
+    it('opens the club’s management screen when the name pill is pressed', () => {
+      const onPressScope = vi.fn();
+      render(
+        <DashboardHeader
+          kicker="Your club"
+          name="Riverside Mah Jongg"
+          meta="Thursdays, 7pm"
+          onPressScope={onPressScope}
+        />,
+      );
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Manage Riverside Mah Jongg, Thursdays, 7pm' }),
+      );
+      expect(onPressScope).toHaveBeenCalled();
+    });
 
-  // accessibilityLabel replaces the accessible name react-native-web would
-  // otherwise compute from the Pressable's children, so the meta text
-  // visible in the <Text> below the name — the club's rhythm — goes unheard
-  // unless the label carries it too. Two shapes: a club with a rhythm gets
-  // it appended, a club without one (meta === '') gets no trailing comma
-  // rather than "Manage Riverside Mah Jongg, ".
-  it('folds the rhythm into the scope label when there is one', () => {
-    render(
-      <DashboardHeader
-        kicker="Your club"
-        name="Riverside Mah Jongg"
-        meta="Thursdays, 7pm"
-        initials="JW"
-        onPressAvatar={() => {}}
-        onPressScope={() => {}}
-      />,
-    );
-    expect(
-      screen.getByRole('button', { name: 'Manage Riverside Mah Jongg, Thursdays, 7pm' }),
-    ).toBeTruthy();
-  });
+    it('folds the rhythm into the manage label, and drops it when there is none', () => {
+      render(
+        <DashboardHeader
+          kicker="Your club"
+          name="Riverside Mah Jongg"
+          meta=""
+          onPressScope={() => {}}
+        />,
+      );
+      expect(
+        screen.getByRole('button', { name: 'Manage Riverside Mah Jongg' }),
+      ).toBeTruthy();
+    });
 
-  it('leaves the scope label as just the name when there is no rhythm to lose', () => {
-    render(
-      <DashboardHeader
-        kicker="Your club"
-        name="Riverside Mah Jongg"
-        meta=""
-        initials="JW"
-        onPressAvatar={() => {}}
-        onPressScope={() => {}}
-      />,
-    );
-    expect(
-      screen.getByRole('button', { name: 'Manage Riverside Mah Jongg' }),
-    ).toBeTruthy();
-  });
+    it('draws no manage button unless it is given a way to manage', () => {
+      render(
+        <DashboardHeader kicker="Your club" name="Riverside Mah Jongg" meta="Thursdays, 7pm" />,
+      );
+      expect(screen.queryByRole('button', { name: /^Manage / })).toBeNull();
+      // The name still renders, as plain text this time.
+      expect(screen.getByText('Riverside Mah Jongg')).toBeTruthy();
+    });
 
-  // The scope text has to stay reachable by content, not only by label:
-  // the screen's own tests read the club name and rhythm straight off the
-  // header now that the club cards below are gone.
-  it('still shows the scope text when it is pressable', () => {
-    render(
-      <DashboardHeader
-        kicker="Your club"
-        name="Riverside Mah Jongg"
-        meta="Thursdays, 7pm"
-        initials="JW"
-        onPressAvatar={() => {}}
-        onPressScope={() => {}}
-      />,
-    );
-    expect(screen.getByText('Your club')).toBeTruthy();
-    expect(screen.getByText('Riverside Mah Jongg')).toBeTruthy();
-    expect(screen.getByText('Thursdays, 7pm')).toBeTruthy();
-  });
+    it('clears the club filter when the back chevron is pressed', () => {
+      const onPressBack = vi.fn();
+      render(
+        <DashboardHeader
+          kicker="Your club"
+          name="Riverside Mah Jongg"
+          meta="Thursdays, 7pm"
+          onPressBack={onPressBack}
+        />,
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Clear club filter' }));
+      expect(onPressBack).toHaveBeenCalled();
+    });
 
-  // The chip row scrolls and this does not. "+ New club" used to trail the
-  // row and was already off-screen at two clubs, which made it invisible to
-  // exactly the member most likely to start another.
-  it('starts a club from the header when it is given a way to', () => {
-    const onPressNew = vi.fn();
-    render(
-      <DashboardHeader
-        kicker=""
-        name="Your clubs"
-        meta="2 clubs"
-        initials="JW"
-        onPressAvatar={() => {}}
-        onPressNew={onPressNew}
-      />,
-    );
-    fireEvent.click(screen.getByRole('button', { name: 'Start a club' }));
-    expect(onPressNew).toHaveBeenCalled();
-  });
+    it('draws no chevron unless it is given one', () => {
+      render(
+        <DashboardHeader kicker="Your club" name="Riverside Mah Jongg" meta="Thursdays, 7pm" />,
+      );
+      expect(screen.queryByRole('button', { name: 'Clear club filter' })).toBeNull();
+    });
 
-  it('draws no way to start a club unless it is given one', () => {
-    render(
-      <DashboardHeader
-        kicker="Your club"
-        name="Riverside Mah Jongg"
-        meta="Thursdays, 7pm"
-        initials="JW"
-        onPressAvatar={() => {}}
-      />,
-    );
-    expect(screen.queryByRole('button', { name: 'Start a club' })).toBeNull();
-    // The avatar is untouched by the new control beside it.
-    expect(screen.getByRole('button', { name: 'Your profile' })).toBeTruthy();
+    it('adds a game for this club when the + is pressed', () => {
+      const onPressAddGame = vi.fn();
+      render(
+        <DashboardHeader
+          kicker="Your club"
+          name="Riverside Mah Jongg"
+          meta="Thursdays, 7pm"
+          onPressAddGame={onPressAddGame}
+        />,
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Add a game' }));
+      expect(onPressAddGame).toHaveBeenCalled();
+    });
+
+    it('draws no way to add a game unless it is given one', () => {
+      render(
+        <DashboardHeader
+          kicker="Your club"
+          name="Riverside Mah Jongg"
+          meta="Thursdays, 7pm"
+          onPressBack={() => {}}
+        />,
+      );
+      expect(screen.queryByRole('button', { name: 'Add a game' })).toBeNull();
+    });
+
+    it('draws no top row at all when given neither a chevron nor a way to add a game', () => {
+      render(
+        <DashboardHeader kicker="Your club" name="Riverside Mah Jongg" meta="Thursdays, 7pm" />,
+      );
+      expect(screen.queryByRole('button', { name: 'Clear club filter' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Add a game' })).toBeNull();
+    });
   });
 });
 

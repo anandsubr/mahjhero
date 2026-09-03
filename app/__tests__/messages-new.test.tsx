@@ -51,6 +51,12 @@ vi.mock('../../lib/messages', async () => {
   };
 });
 
+// TabBar also now calls useNotificationsUnread for its Alerts badge --
+// without this it falls through to a real, unmocked RPC call.
+vi.mock('../../lib/use-notifications-unread', () => ({
+  useNotificationsUnread: () => 0,
+}));
+
 describe('new message screen', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -245,17 +251,17 @@ describe('new message screen', () => {
     ).toBe('false');
   });
 
-  // Removed with the tab bar's arrival: the Messages tab reaches the
-  // identical route (`/messages`) this screen's own back link used to, so
-  // the ghost button above the heading was a second way to do one thing --
-  // the same reasoning the club detail screen's own "no longer draws its
-  // own back link" test already records. Pinned as a count rather than a
-  // `queryByRole` miss: this control shared its accessible name ("Messages")
-  // with TabBar's own tab, so a stray second one would otherwise pass a
-  // `queryByRole(..., { name: 'Messages' })` check silently.
-  it('no longer draws its own back link', async () => {
+  // The Messages tab renders active on this screen too, which reads as
+  // "you are here" rather than a way out, so this screen carries its own
+  // explicit back link again (2026-09-01-back-links-design.md). Its
+  // accessible name is "Back to messages", distinct from TabBar's own tab
+  // ("Messages") — `getAllByRole(..., { name: 'Messages' })` staying at 1
+  // is what confirms the two controls do not collide.
+  it('draws a back link to the messages list', async () => {
     render(<NewMessageScreen />);
     await screen.findByText('New message');
     expect(screen.getAllByRole('button', { name: 'Messages' })).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Back to messages' }));
+    expect(push).toHaveBeenCalledWith('/messages');
   });
 });

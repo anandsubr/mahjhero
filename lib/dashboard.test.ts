@@ -84,9 +84,8 @@ function booking(over: Partial<MyBooking> = {}): MyBooking {
 }
 
 describe('buildChips', () => {
-  it('puts All clubs first, then one chip per club', () => {
+  it('makes one chip per club, in order, with no "All clubs" entry', () => {
     expect(buildChips(CLUBS)).toEqual([
-      { id: ALL_CLUBS, label: 'All clubs' },
       { id: 'club-1', label: 'Riverside Mah Jongg' },
       { id: 'club-2', label: 'Harbour Tiles' },
     ]);
@@ -102,7 +101,7 @@ describe('headerScope', () => {
     expect(headerScope(CLUBS, ALL_CLUBS)).toEqual({
       kicker: '',
       name: 'Your clubs',
-      meta: '2 clubs',
+      meta: '',
     });
   });
 
@@ -117,11 +116,11 @@ describe('headerScope', () => {
     });
   });
 
-  it('still counts an empty list rather than resolving to nothing', () => {
+  it('resolves an empty list to the all-clubs scope rather than nothing', () => {
     expect(headerScope([], ALL_CLUBS)).toEqual({
       kicker: '',
       name: 'Your clubs',
-      meta: '0 clubs',
+      meta: '',
     });
   });
 

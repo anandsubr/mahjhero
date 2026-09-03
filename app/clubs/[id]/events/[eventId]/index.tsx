@@ -1,6 +1,6 @@
-import { Link, Redirect, useLocalSearchParams, useRouter } from 'expo-router';
+import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import BringSomeoneSheet from '../../../../../components/BringSomeoneSheet';
 import Button from '../../../../../components/Button';
 import Card from '../../../../../components/Card';
@@ -12,7 +12,7 @@ import TabBar from '../../../../../components/TabBar';
 import TableCard from '../../../../../components/TableCard';
 import TierPicker from '../../../../../components/TierPicker';
 import WaitlistPanel from '../../../../../components/WaitlistPanel';
-import { ChevronLeftIcon } from '../../../../../components/icons';
+import { ChevronLeftIcon, PencilIcon } from '../../../../../components/icons';
 import {
   checkInOpen,
   clearAttendance,
@@ -657,26 +657,39 @@ export default function EventScreen() {
   return (
     <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="club" />}>
       {/*
-        Kept, not dropped: this goes to /clubs/${clubId}, a specific club,
-        which is a different destination from the Club tab's own /clubs (see
-        app/clubs/[id]/venues.tsx's identical "Back to the club" button, and
-        app/clubs/[id]/index.tsx for the contrasting case where a back link
-        WAS dropped because its destination and the tab's were the same
-        place).
+        Goes to /clubs, not /clubs/${clubId}: the club management page no
+        longer lists games (2026-09-02-club-page-games-and-back-links-
+        design.md deleted its own "Upcoming" section), so the dashboard is
+        the only real way into this screen left. The Club tab reaches the
+        same /clubs route but renders as already-active here, which reads
+        as "you are here" rather than "go back", so this explicit link
+        still earns its place — same reasoning every other back link on
+        this branch documents.
       */}
       <Button
         variant="ghost"
         big={false}
         icon={<ChevronLeftIcon color={colors.accentColor} />}
-        onPress={() => router.push(`/clubs/${clubId}`)}
-        accessibilityLabel="Back to the club"
+        onPress={() => router.push('/clubs')}
+        accessibilityLabel="Back to your clubs"
         style={styles.backButton}
       >
-        {club.name}
+        Clubs
       </Button>
 
       <View style={styles.row}>
-        <Text style={styles.heading}>{event.title}</Text>
+        <View style={styles.titleRow}>
+          <Text style={styles.heading}>{event.title}</Text>
+          {isOrganizer && event.status !== 'cancelled' ? (
+            <Pressable
+              onPress={() => router.push(`/clubs/${clubId}/events/${eventId}/edit`)}
+              accessibilityRole="button"
+              accessibilityLabel={`Edit ${event.title}`}
+            >
+              <PencilIcon size={14} color={colors.accentColor} />
+            </Pressable>
+          ) : null}
+        </View>
         {event.status === 'cancelled' ? <Tag>Cancelled</Tag> : null}
       </View>
       {overridden('title') ? (
@@ -1059,13 +1072,6 @@ export default function EventScreen() {
               </Button>
             </>
           ) : null}
-
-          <Link
-            href={`/clubs/${clubId}/events/${eventId}/edit`}
-            style={styles.linkRow}
-          >
-            <Text style={styles.link}>Edit this game</Text>
-          </Link>
         </>
       ) : null}
 
@@ -1122,6 +1128,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: space[2],
   },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[2],
+    flexShrink: 1,
+  },
   when: {
     fontFamily: type.bodyBold,
     fontSize: type.size.bodyLarge,
@@ -1156,11 +1168,5 @@ const styles = StyleSheet.create({
     fontSize: type.size.helper,
     color: colors.textMuted,
     lineHeight: 24,
-  },
-  linkRow: { marginTop: space[4] },
-  link: {
-    fontFamily: type.bodySemiBold,
-    fontSize: type.size.body,
-    color: colors.accentColor,
   },
 });

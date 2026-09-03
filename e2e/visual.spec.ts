@@ -182,7 +182,7 @@ test.describe('signed in', () => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/messages');
       await expect(
-        page.getByText('No conversations yet. Start one with New.'),
+        page.getByText('No conversations yet. Start one with the + above.'),
       ).toBeVisible();
       await captureScreen(page, vp, `messages-${vp.name}.png`);
     });
@@ -315,14 +315,15 @@ test.describe('signed in', () => {
         // joinable game the member is not in. All three are real; this line
         // only needs to know the chip itself still has one.
         await expect(page.getByText('Riverside Mah Jongg').first()).toBeVisible();
-        // The action moved out of the chip row and into the header: at two
-        // clubs the trailing "+ New club" pill was scrolled off-screen
-        // entirely, and it was the only route to /clubs/new for a member who
-        // already had a club. The ⊕ beside the avatar does not scroll.
+        // The action lives in the chip row again as a trailing "New club"
+        // tile — the row now wraps rather than scrolls, so unlike the pill
+        // this replaced, it is never clipped off-screen. The header's own ⊕
+        // is gone from this unfiltered view entirely; it only shows once a
+        // specific club is in view, as "Add a game" for that club.
         await expect(
           page.getByRole('button', { name: 'Start a club' }),
         ).toBeVisible();
-        await expect(page.getByText('+ New club')).toHaveCount(0);
+        await expect(page.getByText('New club')).toBeVisible();
         // The "Your games" section below the chip row — the club list, once
         // the section below it, is the chip row now: one game the member
         // booked themselves (Riverside's own seeded event above)
@@ -337,7 +338,6 @@ test.describe('signed in', () => {
         // the `event offer` test's own comment on why it has to be), not
         // a fixture bug, so this only anchors on the two rows the brief
         // actually asks for.
-        await expect(page.getByText('Your games')).toBeVisible();
         // `.first()`, for the same reason as the club name above. Riverside
         // seeds TWO occurrences of "Tuesday night mahjong" and the member is
         // booked on only the first; `buildDashboardRows` (lib/dashboard.ts)

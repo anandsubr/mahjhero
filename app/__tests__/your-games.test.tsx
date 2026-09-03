@@ -83,6 +83,12 @@ vi.mock('../../lib/messages', async (importOriginal) => {
   };
 });
 
+// TabBar also now calls useNotificationsUnread for its Alerts badge --
+// without this it falls through to a real, unmocked RPC call.
+vi.mock('../../lib/use-notifications-unread', () => ({
+  useNotificationsUnread: () => 0,
+}));
+
 const fetchMyClubs = vi.fn();
 
 vi.mock('../../lib/clubs', async (importOriginal) => {
@@ -217,11 +223,12 @@ afterEach(() => {
 });
 
 describe('Your games', () => {
-  // Task 8 made the "Your games" title unconditional: the dashboard's
-  // section is always there, with a dashed empty card under it when nothing
-  // is coming up. So the thing that must be absent when the member holds no
-  // seats is a *row*, not the heading — asserting on the heading now only
-  // tests that a title exists, which is not what this ever cared about.
+  // The "Your games" title itself is gone (2026-09-01-ui-tweaks-design.md,
+  // item 6) — the header above it already names the scope ("Your clubs" or
+  // a specific club), so a repeated "games" label added nothing. What must
+  // still be absent when the member holds no seats is a *row*, not a
+  // heading — this describe block is named for the section, not for text
+  // it asserts on.
   it('offers the empty state, not a row, when the member holds no seats', async () => {
     render(<ClubsScreen />);
     await waitFor(() => expect(fetchMyUpcomingBookings).toHaveBeenCalled());
@@ -352,8 +359,10 @@ describe('Your games', () => {
     //
     // The club list is the header and the chip row now, not a section of
     // cards, so that is where the assertion looks: the header naming the
-    // club in scope is what proves the clubs half was not blanked.
-    expect(await screen.findByText('Your club')).toBeTruthy();
+    // club in scope is what proves the clubs half was not blanked. Asserted
+    // with findAllByText, not findByText: the chip row now draws this same
+    // one club's name a second time, in its own tile.
+    expect(await screen.findAllByText(CLUB.name)).toHaveLength(2);
     expect(screen.getByRole('button', { name: `Manage ${CLUB.name}, ${CLUB.rhythm}` })).toBeTruthy();
     expect(screen.getByText('Could not load your games.')).toBeTruthy();
   });

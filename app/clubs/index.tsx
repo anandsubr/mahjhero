@@ -48,7 +48,6 @@ import type { ClubEvent } from '../../lib/events';
 import { useSession } from '../../lib/session';
 import { colors, radius, space, type } from '../../lib/theme';
 import { useUnreadCounts } from '../../lib/use-unread';
-import { useViewerInitials } from '../../lib/use-viewer';
 
 /**
  * The waitlist half of a `commit_booking` outcome, worded as the event screen
@@ -124,7 +123,6 @@ export default function ClubsScreen() {
   const [events, setEvents] = useState<ClubEvent[]>([]);
   const [selected, setSelected] = useState<string>(ALL_CLUBS);
   const [notice, setNotice] = useState<string | null>(null);
-  const initials = useViewerInitials();
   const { byClub: unreadByClub } = useUnreadCounts();
 
   // Every write below awaits the network and then calls setState. Nothing
@@ -424,8 +422,6 @@ export default function ClubsScreen() {
           kicker={empty.kicker}
           name={empty.name}
           meta={empty.meta}
-          initials={initials}
-          onPressAvatar={() => router.push('/profile')}
         />
         <View style={styles.list}>
           <Text style={styles.help}>
@@ -456,16 +452,17 @@ export default function ClubsScreen() {
     userId: userId ?? '',
   }).filter((alert) => inScope(alert.clubId, selected));
 
-  // The club in scope — what "Host a table" creates in, and what the header
-  // opens. Derived from the clubs themselves, NOT from the chip state: the
-  // chip row carries no filters below two clubs, so a one-club member's
-  // `selected` stays ALL_CLUBS forever, and gating on `selected !== ALL_CLUBS`
-  // would hide both affordances from exactly the member most likely to want
-  // them. With several clubs and no chip picked the scope genuinely is
-  // ambiguous, so neither is offered rather than one that guesses.
-  // `headerScope` resolves the lone club the same way, for the same reason.
-  // The lookup below also guards against a `selected` that no longer names a
-  // club in `list` — the same "left, removed, or the list reloaded" case
+  // The club in scope — what "Host a table" and the header's own "Add a
+  // game" create in, and what the header's pencil opens. Derived from the
+  // clubs themselves, NOT from the chip state: a one-club member's
+  // `selected` stays ALL_CLUBS unless they redundantly tap their own tile,
+  // and gating on `selected !== ALL_CLUBS` alone would hide every one of
+  // these affordances from exactly the member most likely to want them.
+  // With several clubs and no chip picked the scope genuinely is ambiguous,
+  // so none of them is offered rather than one that guesses. `headerScope`
+  // resolves the lone club the same way, for the same reason. The lookup
+  // below also guards against a `selected` that no longer names a club in
+  // `list` — the same "left, removed, or the list reloaded" case
   // `headerScope` (lib/dashboard.ts) validates against, for the same reason:
   // trusting `selected` blindly would let the header read the all-clubs
   // scope while still pushing a route built from a stale, non-existent id.
@@ -479,25 +476,46 @@ export default function ClubsScreen() {
         kicker={scope.kicker}
         name={scope.name}
         meta={scope.meta}
-        initials={initials}
-        onPressAvatar={() => router.push('/profile')}
-        onPressNew={() => router.push('/clubs/new')}
         onPressScope={
           scopeClubId ? () => router.push(`/clubs/${scopeClubId}`) : undefined
+        }
+        // Same club the pencil opens — a member looking at one club's games
+        // reaches for the header's + expecting "add a game here", not
+        // "start an unrelated club". `scopeClubId` already resolves both the
+        // ways a single club ends up in view: an explicit chip pick, and a
+        // one-club member's own club, which `headerScope` shows regardless
+        // of `selected` — so this covers both with no special-casing.
+        onPressAddGame={
+          scopeClubId ? () => router.push(`/clubs/${scopeClubId}/events/new`) : undefined
+        }
+        // Shown exactly when the chip row is hidden (see the row's own
+        // guard below) — the chevron is the way back once a club is
+        // filtered in, whether that happened at two clubs or a member
+        // redundantly tapped their own single tile.
+        onPressBack={
+          selected !== ALL_CLUBS
+            ? () => {
+                setSelected(ALL_CLUBS);
+                setNotice(null);
+              }
+            : undefined
         }
       />
 
       {/*
-        Empty below two clubs: a lone "All clubs" pill beside a lone club
-        pill filters nothing, so a one-club member was shown a scrolling row
-        with nothing in it — roughly 20px of unexplained whitespace above
-        "Your games" and an empty overflow-x region in the DOM. It also no
-        longer has to be drawn for the action's sake: "+ New club" used to
-        live in this row, which is the only reason an earlier version of this
-        guard drew the row unconditionally, but that action is the header's
-        ⊕ now.
+        Shown whenever nothing REAL is filtered in — the ALL_CLUBS default,
+        and also a `selected` that no longer names a club in `list` (left,
+        removed, or the list reloaded), the same stale-id case `scopeClubId`
+        and `headerScope` (lib/dashboard.ts) both guard against. That keeps
+        the row (and its trailing "New club" tile, where starting another
+        club lives now, not the header) from vanishing outright in that
+        state — it recovers instead, the same way the old `list.length > 1`
+        guard this replaced would have. Hidden the moment a REAL club is
+        filtered in, at any club count: the header's back chevron is the way
+        to see this row again, so there is no dead end even for a one-club
+        member who taps their own tile.
       */}
-      {list.length > 1 ? (
+      {list.some((club) => club.id === selected) ? null : (
         <ClubChips
           chips={buildChips(list)}
           selected={selected}
@@ -509,8 +527,9 @@ export default function ClubsScreen() {
             setSelected(id);
             setNotice(null);
           }}
+          onPressNewClub={() => router.push('/clubs/new')}
         />
-      ) : null}
+      )}
 
       {notice ? (
         <NoticeBanner message={notice} onDismiss={() => setNotice(null)} />
@@ -527,8 +546,6 @@ export default function ClubsScreen() {
           onTake={() => void takeSeat(alert)}
         />
       ))}
-
-      <Text style={styles.sectionTitle}>Your games</Text>
 
       {bookingsFailed ? (
         <Text style={styles.help}>Could not load your games.</Text>
@@ -921,12 +938,6 @@ const styles = StyleSheet.create({
   },
   gameAction: {
     flexShrink: 0,
-  },
-  sectionTitle: {
-    fontFamily: type.bodyBold,
-    fontSize: type.size.body,
-    color: colors.text,
-    marginTop: space[2],
   },
   emptyCard: {
     flexDirection: 'row',

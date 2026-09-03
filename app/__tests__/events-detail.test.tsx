@@ -142,6 +142,12 @@ vi.mock('../../lib/messages', async (importOriginal) => {
   };
 });
 
+// TabBar also now calls useNotificationsUnread for its Alerts badge --
+// without this it falls through to a real, unmocked RPC call.
+vi.mock('../../lib/use-notifications-unread', () => ({
+  useNotificationsUnread: () => 0,
+}));
+
 import EventScreen from '../clubs/[id]/events/[eventId]/index';
 
 const CLUB = {
@@ -287,14 +293,18 @@ describe('screen chrome', () => {
     expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
   });
 
-  // This screen's own back link goes to /clubs/club-1 -- a specific club,
-  // not the Club tab's own /clubs -- so it is a genuinely different
-  // destination and stays, the same reasoning venues.test.tsx documents for
-  // its own "Back to the club" button.
-  it('keeps its back link to the club, a different destination from the Club tab', async () => {
+  // This screen's back link now goes to /clubs -- the dashboard, not the
+  // specific club -- because the club management page no longer lists
+  // games (2026-09-02-club-page-games-and-back-links-design.md): the
+  // dashboard is the only real way into this screen left, so that is where
+  // back goes. The Club tab reaches the same /clubs route but renders as
+  // already-active here, which reads as "you are here" rather than "go
+  // back" -- the same reasoning every other back link on this branch
+  // documents -- so the explicit link still earns its place.
+  it('draws a back link to the dashboard', async () => {
     render(<EventScreen />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Back to the club' }));
-    expect(push).toHaveBeenCalledWith('/clubs/club-1');
+    fireEvent.click(await screen.findByRole('button', { name: 'Back to your clubs' }));
+    expect(push).toHaveBeenCalledWith('/clubs');
   });
 });
 
@@ -907,13 +917,22 @@ describe('organizer view', () => {
     await vi.waitFor(() => expect(removeEventTable).toHaveBeenCalledWith('table-1'));
   });
 
-  it('shows the edit link and offers cancellation', async () => {
+  it('shows the edit pencil and offers cancellation', async () => {
     render(<EventScreen />);
     await screen.findByText('Thursday Mahjong');
-    expect(screen.getByText('Edit this game')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Edit Thursday Mahjong' })).toBeTruthy();
 
     fireEvent.click(screen.getByText('Cancel this game'));
     await vi.waitFor(() => expect(cancelEvent).toHaveBeenCalledWith('event-1'));
+  });
+
+  // Nothing asserted this before -- the old plain `Link`'s `href` was never
+  // checked, only its visible text.
+  it('opens the edit screen when the pencil is pressed', async () => {
+    render(<EventScreen />);
+    await screen.findByText('Thursday Mahjong');
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Thursday Mahjong' }));
+    expect(push).toHaveBeenCalledWith('/clubs/club-1/events/event-1/edit');
   });
 
   it('removes organizer controls once the event reloads as cancelled', async () => {
@@ -926,7 +945,7 @@ describe('organizer view', () => {
     expect(await screen.findByText('Cancelled')).toBeTruthy();
     expect(screen.queryByText('Cancel this game')).toBeNull();
     expect(screen.queryByText('Add a table')).toBeNull();
-    expect(screen.queryByText('Edit this game')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Edit Thursday Mahjong' })).toBeNull();
   });
 });
 

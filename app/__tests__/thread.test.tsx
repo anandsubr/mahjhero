@@ -38,9 +38,9 @@ vi.mock('expo-router', () => ({
 // on every call breaks the referential stability the real Context provides
 // and produces a genuine render loop in effects that depend on `session`.
 // The regression test below reassigns it mid-test (same shape
-// `app/__tests__/index-screen.test.tsx` and `lib/use-viewer.test.tsx` already
+// `app/__tests__/index-screen.test.tsx` and `lib/use-unread.test.tsx` already
 // use) to model `lib/session.tsx` handing out a fresh `Session` object with
-// the same user id on `TOKEN_REFRESHED` -- the trap `lib/use-viewer.ts`'s
+// the same user id on `TOKEN_REFRESHED` -- the trap `lib/use-unread.ts`'s
 // docstring documents.
 const useSessionMock = vi.fn(
   (): { session: { user: { id: string } } | null; loading: boolean } => ({
@@ -86,6 +86,12 @@ vi.mock('../../lib/messages', async () => {
     fetchUnreadCounts: vi.fn(async () => []),
   };
 });
+
+// TabBar also now calls useNotificationsUnread for its Alerts badge --
+// without this it falls through to a real, unmocked RPC call.
+vi.mock('../../lib/use-notifications-unread', () => ({
+  useNotificationsUnread: () => 0,
+}));
 
 // The Realtime boundary, modeled after the real behavior traced in
 // node_modules/@supabase/realtime-js, not just its call shape:
@@ -482,8 +488,8 @@ describe('thread screen', () => {
   // The regression this file exists to add. `session` is an OBJECT, and
   // lib/session.tsx hands out a fresh one on every onAuthStateChange --
   // TOKEN_REFRESHED included, which fires within the hour and on web tab
-  // focus (see lib/use-viewer.ts's docstring, which documents the identical
-  // trap). If the effect below is keyed on that object, a same-user token
+  // focus (see app/profile.tsx's identical comment, which documents the
+  // same trap). If the effect below is keyed on that object, a same-user token
   // refresh re-runs it; `supabase.channel(topic)` then hands back the SAME,
   // still-subscribed channel (removeChannel is async, so the old channel's
   // teardown hasn't landed by the time the new effect body runs), and `.on()`
