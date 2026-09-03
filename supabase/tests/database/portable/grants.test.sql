@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(104);
+select plan(105);
 
 /*
  * Guards the privileges themselves, not the policies.
@@ -998,6 +998,18 @@ select ok(
   has_function_privilege(
     'authenticated', 'public.thread_roster(uuid)', 'EXECUTE'),
   'authenticated can execute thread_roster'
+);
+
+
+-- ---------------------------------------------------------------------------
+-- Table rounds (2026-09-02 spec). table_rounds is select-only for
+-- authenticated; the two write functions are asserted in the mutations
+-- migration's own task.
+-- ---------------------------------------------------------------------------
+
+select ok(
+  not has_table_privilege('authenticated', 'public.table_rounds', 'TRUNCATE'),
+  'authenticated cannot TRUNCATE table_rounds'
 );
 
 select * from finish();
