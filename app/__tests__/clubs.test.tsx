@@ -1408,14 +1408,16 @@ describe('club detail screen', () => {
     expect(screen.queryByRole('button', { name: 'Your profile' })).toBeNull();
   });
 
-  // This screen never had the combined back/tile/plus row Task 9/10 built
-  // for the Clubs dashboard specifically — its own separate "← Clubs" ghost
-  // button (below) is the only way back, and it never gains "Clear club
-  // filter" or "Add a game" alongside the tile.
-  it('shows the club as a tile, still with its own separate back button unchanged', async () => {
+  // The separate "← Clubs" ghost button is gone — DashboardHeader's own
+  // chevron slot (previously always empty on this screen, since it never
+  // passed onPressBack) now carries the back action, so there is exactly
+  // one way back, not two.
+  it('shows the club as a tile, with one consolidated back button', async () => {
     render(<ClubDetailScreen />);
     expect(await screen.findByTestId('thread-avatar-club-tile')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Back to your clubs' })).toBeTruthy();
+    expect(
+      screen.getAllByRole('button', { name: 'Back to your clubs' }),
+    ).toHaveLength(1);
     expect(screen.queryByRole('button', { name: 'Clear club filter' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Add a game' })).toBeNull();
   });

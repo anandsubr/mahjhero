@@ -68,6 +68,7 @@ export default function DashboardHeader({
   onPressScope,
   onPressAddGame,
   onPressBack,
+  backLabel = 'Clear club filter',
 }: {
   kicker: string;
   name: string;
@@ -80,6 +81,12 @@ export default function DashboardHeader({
   onPressScope?: () => void;
   onPressAddGame?: () => void;
   onPressBack?: () => void;
+  /** Accessibility label for the chevron `onPressBack` draws. Defaults to
+   *  today's "Clear club filter" (app/clubs/index.tsx's own filter-clear
+   *  chevron) — app/clubs/[id]/index.tsx passes "Back to your clubs"
+   *  instead, since its own chevron is real navigation, not a filter
+   *  clear, and the hardcoded label would misdescribe it. */
+  backLabel?: string;
 }) {
   if (kicker === 'Your club') {
     return (
@@ -94,7 +101,7 @@ export default function DashboardHeader({
               <Pressable
                 onPress={onPressBack}
                 accessibilityRole="button"
-                accessibilityLabel="Clear club filter"
+                accessibilityLabel={backLabel}
                 style={styles.clubBack}
               >
                 <ChevronLeftIcon color={colors.text} size={22} />
