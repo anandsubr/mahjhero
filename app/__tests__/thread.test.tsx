@@ -87,6 +87,12 @@ vi.mock('../../lib/messages', async () => {
   };
 });
 
+// TabBar also now calls useNotificationsUnread for its Alerts badge --
+// without this it falls through to a real, unmocked RPC call.
+vi.mock('../../lib/use-notifications-unread', () => ({
+  useNotificationsUnread: () => 0,
+}));
+
 // The Realtime boundary, modeled after the real behavior traced in
 // node_modules/@supabase/realtime-js, not just its call shape:
 //

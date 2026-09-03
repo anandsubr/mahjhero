@@ -41,6 +41,12 @@ vi.mock('../../lib/messages', async (importOriginal) => {
   };
 });
 
+// TabBar also now calls useNotificationsUnread for its Alerts badge --
+// without this it falls through to a real, unmocked RPC call.
+vi.mock('../../lib/use-notifications-unread', () => ({
+  useNotificationsUnread: () => 0,
+}));
+
 const fetchFriends = vi.fn();
 const fetchAddablePeople = vi.fn();
 const addFriend = vi.fn();

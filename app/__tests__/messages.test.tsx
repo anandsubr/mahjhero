@@ -60,6 +60,12 @@ vi.mock('../../lib/messages', async () => {
   };
 });
 
+// TabBar also now calls useNotificationsUnread for its Alerts badge --
+// without this it falls through to a real, unmocked RPC call.
+vi.mock('../../lib/use-notifications-unread', () => ({
+  useNotificationsUnread: () => 0,
+}));
+
 function row(over: Partial<ThreadListRow> = {}): ThreadListRow {
   return {
     thread_id: 't1',
