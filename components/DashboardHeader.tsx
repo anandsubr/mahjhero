@@ -50,16 +50,18 @@ import { colors, radius, space, type } from '../lib/theme';
  * every other tab-root screen's inline treatment). The "Your club" shape
  * ignores it entirely -- app/clubs/index.tsx keeps that shape's own
  * accessory rendered as a separate sibling above this component instead,
- * since a name PILL centred under an avatar has no comparable "inline
- * before the title" slot to fill. Optional and defaulting to nothing
- * rendered, so app/clubs/[id]/index.tsx and venues.tsx -- which never pass
- * it -- are completely unaffected either way.
+ * since a name PILL centred under a tile has no comparable "inline before
+ * the title" slot to fill -- app/clubs/index.tsx's empty-clubs-list branch
+ * is the only current caller. Optional and defaulting to nothing rendered,
+ * so app/clubs/[id]/index.tsx and venues.tsx -- which never pass it -- are
+ * completely unaffected either way.
  */
 export default function DashboardHeader({
   kicker,
   name,
   meta,
   titleAccessory,
+  clubId,
   onPressScope,
   onPressAddGame,
   onPressBack,
@@ -68,6 +70,10 @@ export default function DashboardHeader({
   name: string;
   meta: string;
   titleAccessory?: ReactNode;
+  /** The "Your club" shape's own club id -- required in practice for
+   *  that shape to draw its tile (ThreadAvatar's asTile treatment needs
+   *  it for the glyph hash). Ignored in the flat shape. */
+  clubId?: string;
   onPressScope?: () => void;
   onPressAddGame?: () => void;
   onPressBack?: () => void;
@@ -75,33 +81,33 @@ export default function DashboardHeader({
   if (kicker === 'Your club') {
     return (
       <View style={styles.clubHeader}>
-        {onPressBack || onPressAddGame ? (
-          <View style={styles.clubTopRow}>
-            {/* Fixed 44x44 footprint whether or not the chevron itself
-                draws, so the ⊕ beside it stays in the same place either
-                way — app/clubs/index.tsx passes both together except when
-                the scope resolves to a single club while `selected` is
-                still ALL_CLUBS (a one-club member who hasn't tapped
-                anything), where only the ⊕ is passed. */}
-            <View style={styles.clubBack}>
-              {onPressBack ? (
-                <Pressable
-                  onPress={onPressBack}
-                  accessibilityRole="button"
-                  accessibilityLabel="Clear club filter"
-                  style={styles.clubBack}
-                >
-                  <ChevronLeftIcon color={colors.text} size={22} />
-                </Pressable>
-              ) : null}
-            </View>
+        <View style={styles.clubTopRow}>
+          {/* Fixed 44x44 footprint whether or not the chevron itself
+              draws, so the tile stays perfectly centred either way --
+              same reasoning the ⊕'s own flanking box already used before
+              this task, now applied symmetrically on both sides. */}
+          <View style={styles.clubBack}>
+            {onPressBack ? (
+              <Pressable
+                onPress={onPressBack}
+                accessibilityRole="button"
+                accessibilityLabel="Clear club filter"
+                style={styles.clubBack}
+              >
+                <ChevronLeftIcon color={colors.text} size={22} />
+              </Pressable>
+            ) : null}
+          </View>
+          {clubId ? (
+            <ThreadAvatar kind="club" name={name} clubId={clubId} asTile size={72} />
+          ) : null}
+          <View style={styles.clubBack}>
             {onPressAddGame ? (
               <PlusButton onPress={onPressAddGame} accessibilityLabel="Add a game" />
             ) : null}
           </View>
-        ) : null}
+        </View>
         <View style={styles.clubCenter}>
-          <ThreadAvatar kind="club" name={name} size={72} />
           {onPressScope ? (
             <Pressable
               onPress={onPressScope}

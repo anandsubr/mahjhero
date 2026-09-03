@@ -190,13 +190,31 @@ describe('DashboardHeader', () => {
   describe('the "Your club" variant', () => {
     it('shows the club’s avatar, name and rhythm instead of a kicker', () => {
       render(
-        <DashboardHeader kicker="Your club" name="Riverside Mah Jongg" meta="Thursdays, 7pm" />,
+        <DashboardHeader
+          kicker="Your club"
+          name="Riverside Mah Jongg"
+          meta="Thursdays, 7pm"
+          clubId="club-1"
+        />,
       );
-      expect(screen.getByTestId('thread-avatar-club')).toBeTruthy();
+      expect(screen.getByTestId('thread-avatar-club-tile')).toBeTruthy();
       expect(screen.getByText('Riverside Mah Jongg')).toBeTruthy();
       expect(screen.getByText('Thursdays, 7pm')).toBeTruthy();
       expect(screen.queryByTestId('scope-kicker')).toBeNull();
       expect(screen.queryByText('Your club')).toBeNull();
+    });
+
+    it('shows the club as a tile, not a circular avatar, now that clubId is given', () => {
+      render(
+        <DashboardHeader
+          kicker="Your club"
+          name="Riverside Mah Jongg"
+          meta="Thursdays, 7pm"
+          clubId="club-1"
+        />,
+      );
+      expect(screen.queryByTestId('thread-avatar-club')).toBeNull();
+      expect(screen.getByTestId('thread-avatar-club-tile')).toBeTruthy();
     });
 
     it('draws no rhythm line when there is none to show', () => {
@@ -291,12 +309,18 @@ describe('DashboardHeader', () => {
       expect(screen.queryByRole('button', { name: 'Add a game' })).toBeNull();
     });
 
-    it('draws no top row at all when given neither a chevron nor a way to add a game', () => {
+    it('draws no chevron or add-game button — but still the tile — when given neither', () => {
       render(
-        <DashboardHeader kicker="Your club" name="Riverside Mah Jongg" meta="Thursdays, 7pm" />,
+        <DashboardHeader
+          kicker="Your club"
+          name="Riverside Mah Jongg"
+          meta="Thursdays, 7pm"
+          clubId="club-1"
+        />,
       );
       expect(screen.queryByRole('button', { name: 'Clear club filter' })).toBeNull();
       expect(screen.queryByRole('button', { name: 'Add a game' })).toBeNull();
+      expect(screen.getByTestId('thread-avatar-club-tile')).toBeTruthy();
     });
   });
 });
