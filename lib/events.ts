@@ -590,6 +590,22 @@ function toClubEvent(row: EventRow): ClubEvent {
   };
 }
 
+/**
+ * Every event still relevant to this club: not yet ended, not `starts_at >=
+ * now()`. Matches the same "relevant until it ends" rule
+ * `my_upcoming_bookings` (20260827070000_my_upcoming_bookings_check_in.sql)
+ * and `record_round`'s own guard (20260902070000_table_rounds_mutations.sql)
+ * already use — dropping an event the instant it started used to hide it
+ * from `buildDashboardRows`' organizing-row branch (lib/dashboard.ts) for
+ * exactly the games that most need to stay reachable: an organizer's own
+ * in-progress game they never booked a seat at.
+ *
+ * `needAFourthAlerts` (lib/dashboard.ts) is the OTHER consumer of this
+ * function's output and is unaffected by the widened window: `needsAFourth`
+ * (lib/bookings.ts) already refuses to fire once `startsAt <= now` (its own
+ * `until > 0` guard), so an in-progress event newly included here can never
+ * produce a spurious "needs a 4th" alert.
+ */
 export async function fetchUpcomingEvents(
   clubId: string,
 ): Promise<ClubEvent[] | null> {
@@ -598,7 +614,7 @@ export async function fetchUpcomingEvents(
       .from('events')
       .select(EVENT_COLUMNS)
       .eq('club_id', clubId)
-      .gte('starts_at', new Date().toISOString())
+      .gte('ends_at', new Date().toISOString())
       .order('starts_at');
 
     if (error) {
