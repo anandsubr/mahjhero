@@ -681,19 +681,7 @@ export default function EventScreen() {
     winnerProfileId: string,
     points: number,
   ) {
-    setBusy(true);
-    setError(null);
-    const { error: recordError } = await recordRound({
-      tableId,
-      winnerProfileId,
-      points,
-    });
-    setBusy(false);
-    if (recordError) {
-      setError(recordError);
-      return;
-    }
-    await load();
+    await run(() => recordRound({ tableId, winnerProfileId, points }));
   }
 
   async function removeTableRound(roundId: string) {

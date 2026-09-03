@@ -130,6 +130,25 @@ describe('TableCard', () => {
     expect(screen.queryByText('No rounds recorded yet.')).toBeNull();
   });
 
+  it('still offers a round timer when rounds is not supplied', () => {
+    // RoundTimer is pure local UI state, independent of whether the rounds
+    // fetch succeeded -- a transient fetch failure (rounds undefined)
+    // should not take away an otherwise-workable, unrelated control.
+    render(
+      <TableCard
+        table={table}
+        occupants={occupants}
+        youId="p9"
+        onTakeSeat={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByRole('button', {
+        name: 'Start a 15-minute timer for Table 2',
+      }),
+    ).toBeTruthy();
+  });
+
   it('shows the round log when rounds is supplied', () => {
     render(
       <TableCard

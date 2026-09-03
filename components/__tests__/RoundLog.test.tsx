@@ -59,6 +59,49 @@ describe('RoundLog', () => {
     expect(screen.getByText('Ann: 10 · You: 5')).toBeTruthy();
   });
 
+  it('uses the round\'s own winner_name for the totals line, not players\' label for that id', () => {
+    // p2 is 'You' in `players` (TableCard's currently-seated occupants, which
+    // rewrites the viewer's own name), but this round's `winner_name` is
+    // 'Ada' -- the roster's raw display_name. The totals line must read from
+    // `winner_name`, matching the round row, not disagree with it.
+    render(
+      <RoundLog
+        rounds={[
+          { id: 'r1', winner_profile_id: 'p2', winner_name: 'Ada', points: 8 },
+        ]}
+        players={players}
+        canRecord={false}
+        canDelete={false}
+        onRecord={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('Ada · 8 pts')).toBeTruthy();
+    expect(screen.getByText('Ada: 8')).toBeTruthy();
+    expect(screen.queryByText('You: 8')).toBeNull();
+  });
+
+  it('shows a departed winner\'s real name in the totals line, not "?"', () => {
+    // p3 is not seated at the table any more, so it is absent from
+    // `players` entirely -- the totals line must still resolve their name
+    // from the round's own `winner_name`.
+    render(
+      <RoundLog
+        rounds={[
+          { id: 'r1', winner_profile_id: 'p3', winner_name: 'Zed', points: 4 },
+        ]}
+        players={players}
+        canRecord={false}
+        canDelete={false}
+        onRecord={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('Zed · 4 pts')).toBeTruthy();
+    expect(screen.getByText('Zed: 4')).toBeTruthy();
+    expect(screen.queryByText('?: 4')).toBeNull();
+  });
+
   it('hides the record form when canRecord is false', () => {
     render(
       <RoundLog

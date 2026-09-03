@@ -99,7 +99,7 @@ begin
   -- Belt-and-suspenders alongside table_rounds' own check constraint --
   -- the constraint is what actually stops a bad row; this raises the
   -- friendlier, mapped message.
-  if target_points <= 0 then
+  if target_points is null or target_points <= 0 then
     raise exception 'points must be greater than zero' using errcode = '23514';
   end if;
 

@@ -53,7 +53,14 @@ export default function RoundLog({
   const [pointsText, setPointsText] = useState('');
 
   const totals = roundTotals(rounds);
-  const totalsByPlayer = new Map(players.map((p) => [p.profileId, p.name]));
+  // Names come from `rounds` itself (each DisplayRound already carries the
+  // roster's `winner_name`), not from `players` -- `players` is TableCard's
+  // currently-seated occupants, which rewrites the viewer's own name to
+  // "You" and drops anyone who has since left the table. Reading from the
+  // same source as the round rows below means the totals line and the rows
+  // can never disagree, and a departed winner's total still shows their
+  // real name instead of "?".
+  const namesByPlayer = new Map(rounds.map((r) => [r.winner_profile_id, r.winner_name]));
   const playerOrder = new Map(players.map((p, i) => [p.profileId, i]));
   const sortedTotals = totals.sort((a, b) => {
     const aIndex = playerOrder.get(a.profileId) ?? Infinity;
@@ -61,7 +68,7 @@ export default function RoundLog({
     return aIndex - bIndex;
   });
   const totalsLine = sortedTotals
-    .map((t) => `${totalsByPlayer.get(t.profileId) ?? '?'}: ${t.points}`)
+    .map((t) => `${namesByPlayer.get(t.profileId) ?? '?'}: ${t.points}`)
     .join(' · ');
 
   const parsedPoints = Number.parseInt(pointsText, 10);

@@ -142,22 +142,27 @@ export default function TableCard({
       <Text style={styles.free}>{seatsFreeLabel(free)}</Text>
 
       {rounds ? (
-        <>
-          <RoundLog
-            rounds={rounds}
-            players={seated.map((o) => ({
-              profileId: o.profile_id,
-              name: o.profile_id === youId ? 'You' : o.display_name,
-            }))}
-            canRecord={canRecordRound}
-            canDelete={canDeleteRound}
-            busy={busy}
-            onRecord={(winnerId, points) => onRecordRound?.(winnerId, points)}
-            onDelete={(roundId) => onDeleteRound?.(roundId)}
-          />
-          <RoundTimer tableLabel={table.label} />
-        </>
+        <RoundLog
+          rounds={rounds}
+          players={seated.map((o) => ({
+            profileId: o.profile_id,
+            name: o.profile_id === youId ? 'You' : o.display_name,
+          }))}
+          canRecord={canRecordRound}
+          canDelete={canDeleteRound}
+          busy={busy}
+          onRecord={(winnerId, points) => onRecordRound?.(winnerId, points)}
+          onDelete={(roundId) => onDeleteRound?.(roundId)}
+        />
       ) : null}
+
+      {/*
+        RoundTimer is pure local UI state with no dependence on whether the
+        rounds fetch succeeded -- it stays available even when `rounds` is
+        undefined (a transient fetch failure), unlike RoundLog above which
+        genuinely needs `rounds` data to render.
+      */}
+      <RoundTimer tableLabel={table.label} />
 
       {bookedForYou ? (
         <Text style={styles.help}>
