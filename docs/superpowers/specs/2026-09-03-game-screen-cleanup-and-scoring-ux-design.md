@@ -108,9 +108,9 @@ Also where item 10 (panel contrast) gets fixed — the exact colour combination 
 
 ### `components/TableCard.tsx`
 
-- Drops the `TierPicker`/`SkillTierPips` row entirely (moves to Edit — see below). Keeps "Remove this table" and "Call for a 4th now" (Add a table stays screen-level, unaffected).
+- Drops the **interactive** `TierPicker` (moves to Edit — see below; this is the organizer-only editable control, currently rendered via `children` from the event screen). Keeps "Remove this table" and "Call for a 4th now" (Add a table stays screen-level, unaffected).
+- The **read-only** tier display (`SkillTierPips` + the tier word, e.g. "Any level") stays on the game screen — everyone still needs to see it while browsing, only editing it moves — but combines onto the table's own heading line (item 4) instead of its own row below.
 - Drops the `seatsFreeLabel` text (item 3).
-- Combines the table's label and tier onto one line (item 4) — the tier pips + word move up next to `table.label` instead of their own row below it.
 - Computes each seated occupant's badge state (`points`/`isLeader`) from `rounds` via `roundTotals`, threading it into `SeatGrid`'s per-seat data instead of (or alongside) rendering `RoundLog`'s now-removed totals line.
 
 ### `app/clubs/[id]/events/[eventId]/index.tsx`
