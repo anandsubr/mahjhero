@@ -386,6 +386,15 @@ export default function EventScreen() {
 
   const canBook = event.status === 'published' && new Date(event.starts_at) > now;
 
+  // A member's own already-confirmed booking can be placed or moved
+  // through the whole live game, not just before kickoff --
+  // place_booking's own guard now only refuses once the game has ended
+  // (20260903060000_place_booking_ends_at.sql). Deliberately separate
+  // from `canBook`, which still gates a BRAND NEW booking: creating a
+  // fresh seat is untouched by this fix and stays frozen at kickoff.
+  const canManageOwnSeat =
+    event.status === 'published' && new Date(event.ends_at) > now;
+
   // Every table full, counting only bookings actually placed at one — a
   // booking still awaiting placement (`event_table_id === null`) occupies a
   // seat somewhere but isn't blocking any *specific* table from showing an
@@ -775,7 +784,9 @@ export default function EventScreen() {
               // wanting to move — still offers a tap; `takeSeat` (via
               // `commitSeat`) is what decides book vs. move.
               onTakeSeat={
-                canBook &&
+                (myBooking && myBooking.status === 'confirmed'
+                  ? canManageOwnSeat
+                  : canBook) &&
                 (!myBooking ||
                   (myBooking.status === 'confirmed' &&
                     myBooking.event_table_id !== table.id))
