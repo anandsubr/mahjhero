@@ -258,6 +258,110 @@ describe('buildDashboardRows', () => {
     expect(rows).toEqual([]);
   });
 
+  it('adds an in-progress event the viewer organizes but has not booked, as an organizing row', () => {
+    const rows = buildDashboardRows({
+      bookings: [],
+      events: [
+        event({
+          id: 'in-progress',
+          starts_at: '2026-09-01T10:00:00Z',
+          ends_at: '2026-09-01T14:00:00Z',
+        }),
+      ],
+      clubs: CLUBS,
+      userId: 'me',
+      organizerClubIds: new Set(['club-1']),
+      now: NOW,
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].organizing).toBe(true);
+    expect(rows[0].joinable).toBe(false);
+    expect(rows[0].booking).toBeNull();
+  });
+
+  it('does not add an in-progress event for a plain member, even with a free seat', () => {
+    const rows = buildDashboardRows({
+      bookings: [],
+      events: [
+        event({
+          id: 'in-progress',
+          starts_at: '2026-09-01T10:00:00Z',
+          ends_at: '2026-09-01T14:00:00Z',
+        }),
+      ],
+      clubs: CLUBS,
+      userId: 'me',
+      // No organizerClubIds -- a plain member of the club.
+      now: NOW,
+    });
+    expect(rows).toEqual([]);
+  });
+
+  it('drops an in-progress event the viewer organizes once it has ended', () => {
+    const rows = buildDashboardRows({
+      bookings: [],
+      events: [
+        event({
+          id: 'ended',
+          starts_at: '2026-09-01T08:00:00Z',
+          ends_at: '2026-09-01T11:00:00Z',
+        }),
+      ],
+      clubs: CLUBS,
+      userId: 'me',
+      organizerClubIds: new Set(['club-1']),
+      now: NOW,
+    });
+    expect(rows).toEqual([]);
+  });
+
+  it('lets a booking win over the organizing branch when the organizer is also seated', () => {
+    const rows = buildDashboardRows({
+      bookings: [
+        booking({ event_id: 'in-progress', club_id: 'club-1' }),
+      ],
+      events: [
+        event({
+          id: 'in-progress',
+          starts_at: '2026-09-01T10:00:00Z',
+          ends_at: '2026-09-01T14:00:00Z',
+        }),
+      ],
+      clubs: CLUBS,
+      userId: 'me',
+      organizerClubIds: new Set(['club-1']),
+      now: NOW,
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].booking).not.toBeNull();
+    expect(rows[0].organizing).toBe(false);
+  });
+
+  it('still adds an organizing row even when the table is full', () => {
+    const rows = buildDashboardRows({
+      bookings: [],
+      events: [
+        event({
+          id: 'in-progress-full',
+          starts_at: '2026-09-01T10:00:00Z',
+          ends_at: '2026-09-01T14:00:00Z',
+          bookings: [
+            { profile_id: 'a', status: 'confirmed', event_table_id: 'table-1' },
+            { profile_id: 'b', status: 'confirmed', event_table_id: 'table-1' },
+            { profile_id: 'c', status: 'confirmed', event_table_id: 'table-1' },
+            { profile_id: 'd', status: 'confirmed', event_table_id: 'table-1' },
+          ],
+        }),
+      ],
+      clubs: CLUBS,
+      userId: 'me',
+      organizerClubIds: new Set(['club-1']),
+      now: NOW,
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].organizing).toBe(true);
+  });
+
   it('drops an event the viewer is waitlisted on, without a booking row', () => {
     const rows = buildDashboardRows({
       bookings: [],

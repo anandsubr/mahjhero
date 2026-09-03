@@ -97,9 +97,16 @@ export type DashboardRow = {
   startsAt: string;
   timezone: string;
   venueName: string;
-  /** The viewer's own booking, when they have one. Null on a joinable row. */
+  /** The viewer's own booking, when they have one. Null on a joinable or organizing row. */
   booking: MyBooking | null;
   joinable: boolean;
+  /**
+   * True only for an in-progress event the viewer organizes but holds no
+   * booking at — mutually exclusive with `joinable` (that one is always a
+   * future event) and always paired with `booking: null`. See
+   * `buildDashboardRows`' own doc comment for why this exists.
+   */
+  organizing: boolean;
 };
 
 /** Live means it holds or is queued for a seat; declined and cancelled do not. */
@@ -135,16 +142,31 @@ function hasFreeSeat(event: ClubEvent): boolean {
  * Bookings win the de-duplication: both sources can carry the same event, and
  * the booking is the richer row — it is what the offer, waitlist and check-in
  * controls hang off.
+ *
+ * A THIRD source, folded into the same loop as the joinable branch: an
+ * in-progress event the viewer organizes (host or co-organizer) but holds no
+ * booking at. Before this existed, an organizer who never booked their own
+ * seat lost all access to their own game the instant it started — neither
+ * `my_upcoming_bookings` (no booking to find) nor the joinable branch (which
+ * requires `!started`) ever covered it. See the design doc for how this was
+ * found: two organizer-created, self-unbooked games vanished from a real
+ * dashboard at kickoff.
+ *
+ * `organizerClubIds` defaults to an empty set — every existing caller that
+ * does not pass it gets exactly today's behavior, since an empty set can
+ * never match `event.club_id`.
  */
 export function buildDashboardRows(input: {
   bookings: MyBooking[];
   events: ClubEvent[];
   clubs: Club[];
   userId: string;
+  organizerClubIds?: Set<string>;
   now?: Date;
 }): DashboardRow[] {
   const now = input.now ?? new Date();
   const clubsById = new Map(input.clubs.map((club) => [club.id, club]));
+  const organizerClubIds = input.organizerClubIds ?? new Set<string>();
 
   const rows: DashboardRow[] = input.bookings.map((booking) => ({
     eventId: booking.event_id,
@@ -156,6 +178,7 @@ export function buildDashboardRows(input: {
     venueName: booking.venue_name,
     booking,
     joinable: false,
+    organizing: false,
   }));
 
   const seen = new Set(rows.map((row) => row.eventId));
@@ -164,10 +187,23 @@ export function buildDashboardRows(input: {
     if (seen.has(event.id)) continue;
     if (event.status !== 'published') continue;
     if (viewerIsIn(event, input.userId)) continue;
-    if (new Date(event.starts_at).getTime() <= now.getTime()) continue;
-    if (!hasFreeSeat(event)) continue;
     const club = clubsById.get(event.club_id);
     if (!club) continue;
+
+    const started = new Date(event.starts_at).getTime() <= now.getTime();
+    const ended = new Date(event.ends_at).getTime() <= now.getTime();
+
+    if (started) {
+      // The organizing branch. `ended` is checked unconditionally (not
+      // just for a non-organizer) so a stale already-ended event is
+      // refused outright; only once that passes does organizer status
+      // decide it. Deliberately does NOT check hasFreeSeat -- an organizer
+      // needs this row whether the table is full or not.
+      if (ended || !organizerClubIds.has(event.club_id)) continue;
+    } else {
+      // The existing joinable branch, unchanged.
+      if (!hasFreeSeat(event)) continue;
+    }
 
     seen.add(event.id);
     rows.push({
@@ -179,7 +215,8 @@ export function buildDashboardRows(input: {
       timezone: club.timezone,
       venueName: event.venue_name,
       booking: null,
-      joinable: true,
+      joinable: !started,
+      organizing: started && !ended,
     });
   }
 
