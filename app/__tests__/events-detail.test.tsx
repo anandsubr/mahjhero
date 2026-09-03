@@ -388,26 +388,18 @@ describe('screen chrome', () => {
     expect(push).toHaveBeenCalledWith('/clubs');
   });
 
-  // Task 13: this screen's own small decorative club tile, between the back
-  // chevron and the club-name kicker -- the same `size="section"` treatment
-  // every other landing screen in this plan already carries, here showing
-  // THIS club's own stable glyph via `glyphForClub`. TabBar (carried by
-  // every state of this screen) renders its own `aria-hidden` tiles too, so
-  // a bare `document.querySelector('[aria-hidden="true"]')` would already
-  // pass without this tile existing -- scoped through `testID="section-tile"`
-  // first, the same wrapper convention every other landing screen's own test
-  // already uses (app/__tests__/clubs.test.tsx, messages.test.tsx,
-  // profile.test.tsx, alerts.test.tsx) for this exact false-positive risk.
-  it("shows a small mahjong tile before the club name, matching that club's own glyph elsewhere", async () => {
+  it("shows the club as a tile with its name in a pill below, matching the Club Dashboard header exactly", async () => {
     render(<EventScreen />);
     await screen.findByText(CLUB.name);
-    expect(
-      screen.getByTestId('section-tile').querySelector('[aria-hidden="true"]'),
-    ).toBeTruthy();
-    // The chip form (glyph + initials), the SAME tile every other
-    // club-identity header already uses — not the small, label-less
-    // decorative form the four nav landing pages use.
+    // The `section-tile` wrapper this test used to scope through is gone —
+    // this screen no longer builds its own tile row; it renders the same
+    // `DashboardHeader` "Your club" shape Club Dashboard and Club Edit do,
+    // and `thread-avatar-club-tile` alone is already a specific enough
+    // selector (it's a single, uniquely-testID'd element, not one of
+    // several decorative tiles on the page that needs disambiguating).
     expect(screen.getByTestId('thread-avatar-club-tile')).toBeTruthy();
+    // No "+" — this screen has nothing equivalent to "add a game" here.
+    expect(screen.queryByRole('button', { name: 'Add a game' })).toBeNull();
   });
 });
 

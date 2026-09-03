@@ -5,14 +5,14 @@ import BringSomeoneSheet from '../../../../../components/BringSomeoneSheet';
 import Button from '../../../../../components/Button';
 import Card from '../../../../../components/Card';
 import CheckInControl from '../../../../../components/CheckInControl';
+import DashboardHeader from '../../../../../components/DashboardHeader';
 import ErrorBanner from '../../../../../components/ErrorBanner';
 import Screen from '../../../../../components/Screen';
 import Tag from '../../../../../components/Tag';
 import TabBar from '../../../../../components/TabBar';
 import TableCard from '../../../../../components/TableCard';
-import ThreadAvatar from '../../../../../components/ThreadAvatar';
 import WaitlistPanel from '../../../../../components/WaitlistPanel';
-import { ChevronLeftIcon, PencilIcon } from '../../../../../components/icons';
+import { PencilIcon } from '../../../../../components/icons';
 import {
   checkInOpen,
   clearAttendance,
@@ -724,28 +724,14 @@ export default function EventScreen() {
         still earns its place — same reasoning every other back link on
         this branch documents.
       */}
-      <View style={styles.headerRow}>
-        <Pressable
-          onPress={() => router.push('/clubs')}
-          accessibilityRole="button"
-          accessibilityLabel="Back to your clubs"
-          style={styles.backButton}
-        >
-          <ChevronLeftIcon color={colors.accentColor} />
-        </Pressable>
-        {/*
-          Wrapped in its own testID'd View, not bare -- TabBar (carried by
-          every state of this screen) renders its own `aria-hidden` tiles
-          too, so a test scoping past them needs a wrapper to key off of.
-          Same `testID="section-tile"` convention every other landing
-          screen's own decorative tile already uses (app/clubs/index.tsx,
-          app/alerts.tsx, app/profile.tsx, app/messages/index.tsx).
-        */}
-        <View testID="section-tile">
-          <ThreadAvatar kind="club" name={club.name} clubId={clubId} asTile />
-        </View>
-        <Text style={styles.clubKicker}>{club.name}</Text>
-      </View>
+      <DashboardHeader
+        kicker="Your club"
+        name={club.name}
+        meta=""
+        clubId={clubId}
+        onPressBack={() => router.push('/clubs')}
+        backLabel="Back to your clubs"
+      />
       <View style={styles.row}>
         <View style={styles.titleRow}>
           <Text style={styles.heading}>{event.title}</Text>
@@ -1216,19 +1202,6 @@ export default function EventScreen() {
 const styles = StyleSheet.create({
   container: { padding: space[6], gap: space[4] },
   centered: { alignItems: 'center' },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space[1],
-  },
-  backButton: { alignSelf: 'flex-start' },
-  clubKicker: {
-    fontFamily: type.bodySemiBold,
-    fontSize: type.size.helper,
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
-    color: colors.accentColor,
-  },
   heading: {
     fontFamily: type.heading,
     fontSize: type.size.h2,
