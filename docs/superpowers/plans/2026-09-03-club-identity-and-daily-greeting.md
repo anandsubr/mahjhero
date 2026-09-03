@@ -3837,6 +3837,138 @@ git commit -m "feat(dashboard): show cost-to-play and minimum-spend on the game 
 
 ---
 
+### Task 16: Game screen's club header genuinely reuses `DashboardHeader`, not a lookalike
+
+**Added after live user review of Task 3's already-shipped result.** Task 3 upsized the game screen's tile but kept its own inline layout (back chevron + tile + uppercase kicker text, all in one row). Side-by-side screenshots of the running app showed this still reads as a different treatment from the Club Dashboard/Club Edit header (tile centred on its own row between the back chevron and a right-hand slot, with the name as a pill below it, no inline kicker text at all). The user's own words: "no reason for it to look diff...minus the plus sign as that is not applicable in the game screen." `DashboardHeader`'s existing `kicker="Your club"` shape already produces exactly this layout when no `onPressAddGame`/`onPressScope` are passed (empty flanking box where the "+" would be, a plain non-pressable name pill, no meta line when `meta=""`) — this task swaps the game screen's hand-built row for a direct call to that same component, the same way Club Edit already does, rather than hand-tuning a second layout to look similar.
+
+**Files:**
+- Modify: `app/clubs/[id]/events/[eventId]/index.tsx`
+- Modify: `app/__tests__/events-detail.test.tsx`
+
+**Interfaces:**
+- Consumes: `components/DashboardHeader.tsx`'s existing `kicker`/`name`/`meta`/`clubId`/`onPressBack`/`backLabel` props (all already exist, unchanged).
+- Produces: nothing new.
+
+- [ ] **Step 1: Update the test**
+
+In `app/__tests__/events-detail.test.tsx`, find the existing test (added by Task 3) that reads:
+
+```tsx
+  it("shows a small mahjong tile before the club name, matching that club's own glyph elsewhere", async () => {
+    render(<EventScreen />);
+    await screen.findByText(CLUB.name);
+    expect(
+      screen.getByTestId('section-tile').querySelector('[aria-hidden="true"]'),
+    ).toBeTruthy();
+    expect(screen.getByTestId('thread-avatar-club-tile')).toBeTruthy();
+  });
+```
+
+Replace it with:
+
+```tsx
+  it("shows the club as a tile with its name in a pill below, matching the Club Dashboard header exactly", async () => {
+    render(<EventScreen />);
+    await screen.findByText(CLUB.name);
+    // The `section-tile` wrapper this test used to scope through is gone —
+    // this screen no longer builds its own tile row; it renders the same
+    // `DashboardHeader` "Your club" shape Club Dashboard and Club Edit do,
+    // and `thread-avatar-club-tile` alone is already a specific enough
+    // selector (it's a single, uniquely-testID'd element, not one of
+    // several decorative tiles on the page that needs disambiguating).
+    expect(screen.getByTestId('thread-avatar-club-tile')).toBeTruthy();
+    // No "+" — this screen has nothing equivalent to "add a game" here.
+    expect(screen.queryByRole('button', { name: 'Add a game' })).toBeNull();
+  });
+```
+
+Also find the existing test that clicks the back button (search for `'Back to your clubs'`) and confirm it still passes unmodified — `DashboardHeader`'s chevron will carry that exact same accessibility label via `backLabel`, wired to the same `router.push('/clubs')` handler, so this test's own assertions should not need to change.
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `TZ=America/New_York npx vitest run app/__tests__/events-detail.test.tsx -t "matching the Club Dashboard header exactly"`
+Expected: FAIL — the screen doesn't render a name pill or an empty flanking box yet; it renders its own inline kicker row instead.
+
+- [ ] **Step 3: Write minimal implementation**
+
+In `app/clubs/[id]/events/[eventId]/index.tsx`, add the import:
+
+```tsx
+import DashboardHeader from '../../../../../components/DashboardHeader';
+```
+
+Replace the entire header block:
+
+```tsx
+      <View style={styles.headerRow}>
+        <Pressable
+          onPress={() => router.push('/clubs')}
+          accessibilityRole="button"
+          accessibilityLabel="Back to your clubs"
+          style={styles.backButton}
+        >
+          <ChevronLeftIcon color={colors.accentColor} />
+        </Pressable>
+        {/*
+          Wrapped in its own testID'd View, not bare -- TabBar (carried by
+          every state of this screen) renders its own `aria-hidden` tiles
+          too, so a test scoping past them needs a wrapper to key off of.
+          Same `testID="section-tile"` convention every other landing
+          screen's own decorative tile already uses (app/clubs/index.tsx,
+          app/alerts.tsx, app/profile.tsx, app/messages/index.tsx).
+        */}
+        <View testID="section-tile">
+          <ThreadAvatar kind="club" name={club.name} clubId={clubId} asTile />
+        </View>
+        <Text style={styles.clubKicker}>{club.name}</Text>
+      </View>
+```
+
+with:
+
+```tsx
+      <DashboardHeader
+        kicker="Your club"
+        name={club.name}
+        meta=""
+        clubId={clubId}
+        onPressBack={() => router.push('/clubs')}
+        backLabel="Back to your clubs"
+      />
+```
+
+`ThreadAvatar` and `ChevronLeftIcon` are now unused in this file — check with `grep -n "ThreadAvatar\|ChevronLeftIcon" "app/clubs/[id]/events/[eventId]/index.tsx"` and remove their imports if genuinely unused (per the earlier check while writing this task, neither is used anywhere else in this file — but confirm again at implementation time in case a later task touched it). Remove the now-unused `headerRow`, `backButton`, and `clubKicker` entries from this file's `StyleSheet.create` block, confirming with the same kind of grep (`styles.headerRow`, `styles.backButton`, `styles.clubKicker`) that nothing else in the file still references them.
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `TZ=America/New_York npx vitest run app/__tests__/events-detail.test.tsx -t "matching the Club Dashboard header exactly"`
+Expected: PASS
+
+Run: `TZ=America/New_York npx vitest run app/__tests__/events-detail.test.tsx -t "draws a back link to the dashboard"`
+Expected: PASS (unmodified — confirms `backLabel` wiring didn't change this behavior)
+
+Run the full file:
+
+Run: `TZ=America/New_York npx vitest run app/__tests__/events-detail.test.tsx`
+Expected: PASS (all tests)
+
+- [ ] **Step 5: Run the full unit suite and tsc**
+
+Run: `TZ=America/New_York npm test`
+Expected: PASS (all tests across the whole repo)
+
+Run: `npx tsc --noEmit`
+Expected: 0 errors
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add "app/clubs/[id]/events/[eventId]/index.tsx" app/__tests__/events-detail.test.tsx
+git commit -m "fix(events): game screen's club header genuinely reuses DashboardHeader"
+```
+
+---
+
 ## Self-Review Notes
 
 - **Spec coverage:** Part A (Home truncation → Task 1; Club Edit consolidation → Task 2; message board already consistent, no task; game screen tile → Task 3) — covered. Part B (live-only rounds/timer) → Task 4 — covered. Part C (three-line game row) → Task 5 — covered. Part D (admin flag, greetings table, daily pick, personalization, display, admin UI) → Tasks 6-9 — covered.
