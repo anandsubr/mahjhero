@@ -23,6 +23,7 @@ import {
   fetchSeries,
   formatEventWhen,
   frequencyLabel,
+  parseDollarsToCents,
   updateEvent,
   updateEventSeries,
   updateEventTable,
@@ -36,6 +37,14 @@ import { colors, radius, shadow, space, type } from '../../../../../lib/theme';
 
 type Scope = 'event' | 'series';
 
+/** The inverse of lib/events.ts's parseDollarsToCents, for seeding a text
+ *  field from a stored cents value. `0` renders as `"0"`, not `""` — an
+ *  explicit zero the host can see and overwrite, not a blank field that
+ *  looks unset. */
+function centsToDollarsText(cents: number): string {
+  return cents % 100 === 0 ? String(cents / 100) : (cents / 100).toFixed(2);
+}
+
 /** The single occurrence's own values, snapshotted once on load, so the
  * "This game" save path can tell what actually changed and send only that —
  * see the file-level comment above `onSave` for why that matters here in a
@@ -46,6 +55,8 @@ type OriginalOccurrence = {
   notes: string;
   startTime: string;
   checkInRequired: boolean;
+  feeCents: number;
+  minSpendCents: number;
 };
 
 /**
@@ -236,6 +247,8 @@ export default function EditEventScreen() {
   const [eventStartTime, setEventStartTime] = useState('19:00');
   const [eventNotes, setEventNotes] = useState('');
   const [eventCheckInRequired, setEventCheckInRequired] = useState(false);
+  const [eventFeeText, setEventFeeText] = useState('');
+  const [eventMinSpendText, setEventMinSpendText] = useState('');
   const [original, setOriginal] = useState<OriginalOccurrence | null>(null);
 
   const [seriesTitle, setSeriesTitle] = useState('');
@@ -244,6 +257,8 @@ export default function EditEventScreen() {
   const [seriesStartTime, setSeriesStartTime] = useState('19:00');
   const [seriesNotes, setSeriesNotes] = useState('');
   const [seriesCheckInRequired, setSeriesCheckInRequired] = useState(false);
+  const [seriesFeeText, setSeriesFeeText] = useState('');
+  const [seriesMinSpendText, setSeriesMinSpendText] = useState('');
   // The series' own "stop repeating on". Kept apart from `runsIndefinitely`
   // (see that state's own note) rather than folded into a single nullable
   // string, because DateField has no way to produce an empty string through
@@ -295,12 +310,16 @@ export default function EditEventScreen() {
         setEventNotes(loadedEvent.notes);
         setEventStartTime(initialStartTime);
         setEventCheckInRequired(loadedEvent.check_in_required);
+        setEventFeeText(centsToDollarsText(loadedEvent.fee_cents));
+        setEventMinSpendText(centsToDollarsText(loadedEvent.min_spend_cents));
         setOriginal({
           title: loadedEvent.title,
           venueId: loadedEvent.venue_id,
           notes: loadedEvent.notes,
           startTime: initialStartTime,
           checkInRequired: loadedEvent.check_in_required,
+          feeCents: loadedEvent.fee_cents,
+          minSpendCents: loadedEvent.min_spend_cents,
         });
       }
 
@@ -331,6 +350,8 @@ export default function EditEventScreen() {
           // back into a form field.
           setSeriesStartTime(loadedSeries.start_time.slice(0, 5));
           setSeriesCheckInRequired(loadedSeries.check_in_required);
+          setSeriesFeeText(centsToDollarsText(loadedSeries.fee_cents));
+          setSeriesMinSpendText(centsToDollarsText(loadedSeries.min_spend_cents));
           setEndsOn(loadedSeries.ends_on ?? '');
           setRunsIndefinitely(loadedSeries.ends_on === null);
         }
@@ -431,6 +452,10 @@ export default function EditEventScreen() {
   const setCheckInRequired = isSeriesScope
     ? setSeriesCheckInRequired
     : setEventCheckInRequired;
+  const feeText = isSeriesScope ? seriesFeeText : eventFeeText;
+  const setFeeText = isSeriesScope ? setSeriesFeeText : setEventFeeText;
+  const minSpendText = isSeriesScope ? seriesMinSpendText : eventMinSpendText;
+  const setMinSpendText = isSeriesScope ? setSeriesMinSpendText : setEventMinSpendText;
 
   // Arrow functions assigned to `const`, not `function` declarations --
   // TypeScript only carries the `!club || !event` narrowing above into a
@@ -460,6 +485,8 @@ export default function EditEventScreen() {
         notes,
         startTime,
         checkInRequired,
+        feeCents: parseDollarsToCents(feeText),
+        minSpendCents: parseDollarsToCents(minSpendText),
         endsOn: endsOnInput,
         clearEndsOn,
         includeOverridden,
@@ -480,6 +507,12 @@ export default function EditEventScreen() {
       const checkInChanged = original
         ? checkInRequired !== original.checkInRequired
         : false;
+      const feeCentsValue = parseDollarsToCents(feeText);
+      const minSpendCentsValue = parseDollarsToCents(minSpendText);
+      const feeChanged = original ? feeCentsValue !== original.feeCents : false;
+      const minSpendChanged = original
+        ? minSpendCentsValue !== original.minSpendCents
+        : false;
 
       const result = await updateEvent(event.id, {
         title: titleChanged ? title.trim() : null,
@@ -487,6 +520,8 @@ export default function EditEventScreen() {
         notes: notesChanged ? notes : null,
         startTime: startTimeChanged ? startTime : null,
         checkInRequired: checkInChanged ? checkInRequired : null,
+        feeCents: feeChanged ? feeCentsValue : null,
+        minSpendCents: minSpendChanged ? minSpendCentsValue : null,
       });
       setSaving(false);
       if (result.error) {
@@ -588,6 +623,21 @@ export default function EditEventScreen() {
         Turn this on and this game gets a door list, so you can check people
         in as they arrive. Small games usually don't need it.
       </Text>
+
+      <TextField
+        label="Cost to play"
+        value={feeText}
+        onChangeText={setFeeText}
+        keyboardType="decimal-pad"
+        placeholder="0.00"
+      />
+      <TextField
+        label="Minimum spend"
+        value={minSpendText}
+        onChangeText={setMinSpendText}
+        keyboardType="decimal-pad"
+        placeholder="0.00"
+      />
 
       {scope === 'series' && series ? (
         <>
