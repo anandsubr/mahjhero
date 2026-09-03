@@ -141,14 +141,17 @@ describe('ClubChips', () => {
   });
 
   it("gives the same club the same glyph every time, matching lib/dashboard's own glyphForClub", () => {
-    render(<ClubChips chips={CHIPS} selected="club-1" onSelect={() => {}} />);
-    // Rendered twice (re-render, not remount) to prove it's not a fresh
-    // random pick per render -- a real regression a naive
+    const { rerender } = render(
+      <ClubChips chips={CHIPS} selected="club-1" onSelect={() => {}} />,
+    );
+    // Re-rendered in place (not remounted) to force a real re-evaluation of
+    // the component, including glyphForClub(chip.id) -- to prove it's not a
+    // fresh random pick per render. A real regression a naive
     // Math.random()-based glyph pick would pass the single-render version
     // of this test but fail here.
     const firstGlyph = screen.getByTestId('chip-glyph-club-1').textContent;
-    render(<ClubChips chips={CHIPS} selected="club-1" onSelect={() => {}} />);
-    expect(screen.getAllByTestId('chip-glyph-club-1')[0].textContent).toBe(firstGlyph);
+    rerender(<ClubChips chips={CHIPS} selected="club-1" onSelect={() => {}} />);
+    expect(screen.getByTestId('chip-glyph-club-1').textContent).toBe(firstGlyph);
   });
 });
 
