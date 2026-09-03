@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(16);
+select plan(18);
 
 -- ------------------------------------------------------------------
 -- Fixture.
@@ -156,7 +156,7 @@ select throws_ok(
 select lives_ok(
   $$select public.record_round(
       'b0000000-0000-0000-0000-000000000001',
-      '70000000-0000-0000-0000-000000000003', 8)$$,
+      '70000000-0000-0000-0000-000000000003', 30)$$,
   'the organizer records a round for bob'
 );
 
@@ -166,7 +166,7 @@ set local request.jwt.claims to
 select lives_ok(
   $$select public.record_round(
       'b0000000-0000-0000-0000-000000000001',
-      '70000000-0000-0000-0000-000000000003', 5)$$,
+      '70000000-0000-0000-0000-000000000003', 25)$$,
   'ann, seated at the table, records a round for bob too'
 );
 
@@ -211,7 +211,7 @@ select throws_ok(
       'b0000000-0000-0000-0000-000000000001',
       '70000000-0000-0000-0000-000000000003', 0)$$,
   '23514',
-  'points must be greater than zero',
+  'points must be 25, 30, 35, 40, 45, 50, or 75',
   'zero points is refused'
 );
 
@@ -220,8 +220,24 @@ select throws_ok(
       'b0000000-0000-0000-0000-000000000001',
       '70000000-0000-0000-0000-000000000003', -3)$$,
   '23514',
-  'points must be greater than zero',
+  'points must be 25, 30, 35, 40, 45, 50, or 75',
   'negative points is refused'
+);
+
+select lives_ok(
+  $$select public.record_round(
+      'b0000000-0000-0000-0000-000000000001',
+      '70000000-0000-0000-0000-000000000003', 75)$$,
+  'the highest fixed value, 75, is accepted'
+);
+
+select throws_ok(
+  $$select public.record_round(
+      'b0000000-0000-0000-0000-000000000001',
+      '70000000-0000-0000-0000-000000000003', 20)$$,
+  '23514',
+  'points must be 25, 30, 35, 40, 45, 50, or 75',
+  'a plausible-but-not-fixed value (20) is refused, not just non-positive ones'
 );
 
 reset role;
@@ -280,8 +296,8 @@ reset role;
 select is(
   (select count(*)::int from public.table_rounds
      where event_table_id = 'b0000000-0000-0000-0000-000000000001'),
-  1,
-  'exactly one round remains after the delete'
+  2,
+  'two rounds remain after deleting one of the three recorded'
 );
 
 select * from finish();
