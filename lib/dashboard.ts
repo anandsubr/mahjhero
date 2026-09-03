@@ -120,8 +120,8 @@ const CLUB_GLYPHS: ClubGlyph[] = [
 /**
  * A club's own tile face, stable for a given id -- every member sees the
  * same glyph for the same club, everywhere it's shown (its chip, its
- * header, and the Messages list's club rows/thread header, via
- * ThreadAvatar's `asTile` treatment), not a fresh pick per render. The game
+ * header, and the Messages list's club rows, via ThreadRow's `asTile`
+ * treatment on ThreadAvatar), not a fresh pick per render. The game
  * screen no longer has its own small tile -- it reuses DashboardHeader's
  * "Your club" shape instead, which already carries this same glyph.
  * No fairness/collision-resistance requirement: a plain string hash into
