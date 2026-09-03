@@ -260,7 +260,11 @@ export default function SeatGrid({
               key={seat.bookingId}
               style={[styles.seat, seat.isYou && styles.seatYou, styles.seatRow]}
             >
-              <Text style={[styles.name, seat.isYou && styles.nameYou]}>
+              <Text
+                style={[styles.name, seat.isYou && styles.nameYou]}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
                 {displayName}
               </Text>
               <SeatBadge seat={seat} />
@@ -298,7 +302,11 @@ export default function SeatGrid({
                 name, with the decorative glyph entirely outside it.
               */}
               <View style={styles.nameRow}>
-                <Text style={[styles.name, seat.isYou && styles.nameYou]}>
+                <Text
+                  style={[styles.name, seat.isYou && styles.nameYou]}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
                   {displayName}
                 </Text>
                 {/* Decorative only — the Pressable's own accessibilityLabel
@@ -325,7 +333,11 @@ export default function SeatGrid({
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
               <View style={styles.nameRow}>
-                <Text style={[styles.name, seat.isYou && styles.nameYou]}>
+                <Text
+                  style={[styles.name, seat.isYou && styles.nameYou]}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
                   {displayName}
                 </Text>
                 <Text aria-hidden style={[styles.chevron, seat.isYou && styles.chevronYou]}>▴</Text>
@@ -484,10 +496,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: space[1],
   },
+  // flexShrink: 1 (Yoga's own default is 0, unlike CSS flexbox) so a long
+  // name shrinks to make room for the fixed-size badge/chevron that share
+  // its row (nameRow, seatRow) instead of pushing them past the seat's
+  // rounded background. Paired with numberOfLines/ellipsizeMode at every
+  // render site below so the shrunk name truncates rather than wrapping or
+  // clipping mid-glyph.
   name: {
     fontFamily: type.bodyRegular,
     fontSize: type.size.body,
     color: colors.text,
+    flexShrink: 1,
   },
   nameYou: {
     fontFamily: type.bodySemiBold,
