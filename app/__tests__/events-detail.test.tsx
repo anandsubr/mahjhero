@@ -426,7 +426,6 @@ describe('member view: what is shown, and what is not', () => {
     ]);
     render(<EventScreen />);
     expect(await screen.findByText('Table 1')).toBeTruthy();
-    expect(screen.getByText('4 seats free')).toBeTruthy();
     expect(screen.getByText('Advanced')).toBeTruthy();
     // No tier chip buttons -- a member cannot retier a table.
     expect(screen.queryByLabelText('Table 1: Any level')).toBeNull();

@@ -39,43 +39,8 @@ describe('TableCard', () => {
     );
     expect(screen.getByText('Table 2')).toBeTruthy();
     expect(screen.getByText('Advanced')).toBeTruthy();
-  });
-
-  it('says how many seats are left', () => {
-    render(
-      <TableCard
-        table={table}
-        occupants={occupants}
-        youId="p9"
-        onTakeSeat={vi.fn()}
-      />,
-    );
-    expect(screen.getByText('3 seats free')).toBeTruthy();
-  });
-
-  it('singularises one seat', () => {
-    render(
-      <TableCard
-        table={{ ...table, capacity: 2 }}
-        occupants={occupants}
-        youId="p9"
-        onTakeSeat={vi.fn()}
-      />,
-    );
-    expect(screen.getByText('1 seat free')).toBeTruthy();
-  });
-
-  it('says Full rather than "0 seats free"', () => {
-    render(
-      <TableCard
-        table={{ ...table, capacity: 1 }}
-        occupants={occupants}
-        youId="p9"
-        onTakeSeat={vi.fn()}
-      />,
-    );
-    expect(screen.getByText('Full')).toBeTruthy();
-    expect(screen.queryByText('0 seats free')).toBeNull();
+    // Assert that seats-free text is no longer rendered
+    expect(screen.queryByText(/seats? free/)).toBeNull();
   });
 
   it('shows your own seat as yours', () => {

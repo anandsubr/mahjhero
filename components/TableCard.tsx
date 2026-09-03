@@ -7,7 +7,6 @@ import SeatGrid from './SeatGrid';
 import SkillTierPips from './SkillTierPips';
 import Tag from './Tag';
 import type { SeatOccupant, SkillTier } from '../lib/bookings';
-import { seatsFreeLabel, seatsRemaining } from '../lib/bookings';
 import { roundTotals } from '../lib/rounds';
 import { colors, space, type } from '../lib/theme';
 
@@ -96,7 +95,6 @@ export default function TableCard({
   onDeleteRound,
 }: Props) {
   const seated = occupants.filter((o) => o.status === 'confirmed');
-  const free = seatsRemaining(table.capacity, seated.length);
   const bookedForYou = seated.find(
     (o) => o.profile_id === youId && o.booked_by !== youId,
   );
@@ -108,21 +106,21 @@ export default function TableCard({
   return (
     <Card>
       <View style={styles.row}>
-        <Text style={styles.label}>{table.label}</Text>
+        <View style={styles.labelRow}>
+          <Text style={styles.label}>{table.label}</Text>
+          {/*
+            Pips plus the word, deliberately -- the human's design left this
+            choice to judgement, and the safe default was kept: this is a
+            member's read-only view of a table's tier, not the host's four-row
+            control that pips exist to compact, so there is no height pressure
+            here to justify dropping the word. `SkillTierPips` itself is
+            `aria-hidden` (see its docstring), so the word is what actually
+            carries the meaning for a screen reader.
+          */}
+          <SkillTierPips tier={table.skill_tier} />
+          <Text style={styles.tier}>{TIER_LABELS[table.skill_tier]}</Text>
+        </View>
         {needsFourth ? <Tag>Needs a 4th</Tag> : null}
-      </View>
-      {/*
-        Pips plus the word, deliberately -- the human's design left this
-        choice to judgement, and the safe default was kept: this is a
-        member's read-only view of a table's tier, not the host's four-row
-        control that pips exist to compact, so there is no height pressure
-        here to justify dropping the word. `SkillTierPips` itself is
-        `aria-hidden` (see its docstring), so the word is what actually
-        carries the meaning for a screen reader.
-      */}
-      <View style={styles.tierRow}>
-        <SkillTierPips tier={table.skill_tier} />
-        <Text style={styles.tier}>{TIER_LABELS[table.skill_tier]}</Text>
       </View>
 
       <SeatGrid
@@ -151,8 +149,6 @@ export default function TableCard({
         canRecordRound={canRecordRound}
         onRecordRound={(profileId, points) => onRecordRound?.(profileId, points)}
       />
-
-      <Text style={styles.free}>{seatsFreeLabel(free)}</Text>
 
       {rounds ? (
         <RoundLog
@@ -189,27 +185,22 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: space[2],
   },
+  labelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[2],
+    flexShrink: 1,
+  },
   label: {
     fontFamily: type.bodySemiBold,
     fontSize: type.size.bodyLarge,
     color: colors.text,
-  },
-  tierRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space[2],
   },
   // 16 is the ONLY sanctioned size below 18, and only for helper text.
   tier: {
     fontFamily: type.bodyRegular,
     fontSize: type.size.helper,
     color: colors.textMuted,
-  },
-  free: {
-    fontFamily: type.bodySemiBold,
-    fontSize: type.size.body,
-    color: colors.accent2Color,
-    marginTop: space[2],
   },
   help: {
     fontFamily: type.bodyRegular,
