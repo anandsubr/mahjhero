@@ -61,11 +61,20 @@ export async function updateGreeting(
   }
 }
 
-/** Never rejects. */
+/** Never rejects. `.select('id')` is what turns a zero-row RLS denial into
+ *  an observable failure, the same reason lib/profile.ts's updateProfile and
+ *  this file's own updateGreeting carry it — without it a non-admin's DELETE
+ *  is silently filtered to zero matched rows and PostgREST reports that as
+ *  success with no error. */
 export async function deleteGreeting(id: string): Promise<{ error: string | null }> {
   try {
-    const { error } = await supabase.from('greetings').delete().eq('id', id);
+    const { data, error } = await supabase
+      .from('greetings')
+      .delete()
+      .eq('id', id)
+      .select('id');
     if (error) return { error: error.message };
+    if (!data || data.length === 0) return { error: GENERIC_ERROR };
     return { error: null };
   } catch (cause) {
     console.error('deleteGreeting failed', cause);
@@ -82,7 +91,12 @@ function localDateKey(date: Date): string {
 
 /** No fairness/collision-resistance requirement, same reasoning as
  *  lib/dashboard.ts's glyphForClub — this is decoration, not a security
- *  boundary, just "stable across a day, spreads reasonably". */
+ *  boundary, just "stable across a day, spreads reasonably".
+ *
+ *  Note: consecutive calendar dates hash to adjacent indices, so this cycles
+ *  through the list in order rather than appearing shuffled — deliberate,
+ *  not a bug, since there's no fairness requirement here, just documented so
+ *  nobody mistakes the sequential pattern for something to fix. */
 function hashString(value: string): number {
   let hash = 0;
   for (let i = 0; i < value.length; i++) {

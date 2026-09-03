@@ -13,7 +13,7 @@ vi.mock('./supabase', () => ({
       update: vi.fn(() => ({
         eq: vi.fn(() => ({ select: selectAfterUpdate })),
       })),
-      delete: vi.fn(() => ({ eq: deleteResult })),
+      delete: vi.fn(() => ({ eq: vi.fn(() => ({ select: deleteResult })) })),
     })),
   },
 }));
@@ -86,11 +86,19 @@ describe('updateGreeting', () => {
 
 describe('deleteGreeting', () => {
   it('reports no error on success', async () => {
-    deleteResult.mockResolvedValue({ error: null });
+    deleteResult.mockResolvedValue({ data: [{ id: 'g1' }], error: null });
     expect(await deleteGreeting('g1')).toEqual({ error: null });
   });
 
   it('reports the generic error on a network failure', async () => {
+    expect(await deleteGreeting('g1')).toEqual({ error: GENERIC_ERROR });
+  });
+
+  it('reports the generic error when the delete matches no rows', async () => {
+    // A non-admin's DELETE is filtered by RLS to zero matched rows, which
+    // PostgREST reports as success with no error — the same silent-no-op
+    // shape updateGreeting's own "matches no rows" test guards against.
+    deleteResult.mockResolvedValue({ data: [], error: null });
     expect(await deleteGreeting('g1')).toEqual({ error: GENERIC_ERROR });
   });
 });
