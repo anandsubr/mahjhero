@@ -1,9 +1,9 @@
 import { usePathname, useRouter } from 'expo-router';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { BellIcon, HomeIcon, MessageIcon, PersonIcon } from './icons';
+import { Pressable, StyleSheet, View } from 'react-native';
+import MahjongTile, { type MahjongSuit } from './MahjongTile';
 import UnreadBadge from './UnreadBadge';
 import { unreadSuffix } from '../lib/messages';
-import { colors, space, type } from '../lib/theme';
+import { space } from '../lib/theme';
 import { useNotificationsUnread } from '../lib/use-notifications-unread';
 import { useUnreadCounts } from '../lib/use-unread';
 
@@ -16,11 +16,15 @@ const TABS: { key: TabKey; label: string; href: string }[] = [
   { key: 'alerts', label: 'Alerts', href: '/alerts' },
 ];
 
-function icon(key: TabKey, color: string) {
-  if (key === 'club') return <HomeIcon color={color} />;
-  if (key === 'messages') return <MessageIcon color={color} />;
-  if (key === 'profile') return <PersonIcon color={color} />;
-  return <BellIcon color={color} />;
+// Exported so app/__tests__/nav-glyph-parity.test.tsx can check the bar's own
+// mapping against the suit prop each landing screen's own section tile
+// carries, rather than duplicating this mapping as a second hardcoded list
+// that could itself drift from this one.
+export function suitFor(key: TabKey): MahjongSuit {
+  if (key === 'club') return 'dots';
+  if (key === 'messages') return 'bamboo';
+  if (key === 'profile') return 'red-dragon';
+  return 'green-dragon';
 }
 
 /**
@@ -62,13 +66,6 @@ export default function TabBar({ active }: { active: TabKey }) {
     <View style={styles.bar}>
       {TABS.map((tab) => {
         const selected = tab.key === active;
-        // `accent[700]`, not the artboard's `accentColor`: on this bar's
-        // `surface` background accentColor measures 2.69:1, which made the
-        // SELECTED tab less legible than the unselected one (neutral-700,
-        // 4.92:1) — the one tab a member is looking for. accent[700] reads
-        // 5.09:1 and clears AA. Same failure, and the same fix, as
-        // components/NeedAFourthCard.tsx's own card background.
-        const tint = selected ? colors.accent[700] : colors.neutral[700];
         // Messages and Alerts both carry a badge; the other two tabs'
         // suffix is always empty.
         const badgeCount =
@@ -90,15 +87,19 @@ export default function TabBar({ active }: { active: TabKey }) {
             aria-selected={selected}
             style={styles.tab}
           >
-            <View style={styles.iconWrap}>
-              {icon(tab.key, tint)}
+            <View style={styles.tileWrap}>
+              <MahjongTile
+                suit={suitFor(tab.key)}
+                size="tab"
+                selected={selected}
+                label={tab.label}
+              />
               {tab.key === 'messages' || tab.key === 'alerts' ? (
                 <View style={styles.badge}>
                   <UnreadBadge count={badgeCount} />
                 </View>
               ) : null}
             </View>
-            <Text style={[styles.label, { color: tint }]}>{tab.label}</Text>
           </Pressable>
         );
       })}
@@ -109,19 +110,16 @@ export default function TabBar({ active }: { active: TabKey }) {
 const styles = StyleSheet.create({
   bar: {
     flexDirection: 'row',
-    backgroundColor: colors.surface,
     paddingTop: space[2],
-    paddingBottom: space[4],
+    paddingBottom: space[3],
   },
   tab: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: space[1],
-    minHeight: 58,
   },
-  iconWrap: {
-    // Positions the badge relative to the icon alone, not the whole tab —
+  tileWrap: {
+    // Positions the badge relative to the tile alone, not the whole tab --
     // an absolutely-positioned child otherwise anchors to the nearest
     // positioned ancestor, which would be this Pressable's full width.
     position: 'relative',
@@ -129,10 +127,6 @@ const styles = StyleSheet.create({
   badge: {
     position: 'absolute',
     top: -space[2],
-    right: -space[3],
-  },
-  label: {
-    fontFamily: type.bodySemiBold,
-    fontSize: type.size.helper,
+    right: -space[2],
   },
 });

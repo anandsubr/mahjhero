@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import ClubBoardScreen from '../messages/club/[threadId]/index';
+import { glyphForClub } from '../../lib/dashboard';
 
 const push = vi.fn();
 
@@ -289,6 +290,24 @@ describe('the club board', () => {
     expect(push).toHaveBeenCalledWith('/messages/club/new?threadId=t1&clubId=');
   });
 
+  // The old control was a full-width Button reading "New post" as its own
+  // visible label, between the header and the post list. The replacement is
+  // an icon-only top-right PlusButton with the same accessible name -- same
+  // control, same destination, different chrome. `screen.queryByText` (not
+  // `queryByLabelText`) is the right check for "no visible text of its own":
+  // PlusButton's accessibilityLabel becomes the accessible name via
+  // react-native-web's aria-label, which testing-library's `getByText`
+  // never matches on, so this only passes once the visible "New post" text
+  // node the old Button rendered as a CHILD is actually gone.
+  it('moves New post into a top-right + button, off its own full-width row', async () => {
+    fetchClubPosts.mockResolvedValue([]);
+    render(<ClubBoardScreen />);
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'New post' })).toBeTruthy(),
+    );
+    expect(screen.queryByText('New post')).toBeNull();
+  });
+
   // The board shipped with no header at all -- a member who tapped in had
   // no way to tell which club they had landed on, and no way back except
   // the tab bar. This is the fix, built to the same iOS Messages convention
@@ -311,6 +330,23 @@ describe('the club board', () => {
       render(<ClubBoardScreen />);
       expect(await screen.findByText('Cedar Falls Mah Jongg')).toBeTruthy();
       expect(screen.getByTestId('thread-header-avatar-club')).toBeTruthy();
+    });
+
+    // Task 8/9's `asTile` treatment (components/ThreadAvatar.tsx) draws a
+    // mahjong tile instead of the plain circle -- but this screen keeps its
+    // own explicit `testID={`thread-header-avatar-${kind}`}` at the call
+    // site (unlike components/DashboardHeader.tsx's callers, which omit
+    // `testID` and so fall back to ThreadAvatar's own default
+    // `thread-avatar-club-tile`), so that testID alone can't distinguish
+    // tile mode from the plain circle -- both branches render it identically
+    // when an explicit testID is passed. Reusing app/__tests__/
+    // nav-glyph-parity.test.tsx's own idiom instead: look for the glyph
+    // MahjongTile itself renders (`glyph-<suit>`, components/MahjongTile.tsx)
+    // inside the avatar container, which only exists in tile mode.
+    it('shows the club as a mahjong tile', async () => {
+      render(<ClubBoardScreen />);
+      const tile = await screen.findByTestId('thread-header-avatar-club');
+      expect(within(tile).getByTestId(`glyph-${glyphForClub('c1')}`)).toBeTruthy();
     });
 
     it('shows a back chevron, distinctly named from the Messages tab, that returns to /messages', async () => {

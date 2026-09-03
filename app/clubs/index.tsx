@@ -8,6 +8,7 @@ import ClubChips from '../../components/ClubChips';
 import DashboardHeader from '../../components/DashboardHeader';
 import DateTile from '../../components/DateTile';
 import ErrorBanner from '../../components/ErrorBanner';
+import MahjongTile from '../../components/MahjongTile';
 import NeedAFourthCard from '../../components/NeedAFourthCard';
 import NoticeBanner from '../../components/NoticeBanner';
 import Screen from '../../components/Screen';
@@ -414,7 +415,12 @@ export default function ClubsScreen() {
   if (loadFailed) {
     return (
       <Screen contentStyle={styles.container} tabBar={<TabBar active="club" />}>
-        <Text style={styles.heading}>Your clubs</Text>
+        <View style={styles.titleRow}>
+          <View testID="section-tile">
+            <MahjongTile suit="dots" size="section" />
+          </View>
+          <Text style={styles.heading}>Your clubs</Text>
+        </View>
         <ErrorBanner message={GENERIC_ERROR} />
       </Screen>
     );
@@ -433,6 +439,11 @@ export default function ClubsScreen() {
           kicker={empty.kicker}
           name={empty.name}
           meta={empty.meta}
+          titleAccessory={
+            <View testID="section-tile">
+              <MahjongTile suit="dots" size="section" />
+            </View>
+          }
         />
         <View style={styles.list}>
           <Text style={styles.help}>
@@ -487,35 +498,38 @@ export default function ClubsScreen() {
 
   return (
     <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="club" />}>
-      <DashboardHeader
-        kicker={scope.kicker}
-        name={scope.name}
-        meta={scope.meta}
-        onPressScope={
-          scopeClubId ? () => router.push(`/clubs/${scopeClubId}`) : undefined
-        }
-        // Same club the pencil opens — a member looking at one club's games
-        // reaches for the header's + expecting "add a game here", not
-        // "start an unrelated club". `scopeClubId` already resolves both the
-        // ways a single club ends up in view: an explicit chip pick, and a
-        // one-club member's own club, which `headerScope` shows regardless
-        // of `selected` — so this covers both with no special-casing.
-        onPressAddGame={
-          scopeClubId ? () => router.push(`/clubs/${scopeClubId}/events/new`) : undefined
-        }
-        // Shown exactly when the chip row is hidden (see the row's own
-        // guard below) — the chevron is the way back once a club is
-        // filtered in, whether that happened at two clubs or a member
-        // redundantly tapped their own single tile.
-        onPressBack={
-          selected !== ALL_CLUBS
-            ? () => {
-                setSelected(ALL_CLUBS);
-                setNotice(null);
-              }
-            : undefined
-        }
-      />
+      {scope.kicker === 'Your club' ? (
+        <DashboardHeader
+          kicker={scope.kicker}
+          name={scope.name}
+          meta={scope.meta}
+          clubId={scopeClubId ?? undefined}
+          onPressScope={
+            scopeClubId ? () => router.push(`/clubs/${scopeClubId}`) : undefined
+          }
+          // Same club the pencil opens — a member looking at one club's games
+          // reaches for the header's + expecting "add a game here", not
+          // "start an unrelated club". `scopeClubId` already resolves both the
+          // ways a single club ends up in view: an explicit chip pick, and a
+          // one-club member's own club, which `headerScope` shows regardless
+          // of `selected` — so this covers both with no special-casing.
+          onPressAddGame={
+            scopeClubId ? () => router.push(`/clubs/${scopeClubId}/events/new`) : undefined
+          }
+          // Shown exactly when the chip row is hidden (see the row's own
+          // guard below) — the chevron is the way back once a club is
+          // filtered in, whether that happened at two clubs or a member
+          // redundantly tapped their own single tile.
+          onPressBack={
+            selected !== ALL_CLUBS
+              ? () => {
+                  setSelected(ALL_CLUBS);
+                  setNotice(null);
+                }
+              : undefined
+          }
+        />
+      ) : null}
 
       {/*
         Shown whenever nothing REAL is filtered in — the ALL_CLUBS default,
@@ -904,6 +918,20 @@ const styles = StyleSheet.create({
     fontFamily: type.heading,
     fontSize: type.size.h2,
     color: colors.text,
+  },
+  // Used only by the `loadFailed` branch. The other two places this screen
+  // could show a section tile don't need a row of their own for it: the
+  // empty-clubs-list branch passes it as `DashboardHeader`'s own
+  // `titleAccessory` (rendered inline, before the name, by that component
+  // itself), and the main populated branch's flat "all clubs" scope has no
+  // header -- and so no section tile -- at all, removed entirely once the
+  // chip row took over as that scope's own heading. Only the plain
+  // `<Text style={styles.heading}>` branch below has no wrapping row of its
+  // own to sit a tile beside, hence this one.
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[2],
   },
   // The empty state's own gap: what puts space between the "not in a club
   // yet" help text and the "Start a club" button below it, instead of them

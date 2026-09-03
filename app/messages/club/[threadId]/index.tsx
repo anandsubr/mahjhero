@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Redirect, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
-import Button from '../../../../components/Button';
 import ErrorBanner from '../../../../components/ErrorBanner';
 import PostRow from '../../../../components/messages/PostRow';
+import PlusButton from '../../../../components/PlusButton';
 import Screen from '../../../../components/Screen';
 import TabBar from '../../../../components/TabBar';
 import ThreadAvatar from '../../../../components/ThreadAvatar';
@@ -179,6 +179,32 @@ export default function ClubBoardScreen() {
           <ChevronLeftIcon color={colors.text} size={22} />
         </Pressable>
 
+        {/*
+          Top-right, symmetric with the back chevron's own absolute
+          top-left placement -- the same fixed-size-control-in-one-corner
+          idea components/DashboardHeader.tsx's clubTopRow uses via flex-row
+          instead. Deliberately not gated on `thread`/`ready` the way the
+          centred avatar+pill below is: a member composing does not need
+          the existing posts (or even the thread's own name) loaded first,
+          and the board's own load failing must not also take away the one
+          way to start a post. `clubId` falls back to '' when `thread`
+          hasn't resolved yet (or failed) -- the compose screen still works
+          without it, just without an Announcement toggle or recipient
+          preview to show a plain member who couldn't see either anyway.
+          Replaces the old full-width "New post" Button that used to sit
+          between this header and the post list.
+        */}
+        <View style={styles.newPostButton}>
+          <PlusButton
+            onPress={() =>
+              router.push(
+                `/messages/club/new?threadId=${threadId}&clubId=${thread?.club_id ?? ''}`,
+              )
+            }
+            accessibilityLabel="New post"
+          />
+        </View>
+
         {thread && kind ? (
           <View style={styles.headerCenter}>
             <ThreadAvatar
@@ -186,6 +212,8 @@ export default function ClubBoardScreen() {
               name={title}
               size={72}
               testID={`thread-header-avatar-${kind}`}
+              asTile={kind === 'club'}
+              clubId={kind === 'club' ? (thread.club_id ?? undefined) : undefined}
             />
 
             {/*
@@ -218,26 +246,6 @@ export default function ClubBoardScreen() {
 
       {/* The alert role lives inside ErrorBanner now -- see its docstring. */}
       {error ? <ErrorBanner message={error} /> : null}
-
-      {/*
-        Deliberately not gated on `ready`: a member composing does not need
-        the existing posts loaded first, and the board's own load failing
-        must not also take away the one way to start a post. `clubId` falls
-        back to '' when the read above hasn't resolved yet (or failed) --
-        the compose screen still works without it, just without an
-        Announcement toggle or recipient preview to show a plain member
-        who couldn't see either anyway.
-      */}
-      <Button
-        onPress={() =>
-          router.push(
-            `/messages/club/new?threadId=${threadId}&clubId=${thread?.club_id ?? ''}`,
-          )
-        }
-        accessibilityLabel="New post"
-      >
-        New post
-      </Button>
 
       {!ready ? (
         <ActivityIndicator color={colors.accentColor} />
@@ -287,6 +295,15 @@ const styles = StyleSheet.create({
     height: 44,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  // Mirrors `backButton`'s own top-left absolute placement -- PlusButton is
+  // already a fixed 50x50-ish circle (components/PlusButton.tsx), so there
+  // is no matching width/height pair to set here the way `backButton` needs
+  // for its bare-icon hit area.
+  newPostButton: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
   },
   headerCenter: { alignItems: 'center', gap: space[2] },
   // colors.surface, the same pill/panel ground the flat screen's own

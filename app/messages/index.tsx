@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { Redirect, useFocusEffect, useRouter } from 'expo-router';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import MahjongTile from '../../components/MahjongTile';
 import PlusButton from '../../components/PlusButton';
 import ErrorBanner from '../../components/ErrorBanner';
 import Screen from '../../components/Screen';
@@ -139,7 +140,12 @@ export default function MessagesScreen() {
       tabBar={<TabBar active="messages" />}
     >
       <View style={styles.header}>
-        <Text style={styles.heading}>Messages</Text>
+        <View style={styles.titleRow}>
+          <View testID="section-tile">
+            <MahjongTile suit="bamboo" size="section" />
+          </View>
+          <Text style={styles.heading}>Messages</Text>
+        </View>
         <PlusButton
           onPress={() => router.push('/messages/new')}
           accessibilityLabel="New message"
@@ -185,6 +191,11 @@ const styles = StyleSheet.create({
     fontFamily: type.heading,
     fontSize: type.size.h2,
     color: colors.text,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[2],
   },
   // No gap: components/ThreadRow.tsx's own hairline divider is what
   // separates rows now, not space between cards.

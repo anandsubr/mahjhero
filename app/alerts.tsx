@@ -3,6 +3,7 @@ import { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import Card from '../components/Card';
 import ErrorBanner from '../components/ErrorBanner';
+import MahjongTile from '../components/MahjongTile';
 import Screen from '../components/Screen';
 import TabBar from '../components/TabBar';
 import { GENERIC_ERROR } from '../lib/constants';
@@ -111,7 +112,12 @@ export default function AlertsScreen() {
 
   return (
     <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="alerts" />}>
-      <Text style={styles.heading}>Alerts</Text>
+      <View style={styles.titleRow}>
+        <View testID="section-tile">
+          <MahjongTile suit="green-dragon" size="section" />
+        </View>
+        <Text style={styles.heading}>Alerts</Text>
+      </View>
 
       {error ? <ErrorBanner message={error} /> : null}
 
@@ -169,6 +175,11 @@ const styles = StyleSheet.create({
     fontFamily: type.heading,
     fontSize: type.size.h1,
     color: colors.text,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[2],
   },
   emptyCard: {
     padding: space[4],

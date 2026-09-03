@@ -308,6 +308,14 @@ describe('clubs list', () => {
     expect(screen.getByText('Thursday evenings')).toBeTruthy();
   });
 
+  it('shows the club as a tile in the combined top row, for the single-club scope', async () => {
+    // Reuse whichever existing fixture already reaches the centred
+    // "Your club" shape (a one-club member, or a filtered-in club).
+    fetchMyClubs.mockResolvedValueOnce([CLUB]);
+    render(<ClubsScreen />);
+    await screen.findByTestId('thread-avatar-club-tile');
+  });
+
   // "Your games" (Task 13) stacked a whole section below the header and chip
   // row with no `scroll` prop on Screen, unlike every other list screen
   // (app/clubs/[id]/index.tsx, the event screen). A member with a few games
@@ -335,18 +343,40 @@ describe('clubs list', () => {
     expect(await screen.findByText(/Could not reach MahjHero/)).toBeTruthy();
     expect(screen.queryByText(/not in a club yet/i)).toBeNull();
   });
+
+  // The tile is purely decorative -- scoped to a wrapping testID rather than
+  // a bare `[aria-hidden="true"]` query, since TabBar (carried by every
+  // screen) already renders one such tile per tab and a bare query would
+  // pass whether or not this screen's own section tile exists.
+  it('shows a decorative dots tile before the heading when clubs fail to load', async () => {
+    fetchMyClubs.mockResolvedValue(null);
+    render(<ClubsScreen />);
+    await screen.findByText('Your clubs');
+    expect(
+      screen.getByTestId('section-tile').querySelector('[aria-hidden="true"]'),
+    ).toBeTruthy();
+  });
+
+  it('shows a decorative dots tile before the heading with no clubs', async () => {
+    fetchMyClubs.mockResolvedValue([]);
+    render(<ClubsScreen />);
+    await screen.findByText('Start a club');
+    expect(
+      screen.getByTestId('section-tile').querySelector('[aria-hidden="true"]'),
+    ).toBeTruthy();
+  });
 });
 
 describe('dashboard artboard', () => {
-  it('heads the page with "Your clubs" and no club-count subtitle', async () => {
+  it('leads with the club chips, no header line, when several clubs and none is selected', async () => {
     fetchMyClubs.mockResolvedValue([CLUB, { ...CLUB, id: 'club-2', name: 'Harbour' }]);
     fetchMyUpcomingBookings.mockResolvedValue([]);
     fetchUpcomingEvents.mockResolvedValue([]);
 
     render(<ClubsScreen />);
 
-    expect(await screen.findByText('Your clubs')).toBeTruthy();
-    expect(screen.queryByText('2 clubs')).toBeNull();
+    await screen.findByRole('button', { name: /Riverside/ }); // a chip has rendered
+    expect(screen.queryByText('Your clubs')).toBeNull();
   });
 
   // The rows were inert: the one thing a member wants from a game they can
@@ -419,10 +449,17 @@ describe('dashboard artboard', () => {
     expect(await screen.findByRole('button', { name: 'Harbour' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Harbour' }));
     expect(await screen.findByRole('button', { name: /^Manage Harbour/ })).toBeTruthy();
+    // The centred "Your club" header draws Harbour's own mahjong tile in its
+    // top row (components/DashboardHeader.tsx) -- this is the one place a
+    // real "several clubs, tap a chip, see the centred header" flow actually
+    // asserts that tile shows up, rather than leaving it covered only
+    // piecemeal, across DashboardHeader's own unit tests and
+    // nav-glyph-parity.test.tsx's synthetic renders.
+    expect(await screen.findByTestId('thread-avatar-club-tile')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Clear club filter' }));
 
-    expect(screen.getByText('Your clubs')).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Harbour' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /^Manage / })).toBeNull();
   });
 
@@ -485,7 +522,7 @@ describe('dashboard artboard', () => {
   it('offers no header + while every club is in scope', async () => {
     fetchMyClubs.mockResolvedValue([CLUB, { ...CLUB, id: 'club-2', name: 'Harbour' }]);
     render(<ClubsScreen />);
-    expect(await screen.findByText('Your clubs')).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Riverside Mah Jongg' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Add a game' })).toBeNull();
   });
 
@@ -1047,7 +1084,7 @@ describe('dashboard artboard', () => {
   it('offers no way in while every club is in scope', async () => {
     fetchMyClubs.mockResolvedValue([CLUB, { ...CLUB, id: 'club-2', name: 'Harbour' }]);
     render(<ClubsScreen />);
-    expect(await screen.findByText('Your clubs')).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Riverside Mah Jongg' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /^Manage / })).toBeNull();
   });
 
@@ -1348,13 +1385,25 @@ describe('club detail screen', () => {
     render(<ClubDetailScreen />);
     expect(await screen.findByText('Riverside Mah Jongg')).toBeTruthy();
     expect(screen.getByText('Thursday evenings')).toBeTruthy();
-    // Pins this to the "Your club" avatar/pill variant specifically — the
-    // name and rhythm text alone would pass identically for the flat
-    // branch, so they don't prove which shape actually rendered.
-    expect(screen.getByTestId('thread-avatar-club')).toBeTruthy();
+    // Pins this to the "Your club" tile variant specifically — the name and
+    // rhythm text alone would pass identically for the flat branch, so they
+    // don't prove which shape actually rendered.
+    expect(screen.getByTestId('thread-avatar-club-tile')).toBeTruthy();
     // The bottom tab bar's own Profile tab is the way to profile now —
     // this header no longer draws its own avatar/profile control.
     expect(screen.queryByRole('button', { name: 'Your profile' })).toBeNull();
+  });
+
+  // This screen never had the combined back/tile/plus row Task 9/10 built
+  // for the Clubs dashboard specifically — its own separate "← Clubs" ghost
+  // button (below) is the only way back, and it never gains "Clear club
+  // filter" or "Add a game" alongside the tile.
+  it('shows the club as a tile, still with its own separate back button unchanged', async () => {
+    render(<ClubDetailScreen />);
+    expect(await screen.findByTestId('thread-avatar-club-tile')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Back to your clubs' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Clear club filter' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Add a game' })).toBeNull();
   });
 
   // The tab bar's Club tab reaches the identical /clubs route, but renders

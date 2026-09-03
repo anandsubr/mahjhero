@@ -316,6 +316,8 @@ export default function NewPostScreen() {
               name={clubName}
               size={72}
               testID="thread-header-avatar-club"
+              asTile
+              clubId={clubId}
             />
 
             {/*

@@ -1,6 +1,7 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { CalendarIcon, PeopleIcon } from './icons';
-import { initialsFrom } from '../lib/dashboard';
+import MahjongTile from './MahjongTile';
+import { glyphForClub, initialsFrom } from '../lib/dashboard';
 import type { ThreadKind } from '../lib/messages';
 import { colors, type } from '../lib/theme';
 
@@ -32,6 +33,8 @@ export default function ThreadAvatar({
   name,
   size = DEFAULT_SIZE,
   testID,
+  asTile = false,
+  clubId,
 }: {
   kind: ThreadKind;
   /** Club name (club) or the other member's/thread's title (direct).
@@ -39,6 +42,16 @@ export default function ThreadAvatar({
   name: string;
   size?: number;
   testID?: string;
+  /** Opt-in: renders `kind="club"` as a mahjong tile (this club's own
+   *  stable glyph + initials) instead of the plain circle every other
+   *  caller still gets. Default false so every existing caller — in
+   *  particular components/ThreadRow.tsx's small list-row avatars, which
+   *  must stay circular — is completely unaffected. Ignored for any
+   *  kind other than 'club'. */
+  asTile?: boolean;
+  /** Required (in practice) whenever `asTile` is true and `kind==='club'`
+   *  — the tile's glyph is derived from this, not from `name`. */
+  clubId?: string;
 }) {
   const dim = { width: size, height: size, borderRadius: size / 2 };
   const glyphSize = Math.round(size * (24 / DEFAULT_SIZE));
@@ -47,6 +60,17 @@ export default function ThreadAvatar({
     { fontSize: Math.round(size * (18 / DEFAULT_SIZE)) },
   ];
 
+  if (kind === 'club' && asTile && clubId) {
+    return (
+      <View testID={testID ?? 'thread-avatar-club-tile'}>
+        <MahjongTile
+          suit={glyphForClub(clubId)}
+          size="chip"
+          label={initialsFrom(name)}
+        />
+      </View>
+    );
+  }
   if (kind === 'club') {
     return (
       <View testID={testID ?? 'thread-avatar-club'} style={[styles.avatar, dim, styles.avatarClub]}>

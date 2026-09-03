@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import NewPostScreen from '../messages/club/new';
+import { glyphForClub } from '../../lib/dashboard';
 
 const replace = vi.fn();
 const push = vi.fn();
@@ -194,6 +195,22 @@ describe('composing a post', () => {
     render(<NewPostScreen />);
     await waitFor(() => expect(screen.getByText('Riverside Riichi')).toBeTruthy());
     expect(fetchClub).toHaveBeenCalledWith('c1');
+  });
+
+  // Same asTile treatment the board screen's own header gets (Task 8/9,
+  // components/ThreadAvatar.tsx) -- and the same reason this screen's own
+  // test can't key off `thread-avatar-club-tile` (ThreadAvatar's default
+  // testID) either: this call site keeps its own explicit
+  // testID="thread-header-avatar-club", which both the tile and plain-circle
+  // branches render identically, so only the glyph MahjongTile draws inside
+  // (`glyph-<suit>`, only present in tile mode) actually proves the tile
+  // rendered -- the same idiom app/__tests__/nav-glyph-parity.test.tsx and
+  // app/__tests__/club-board.test.tsx's own new test both use.
+  it('shows the club as a mahjong tile', async () => {
+    fetchRoster.mockResolvedValue(member('member'));
+    render(<NewPostScreen />);
+    const tile = await screen.findByTestId('thread-header-avatar-club');
+    expect(within(tile).getByTestId(`glyph-${glyphForClub('c1')}`)).toBeTruthy();
   });
 
   // See app/messages/[threadId].tsx's own inert-pill comment: a control

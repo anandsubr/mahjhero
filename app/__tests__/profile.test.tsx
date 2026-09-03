@@ -176,4 +176,23 @@ describe('profile screen', () => {
     render(<ProfileScreen />);
     expect(await screen.findByText('Friends')).toBeTruthy();
   });
+
+  // The tile is purely decorative -- scoped to a wrapping testID rather than
+  // a bare `[aria-hidden="true"]` query, since TabBar (carried by every
+  // screen) renders its own four `aria-hidden` tiles too, which would let a
+  // bare query pass whether or not this screen's own section tile exists.
+  it('shows a decorative red-dragon tile before the heading', async () => {
+    fetchProfile.mockResolvedValueOnce({
+      id: 'test-user',
+      display_name: 'Pat',
+      skill_level: 'intermediate',
+      avatar_url: null,
+      timezone: 'America/New_York',
+    });
+    render(<ProfileScreen />);
+    await screen.findByText('Your profile');
+    expect(
+      screen.getByTestId('section-tile').querySelector('[aria-hidden="true"]'),
+    ).toBeTruthy();
+  });
 });

@@ -184,6 +184,7 @@ export default function ClubDetailScreen() {
         kicker="Your club"
         name={club.name}
         meta={club.rhythm}
+        clubId={club.id}
       />
 
       {mayInvite ? (

@@ -1,27 +1,30 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { PlusIcon } from './icons';
+import MahjongTile from './MahjongTile';
 import UnreadBadge from './UnreadBadge';
-import { initialsFrom } from '../lib/dashboard';
+import { glyphForClub, initialsFrom } from '../lib/dashboard';
 import type { Chip } from '../lib/dashboard';
 import { unreadSuffix } from '../lib/messages';
 import { colors, control, space, type } from '../lib/theme';
 
 /**
  * The artboard's club switcher, icon-over-label — the same shape
- * components/TabBar.tsx uses for every tab. Each club gets a small avatar
- * carrying its initials (the same fill/initials treatment DashboardHeader's
- * and ThreadAvatar's own club avatars use).
+ * components/TabBar.tsx uses for every tab, but drawn with `MahjongTile`'s
+ * own `size="chip"` variant (48x60), distinct from TabBar's `size="tab"`
+ * (70x77). Each club gets its own `glyphForClub`-derived suit on the tile
+ * face, with its initials as the tile's label underneath.
  *
  * No "All clubs" chip: it never represented a real club, and the row's own
  * visibility already carries that meaning (app/clubs/index.tsx draws it
  * exactly when nothing is filtered in). A trailing "New club" tile takes
- * its place at the end of the row — the outlined ⊕ treatment PlusButton
- * uses, not a club's solid initials fill, so it reads as an action rather
+ * its place at the end of the row — a same-sized outlined tile, not a
+ * club's solid glyph-and-initials tile, so it reads as an action rather
  * than a fourth club. `onPressNewClub` is optional so this component stays
  * usable without it, but every real caller passes it.
  *
- * Selection reads as a ring around the avatar rather than a leading dot,
- * which had nowhere clean to sit on a tile.
+ * Selection reads via `MahjongTile`'s own solid accent-tile treatment
+ * (`selected`) rather than a leading dot, which had nowhere clean to sit on
+ * a tile.
  *
  * Still wraps onto as many lines as it needs rather than scrolling
  * horizontally — selecting a chip is the only way to arm the header's
@@ -63,12 +66,13 @@ export default function ClubChips({
             aria-selected={active}
             style={styles.tile}
           >
-            <View style={styles.avatarWrap}>
-              <View
-                style={[styles.avatar, styles.avatarClub, active ? styles.avatarActive : null]}
-              >
-                <Text style={styles.avatarInitials}>{initialsFrom(chip.label)}</Text>
-              </View>
+            <View style={styles.tileWrap} testID={`chip-glyph-${chip.id}`}>
+              <MahjongTile
+                suit={glyphForClub(chip.id)}
+                size="chip"
+                selected={active}
+                label={initialsFrom(chip.label)}
+              />
               <View style={styles.badgeWrap}>
                 <UnreadBadge count={count} />
               </View>
@@ -86,7 +90,7 @@ export default function ClubChips({
           accessibilityLabel="Start a club"
           style={styles.tile}
         >
-          <View style={[styles.avatar, styles.avatarNewClub]}>
+          <View style={styles.newClubTile}>
             <PlusIcon size={16} color={colors.text} />
           </View>
           <Text style={styles.label} numberOfLines={1}>
@@ -107,33 +111,22 @@ const styles = StyleSheet.create({
   tile: {
     alignItems: 'center',
     gap: space[1],
-    width: 72,
+    width: 64,
   },
-  avatarWrap: {
+  tileWrap: {
     position: 'relative',
   },
-  avatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  avatarClub: { backgroundColor: colors.accent[700] },
-  avatarActive: { borderColor: colors.accentColor },
   // Outlined rather than filled — the same treatment PlusButton uses — so
   // this tile reads as an action, not as a fourth club.
-  avatarNewClub: {
+  newClubTile: {
+    width: 48,
+    height: 60,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: 'transparent',
     borderWidth: control.hairline,
     borderColor: colors.textMuted,
-  },
-  avatarInitials: {
-    fontFamily: type.bodyBold,
-    fontSize: 13,
-    color: colors.bg,
   },
   badgeWrap: {
     position: 'absolute',

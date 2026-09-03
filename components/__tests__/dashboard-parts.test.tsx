@@ -130,6 +130,29 @@ describe('ClubChips', () => {
     expect(screen.queryByRole('button', { name: 'Start a club' })).toBeNull();
     expect(screen.queryByText('New club')).toBeNull();
   });
+
+  it('shows each club as a mahjong tile, not a circular avatar', () => {
+    render(<ClubChips chips={CHIPS} selected="club-1" onSelect={() => {}} />);
+    // The old circular-avatar testID this replaces.
+    expect(screen.queryByTestId('thread-avatar-club')).toBeNull();
+    // Both initials still read, now on the tile face rather than a circle.
+    expect(screen.getByText('RM')).toBeTruthy();
+    expect(screen.getByText('HT')).toBeTruthy();
+  });
+
+  it("gives the same club the same glyph every time, matching lib/dashboard's own glyphForClub", () => {
+    const { rerender } = render(
+      <ClubChips chips={CHIPS} selected="club-1" onSelect={() => {}} />,
+    );
+    // Re-rendered in place (not remounted) to force a real re-evaluation of
+    // the component, including glyphForClub(chip.id) -- to prove it's not a
+    // fresh random pick per render. A real regression a naive
+    // Math.random()-based glyph pick would pass the single-render version
+    // of this test but fail here.
+    const firstGlyph = screen.getByTestId('chip-glyph-club-1').textContent;
+    rerender(<ClubChips chips={CHIPS} selected="club-1" onSelect={() => {}} />);
+    expect(screen.getByTestId('chip-glyph-club-1').textContent).toBe(firstGlyph);
+  });
 });
 
 import DashboardHeader from '../DashboardHeader';
@@ -167,13 +190,31 @@ describe('DashboardHeader', () => {
   describe('the "Your club" variant', () => {
     it('shows the club’s avatar, name and rhythm instead of a kicker', () => {
       render(
-        <DashboardHeader kicker="Your club" name="Riverside Mah Jongg" meta="Thursdays, 7pm" />,
+        <DashboardHeader
+          kicker="Your club"
+          name="Riverside Mah Jongg"
+          meta="Thursdays, 7pm"
+          clubId="club-1"
+        />,
       );
-      expect(screen.getByTestId('thread-avatar-club')).toBeTruthy();
+      expect(screen.getByTestId('thread-avatar-club-tile')).toBeTruthy();
       expect(screen.getByText('Riverside Mah Jongg')).toBeTruthy();
       expect(screen.getByText('Thursdays, 7pm')).toBeTruthy();
       expect(screen.queryByTestId('scope-kicker')).toBeNull();
       expect(screen.queryByText('Your club')).toBeNull();
+    });
+
+    it('shows the club as a tile, not a circular avatar, now that clubId is given', () => {
+      render(
+        <DashboardHeader
+          kicker="Your club"
+          name="Riverside Mah Jongg"
+          meta="Thursdays, 7pm"
+          clubId="club-1"
+        />,
+      );
+      expect(screen.queryByTestId('thread-avatar-club')).toBeNull();
+      expect(screen.getByTestId('thread-avatar-club-tile')).toBeTruthy();
     });
 
     it('draws no rhythm line when there is none to show', () => {
@@ -268,12 +309,18 @@ describe('DashboardHeader', () => {
       expect(screen.queryByRole('button', { name: 'Add a game' })).toBeNull();
     });
 
-    it('draws no top row at all when given neither a chevron nor a way to add a game', () => {
+    it('draws no chevron or add-game button — but still the tile — when given neither', () => {
       render(
-        <DashboardHeader kicker="Your club" name="Riverside Mah Jongg" meta="Thursdays, 7pm" />,
+        <DashboardHeader
+          kicker="Your club"
+          name="Riverside Mah Jongg"
+          meta="Thursdays, 7pm"
+          clubId="club-1"
+        />,
       );
       expect(screen.queryByRole('button', { name: 'Clear club filter' })).toBeNull();
       expect(screen.queryByRole('button', { name: 'Add a game' })).toBeNull();
+      expect(screen.getByTestId('thread-avatar-club-tile')).toBeTruthy();
     });
   });
 });

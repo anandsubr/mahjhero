@@ -4,6 +4,7 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import Button from '../components/Button';
 import Card from '../components/Card';
 import ErrorBanner from '../components/ErrorBanner';
+import MahjongTile from '../components/MahjongTile';
 import Screen from '../components/Screen';
 import SkillLevelPicker from '../components/SkillLevelPicker';
 import TabBar from '../components/TabBar';
@@ -153,7 +154,12 @@ export default function ProfileScreen() {
 
   return (
     <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="profile" />}>
-      <Text style={styles.heading}>Your profile</Text>
+      <View style={styles.titleRow}>
+        <View testID="section-tile">
+          <MahjongTile suit="red-dragon" size="section" />
+        </View>
+        <Text style={styles.heading}>Your profile</Text>
+      </View>
       <Text style={styles.subheading}>Two things and you're ready to sit down at a table.</Text>
 
       <TextField
@@ -246,6 +252,11 @@ const styles = StyleSheet.create({
     fontFamily: type.heading,
     fontSize: type.size.h2,
     color: colors.text,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[2],
   },
   subheading: {
     fontFamily: type.bodyRegular,

@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { ChevronLeftIcon, PencilIcon } from './icons';
 import PlusButton from './PlusButton';
@@ -12,11 +13,15 @@ import { colors, radius, space, type } from '../lib/theme';
  * starting a club lives in the chip row now (components/ClubChips.tsx's own
  * trailing "New club" tile), not here. The single-club scope —
  * `kicker === 'Your club'`, the one value lib/dashboard.ts's `headerScope`
- * and app/clubs/[id]/index.tsx ever pass for it — instead centres the
- * club's own identity: an avatar and a name pill, the same treatment the
- * messages board header uses for a club thread (app/messages/club/new.tsx).
- * venues.tsx passes the club's own name as its kicker, never the literal
- * string 'Your club', so it always draws the flat shape.
+ * and app/clubs/[id]/index.tsx ever pass for it — instead draws the club's
+ * own identity: its mahjong tile sits in the top row (`clubTopRow`),
+ * flanked by the back chevron and the ⊕, the same chevron-tile-plus
+ * shape the messages board header uses for a club thread
+ * (app/messages/club/[threadId]/index.tsx -- its own ⊕ opens a new post,
+ * not a new game, but the layout is the same); a centred name pill and
+ * meta line (`clubCenter`) sit below that row. venues.tsx
+ * passes the club's own name as its kicker, never the literal string 'Your
+ * club', so it always draws the flat shape.
  *
  * `onPressScope`, only meaningful in the "Your club" shape, draws a pencil
  * beside the name and opens the club's roster, invites, venues and import —
@@ -42,11 +47,24 @@ import { colors, radius, space, type } from '../lib/theme';
  * (2026-09-01-back-links-design.md), a real navigation rather than a filter
  * clear, so the two were kept apart rather than overloading one chevron
  * with both meanings.
+ *
+ * `titleAccessory`, only meaningful in the flat kicker/name/meta shape: an
+ * optional element rendered inline immediately before `name` (e.g. the
+ * clubs dashboard's own small decorative tile-before-the-title, matching
+ * every other tab-root screen's inline treatment). The "Your club" shape
+ * ignores it entirely -- that shape draws its own tile itself, in
+ * `clubTopRow` above, so there is nothing left for a second, inline
+ * accessory to add. app/clubs/index.tsx's empty-clubs-list branch is the
+ * only current caller. Optional and defaulting to nothing rendered, so
+ * app/clubs/[id]/index.tsx and venues.tsx -- which never pass it -- are
+ * completely unaffected either way.
  */
 export default function DashboardHeader({
   kicker,
   name,
   meta,
+  titleAccessory,
+  clubId,
   onPressScope,
   onPressAddGame,
   onPressBack,
@@ -54,6 +72,11 @@ export default function DashboardHeader({
   kicker: string;
   name: string;
   meta: string;
+  titleAccessory?: ReactNode;
+  /** The "Your club" shape's own club id -- required in practice for
+   *  that shape to draw its tile (ThreadAvatar's asTile treatment needs
+   *  it for the glyph hash). Ignored in the flat shape. */
+  clubId?: string;
   onPressScope?: () => void;
   onPressAddGame?: () => void;
   onPressBack?: () => void;
@@ -61,33 +84,33 @@ export default function DashboardHeader({
   if (kicker === 'Your club') {
     return (
       <View style={styles.clubHeader}>
-        {onPressBack || onPressAddGame ? (
-          <View style={styles.clubTopRow}>
-            {/* Fixed 44x44 footprint whether or not the chevron itself
-                draws, so the ⊕ beside it stays in the same place either
-                way — app/clubs/index.tsx passes both together except when
-                the scope resolves to a single club while `selected` is
-                still ALL_CLUBS (a one-club member who hasn't tapped
-                anything), where only the ⊕ is passed. */}
-            <View style={styles.clubBack}>
-              {onPressBack ? (
-                <Pressable
-                  onPress={onPressBack}
-                  accessibilityRole="button"
-                  accessibilityLabel="Clear club filter"
-                  style={styles.clubBack}
-                >
-                  <ChevronLeftIcon color={colors.text} size={22} />
-                </Pressable>
-              ) : null}
-            </View>
+        <View style={styles.clubTopRow}>
+          {/* Fixed 44x44 footprint whether or not the chevron itself
+              draws, so the tile stays perfectly centred either way --
+              same reasoning the ⊕'s own flanking box already used before
+              this task, now applied symmetrically on both sides. */}
+          <View style={styles.clubBack}>
+            {onPressBack ? (
+              <Pressable
+                onPress={onPressBack}
+                accessibilityRole="button"
+                accessibilityLabel="Clear club filter"
+                style={styles.clubBack}
+              >
+                <ChevronLeftIcon color={colors.text} size={22} />
+              </Pressable>
+            ) : null}
+          </View>
+          {clubId ? (
+            <ThreadAvatar kind="club" name={name} clubId={clubId} asTile size={72} />
+          ) : null}
+          <View style={styles.clubBack}>
             {onPressAddGame ? (
               <PlusButton onPress={onPressAddGame} accessibilityLabel="Add a game" />
             ) : null}
           </View>
-        ) : null}
+        </View>
         <View style={styles.clubCenter}>
-          <ThreadAvatar kind="club" name={name} size={72} />
           {onPressScope ? (
             <Pressable
               onPress={onPressScope}
@@ -131,7 +154,14 @@ export default function DashboardHeader({
           {kicker}
         </Text>
       ) : null}
-      <Text style={styles.name}>{name}</Text>
+      {titleAccessory ? (
+        <View style={styles.nameRow}>
+          {titleAccessory}
+          <Text style={[styles.name, styles.nameInRow]}>{name}</Text>
+        </View>
+      ) : (
+        <Text style={styles.name}>{name}</Text>
+      )}
       {meta.length > 0 ? <Text style={styles.meta}>{meta}</Text> : null}
     </View>
   );
@@ -150,6 +180,20 @@ const styles = StyleSheet.create({
     fontSize: 30,
     lineHeight: 35,
     color: colors.text,
+    marginTop: 3,
+  },
+  // `name`'s own `marginTop: 3` is right when it's the row's only child,
+  // but doubles up oddly once it shares a row with `titleAccessory` --
+  // moved onto `nameRow` itself below, so the accessory and the text stay
+  // vertically centred against each other instead of the text sitting 3px
+  // lower than its neighbour.
+  nameInRow: {
+    marginTop: 0,
+  },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[2],
     marginTop: 3,
   },
   meta: {

@@ -245,6 +245,8 @@ export default function PostScreen() {
               name={title}
               size={72}
               testID={`thread-header-avatar-${kind}`}
+              asTile={kind === 'club'}
+              clubId={kind === 'club' ? (thread.club_id ?? undefined) : undefined}
             />
 
             {/* Tappable for the same reason the board's own pill is --
