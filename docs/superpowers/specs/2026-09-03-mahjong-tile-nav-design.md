@@ -126,3 +126,128 @@ so the other two screens that render that same component are untouched.
   practice of live-verifying layout/contrast fixes) of the tab bar at
   mobile width, and of at least the Clubs landing screen in both its
   "all clubs" and "single club" `DashboardHeader` shapes.
+
+## Post-implementation refinements (landed after the design above)
+
+Two smaller adjustments made directly during implementation review, not
+worth their own brainstorming round:
+
+- **The Clubs landing screen's tile now sits inline with "Your clubs"**,
+  not stacked on its own row above the whole header block — matching
+  every other landing screen's inline treatment. `DashboardHeader` gained
+  an optional `titleAccessory` prop (rendered inline before `name`, flat
+  shape only) for this; its other two callers never pass it, so they're
+  unaffected. The centred "Your club" (single-club) shape has no
+  comparable inline slot and keeps its own tile as a separate centred
+  sibling above the block, unchanged.
+- **The tab bar no longer paints its own background** — each tile already
+  carries its own surface fill and shadow, so the bar itself is
+  transparent and the four tiles float directly on the screen's own
+  background instead of sitting on a same-toned strip.
+
+## Addendum: club chips become mahjong tiles
+
+A further request, explored the same way as the sections above (live
+mockups, iterative comparison): `components/ClubChips.tsx` — the
+club-switcher row shown on the Clubs landing screen whenever no single
+club is resolved into view (see "Scope for this addendum" below) — turns
+each club's circular initials-avatar into a small mahjong tile, and the
+screen drops its "Your clubs" header line entirely in that state, letting
+the chip row become the first thing on the page.
+
+### Design (approved via mockup)
+
+- Each chip becomes a ~48×60px tile, same chrome family as the rest of
+  this spec (`colors.surface` fill, ivory lip, `shadow.sm`, radius
+  scaled down from the tab/section tiles' 12 — exact value for the
+  implementation plan to pick, tested small in the mockup).
+- **Glyph on top, the club's initials (`lib/dashboard.ts`'s existing
+  `initialsFrom`) below, on the same tile face** — approved directly over
+  an alternative (initials dominant, glyph as a small corner badge) after
+  a live side-by-side comparison.
+- The club's name stays below the tile, unchanged from today's
+  below-avatar label.
+- Selected-state styling matches the nav tiles' own convention: the
+  active chip's tile switches to the solid accent-tile treatment
+  (`accent[700]` fill / `accent[800]` lip, per this spec's own contrast
+  fix — **not** `accentColor`) rather than today's ring-around-the-circle
+  border. In practice this state is transient — see "Scope for this
+  addendum" below for why a selected chip's own row disappears on the
+  very next render — but the styling should still be correct for
+  whatever brief window it's visible.
+- The "New club" tile keeps its own distinct treatment (outlined, not
+  filled — it's an action, not a club) at the same new tile size/shape.
+
+### Glyph assignment (a genuinely new problem this piece introduces)
+
+Unlike the four nav sections (a fixed, hand-picked 1:1 mapping), a member
+can belong to any number of clubs. Decided:
+
+1. **The glyph set expands** beyond the nav's four (dots, bamboo, 中, 發)
+   to include the four wind honor tiles — 東 (east), 南 (south), 西
+   (west), 北 (north) — eight glyphs total. Real mahjong's third dragon,
+   白 (white), is deliberately **excluded**: it is traditionally a truly
+   blank tile face, which would read as a broken/missing icon in this UI
+   rather than a deliberate design choice. The "characters" numbered suit
+   (万) is also excluded — it needs a numeral *and* a character together,
+   more artwork than this addendum's scope justifies for a purely
+   decorative avatar.
+   - Wind ink color: real mahjong sets print winds in plain black, not
+     the reds/greens dragons and colored suits get. This app's palette
+     has no black; use `colors.text` for all four, on the same reasoning
+     `MahjongTile`'s existing suits already use per-glyph authentic ink.
+2. **Each club's glyph is stable, not random per render** — derived
+   deterministically from the club's own `id` (a hash into the 8-glyph
+   set), so a given club always shows the same tile face to every member
+   who sees it, not just within one session. The exact hash function is
+   an implementation-plan detail (a simple, well-tested string hash is
+   sufficient — this has no security or collision-resistance
+   requirement, only "stable and reasonably spread across 8 buckets").
+
+### Scope for this addendum
+
+`ClubChips` already renders in exactly one condition today
+(`app/clubs/index.tsx`): `!list.some((club) => club.id === selected)` —
+i.e. no single real club is currently resolved into view. This is
+**not** the same condition as `DashboardHeader`'s own flat-vs-centered
+shape choice — `lib/dashboard.ts`'s `headerScope` independently resolves
+a *lone* club (`clubs.length === 1`) into the centred "Your club" shape
+even while `selected` is still the `ALL_CLUBS` sentinel, so a one-club
+member sees the chip row *and* the centred single-club header at the
+same time today. Dropping "the top line with the tile and 'Your Clubs'"
+therefore means exactly this: when `headerScope` resolves to its
+flat, no-real-club-selected shape (`kicker === ''`, `name === 'Your
+clubs'`) — **and only then** — skip rendering `DashboardHeader`
+entirely, letting `ClubChips` (now tile-based) be the first content on
+the page. The centred "Your club" shape (a real, named club — whether
+because the member has exactly one, or has actively filtered into one)
+is untouched by this addendum: it keeps showing its own header exactly
+as today, with `ClubChips` still appearing below it whenever the
+existing visibility condition says to.
+
+The already-empty-of-clubs state (`list.length === 0`, a distinct early
+return in `app/clubs/index.tsx` with its own "you are not in a club yet"
+copy) is **not** affected by this addendum — there is nothing to lead
+with as "the clubs, first line" when there are none, so that branch
+keeps its header exactly as the earlier section of this spec left it.
+
+### Testing
+
+- `components/ClubChips.tsx`'s existing tests (chip rendering, selection,
+  the New Club tile, unread badges) should be updated for the new tile
+  markup but keep asserting the same underlying behavior — nothing about
+  *what* a tap does changes, only how each chip looks.
+- A new test for the glyph-assignment function: stable across repeated
+  calls with the same id, and produces a value from the 8-glyph set for
+  a range of sample ids (not a statistical distribution test — this has
+  no fairness requirement, just "doesn't crash, doesn't return outside
+  the set").
+- A test confirming `app/clubs/index.tsx` does not render
+  `DashboardHeader` at all when `headerScope` resolves to its flat,
+  no-club-selected shape, and does render it (centred shape) when a lone
+  or filtered-in club resolves — both already-reachable states in that
+  screen's existing test fixtures.
+- A live visual check (this branch's established practice) of the chip
+  row at a plausible club count (e.g. 3-4 clubs plus the New Club tile),
+  confirming legibility of glyph+initials together at the small tile
+  size and that wrapping still behaves sensibly at various widths.
