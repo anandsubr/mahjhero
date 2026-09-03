@@ -639,6 +639,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: space[2],
+    // `manageActions` is itself a flex-wrap row, so without a width of its
+    // own this row of 7 chips has no bound to wrap against -- Yoga sizes it
+    // to its unwrapped max-content width by default (flexShrink defaults to
+    // 0, unlike CSS), and the trailing chips get clipped past the panel's
+    // edge instead of wrapping onto a second line. Forcing it onto its own
+    // full-width line first is what lets its own `flexWrap` actually do
+    // anything.
+    flexBasis: '100%',
   },
   // colors.accent[700], NOT colors.accentColor -- same WCAG AA regression
   // this codebase already pins a test against; see badgeRound's comment

@@ -292,7 +292,12 @@ export default function NewEventScreen() {
         setError(result.error);
         return;
       }
-      router.replace(`/clubs/${clubId}`);
+      // The clubs dashboard, not this specific club's own page -- a newly
+      // created game already shows up there, and it matches this screen's
+      // own top-of-screen back link and the Club tab, unlike the Cancel
+      // button below (which deliberately stays on `/clubs/${clubId}`, see
+      // this file's own docstring).
+      router.replace('/clubs');
       return;
     }
 
@@ -316,7 +321,8 @@ export default function NewEventScreen() {
       setError(result.error);
       return;
     }
-    router.replace(`/clubs/${clubId}`);
+    // Same destination as the single-event save above, for the same reason.
+    router.replace('/clubs');
   }
 
   return (

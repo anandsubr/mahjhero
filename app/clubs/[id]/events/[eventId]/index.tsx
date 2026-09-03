@@ -723,18 +723,17 @@ export default function EventScreen() {
         still earns its place — same reasoning every other back link on
         this branch documents.
       */}
-      <Button
-        variant="ghost"
-        big={false}
-        icon={<ChevronLeftIcon color={colors.accentColor} />}
-        onPress={() => router.push('/clubs')}
-        accessibilityLabel="Back to your clubs"
-        style={styles.backButton}
-      >
-        Clubs
-      </Button>
-
-      <Text style={styles.clubKicker}>{club.name}</Text>
+      <View style={styles.headerRow}>
+        <Pressable
+          onPress={() => router.push('/clubs')}
+          accessibilityRole="button"
+          accessibilityLabel="Back to your clubs"
+          style={styles.backButton}
+        >
+          <ChevronLeftIcon color={colors.accentColor} />
+        </Pressable>
+        <Text style={styles.clubKicker}>{club.name}</Text>
+      </View>
       <View style={styles.row}>
         <View style={styles.titleRow}>
           <Text style={styles.heading}>{event.title}</Text>
@@ -1204,6 +1203,11 @@ export default function EventScreen() {
 const styles = StyleSheet.create({
   container: { padding: space[6], gap: space[4] },
   centered: { alignItems: 'center' },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[1],
+  },
   backButton: { alignSelf: 'flex-start' },
   clubKicker: {
     fontFamily: type.bodySemiBold,
