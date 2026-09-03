@@ -2,11 +2,13 @@
  * A real feed for the Alerts tab, reading notification_outbox for the
  * first time from the client side — see
  * docs/superpowers/specs/2026-09-02-alerts-feed-design.md for the full
- * rationale. notification_outbox itself is untouched: still no RLS
- * policy, still no grant to authenticated, exactly as
- * 20260825000000_create_bookings.sql built it. Every function below is
- * security definer, scoped to auth.uid() internally, the same shape
- * fetch_my_threads/my_unread_counts already use for "read your own X".
+ * rationale. notification_outbox's own access posture is untouched:
+ * still no RLS policy, still no grant to authenticated, exactly as
+ * 20260825000000_create_bookings.sql built it (it does gain one new
+ * index below, to support the two functions' own recipient_id/created_at
+ * access pattern). Every function below is security definer, scoped to
+ * auth.uid() internally, the same shape fetch_my_threads/my_unread_counts
+ * already use for "read your own X".
  */
 
 -- One watermark per recipient, the same shape thread_reads already uses
