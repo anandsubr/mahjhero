@@ -47,6 +47,7 @@ import {
   fetchEventTables,
   fetchSeries,
   formatEventWhen,
+  formatFeeCents,
   frequencyLabel,
   removeEventTable,
   resetEventToSeries,
@@ -766,6 +767,19 @@ export default function EventScreen() {
           <Text style={styles.help}>Moved from the usual venue</Text>
         ) : null}
 
+        {event.fee_cents > 0 || event.min_spend_cents > 0 ? (
+          <Text style={styles.fee}>
+            {[
+              event.fee_cents > 0 ? `${formatFeeCents(event.fee_cents)} to play` : null,
+              event.min_spend_cents > 0
+                ? `${formatFeeCents(event.min_spend_cents)} min spend`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+          </Text>
+        ) : null}
+
         {series ? (
           <Text style={styles.help}>
             Part of a series —{' '}
@@ -1226,6 +1240,12 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   where: {
+    fontFamily: type.bodyRegular,
+    fontSize: type.size.body,
+    color: colors.text,
+    marginTop: space[2],
+  },
+  fee: {
     fontFamily: type.bodyRegular,
     fontSize: type.size.body,
     color: colors.text,

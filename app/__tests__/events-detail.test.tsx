@@ -435,6 +435,21 @@ describe('member view: what is shown, and what is not', () => {
     expect(screen.queryByText(newYorkWhen)).toBeNull();
   });
 
+  it('shows no fee line when neither a fee nor a minimum spend is set', async () => {
+    render(<EventScreen />);
+    await screen.findByText('The Annexe');
+    expect(screen.queryByText(/to play/)).toBeNull();
+    expect(screen.queryByText(/min spend/)).toBeNull();
+  });
+
+  it('shows the fee line, joining cost-to-play and minimum-spend, when both are set', async () => {
+    fetchEvent.mockResolvedValue({ ...EVENT, fee_cents: 1500, min_spend_cents: 2000 });
+    render(<EventScreen />);
+    expect(
+      await screen.findByText('$15 to play · $20 min spend'),
+    ).toBeTruthy();
+  });
+
   // Task 10 replaced this read-only table row with `TableCard`, which
   // reports the seat count as "free", not raw capacity -- and `lib/bookings`
   // is mocked at the top of this file with `fetchEventSeating` resolving an
