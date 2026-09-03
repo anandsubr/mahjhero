@@ -1708,7 +1708,7 @@ Move the `import { roundTotals } from '../lib/rounds';` line to the top of the f
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `npm test -- components/__tests__/RoundLog.test.tsx`
-Expected: PASS — all 10 tests green.
+Expected: PASS — all 9 tests green.
 
 - [ ] **Step 5: Commit**
 
