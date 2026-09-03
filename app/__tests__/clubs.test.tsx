@@ -489,6 +489,19 @@ describe('dashboard artboard', () => {
     expect(screen.getByText('New club')).toBeTruthy();
   });
 
+  it('lets a long club name wrap to a second line instead of truncating', async () => {
+    fetchMyClubs.mockResolvedValue([
+      { ...CLUB, id: 'c2', name: 'West Chapter Mahjong Society' },
+      CLUB,
+    ]);
+    render(<ClubsScreen />);
+    const label = await screen.findByText('West Chapter Mahjong Society');
+    // react-native-web renders `numberOfLines` as `-webkit-line-clamp` — 1
+    // clips to a single line (what today's bug does); this asserts the fix
+    // allows a second line instead.
+    expect(window.getComputedStyle(label).webkitLineClamp).toBe('2');
+  });
+
   it('draws the chip row at two clubs, with a New club tile', async () => {
     fetchMyClubs.mockResolvedValue([CLUB, { ...CLUB, id: 'club-2', name: 'Harbour' }]);
     render(<ClubsScreen />);
