@@ -229,4 +229,19 @@ describe('messages list', () => {
     fireEvent.click(await screen.findByLabelText('New message'));
     expect(push).toHaveBeenCalledWith('/messages/new');
   });
+
+  // The tile is purely decorative -- scoped to a wrapping testID rather than
+  // a bare `[aria-hidden="true"]` query, since TabBar (carried by every
+  // screen) renders its own five `aria-hidden` tiles too, which would let a
+  // bare query pass whether or not this screen's own section tile exists.
+  // Waits on `Riverside` (the fixture row), not the heading text `Messages`
+  // itself -- TabBar's own Messages tab carries that exact label too, which
+  // makes `findByText('Messages')` ambiguous once both are on screen.
+  it('shows a decorative bamboo tile before the heading', async () => {
+    render(<MessagesScreen />);
+    await screen.findByText('Riverside');
+    expect(
+      screen.getByTestId('section-tile').querySelector('[aria-hidden="true"]'),
+    ).toBeTruthy();
+  });
 });

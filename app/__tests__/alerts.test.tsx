@@ -215,4 +215,19 @@ describe('alerts screen', () => {
       screen.getByRole('button', { name: 'Club' }).getAttribute('aria-selected'),
     ).toBe('false');
   });
+
+  // The tile is purely decorative -- scoped to a wrapping testID rather than
+  // a bare `[aria-hidden="true"]` query, since TabBar (carried by every
+  // screen) renders its own five `aria-hidden` tiles too, which would let a
+  // bare query pass whether or not this screen's own section tile exists.
+  // Waits on the empty-state text, not the heading text `Alerts` itself --
+  // TabBar's own Alerts tab carries that exact label too, which makes
+  // `findByText('Alerts')` ambiguous once both are on screen.
+  it('shows a decorative green-dragon tile before the heading', async () => {
+    render(<AlertsScreen />);
+    await screen.findByText(/No notifications yet/);
+    expect(
+      screen.getByTestId('section-tile').querySelector('[aria-hidden="true"]'),
+    ).toBeTruthy();
+  });
 });
