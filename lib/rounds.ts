@@ -90,7 +90,7 @@ export async function deleteRound(
  * supabase double to test.
  */
 export function roundTotals(
-  rounds: TableRound[],
+  rounds: Pick<TableRound, 'winner_profile_id' | 'points'>[],
 ): { profileId: string; points: number }[] {
   const order: string[] = [];
   const totals = new Map<string, number>();
