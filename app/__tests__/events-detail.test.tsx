@@ -188,8 +188,15 @@ const EVENT = {
   venue_id: 'venue-1',
   venue_name: 'The Annexe',
   notes: '',
-  starts_at: '2026-09-03T13:00:00.000Z',
-  ends_at: '2026-09-03T16:00:00.000Z',
+  // Relative to Date.now(), not a fixed calendar timestamp -- an earlier,
+  // hardcoded '2026-09-03T13:00:00.000Z' drifted from "upcoming" to "live"
+  // to "ended" as real wall-clock time passed it, intermittently breaking
+  // every test here that assumes this default event hasn't started yet
+  // (see OUTSIDE_WINDOW_EVENT below for the same, already-established
+  // pattern). 2 days out keeps `canBook` true and `gameLive` false no
+  // matter when this suite actually runs.
+  starts_at: new Date(Date.now() + 2 * 86_400_000).toISOString(),
+  ends_at: new Date(Date.now() + 2 * 86_400_000 + 3 * 3_600_000).toISOString(),
   status: 'published' as const,
   occurrence_date: null as string | null,
   overrides: [] as string[],
