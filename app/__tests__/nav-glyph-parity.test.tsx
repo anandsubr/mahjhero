@@ -4,6 +4,7 @@ import { render, screen, within } from '@testing-library/react';
 import TabBar, { suitFor, type TabKey } from '../../components/TabBar';
 import type { MahjongSuit } from '../../components/MahjongTile';
 import { fetchMyClubs } from '../../lib/clubs';
+import { glyphForClub } from '../../lib/dashboard';
 import ClubsScreen from '../clubs/index';
 import MessagesScreen from '../messages/index';
 import ProfileScreen from '../profile';
@@ -143,28 +144,48 @@ describe('nav glyph parity', () => {
 
   // The `club` row above only ever exercises ClubsScreen's EMPTY-clubs
   // branch (`fetchMyClubs` mocked to `[]` for every row, shared setup
-  // above) -- a different `<MahjongTile suit="dots" ...>` call site than
-  // the screen's own main branch, the one any member with at least one
-  // club actually sees (app/clubs/index.tsx, ~line 515). A suit typo there
+  // above) -- a different tile than the screen's own main branch, the one
+  // any member with at least one club actually sees. That main branch's
+  // centred "Your club" shape renders its tile via `DashboardHeader`'s own
+  // internal `ThreadAvatar` call (`asTile` mode, `clubId` prop --
+  // app/clubs/index.tsx's main-branch `DashboardHeader` usage,
+  // components/DashboardHeader.tsx), which defaults to
+  // testID="thread-avatar-club-tile" (components/ThreadAvatar.tsx) when no
+  // explicit `testID` is passed.
+  //
+  // NOTE: this branch's tile is no longer the fixed section suit ("dots").
+  // A separate, already-landed change (`ea09b6a feat(nav): expand
+  // MahjongTile's glyph set, add a stable per-club glyph`) gave
+  // `ThreadAvatar`'s `asTile` treatment a stable *per-club* glyph via
+  // `lib/dashboard.ts`'s `glyphForClub(clubId)` (a deterministic hash into
+  // an 8-glyph set), so each club is branded with its own tile face rather
+  // than the generic "Club section = dots" glyph. For fixture club id
+  // 'club-1' that hash lands on 'west-wind', not 'dots' -- asserting a
+  // hardcoded 'dots' here would be both wrong and coincidental (it would
+  // stop meaning anything the moment `CLUB_GLYPHS`'s order or length
+  // changed). The regression this test guards against is now "does the
+  // rendered tile carry the *same* glyph `glyphForClub` itself would
+  // produce for this club" -- i.e. that the wiring from ClubsScreen's main
+  // branch through `DashboardHeader` and `ThreadAvatar` to `MahjongTile`
+  // doesn't drop or override the per-club glyph. A suit-mapping bug there
   // specifically would leave the whole suite -- this file included --
   // green. Overrides `fetchMyClubs` for this one test only, to a single
   // club, matching the minimal fixture clubs.test.tsx's own "dashboard
   // artboard" tests use to reach the same branch.
-  it("ClubsScreen's own main (populated) branch also renders the dots suit", async () => {
-    vi.mocked(fetchMyClubs).mockResolvedValueOnce([
-      {
-        id: 'club-1',
-        name: 'Riverside Mah Jongg',
-        slug: 'riverside',
-        rhythm: 'Thursday evenings',
-        visibility: 'private',
-        timezone: 'America/New_York',
-      },
-    ]);
+  it("ClubsScreen's own main (populated) branch renders that club's own per-club glyph", async () => {
+    const club = {
+      id: 'club-1',
+      name: 'Riverside Mah Jongg',
+      slug: 'riverside',
+      rhythm: 'Thursday evenings',
+      visibility: 'private' as const,
+      timezone: 'America/New_York',
+    };
+    vi.mocked(fetchMyClubs).mockResolvedValueOnce([club]);
 
     render(<ClubsScreen />);
-    const tile = await screen.findByTestId('section-tile');
-    expect(within(tile).getByTestId('glyph-dots')).toBeTruthy();
+    const tile = await screen.findByTestId('thread-avatar-club-tile');
+    expect(within(tile).getByTestId(`glyph-${glyphForClub(club.id)}`)).toBeTruthy();
   });
 
   // Sanity check on the bar itself: renders all four tabs with the same
