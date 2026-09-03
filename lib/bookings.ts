@@ -145,6 +145,11 @@ const BOOKING_REFUSALS: { contains: string; message: string; codes: string[] }[]
     codes: ['23514'],
   },
   {
+    contains: 'this game has already ended',
+    message: 'This game has already ended.',
+    codes: ['23514'],
+  },
+  {
     // `assert_players_bookable` raises this for a solo booking exactly as
     // it does for a group one — the caller can be the offending player
     // themselves. `details` does carry the offending profile id, but this

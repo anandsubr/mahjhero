@@ -411,6 +411,15 @@ export default function EventScreen() {
 
   const canBook = event.status === 'published' && new Date(event.starts_at) > now;
 
+  // A member's own already-confirmed booking can be placed or moved
+  // through the whole live game, not just before kickoff --
+  // place_booking's own guard now only refuses once the game has ended
+  // (20260903060000_place_booking_ends_at.sql). Deliberately separate
+  // from `canBook`, which still gates a BRAND NEW booking: creating a
+  // fresh seat is untouched by this fix and stays frozen at kickoff.
+  const canManageOwnSeat =
+    event.status === 'published' && new Date(event.ends_at) > now;
+
   // Every table full, counting only bookings actually placed at one — a
   // booking still awaiting placement (`event_table_id === null`) occupies a
   // seat somewhere but isn't blocking any *specific* table from showing an
@@ -837,9 +846,16 @@ export default function EventScreen() {
               // to do. Any other seat — a fresh booking, or a confirmed
               // booking elsewhere (a different table, or "any table")
               // wanting to move — still offers a tap; `takeSeat` (via
-              // `commitSeat`) is what decides book vs. move.
+              // `commitSeat`) is what decides book vs. move. Note that
+              // "already-started" above only rules out the fresh-booking
+              // branch (`canBook`); moving an existing confirmed booking is
+              // instead gated on `canManageOwnSeat`, allowed through the
+              // whole live game (see its own comment above, "A member's own
+              // already-confirmed booking...", for why).
               onTakeSeat={
-                canBook &&
+                (myBooking && myBooking.status === 'confirmed'
+                  ? canManageOwnSeat
+                  : canBook) &&
                 (!myBooking ||
                   (myBooking.status === 'confirmed' &&
                     myBooking.event_table_id !== table.id))
@@ -861,12 +877,17 @@ export default function EventScreen() {
               // docstring) rather than a half-wired tappable seat with
               // nothing to move to. `onLeaveSeat` is the separate,
               // single-prop member capability (give up YOUR OWN seat) —
-              // gated on `canBook` alone, the same "game is still live"
-              // condition `onTakeSeat` above already uses, not on
-              // `isOrganizer`: an organizer is also a member and gets this
+              // gated on `canBook` alone, not on `isOrganizer`: an
+              // organizer is also a member and gets this
               // too, it just never wins the branch for their own seat
               // (SeatGrid's `organizerManageable || selfManageable` always
-              // picks the organizer panel first — see its docstring).
+              // picks the organizer panel first — see its docstring). Note
+              // `onTakeSeat` above no longer uses `canBook` alone for every
+              // case — only for its fresh-booking branch, moving to
+              // `canManageOwnSeat` for an existing confirmed booking —
+              // while `onLeaveSeat` here stays on `canBook` unconditionally:
+              // giving up a seat is deliberately out of scope for this fix
+              // and remains frozen at kickoff.
               // `openBookingId`/`onToggleManage` are the shared open/close
               // plumbing BOTH features need, so — unlike the organizer
               // bundle — they are no longer gated on `isOrganizer`: a

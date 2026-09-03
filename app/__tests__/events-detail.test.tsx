@@ -584,6 +584,80 @@ describe('member view: what is shown, and what is not', () => {
   });
 });
 
+describe('seat management during a live game', () => {
+  // Relative to the real clock, matching this file's own convention for
+  // any timestamp that needs to stay "in the past"/"in the future" as time
+  // moves on (this file installs no fake timers).
+  function liveEvent() {
+    return {
+      ...EVENT,
+      starts_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+      ends_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    };
+  }
+
+  // `{ ...TABLE_1, capacity: 1 }`, not plain `TABLE_1` -- deliberately, and
+  // a deviation from this describe block's original brief. `TABLE_1`'s
+  // capacity is 4, and neither booking below is placed AT this table
+  // (`event_table_id: null`, or no booking at all), so a plain `TABLE_1`
+  // renders FOUR empty seats sharing the identical accessibility label
+  // "Take a seat at Table 1" -- SeatGrid renders one `Pressable` per empty
+  // seat regardless of whether `onTakeSeat` is supplied, merely toggling
+  // `disabled`/`aria-disabled` on it (components/SeatGrid.tsx's own empty-
+  // seat block; see also SeatGrid.test.tsx's "offers no empty seat when the
+  // table is full", which gets its zero matches from `empties === 0`, not
+  // from `onTakeSeat` being absent). `findByLabelText`/`queryByLabelText`
+  // throw on multiple matches rather than returning null/one element, so
+  // both tests below would error out on that ambiguity regardless of this
+  // fix's own correctness. Capacity 1 leaves exactly one empty seat, the
+  // same fixture idiom this file already uses at the "hides Call for a 4th
+  // now on a capacity-1 table" test above.
+  it('lets a member move their own confirmed, unplaced booking once the game has started', async () => {
+    fetchEvent.mockResolvedValue(liveEvent());
+    fetchEventTables.mockResolvedValue([{ ...TABLE_1, capacity: 1 }]);
+    fetchEventSeating.mockResolvedValue([
+      {
+        booking_id: 'booking-9',
+        group_id: 'group-9',
+        profile_id: 'test-user',
+        display_name: 'Ada',
+        skill_level: null,
+        event_table_id: null,
+        status: 'confirmed' as const,
+        booked_by: 'test-user',
+        booked_by_name: 'Ada',
+        group_status: 'confirmed' as const,
+        waitlist_position: null,
+        created_at: '2026-08-20T10:00:00Z',
+      },
+    ]);
+    render(<EventScreen />);
+
+    fireEvent.click(await screen.findByLabelText('Take a seat at Table 1'));
+    await vi.waitFor(() =>
+      expect(placeBooking).toHaveBeenCalledWith('booking-9', 'table-1'),
+    );
+  });
+
+  // Also a deviation from the brief: `queryByLabelText(...).toBeNull()`
+  // cannot pass here, for the same reason documented above -- the empty
+  // seat's `Pressable` renders regardless of `onTakeSeat`, so a member with
+  // no booking at all still gets a rendered (inert) "Take a seat" control,
+  // not an absent one. What actually distinguishes "no seat offered" is the
+  // control's own disabled state, the same attribute
+  // components/__tests__/SeatGrid.test.tsx already asserts directly
+  // ("renders aria-disabled=\"true\" on the empty seat while busy").
+  it('still offers no seat at all, for a member with no booking, once the game has started', async () => {
+    fetchEvent.mockResolvedValue(liveEvent());
+    fetchEventTables.mockResolvedValue([{ ...TABLE_1, capacity: 1 }]);
+    fetchEventSeating.mockResolvedValue([]);
+    render(<EventScreen />);
+
+    const seat = await screen.findByLabelText('Take a seat at Table 1');
+    expect(seat.getAttribute('aria-disabled')).toBe('true');
+  });
+});
+
 describe('overrides are shown quietly, on the field that changed', () => {
   it('annotates only the fields actually overridden, not every field', async () => {
     fetchEvent.mockResolvedValue({
