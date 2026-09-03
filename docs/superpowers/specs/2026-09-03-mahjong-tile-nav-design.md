@@ -403,3 +403,206 @@ is already right next to it).
 - A live visual check of `app/clubs/index.tsx`'s new combined top row
   (back/tile/plus in one row) at mobile width, and of the game screen's
   new small club tile sitting next to its existing kicker text.
+
+## Addendum 3: club-identity consistency, live-only rounds/timer, and an admin-managed daily greeting
+
+A follow-up request after living with Addenda 1-2, driven by two reference
+screenshots (a clean club-identity header, and the home grid's tile row)
+and a fresh look at four screens side by side.
+
+### Part A — club tile+name consistency across every context
+
+Read fresh, not assumed, before deciding what to change:
+
+1. **Home dashboard's club chips** (`components/ClubChips.tsx`) — already
+   the correct "grid" shape from Addendum 1 (tile above, initials+name
+   below). The one bug: the name `Text` at `ClubChips.tsx:80-82` is
+   `numberOfLines={1}`, so a longer name ("Tuesday Circle", "West
+   Chapter") truncates with an ellipsis instead of wrapping to a second
+   line the way the reference screenshot shows. **Fix:** raise to
+   `numberOfLines={2}` — `styles.tile` (`width: 64`, centered text) needs
+   no other change to wrap cleanly.
+2. **Club Dashboard and Club Edit headers** — both already render
+   `DashboardHeader`'s `kicker === 'Your club'` shape (`ThreadAvatar
+   asTile`, the 48x60 chip, name pill below) — the correct "header" shape
+   from Addendum 2, and already shared correctly between the two screens.
+   No change needed to tile/name styling itself. What IS wrong: Club Edit
+   duplicates its back control — a standalone ghost `Button` reading
+   "Clubs" sits above the header (`app/clubs/[id]/index.tsx:172-181`),
+   while the header's own built-in chevron slot (`clubTopRow`) sits empty
+   because that `DashboardHeader` call passes no `onPressBack`
+   (`183-188`). **Fix:** delete the ghost Button block entirely and pass
+   `onPressBack={() => router.push('/clubs')}` into the existing
+   `DashboardHeader` call — the exact prop `app/clubs/index.tsx` already
+   uses for its own back-to-all-clubs chevron. One header block, one back
+   control, matching Club Dashboard's own shape exactly — no new
+   component required. One real difference to carry along:
+   `app/clubs/index.tsx`'s own `onPressBack` clears a client-side filter
+   ("all clubs" again), while Club Edit's is real navigation back to
+   `/clubs` — the chevron's hardcoded `accessibilityLabel="Clear club
+   filter"` (`DashboardHeader.tsx:96-97`) would misdescribe the latter.
+   `DashboardHeader` needs a new optional `backLabel` prop (defaulting to
+   today's "Clear club filter" so `app/clubs/index.tsx` is unaffected),
+   with Club Edit passing "Back to your clubs" — the exact label its
+   deleted ghost Button used — so assistive tech still hears the right
+   thing.
+3. **Message board header** (`app/messages/club/[threadId]/index.tsx`,
+   and the same pattern in `[postId].tsx` / `new.tsx`) — already calls
+   `ThreadAvatar kind="club" asTile size={72} clubId={...}`. Since
+   `ThreadAvatar`'s `asTile` branch (`ThreadAvatar.tsx:63-72`) always
+   renders `MahjongTile size="chip"` regardless of the `size` number
+   passed in, this already renders byte-identical tile chrome to Club
+   Dashboard/Club Edit today. **No change needed here** — this screen is
+   already consistent; the `size={72}` prop is simply dead code on this
+   branch, worth a one-line comment but not a functional fix.
+4. **Game screen header** (`app/clubs/[id]/events/[eventId]/index.tsx:728-749`)
+   — the one genuinely inconsistent case. It already has the right
+   *structure* (back chevron, then tile, then club name, all in one row,
+   `headerRow`) — but the tile itself is `MahjongTile size="section"`
+   (30x40, no initials label), the small decorative form Addendum 1 built
+   for the four nav landing pages, not the 48x60 chip-with-initials form
+   every other club-identity context uses. **Fix:** swap it for the same
+   `ThreadAvatar kind="club" asTile clubId={clubId} name={club.name}`
+   used everywhere else, keeping the existing `View testID="section-tile"`
+   wrapper around it (so `events-detail.test.tsx`'s existing scoped query
+   keeps working unchanged) and the existing `clubKicker` text styling
+   (already the correct uppercase/accent look — no text change needed).
+   This supersedes one piece of Addendum 2 for this specific consumer
+   only (`MahjongTile.tsx:120-124`'s own doc comment calls out "a single
+   game's own screen ... size 'section'"); the four nav landing pages
+   keep their `section` tiles unchanged.
+
+No new shared component anywhere in Part A — every context already has
+the right building block. This is three small, targeted fixes (#1, one
+prop wired through in #2, one swap in #4) rather than a refactor.
+
+### Part B — rounds and the timer show only while the game is live
+
+`app/clubs/[id]/events/[eventId]/index.tsx` already computes `gameLive`
+(lines 445-448: `status === 'published' && starts_at <= now < ends_at`),
+today used only to gate `canRecordRound`. `TableCard`
+(`components/TableCard.tsx`) always renders `RoundLog` and `RoundTimer`
+regardless of that. **Fix:** thread `gameLive` down as a new prop to
+`TableCard`, and render the `RoundLog`/`RoundTimer` block only when it's
+true — before the game starts and after it ends, that block disappears
+entirely; the seat/table roster underneath stays visible throughout,
+unaffected.
+
+### Part C — Club Dashboard's game row: three aligned lines
+
+`GameRow` (`app/clubs/index.tsx:627-732`)'s body (`gameBody`, lines
+686-693) currently shows three lines of very different weight: a small
+caps club-name kicker, a bold event title, then one combined "when ·
+venue" line. **New shape:** three lines of comparable weight — **club
+name**, **time only**, **venue** — replacing all three current lines.
+The event's own title is dropped from this row entirely (still the
+heading of the screen you land on after tapping through; the date badge
+plus club name/time/venue already identify the row in the list). This
+needs one new formatter beside `formatEventWhen` in `lib/events.ts` —
+`formatEventTime(startsAt, timezone, locale?)`, the same
+`Intl.DateTimeFormat` call minus `weekday`/`day`/`month` — since the
+`DateTile` badge already to the row's left already carries the day/date,
+and showing it twice was exactly the "time only, as the date repeats"
+complaint. The badge's own size (52x70) already sets the row's height;
+the three text lines just need even spacing within `gameBody`.
+
+### Part D — a daily, admin-managed greeting on the Dashboard
+
+Net-new — nothing like this exists in the app today.
+
+- **Admin flag** — a new migration adds `is_admin boolean not null
+  default false` to `public.profiles`, seeded `true` for the requesting
+  user's own account (matched by email against `auth.users`, since
+  `profiles` itself carries no email column).
+  `lib/schema-contract.test.ts:272`'s column whitelist needs `is_admin`
+  added alongside the new column, or that test fails on the very next
+  schema read.
+- **Storage** — a new `public.greetings` table: `id uuid primary key
+  default gen_random_uuid()`, `text text not null` (a template
+  containing a literal `{name}` token), `created_at timestamptz not null
+  default now()`. RLS: any signed-in member can `select`;
+  `insert`/`update`/`delete` require the caller's own `profiles.is_admin
+  = true`. A new `lib/greetings.ts` exposes `fetchGreetings()`,
+  `addGreeting(text)`, `updateGreeting(id, text)`, `deleteGreeting(id)` —
+  the same shape `lib/profile.ts`'s own functions already follow.
+- **Daily pick** — deterministic, not re-rolled per render: hash today's
+  local calendar date (`YYYY-MM-DD`) into an index over the fetched
+  greeting list, so every user sees the same greeting all day and it
+  changes at local midnight. An empty list means the dashboard simply
+  shows no greeting line — not an error state.
+- **Personalization** — the signed-in profile's `display_name` (via
+  `lib/profile.ts`'s existing `fetchProfile`, not currently called from
+  `app/clubs/index.tsx` — this adds that one call) replaces the
+  template's `{name}` token. An empty `display_name` (a real, reachable
+  state — see `app/clubs/[id]/index.tsx:236-238`'s own existing "Member"
+  fallback) substitutes the same fallback word used there, rather than
+  rendering "Hi , ready...".
+- **Display** — a new heading at the very top of `app/clubs/index.tsx`,
+  above `DashboardHeader`/`ClubChips`, styled with `type.heading`
+  (Caprasimo) — the same font `app/welcome.tsx`'s own headline uses — at
+  a size suited to an in-app screen heading (e.g. `profile.tsx`'s own
+  `type.size.h2` treatment) rather than the welcome screen's larger
+  marketing `type.size.display`.
+- **Admin management UI** — a new screen (e.g. `app/admin/greetings.tsx`)
+  listing every greeting with edit/delete plus an add field, following
+  `app/profile.tsx`'s existing `Card`/`settingsRow` visual pattern.
+  Linked from Profile via one new `Card`
+  (`settingsCard`/`settingsRow`/`settingsLabel`/"Manage" `editLink`,
+  copying the existing "Friends" card's exact shape at
+  `app/profile.tsx:218-226`), rendered only when the loaded profile's
+  `is_admin` is true.
+
+### Decisions locked during brainstorming (Addendum 3)
+
+| # | Decision |
+|---|---|
+| 1 | No new shared "ClubTile" component — every context already has the right building block; this is targeted fixes, not a refactor. |
+| 2 | Admin is a new `profiles.is_admin` boolean, not a reuse of per-club host/co-organizer roles. |
+| 3 | Greeting template holds a `{name}` placeholder, filled from `display_name` at render time. |
+| 4 | Greeting changes once per calendar day (deterministic hash), not on every dashboard visit. |
+| 5 | The game-row restructure (Part C) drops the event's own title from the row entirely. |
+
+### Open items for the implementation plan to resolve
+
+- Exact `formatEventTime` output format (12-hour, matching
+  `formatEventWhen`'s existing `hour12: true` convention) and the exact
+  line spacing/sizing for the three `gameBody` lines once they replace
+  today's two differently-weighted ones.
+- Exact heading font size token for the dashboard greeting — a live
+  check against the existing dashboard layout, not an assumption.
+- The date-hash function for the daily greeting pick (no security or
+  uniformity requirement, only "stable across a day, spreads reasonably"
+  — the same bar Addendum 1 set for `glyphForClub`'s own hash).
+- Whether `is_admin` should be settable only by direct SQL for now (no
+  UI to promote a second admin) — reasonable given there's exactly one
+  admin today; flag if a future admin-management UI is wanted instead.
+
+### Testing
+
+- `components/ClubChips.tsx`: existing tests updated for
+  `numberOfLines={2}`; a new case for a name long enough to wrap.
+- `app/clubs/[id]/index.tsx`: a test confirming the ghost "Clubs" button
+  is gone and `DashboardHeader`'s own chevron now calls
+  `router.push('/clubs')`.
+- `app/clubs/[id]/events/[eventId]/index.tsx`:
+  `events-detail.test.tsx`'s existing `section-tile`-scoped query keeps
+  passing; a new assertion that the tile inside it now carries the
+  club's initials label (the chip form), not the label-less section
+  form.
+- `components/TableCard.tsx`: existing round/timer tests split into
+  "game live" and "game not live" cases; a new test confirming neither
+  renders outside the live window.
+- `lib/events.ts`: a new `formatEventTime` unit test (format, and the
+  existing `RangeError` guard).
+- `lib/greetings.ts`: CRUD tests following `lib/profile.test.ts`'s
+  existing shape; a test for the deterministic daily-pick function (same
+  date -> same index; varying list lengths don't throw).
+- `lib/schema-contract.test.ts`: updated column whitelist including
+  `is_admin`, and a new `greetings` table contract test alongside the
+  existing `profiles` one.
+- A live visual check (this branch's established practice) of: the Home
+  grid with a long club name wrapping to two lines; the Club Edit header
+  with its single back chevron; the game screen's upsized tile; a game
+  row before/during/after its live window (timer/rounds appearing and
+  disappearing); and the Dashboard's new greeting line both with and
+  without a `display_name` set.
