@@ -440,6 +440,23 @@ describe('needAFourthAlerts', () => {
     expect(alerts).toEqual([]);
   });
 
+  it('stays silent for a table one short in an event that has already started', () => {
+    // Newly reachable input as of this branch's fetchUpcomingEvents widening
+    // (ends_at, not starts_at) -- an in-progress event can appear in `events`
+    // here for the first time. needsAFourth's own `until > 0` guard
+    // (lib/bookings.ts) is what has to keep this silent, not any filtering
+    // needAFourthAlerts does itself.
+    const alerts = needAFourthAlerts({
+      events: [
+        event({ starts_at: '2026-09-01T10:00:00Z', bookings: threeSeated }),
+      ],
+      clubs: CLUBS,
+      userId: 'me',
+      now: NOW,
+    });
+    expect(alerts).toEqual([]);
+  });
+
   it('stays silent for a cancelled event', () => {
     const alerts = needAFourthAlerts({
       events: [event({ status: 'cancelled', bookings: threeSeated })],

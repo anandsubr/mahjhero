@@ -1102,7 +1102,7 @@ describe('organizing an unbooked, in-progress game', () => {
 
   it('does not show an in-progress unbooked game to a plain member', async () => {
     fetchMyClubs.mockResolvedValue([CLUB]);
-    fetchMyRoles.mockResolvedValue([]); // organizer nowhere
+    fetchMyRoles.mockResolvedValue([{ club_id: CLUB.id, role: 'member' }]);
     fetchUpcomingEvents.mockResolvedValue([liveUnbookedGame()]);
 
     render(<ClubsScreen />);
