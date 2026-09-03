@@ -79,11 +79,15 @@ describe('ThreadRow', () => {
   });
 
   // Flat, uniform circular avatars replace the old card + DateTile
-  // treatment. A club row's avatar carries the club's own initials.
-  it('shows the club’s initials in the avatar for a club thread', () => {
+  // treatment. A club row’s avatar carries the club’s own initials.
+  it("shows the club as a mahjong tile, carrying its initials, in the avatar", () => {
     render(<ThreadRow row={row()} onPress={vi.fn()} />);
-    const avatar = screen.getByTestId('thread-avatar-club');
-    expect(avatar.textContent).toBe('R');
+    // Not asserting the exact textContent string: the tile also renders a
+    // suit/honor glyph (some are characters, e.g. 北, sharing the DOM text
+    // node with the initials) alongside the initials, and the exact glyph
+    // is a stable hash of the club id, not something this test should pin.
+    const avatar = screen.getByTestId("thread-avatar-club-tile");
+    expect(avatar.textContent).toContain("R");
   });
 
   // A direct row's avatar carries the OTHER person's initials -- the row's

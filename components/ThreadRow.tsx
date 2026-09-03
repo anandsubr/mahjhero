@@ -66,7 +66,12 @@ export default function ThreadRow({
       accessibilityLabel={`${title}${unreadSuffix(row.unread)}`}
       style={styles.row}
     >
-      <ThreadAvatar kind={row.kind} name={row.kind === 'club' ? row.club_name ?? '' : title} />
+      <ThreadAvatar
+        kind={row.kind}
+        name={row.kind === 'club' ? row.club_name ?? '' : title}
+        asTile={row.kind === 'club'}
+        clubId={row.kind === 'club' ? row.club_id ?? undefined : undefined}
+      />
 
       <View style={styles.body}>
         {/*
