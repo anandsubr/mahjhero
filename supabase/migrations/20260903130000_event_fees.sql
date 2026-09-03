@@ -72,10 +72,16 @@ begin
     return 0;
   end if;
 
+  -- A series the host has stopped generates nothing, whoever asks and by
+  -- whichever door. See 20260823040000's note on ended_at vs ends_on.
   if s.ended_at is not null then
     return 0;
   end if;
 
+  /*
+   * The floor at current_date is the fix for the backfill; unchanged from
+   * 20260823000000, whose comment explains it in full.
+   */
   window_start := greatest(
     s.starts_on,
     coalesce(s.materialized_through + 1, s.starts_on),

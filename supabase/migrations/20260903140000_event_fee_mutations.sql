@@ -46,6 +46,9 @@ begin
     raise exception 'an event must have a date and a start time'
       using errcode = '23514';
   end if;
+  -- The same window event_series.duration_minutes is constrained to
+  -- (20260822194000), so a one-off and a series cannot disagree about what
+  -- a plausible game length is.
   if duration_minutes is null or duration_minutes not between 15 and 1440 then
     raise exception 'duration out of range' using errcode = '23514';
   end if;
@@ -59,10 +62,17 @@ begin
     raise exception 'minimum spend cannot be negative' using errcode = '23514';
   end if;
 
+  -- assert_club_organizer already established that this club exists and that
+  -- the caller organizes it, so this cannot come back null.
   select c.timezone into club_tz from public.clubs c where c.id = target_club;
 
+  -- The one conversion. Character-for-character the expression
+  -- materialize_one_series uses (20260823000000), because a one-off game at
+  -- 7pm and the first week of a series at 7pm must land on the same instant.
   starts := (event_date + start_time) at time zone club_tz;
 
+  -- The new check. After the conversion, because the club's timezone is what
+  -- decides whether the host's digits are in the past.
   if starts < now() then
     raise exception 'that start time has already passed' using errcode = '23514';
   end if;
@@ -169,10 +179,17 @@ begin
 
     select c.timezone into club_tz from public.clubs c where c.id = ev.club_id;
 
+    -- What the host currently sees on the club's wall clock. Whichever of
+    -- the three calendar values this edit did not name is taken from here,
+    -- so "move this week to Thursday" keeps 7pm rather than keeping an
+    -- instant that reads as 6pm on the other side of a DST transition.
     local_start := ev.starts_at at time zone club_tz;
 
     eff_date := coalesce(new_date, local_start::date);
     eff_time := coalesce(new_start_time, local_start::time);
+    -- Elapsed minutes, not wall-clock difference: a game that ran across a
+    -- transition is three hours long in both readings, and the interval
+    -- between the two stored instants is the one that is true.
     eff_duration := coalesce(
       new_duration_minutes,
       (extract(epoch from (ev.ends_at - ev.starts_at)) / 60)::int);
@@ -192,6 +209,20 @@ begin
     raise exception 'an event must end after it starts' using errcode = '23514';
   end if;
 
+  -- The new check, and note what it is conditioned on. It refuses to MOVE a
+  -- game into the past; it does not refuse to edit a game that is already
+  -- there. A host correcting the name or the notes on last Tuesday's game is
+  -- editing history, which this function has always allowed and which
+  -- rejecting `eff_starts < now()` outright would break -- an event's own
+  -- stored instant is the one thing it is guaranteed to have.
+  --
+  -- One acknowledged edge: for an already-past event inside a DST fall-back's
+  -- repeated local hour, a duration-only edit round-trips its wall clock to
+  -- the OTHER of the two instants, which is `distinct from` the stored one
+  -- and in the past, so it is refused. That is the same instant-moving edit
+  -- the check exists to stop, arriving by an unlucky door; the alternative
+  -- (dropping the `distinct from` half) would refuse every edit to every past
+  -- game, which is far worse.
   if eff_starts is distinct from ev.starts_at and eff_starts < now() then
     raise exception 'that start time has already passed' using errcode = '23514';
   end if;
@@ -199,6 +230,9 @@ begin
   next_overrides := ev.overrides;
 
   if ev.series_id is not null then
+    -- array_append, not `||` with a text literal on the right: that resolves
+    -- to the anyarray-concatenation overload and fails with "malformed array
+    -- literal" (22P02). See 20260823020000.
     if trim(eff_title) is distinct from trim(ev.title) then
       next_overrides := array_append(next_overrides, 'title');
     end if;
@@ -311,6 +345,32 @@ begin
   )
   returning id into new_id;
 
+  /*
+   * The new check: a capped run that produces no game at all.
+   *
+   * A series with `ends_on` already behind us materializes nothing, ever, and
+   * used to report success -- the same invisible-save this file exists to
+   * close, one level up. So does a run capped before its own first
+   * occurrence: "every 5th Tuesday, stopping in three weeks" is a rule and an
+   * end date that never meet.
+   *
+   * Asked of series_occurrence_dates rather than reimplemented, so this
+   * cannot drift from what materialization will actually generate, and asked
+   * over the WHOLE remaining run ([today-or-later .. ends_on], the same floor
+   * materialize_one_series applies) rather than the 42-day horizon -- a
+   * monthly rule can legitimately produce nothing for six weeks and still be
+   * a perfectly good series.
+   *
+   * Only when `ends_on` is set. An open-ended series always produces
+   * something eventually, whatever the rule.
+   *
+   * Placed AFTER the insert on purpose: event_series' own constraints
+   * (nth_week matching the frequency, ends_on >= starts_on) have already been
+   * enforced by then, so a monthly series sent with a null nth_week gets the
+   * constraint error that names its real problem instead of this one, which
+   * would be true but misleading. The exception rolls the insert back with
+   * it.
+   */
   if ends_on is not null then
     select d into first_date
     from public.series_occurrence_dates(
@@ -325,6 +385,13 @@ begin
     end if;
   end if;
 
+  -- Synchronously, in the same transaction, and for THIS series only. A host
+  -- who creates a series and sees no games has watched the feature fail,
+  -- whatever happens at 3am -- and materialize_one_series lets the error
+  -- propagate, so a failure rolls the creation back with it rather than
+  -- leaving an empty series behind a success message. The sweep is for cron:
+  -- calling it here would make one host's request materialize every club's
+  -- series, and would swallow the failure of the very series being created.
   perform public.materialize_one_series(new_id);
 
   return new_id;
@@ -405,6 +472,9 @@ begin
   eff_check_in := coalesce(new_check_in_required, se.check_in_required);
   eff_fee := coalesce(new_fee_cents, se.fee_cents);
   eff_min_spend := coalesce(new_min_spend_cents, se.min_spend_cents);
+  -- `clear_ends_on` wins over `new_ends_on` outright -- there is no reading
+  -- of "clear it AND set it to this date" that makes sense, so precedence,
+  -- not an error, is the simplest correct answer.
   eff_ends  := case when clear_ends_on then null
                     else coalesce(new_ends_on, se.ends_on) end;
 
@@ -415,6 +485,8 @@ begin
     raise exception 'minimum spend cannot be negative' using errcode = '23514';
   end if;
 
+  -- The gate. Compared against `se`, the pre-edit snapshot, and computed
+  -- before the UPDATE below overwrites the stored row.
   touched_title := trim(eff_title) is distinct from trim(se.title);
   touched_venue := eff_venue is distinct from se.venue_id;
   touched_notes := eff_notes is distinct from se.notes;
@@ -493,6 +565,8 @@ begin
       and (include_overridden or not ('min_spend_cents' = any(e.overrides)));
   end if;
 
+  -- One guard for both instants: a hand-set 6:30-9:30 week must not keep its
+  -- start and silently take the series' new length.
   if touched_time then
     update public.events e set
       starts_at = (e.occurrence_date + eff_start) at time zone club_tz,
@@ -504,6 +578,7 @@ begin
       and (include_overridden or not ('starts_at' = any(e.overrides)));
   end if;
 
+  -- Clear only the keys this edit actually changed.
   if include_overridden then
     update public.events e set overrides = (
       select coalesce(array_agg(k), '{}')
@@ -523,7 +598,18 @@ begin
       and e.status <> 'cancelled';
   end if;
 
+  -- Shortening the run REMOVES what now falls outside it -- see
+  -- 20260824000000's file-level comment for why deleting, not cancelling,
+  -- is the correct verb and what it buys. `eff_ends is not null` is what
+  -- keeps this branch from firing when the run is instead being UNCAPPED
+  -- (clear_ends_on, or a plain widening new_ends_on): there is nothing
+  -- outside a boundary at infinity. A widening new_ends_on does enter this
+  -- branch and matches no rows, which is correct and costs one indexed
+  -- delete (plus, now, one indexed select that also matches no rows).
   if eff_ends is not null and eff_ends is distinct from se.ends_on then
+    -- Told, not just dropped. See the file-level comment above for the
+    -- event_id-cascade trap this INSERT has to run ahead of the DELETE to
+    -- avoid, and why it is one row per member rather than per booking.
     insert into public.notification_outbox
       (recipient_id, club_id, event_id, kind, payload, dedupe_key)
     select distinct on (b.profile_id)
@@ -555,6 +641,10 @@ begin
       where id = target_series;
   end if;
 
+  -- Extending it, clearing it, or changing nothing, all want the horizon
+  -- topped up -- for this series only. With the delete above, this is also
+  -- what makes shortening reversible: the freed slots are refilled here the
+  -- moment the end date moves back out or goes away.
   perform public.materialize_one_series(target_series);
 
   return true;
