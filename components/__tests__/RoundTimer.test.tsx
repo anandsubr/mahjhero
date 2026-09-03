@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import RoundTimer from '../RoundTimer';
 
@@ -75,6 +75,26 @@ describe('RoundTimer', () => {
     // itself) rather than re-querying '15:00' alone, since that text may
     // legitimately appear in both the inline and overlay views at once.
     expect(screen.getByTestId('timer-overlay')).toBeTruthy();
+  });
+
+  it('shows "Time\'s up" in the overlay too, not a frozen 0:00', () => {
+    render(<RoundTimer tableLabel="Table 1" />);
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Start a 10-minute timer for Table 1' }),
+    );
+    fireEvent.click(screen.getByText('10:00'));
+    const overlay = screen.getByTestId('timer-overlay');
+    expect(within(overlay).getByText('10:00')).toBeTruthy();
+
+    act(() => {
+      vi.advanceTimersByTime(10 * 60_000);
+    });
+
+    // The overlay stayed open across expiry (no auto-close) -- its clock
+    // must switch to "Time's up" the same way the inline view already does,
+    // not keep showing "0:00" forever.
+    expect(within(overlay).getByText("Time's up")).toBeTruthy();
+    expect(within(overlay).queryByText('0:00')).toBeNull();
   });
 
   it('closes the overlay without affecting the underlying countdown', () => {

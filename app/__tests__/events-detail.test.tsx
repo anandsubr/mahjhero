@@ -60,7 +60,6 @@ const fetchEventTables = vi.fn();
 const fetchSeries = vi.fn();
 const cancelEvent = vi.fn();
 const addEventTable = vi.fn();
-const updateEventTable = vi.fn();
 const removeEventTable = vi.fn();
 const resetEventToSeries = vi.fn();
 
@@ -76,7 +75,6 @@ vi.mock('../../lib/events', async (importOriginal) => {
     fetchSeries: (...args: unknown[]) => fetchSeries(...args),
     cancelEvent: (...args: unknown[]) => cancelEvent(...args),
     addEventTable: (...args: unknown[]) => addEventTable(...args),
-    updateEventTable: (...args: unknown[]) => updateEventTable(...args),
     removeEventTable: (...args: unknown[]) => removeEventTable(...args),
     resetEventToSeries: (...args: unknown[]) => resetEventToSeries(...args),
   };
@@ -289,7 +287,6 @@ beforeEach(() => {
   fetchSeries.mockResolvedValue(null);
   cancelEvent.mockResolvedValue({ error: null });
   addEventTable.mockResolvedValue({ error: null });
-  updateEventTable.mockResolvedValue({ error: null });
   removeEventTable.mockResolvedValue({ error: null });
   resetEventToSeries.mockResolvedValue({ error: null });
   fetchEventSeating.mockReset();
@@ -425,7 +422,7 @@ describe('member view: what is shown, and what is not', () => {
   // are about the event's own rendering, not about seating, and a
   // `seatingFailed` state would put an unrelated error banner on every one
   // of them.
-  it('renders each table with tier as text and seat count, no edit controls', async () => {
+  it('renders each table with tier as text, no edit controls', async () => {
     fetchEventTables.mockResolvedValue([
       { id: 'table-1', label: 'Table 1', skill_tier: 'advanced' as const, capacity: 4, position: 1 },
     ]);
@@ -1350,6 +1347,46 @@ describe('table rounds', () => {
         tableId: 'table-1',
         winnerProfileId: 'p1',
         points: 30,
+      }),
+    );
+  });
+
+  // Critical #1 from the whole-branch review: `canBook` (which gates
+  // `onLeaveSeat`) and `gameLive` (which gates `canRecordRound`) are
+  // mutually exclusive by construction -- before vs. after kickoff. Gating
+  // SeatGrid's own panel open/close on `onLeaveSeat` alone meant a plain
+  // seated member's own seat was unreachable for the ENTIRE window
+  // recording a round is legal, since `onLeaveSeat` is never supplied then.
+  // This is the primary audience the feature was built for -- a non-
+  // organizer recording their own win -- and had no test anywhere in the
+  // codebase before this one; every existing recording test used an
+  // organizer roster.
+  it('lets a plain seated member record their own win while the game is live', async () => {
+    fetchRoster.mockResolvedValue(MEMBER_ROLE); // test-user is a plain member, not organizer.
+    fetchEvent.mockResolvedValue(liveEvent());
+    fetchEventSeating.mockResolvedValue([SEATED_ADA, SEATED_RAVI]); // test-user (Ada) is seated.
+    fetchTableRounds.mockResolvedValue([]);
+    recordRound.mockResolvedValue({ round: ROUND_1, error: null });
+
+    render(<EventScreen />);
+
+    fireEvent.click(await screen.findByLabelText("Manage Ada's seat"));
+    // The organizer bundle never applies to a plain member, and during a
+    // live game `onLeaveSeat` isn't supplied either (leaving is only
+    // offered before kickoff) -- the panel that opened here must be the
+    // recording one, not a Move/Remove or "Leave this game" one.
+    expect(screen.queryByLabelText('Leave this game')).toBeNull();
+    expect(screen.queryByText(/^Move to /)).toBeNull();
+    expect(screen.queryByLabelText('Remove Ada from this game')).toBeNull();
+
+    fireEvent.click(screen.getByLabelText('Record a win for Ada'));
+    fireEvent.click(screen.getByLabelText("Record Ada's win for 25 points"));
+
+    await waitFor(() =>
+      expect(recordRound).toHaveBeenCalledWith({
+        tableId: 'table-1',
+        winnerProfileId: 'test-user',
+        points: 25,
       }),
     );
   });

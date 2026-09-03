@@ -415,6 +415,52 @@ describe('SeatGrid: member self-service (leave own seat)', () => {
     );
     expect(screen.queryByLabelText("Manage Ada's seat")).toBeNull();
   });
+
+  // The bug this covers: `canBook` (which gates `onLeaveSeat`) and
+  // `gameLive` (which gates `canRecordRound`) are mutually exclusive by
+  // construction on the event screen -- before vs. after kickoff. Gating the
+  // panel's own open/close on `onLeaveSeat` alone meant a plain seated
+  // member's own seat was UNREACHABLE for the entire window recording a
+  // round is legal, because `onLeaveSeat` is never supplied then. The panel
+  // must open off EITHER of the seat's own actions.
+  it('opens your own seat panel to record a win even when onLeaveSeat is not supplied (a live game)', () => {
+    const onRecordRound = vi.fn();
+    function LiveGameHarness() {
+      const [openBookingId, setOpenBookingId] = useState<string | null>(null);
+      return (
+        <SeatGrid
+          tableLabel="Table 1"
+          capacity={4}
+          seats={selfSeats}
+          openBookingId={openBookingId}
+          onToggleManage={(id) =>
+            setOpenBookingId((current) => (current === id ? null : id))
+          }
+          canRecordRound
+          onRecordRound={onRecordRound}
+        />
+      );
+    }
+    render(<LiveGameHarness />);
+
+    // Without the fix, this seat is a plain read-only <View> and this label
+    // does not exist at all.
+    fireEvent.click(screen.getByLabelText("Manage Ada's seat"));
+    expect(screen.getByLabelText('Record a win for Ada')).toBeTruthy();
+    expect(screen.queryByLabelText('Leave this game')).toBeNull();
+
+    fireEvent.click(screen.getByLabelText('Record a win for Ada'));
+    fireEvent.click(screen.getByLabelText("Record Ada's win for 50 points"));
+    expect(onRecordRound).toHaveBeenCalledWith('p3', 50);
+  });
+
+  // The inverse: before kickoff, only leaving is offered, never recording.
+  it('shows only "Leave this game" -- no record control -- when canRecordRound is false', () => {
+    render(<Harness onLeaveSeat={vi.fn()} />);
+    fireEvent.click(screen.getByLabelText("Manage Ada's seat"));
+    expect(screen.getByLabelText('Leave this game')).toBeTruthy();
+    expect(screen.queryByLabelText('Record a win for Ada')).toBeNull();
+  });
 });
 
 // Each occupied seat's own running point total, plus a star badge for

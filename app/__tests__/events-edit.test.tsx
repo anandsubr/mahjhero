@@ -846,6 +846,51 @@ describe('the Tables section', () => {
     expect(fetchEventTables).toHaveBeenCalledTimes(1);
   });
 
+  // Minor #12 from the whole-branch review: this section's TierPickers had
+  // no busy/disabled state at all, unlike the game-screen picker they
+  // replaced (which had `disabled={busy}`) -- rapid taps could fire
+  // concurrent updates for the same table. The guard is per-table, not
+  // screen-wide, so an unrelated table's picker stays usable while this
+  // one's own update is in flight.
+  it("disables a table's own TierPicker while its update is in flight, but not another table's", async () => {
+    fetchEventTables.mockResolvedValue([TABLE_1, TABLE_2]);
+    let resolveUpdate: (value: { error: string | null }) => void = () => {};
+    updateEventTable.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveUpdate = resolve;
+      }),
+    );
+    render(<EditEventScreen />);
+    await screen.findByDisplayValue('Thursday Mahjong');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Table 1: Advanced' }));
+
+    await vi.waitFor(() =>
+      expect(
+        screen
+          .getByRole('button', { name: 'Table 1: Advanced' })
+          .getAttribute('aria-disabled'),
+      ).toBe('true'),
+    );
+    // Table 2's picker is a wholly separate update -- untouched by Table 1's
+    // own in-flight guard.
+    expect(
+      screen
+        .getByRole('button', { name: 'Table 2: Advanced' })
+        .getAttribute('aria-disabled'),
+    ).toBeNull();
+
+    resolveUpdate({ error: null });
+
+    await vi.waitFor(() =>
+      expect(
+        screen
+          .getByRole('button', { name: 'Table 1: Advanced' })
+          .getAttribute('aria-disabled'),
+      ).toBeNull(),
+    );
+  });
+
   it('is absent, but everything else on the screen still renders, when there are no tables', async () => {
     fetchEventTables.mockResolvedValue([]);
     render(<EditEventScreen />);

@@ -147,7 +147,7 @@ export default function TableCard({
         openBookingId={openBookingId}
         onToggleManage={onToggleManage}
         canRecordRound={canRecordRound}
-        onRecordRound={(profileId, points) => onRecordRound?.(profileId, points)}
+        onRecordRound={onRecordRound}
       />
 
       {rounds ? (

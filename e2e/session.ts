@@ -1833,7 +1833,11 @@ export async function seedTableWithRound(
   await seatBooking(admin, need, { eventId, clubId, profileId: winnerId, tableId });
   await seatBooking(admin, need, { eventId, clubId, profileId: runnerUpId, tableId });
 
-  const points = 8;
+  // One of the plan's fixed set (25/30/35/40/45/50/75) --
+  // `table_rounds_points_check` (supabase/migrations, Task 1) rejects
+  // anything else. No other round is seeded on this table, so any of the
+  // seven values is collision-free.
+  const points = 30;
   const { error: roundError } = await admin.from('table_rounds').insert({
     event_table_id: tableId,
     event_id: eventId,

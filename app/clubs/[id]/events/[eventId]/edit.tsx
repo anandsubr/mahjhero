@@ -210,6 +210,17 @@ export default function EditEventScreen() {
   // above: a failed fetch must not read as "this game has no tables".
   const [tables, setTables] = useState<EventTable[]>([]);
   const [tablesFailed, setTablesFailed] = useState(false);
+  // Per-table in-flight guard for the Tables section's TierPickers below --
+  // distinct from `saving` (which only covers the Save/End-series buttons,
+  // an entirely separate `updateEvent`/`updateEventSeries` call), matching
+  // the game screen's own tier picker this replaced, which disabled itself
+  // via `busy` while its own update was pending. A Set keyed by table id,
+  // not one shared boolean, so tapping one table's tier does not also
+  // freeze every other table's picker while its own unrelated update is in
+  // flight.
+  const [updatingTierTableIds, setUpdatingTierTableIds] = useState<Set<string>>(
+    new Set(),
+  );
   const [ready, setReady] = useState(false);
 
   const [scope, setScope] = useState<Scope>('event');
@@ -690,8 +701,17 @@ export default function EditEventScreen() {
               key={t.id}
               tableLabel={t.label}
               tier={t.skill_tier}
-              onChange={(nextTier) =>
+              disabled={updatingTierTableIds.has(t.id)}
+              onChange={(nextTier) => {
+                setUpdatingTierTableIds(
+                  (current) => new Set(current).add(t.id),
+                );
                 void updateEventTable(t.id, { tier: nextTier }).then((result) => {
+                  setUpdatingTierTableIds((current) => {
+                    const next = new Set(current);
+                    next.delete(t.id);
+                    return next;
+                  });
                   if (result.error) {
                     setError(result.error);
                     return;
@@ -702,7 +722,7 @@ export default function EditEventScreen() {
                     ),
                   );
                 })
-              }
+              }}
             />
           ))}
         </Card>

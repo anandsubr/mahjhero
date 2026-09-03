@@ -78,9 +78,12 @@ type Props = {
    * above, this is a SINGLE prop guarding a SINGLE action — there is no
    * second prop it could disagree with, so there is no "half-wired" shape
    * for it to fall into: either a caller supplies it (that seat's own
-   * occupant may open the panel and leave) or it doesn't (nothing renders).
-   * A boolean flag alongside it would only restate what its own presence
-   * already says, so there isn't one.
+   * occupant may open the panel and leave) or it doesn't (that action alone
+   * doesn't render -- the panel itself may still open via `canRecordRound`/
+   * `onRecordRound` below, since either of the seat's own two actions is
+   * enough to make it worth opening; see `selfManageable`). A boolean flag
+   * alongside it would only restate what its own presence already says, so
+   * there isn't one.
    *
    * Gated per-seat on `seat.isYou`, not on any role — an organizer's own
    * seat still goes through `organizerManageable` instead (see below),
@@ -115,7 +118,12 @@ type Props = {
    *  caller (the same `canRecordRound` the event screen already computes:
    *  `gameLive && (isOrganizer || iAmSeatedHere)`), not per-seat: whichever
    *  panel a caller can already open (their own, or -- for an organizer --
-   *  anyone's) is exactly who they may record a win for. */
+   *  anyone's) is exactly who they may record a win for. Together with
+   *  `onRecordRound`, this is also (as of the whole-branch review's Critical
+   *  #1 fix) one of the two things that can make a NON-organizer's own seat
+   *  `selfManageable` -- `canBook` (which gates `onLeaveSeat`) and
+   *  `gameLive` (which gates this) are mutually exclusive on the event
+   *  screen, so the panel has to open on either one alone. */
   canRecordRound?: boolean;
   onRecordRound?: (profileId: string, points: number) => void;
 };
@@ -164,15 +172,27 @@ type Props = {
  * occupant, the database was never the gap, only the UI was (see
  * .superpowers/sdd/member-leave-seat.md). So a SECOND, narrower kind of
  * "manageable" exists alongside the organizer one: `selfManageable`, true
- * only for the one seat where `seat.isYou` and the caller supplied
- * `onLeaveSeat` (plus the shared `onToggleManage`/`openBookingId` above).
- * It opens the exact same panel shape as the organizer one — same closed
- * Pressable, same header, same `aria-expanded` — with a single action,
- * "Leave this game", instead of Move-to-… plus Remove. Wording deliberately
- * NOT "Leave the club" (WaitlistPanel's "Leave the waitlist" and this
- * screen's own "Cancel this game" are both already-established, and
- * DIFFERENT, pieces of vocabulary this needed to stay clearly apart from):
- * `cancel_booking` ends this one booking, for this one game, nothing more.
+ * for the one seat where `seat.isYou` and the caller supplied
+ * `onToggleManage` (the shared open/close plumbing above) plus EITHER of
+ * that seat's own two actions — `onLeaveSeat`, or `canRecordRound` together
+ * with `onRecordRound`. Those two actions are legal at mutually exclusive
+ * times (leaving only before kickoff, recording only during a live game),
+ * so gating the panel on `onLeaveSeat` alone would make a plain member's own
+ * seat unreachable for the entire window recording is legal — the panel has
+ * to open whenever ANY of the seat's own actions is available, and each
+ * action then renders (or doesn't) independently inside, exactly as it
+ * always has.
+ *
+ * When the panel opens via `onLeaveSeat`, it renders the exact same panel
+ * shape as the organizer one — same closed Pressable, same header, same
+ * `aria-expanded` — with a single action, "Leave this game", instead of
+ * Move-to-… plus Remove. Wording deliberately NOT "Leave the club"
+ * (WaitlistPanel's "Leave the waitlist" and this screen's own "Cancel this
+ * game" are both already-established, and DIFFERENT, pieces of vocabulary
+ * this needed to stay clearly apart from): `cancel_booking` ends this one
+ * booking, for this one game, nothing more. That button itself only renders
+ * when `onLeaveSeat` is actually present — the panel can now open on the
+ * recording path alone, with `onLeaveSeat` undefined.
  *
  * `organizerManageable || selfManageable` is checked in that order — an
  * organizer looking at their OWN seat gets the organizer panel (Move +
@@ -263,8 +283,20 @@ export default function SeatGrid({
         // See the "A member's own seat" section of this component's
         // docstring for why these two are separate booleans rather than one
         // shared flag, and why the organizer one wins when both are true.
+        // The panel opens for EITHER of the seat's own two independently
+        // gated actions -- leaving (`onLeaveSeat`) or recording a win
+        // (`canRecordRound`/`onRecordRound`) -- since the two are legal at
+        // mutually exclusive times (before vs. during a live game): during
+        // the window recording is allowed, `onLeaveSeat` is never supplied,
+        // so gating the panel on `onLeaveSeat` alone would make a plain
+        // member's own seat unreachable for the entire time recording is
+        // legal. Each action inside still renders conditionally on its own
+        // prop, exactly as before.
         const selfManageable = Boolean(
-          !organizerManageable && seat.isYou && onToggleManage && onLeaveSeat,
+          !organizerManageable &&
+            seat.isYou &&
+            onToggleManage &&
+            (onLeaveSeat || (canRecordRound && onRecordRound)),
         );
         const manageable = organizerManageable || selfManageable;
 
@@ -387,21 +419,26 @@ export default function SeatGrid({
                     Remove from game
                   </Button>
                 </>
-              ) : (
+              ) : onLeaveSeat ? (
                 // The member's own single action — see the "A member's own
                 // seat" section of this component's docstring. "Leave this
                 // game" and NOT "Leave the club" or "Cancel this game":
                 // this ends one booking, for this one game, nothing wider.
+                // Guarded on `onLeaveSeat` itself (not just `!organizerManageable`)
+                // because `selfManageable` can now be true from the recording
+                // path alone, with `onLeaveSeat` undefined (e.g. during a live
+                // game, when leaving isn't offered) -- rendering this
+                // unconditionally would call an undefined handler.
                 <Button
                   variant="ghost"
                   big={false}
                   disabled={busy}
-                  onPress={() => onLeaveSeat!(seat.bookingId)}
+                  onPress={() => onLeaveSeat(seat.bookingId)}
                   accessibilityLabel="Leave this game"
                 >
                   Leave this game
                 </Button>
-              )}
+              ) : null}
 
               {canRecordRound && onRecordRound ? (
                 recordingBookingId === seat.bookingId ? (
@@ -505,15 +542,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  // marginLeft: 'auto' pushes the badge to the row's trailing edge without
+  // disturbing the name/chevron pair's own adjacency in `nameRow` (a plain
+  // `justifyContent: 'space-between'` on `nameRow` would instead space all
+  // three children apart evenly, dragging the chevron away from the name it
+  // decorates). In `seatRow` (the read-only render, which already sets its
+  // own `justifyContent: 'space-between'` with just two children: name and
+  // badge) this is redundant but harmless -- the badge is already the
+  // trailing child there.
   badge: {
     width: 40,
     height: 40,
     borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
+    marginLeft: 'auto',
   },
+  // colors.accent[700], NOT colors.accentColor -- lib/theme.test.ts pins a
+  // regression proving colors.bg text on colors.accentColor fails WCAG AA at
+  // this weight/size (~3.03:1); accent[700] is the established fix
+  // (~5.72:1). See that file's contrast-pin table, which this call site is
+  // also registered in.
   badgeRound: {
-    backgroundColor: colors.accentColor,
+    backgroundColor: colors.accent[700],
   },
   badgeStarIcon: {
     position: 'absolute',
@@ -589,11 +640,14 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: space[2],
   },
+  // colors.accent[700], NOT colors.accentColor -- same WCAG AA regression
+  // this codebase already pins a test against; see badgeRound's comment
+  // above.
   pointChip: {
     minWidth: 44,
     minHeight: 44,
     borderRadius: radius.pill,
-    backgroundColor: colors.accentColor,
+    backgroundColor: colors.accent[700],
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: space[3],

@@ -100,7 +100,9 @@ export default function RoundTimer({ tableLabel }: { tableLabel: string }) {
           onRequestClose={() => setOverlayOpen(false)}
         >
           <View style={styles.overlay} testID="timer-overlay">
-            <Text style={styles.overlayClock}>{formatClock(secondsLeft)}</Text>
+            <Text style={[styles.overlayClock, expired ? styles.expired : null]}>
+              {expired ? "Time's up" : formatClock(secondsLeft)}
+            </Text>
             <Button
               variant="secondary"
               onPress={() => setOverlayOpen(false)}
@@ -140,6 +142,12 @@ const styles = StyleSheet.create({
   },
   overlayClock: {
     fontFamily: type.heading,
+    // 96 is intentionally hardcoded, not a lib/theme.ts token -- the
+    // largest token, type.size.display, tops out at 50, and this codebase
+    // already has an established, accepted pattern of hardcoding one-off
+    // large display sizes beyond that ceiling (see DateTile.tsx,
+    // DashboardHeader.tsx) rather than growing the shared scale for a
+    // single full-screen use.
     fontSize: 96,
     color: colors.text,
   },
