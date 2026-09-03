@@ -15,9 +15,11 @@ import { colors, radius, space, type } from '../lib/theme';
  * `kicker === 'Your club'`, the one value lib/dashboard.ts's `headerScope`
  * and app/clubs/[id]/index.tsx ever pass for it — instead draws the club's
  * own identity: its mahjong tile sits in the top row (`clubTopRow`),
- * flanked by the back chevron and the ⊕, the same treatment the messages
- * board header uses for a club thread (app/messages/club/new.tsx); a
- * centred name pill and meta line (`clubCenter`) sit below that row. venues.tsx
+ * flanked by the back chevron and the ⊕, the same chevron-tile-plus
+ * shape the messages board header uses for a club thread
+ * (app/messages/club/[threadId]/index.tsx -- its own ⊕ opens a new post,
+ * not a new game, but the layout is the same); a centred name pill and
+ * meta line (`clubCenter`) sit below that row. venues.tsx
  * passes the club's own name as its kicker, never the literal string 'Your
  * club', so it always draws the flat shape.
  *

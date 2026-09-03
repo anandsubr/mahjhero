@@ -101,11 +101,15 @@ so the other two screens that render that same component are untouched.
 > **Superseded for the Clubs section (Addendum 2):** decision #5 no longer
 > holds for Clubs specifically. Addendum 2 replaced the fixed "dots" glyph
 > at the top of the Clubs section with a per-club glyph (`glyphForClub`),
-> shown only in the single-club scope, while the flat all-clubs scope shows
-> no header tile at all — so there is no longer one fixed tile face shared
-> between the Clubs tab and every Clubs screen's own heading. Messages,
-> Profile, and Alerts are unaffected; decision #5 still holds for those
-> three sections as originally written.
+> shown only in the single-club scope, while the flat all-clubs scope's
+> *populated* branch (several clubs, none selected — where `ClubChips`
+> leads the page instead) shows no header tile at all. The flat shape's
+> other two branches (`loadFailed`, and the empty-clubs-list "you're not
+> in a club yet" state) still show the original fixed dots tile, since
+> neither of those has a chip row to lead with instead. So there is no
+> longer one fixed tile face shared between the Clubs tab and every Clubs
+> screen's own heading. Messages, Profile, and Alerts are unaffected;
+> decision #5 still holds for those three sections as originally written.
 
 ## Open items for the implementation plan to resolve
 

@@ -21,10 +21,13 @@ type Props = {
    *  large club-header treatment) -- carries `label` too, but as the
    *  club's initials, not a full word. */
   size: 'tab' | 'section' | 'chip';
-  /** `TileHero`'s (app/welcome.tsx) accent-tile treatment: solid
-   *  `accentColor` fill, `accent[700]` lip, glyph/label in `colors.bg`.
-   *  Meaningful for `size="tab"` and `size="chip"` -- never `"section"`,
-   *  which is always the plain, decorative surface-fill tile. */
+  /** A one-step-darker variant of `TileHero`'s (app/welcome.tsx) own
+   *  accent-tile treatment: solid `accent[700]` fill, `accent[800]` lip,
+   *  glyph/label in `colors.bg` -- see `styles.selected` below for why
+   *  this is darker than `TileHero`'s own `accentColor`/`accent[700]`
+   *  pair (a WCAG AA contrast fix, not a stylistic choice). Meaningful
+   *  for `size="tab"` and `size="chip"` -- never `"section"`, which is
+   *  always the plain, decorative surface-fill tile. */
   selected?: boolean;
   /** Rendered for `size="tab"` and `size="chip"`; never for `"section"`. */
   label?: string;
@@ -100,21 +103,25 @@ function Glyph({ suit, color }: { suit: MahjongSuit; color: string }) {
  * A mahjong tile: the same chrome `TileHero` (app/welcome.tsx) draws for
  * its three decorative hero tiles -- `colors.surface` fill, a raised ivory
  * lip via `borderBottomWidth`/`borderBottomColor`, `shadow.sm` -- carrying
- * one real suit or honor glyph, and (size `"tab"` only) a label at the
- * tile's bottom edge. Used by the bottom tab bar (components/TabBar.tsx,
- * size `"tab"`, one per tab) and by each of the four landing screens' own
- * headings (size `"section"`, purely decorative, no label).
+ * one real suit or honor glyph, and (sizes `"tab"`/`"chip"` only) a label
+ * at the tile's bottom edge. `size="section"` is always the smallest,
+ * purely decorative form -- no label, ever, never `selected`.
  *
  * Unlike `TileHero`'s three tiles, this one is always upright -- rotation
  * is that hero's own decorative-only treatment, not this shared tile's.
  *
  * Consumers: the bottom tab bar (components/TabBar.tsx, size `"tab"`, one
- * per tab, `selected` on the active one); the clubs dashboard's chip row
- * (components/ClubChips.tsx, size `"chip"`, `selected` on the chosen club);
- * a club thread's own avatar (components/ThreadAvatar.tsx's `asTile`
- * branch, size `"chip"`); and each of the four landing screens' own
- * headings (size `"section"`, purely decorative, no label, never
- * `selected`).
+ * per tab, `selected` on the active one, one of the plan's own fixed
+ * 4-glyph section mapping -- not a real club); the clubs dashboard's chip
+ * row (components/ClubChips.tsx, size `"chip"`, `selected` on the chosen
+ * club, suit from `glyphForClub`); a club thread's own avatar
+ * (components/ThreadAvatar.tsx's `asTile` branch, size `"chip"`, suit
+ * from `glyphForClub`); each of the four landing screens' own headings
+ * (size `"section"`, one of the fixed 4-glyph section mapping); and a
+ * single game's own screen (app/clubs/[id]/events/[eventId]/index.tsx,
+ * size `"section"`, but -- unlike the other `"section"` consumers --
+ * this one's suit is that specific club's own `glyphForClub` result, not
+ * a fixed section glyph.
  */
 export default function MahjongTile({ suit, size, selected = false, label }: Props) {
   const glyphColor = selected ? colors.bg : GLYPH_COLOR[suit];
