@@ -2714,6 +2714,7 @@ git commit -m "feat(events): add fee_cents/min_spend_cents to events, event_seri
 - Modify: `lib/events.ts`
 - Modify: `lib/events.test.ts`
 - Modify: `lib/bookings.ts`
+- Modify: `lib/bookings.test.ts`
 - Modify: `lib/dashboard.ts`
 - Modify: `lib/dashboard.test.ts`
 - Modify: `lib/schema-contract.test.ts`
@@ -2721,6 +2722,44 @@ git commit -m "feat(events): add fee_cents/min_spend_cents to events, event_seri
 **Interfaces:**
 - Consumes: Task 11's new columns/RPC params.
 - Produces: `ClubEvent.fee_cents: number`, `ClubEvent.min_spend_cents: number`, `EventSeries.fee_cents: number`, `EventSeries.min_spend_cents: number`, `MyBooking.fee_cents: number`, `MyBooking.min_spend_cents: number`, `DashboardRow.feeCents: number`, `DashboardRow.minSpendCents: number`; `createEvent`/`createEventSeries` require `feeCents`/`minSpendCents: number`; `updateEvent`/`updateEventSeries` accept optional `feeCents`/`minSpendCents?: number | null`; `formatFeeCents(cents: number): string`; `parseDollarsToCents(value: string): number`.
+
+**Addendum discovered during Task 11's implementation:** Task 11's new `raise
+exception 'fee cannot be negative'` / `'minimum spend cannot be negative'`
+messages (in `create_event`/`update_event`/`create_event_series`/
+`update_event_series`) broke `lib/bookings.test.ts`'s
+`'maps, or explicitly allowlists, every message the migrations raise'`
+self-audit test — a whole-schema scan requiring every distinct `raise
+exception` string across ALL migrations to be either mapped by
+`bookingErrorMessage` or explicitly allowlisted there as owned by another
+module. This task must close that gap, following the EXACT existing
+precedent for other event-mutation messages (e.g. `'title is required'`,
+`'duration out of range'`) at `lib/bookings.test.ts`'s `ALLOWLIST` (search
+for `"mapped by lib/events.ts's own RPC_ERROR_MESSAGES, not this module's"`)
+and `lib/events.ts`'s `RPC_ERROR_MESSAGES` array (search for `const
+RPC_ERROR_MESSAGES`):
+
+1. In `lib/events.ts`, add two entries to the `RPC_ERROR_MESSAGES` array (same shape as every existing entry — `{ contains, message, codes }`):
+   ```ts
+   {
+     contains: 'fee cannot be negative',
+     message: 'The cost to play cannot be negative.',
+     codes: ['23514'],
+   },
+   {
+     contains: 'minimum spend cannot be negative',
+     message: 'The minimum spend cannot be negative.',
+     codes: ['23514'],
+   },
+   ```
+2. In `lib/events.test.ts`'s `describe('deliberate refusals are reported as refusals, not as network failures', ...)` block, add at least one test pinning one of these mappings, following the exact pattern the existing `'updateEvent: an out-of-range duration says so...'` test there already uses (a `{code: '23514', message: 'fee cannot be negative'}` fixture, calling `updateEvent` or `createEvent`, asserting the friendly message comes back, not `GENERIC_ERROR`).
+3. In `lib/bookings.test.ts`'s `ALLOWLIST` object, add two entries with the exact same comment convention every neighboring event-mutation entry there already uses:
+   ```ts
+   'fee cannot be negative':
+     'raised by create_event/update_event/create_event_series/update_event_series — mapped by lib/events.ts’s own RPC_ERROR_MESSAGES, not this module’s',
+   'minimum spend cannot be negative':
+     'raised by create_event/update_event/create_event_series/update_event_series — mapped by lib/events.ts’s own RPC_ERROR_MESSAGES, not this module’s',
+   ```
+4. Run `TZ=America/New_York npx vitest run lib/bookings.test.ts` — the self-audit test must pass again.
 
 - [ ] **Step 1: Write the failing tests for the new pure helpers**
 
