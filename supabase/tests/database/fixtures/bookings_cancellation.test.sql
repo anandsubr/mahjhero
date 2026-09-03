@@ -452,6 +452,7 @@ select lives_ok(
 -- already-seated one wanting to move, had no way to ever be placed once
 -- starts_at passed -- forever, for the rest of the game.
 -- ---------------------------------------------------------------------
+reset role;
 insert into public.events
   (id, club_id, title, venue_id, starts_at, ends_at, created_by) values
   ('e4e4e4e4-0000-0000-0000-000000000004',

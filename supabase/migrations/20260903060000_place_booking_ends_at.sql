@@ -6,8 +6,11 @@
  * promote_waitlist mid-game, seating someone who "left home an hour ago",
  * is the actual risk plan 4's freeze existed to prevent. But
  * promote_waitlist ALREADY refuses to run once starts_at <= now(), on its
- * own (20260825010000_waitlist_promotion.sql: "if ev.id is null or
- * ev.status <> 'published' or ev.starts_at <= now() then return; end if;").
+ * own ("if ev.id is null or ev.status <> 'published' or ev.starts_at <=
+ * now() then return; end if;" -- originally added in
+ * 20260825010000_waitlist_promotion.sql; current/live definition in
+ * 20260825090000_promote_waitlist_stops_regenerating_lapsed_offers.sql,
+ * where this same guard text still holds).
  * That protection does not live in place_booking at all -- it is
  * independent of what triggers the call.
  *
@@ -20,7 +23,11 @@
  * door.
  *
  * The fix: refuse only once the game has actually ENDED, matching the same
- * window record_round's own guard uses. cancel_booking, decline_booking,
+ * "relevant until ends_at" window my_upcoming_bookings' own filter change
+ * uses for the same reason (20260827070000_my_upcoming_bookings_check_in.sql:
+ * `starts_at > now()` dropped a game the instant it began, when a member
+ * still needs it; `ends_at > now()` keeps it around until it actually
+ * finishes). cancel_booking, decline_booking,
  * and cancel_booking_group are UNTOUCHED -- giving up a seat mid-game is
  * the genuinely risky case (a seat freed with nobody present to claim it),
  * and none of this reasoning applies to it.
