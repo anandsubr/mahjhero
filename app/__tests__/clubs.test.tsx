@@ -295,7 +295,14 @@ beforeEach(() => {
   fetchMyUpcomingBookings.mockResolvedValue([]);
   commitBooking.mockResolvedValue({ result: null, error: null });
   cancelBooking.mockResolvedValue({ error: null });
-  fetchProfile.mockResolvedValue(null);
+  fetchProfile.mockResolvedValue({
+    id: 'you',
+    display_name: 'Anand',
+    skill_level: null,
+    avatar_url: null,
+    timezone: 'America/New_York',
+    is_admin: false,
+  });
   fetchGreetings.mockResolvedValue([
     { id: 'g1', text: 'Ready to shuffle, {name}?', created_at: '2026-09-01T00:00:00Z' },
   ]);
