@@ -40,4 +40,35 @@ describe('ThreadAvatar', () => {
     expect(getComputedStyle(avatar).width).toBe('72px');
     expect(getComputedStyle(avatar).height).toBe('72px');
   });
+
+  it('renders the plain circle by default, even for kind="club"', () => {
+    render(<ThreadAvatar kind="club" name="Riverside Mah Jongg" />);
+    expect(screen.getByTestId('thread-avatar-club')).toBeTruthy();
+    expect(screen.queryByText('RM')).toBeTruthy(); // initials, same as before
+  });
+
+  it('renders a mahjong tile instead of a circle when asTile is true', () => {
+    render(
+      <ThreadAvatar kind="club" name="Riverside Mah Jongg" clubId="club-1" asTile size={72} />,
+    );
+    expect(screen.queryByTestId('thread-avatar-club')).toBeNull();
+    expect(screen.getByText('RM')).toBeTruthy();
+  });
+
+  it('gives the same club id the same glyph as asTile=false does not need to care about, but stays stable across renders', () => {
+    const { rerender } = render(
+      <ThreadAvatar kind="club" name="Riverside Mah Jongg" clubId="club-1" asTile size={72} />,
+    );
+    const first = screen.getByTestId('thread-avatar-club-tile').textContent;
+    rerender(
+      <ThreadAvatar kind="club" name="Riverside Mah Jongg" clubId="club-1" asTile size={72} />,
+    );
+    expect(screen.getByTestId('thread-avatar-club-tile').textContent).toBe(first);
+  });
+
+  it('ignores asTile for non-club kinds', () => {
+    render(<ThreadAvatar kind="direct" name="Ada" asTile />);
+    // Still the plain circle -- asTile only ever does anything for kind="club".
+    expect(screen.getByTestId('thread-avatar-direct')).toBeTruthy();
+  });
 });
