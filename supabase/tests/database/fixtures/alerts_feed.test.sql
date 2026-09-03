@@ -60,8 +60,13 @@ select is(
   'fetch_my_notifications returns both of Alice''s rows'
 );
 
+-- No `order by` inside the aggregate: this has to pin the order
+-- fetch_my_notifications() itself returns rows in, not an order the test
+-- re-derives -- an array_agg(id order by created_at desc) here would keep
+-- passing even if the function's own `order by ctx.created_at desc` were
+-- deleted.
 select is(
-  (select array_agg(id order by created_at desc)
+  (select array_agg(id)
      from public.fetch_my_notifications()),
   array['11111111-0000-0000-0000-000000000002'::uuid,
         '11111111-0000-0000-0000-000000000001'::uuid],
@@ -104,12 +109,32 @@ select is(
   'mark_notifications_read upserts exactly one watermark row for Alice'
 );
 
+-- notification_outbox has no policy and no grant to authenticated at all
+-- (20260825000000_create_bookings.sql) -- an insert while role is still
+-- authenticated is a permission error, not an RLS-filtered no-op
+-- (bookings_schema.test.sql:292-301 asserts exactly this and calls it
+-- fatal to the whole transaction). `reset role` / `set local role
+-- authenticated` bracket the seed the same way thread_lists.test.sql does
+-- around its own backfill call.
+reset role;
+
+-- now() is transaction-constant in Postgres, so a row stamped with plain
+-- now() here would land EQUAL to the watermark mark_notifications_read()
+-- is about to write below with its own now() -- and the unread count's
+-- strict `>` would then see it as not-after-the-watermark. `+ interval
+-- '1 minute'` makes this row genuinely later than the watermark rather
+-- than coincident with it.
 insert into public.notification_outbox
   (id, recipient_id, club_id, kind, payload, dedupe_key, created_at) values
   ('11111111-0000-0000-0000-000000000003',
    'aaaaaaaa-0000-0000-0000-000000000001',
    'c1c1c1c1-0000-0000-0000-000000000001',
-   'need_a_fourth', '{}'::jsonb, 'alerts_test:3', now());
+   'need_a_fourth', '{}'::jsonb, 'alerts_test:3',
+   now() + interval '1 minute');
+
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "aaaaaaaa-0000-0000-0000-000000000001", "role": "authenticated"}';
 
 select is(
   (select public.my_notification_unread_count()),
@@ -124,6 +149,12 @@ select is(
 -- than one of these three being set on the same row, so each state gets
 -- its own row rather than combining them.
 -- ---------------------------------------------------------------------
+
+-- Same reason as scenario 3's seed above: notification_outbox has no
+-- grant to authenticated, so these three inserts need the privileged
+-- role too, with the switch back to Alice's session happening once, after
+-- all three, before the assertions below.
+reset role;
 
 insert into public.notification_outbox
   (id, recipient_id, club_id, kind, payload, dedupe_key, created_at, sent_at)
@@ -148,6 +179,10 @@ insert into public.notification_outbox
    'aaaaaaaa-0000-0000-0000-000000000001',
    'c1c1c1c1-0000-0000-0000-000000000001',
    'promotion_offer_expired', '{}'::jsonb, 'alerts_test:6', now(), now());
+
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "aaaaaaaa-0000-0000-0000-000000000001", "role": "authenticated"}';
 
 select is(
   (select count(*)::int from public.fetch_my_notifications()),

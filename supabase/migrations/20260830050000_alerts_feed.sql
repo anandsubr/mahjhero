@@ -27,6 +27,17 @@ create policy notification_reads_own on public.notification_reads
   using (recipient_id = (select auth.uid()))
   with check (recipient_id = (select auth.uid()));
 
+-- Both functions below filter/order notification_outbox by
+-- (recipient_id, created_at), and the table's own two indexes
+-- (20260825000000_create_bookings.sql, 20260826010000_outbox_delivery_
+-- lifecycle.sql) are both partial on `sent_at is null`/the due-queue
+-- columns -- unusable here since the feed deliberately reads every
+-- delivery state. my_notification_unread_count() in particular runs on
+-- every tab-bar render, so an unindexed lookup here is a sequential scan
+-- over an append-only, ever-growing table on every render.
+create index notification_outbox_recipient_recent
+  on public.notification_outbox (recipient_id, created_at desc);
+
 /*
  * The feed's read path. Reuses outbox_render_context
  * (20260826050000_outbox_render_context.sql) — the exact function
