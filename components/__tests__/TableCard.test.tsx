@@ -1,4 +1,5 @@
-import { render, screen } from '@testing-library/react';
+import { useState } from 'react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import TableCard from '../TableCard';
 
@@ -203,6 +204,43 @@ describe('TableCard', () => {
     );
     expect(screen.getByTestId('badge-star-b1')).toBeTruthy();
     expect(screen.getByText('30')).toBeTruthy();
+  });
+
+  // canRecordRound alone never opens a panel that wasn't already
+  // open-able -- see SeatGrid's own docstring: recording rides on the SAME
+  // organizer/self panel-access rule as Move/Remove/Leave, with no separate
+  // per-seat gate of its own. So this test pairs canRecordRound with the
+  // organizer bundle (otherTables/onMove/onRemove/openBookingId/
+  // onToggleManage), matching how the event screen actually calls this --
+  // canRecordRound is only ever true for an organizer or for your own seat,
+  // both of which are already manageable seats by then.
+  it('offers "Record a win" on an occupied seat once canRecordRound is true', () => {
+    function Harness() {
+      const [openBookingId, setOpenBookingId] = useState<string | null>(null);
+      return (
+        <TableCard
+          table={table}
+          occupants={occupants}
+          youId="p9"
+          onTakeSeat={vi.fn()}
+          rounds={[]}
+          canRecordRound
+          canDeleteRound={false}
+          onRecordRound={vi.fn()}
+          onDeleteRound={vi.fn()}
+          otherTables={[{ id: 't2', label: 'Table 2' }]}
+          onMove={vi.fn()}
+          onRemove={vi.fn()}
+          openBookingId={openBookingId}
+          onToggleManage={(id) =>
+            setOpenBookingId((current) => (current === id ? null : id))
+          }
+        />
+      );
+    }
+    render(<Harness />);
+    fireEvent.click(screen.getByLabelText("Manage Ravi K.'s seat"));
+    expect(screen.getByLabelText('Record a win for Ravi K.')).toBeTruthy();
   });
 
   it('offers a round timer', () => {

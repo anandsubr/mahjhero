@@ -148,6 +148,8 @@ export default function TableCard({
         onLeaveSeat={onLeaveSeat}
         openBookingId={openBookingId}
         onToggleManage={onToggleManage}
+        canRecordRound={canRecordRound}
+        onRecordRound={(profileId, points) => onRecordRound?.(profileId, points)}
       />
 
       <Text style={styles.free}>{seatsFreeLabel(free)}</Text>

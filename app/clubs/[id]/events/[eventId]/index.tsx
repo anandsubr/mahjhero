@@ -908,9 +908,10 @@ export default function EventScreen() {
               rounds={roundsFailed ? undefined : displayRounds}
               canRecordRound={gameLive && (isOrganizer || iAmSeatedHere)}
               canDeleteRound={isOrganizer}
-              onRecordRound={(winnerId, points) =>
-                void recordTableRound(table.id, winnerId, points)
-              }
+              onRecordRound={(winnerId, points) => {
+                setOpenBookingId(null);
+                void recordTableRound(table.id, winnerId, points);
+              }}
               onDeleteRound={(roundId) => void removeTableRound(roundId)}
             >
               {isOrganizer ? (

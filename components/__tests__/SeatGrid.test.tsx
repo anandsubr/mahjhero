@@ -231,6 +231,63 @@ describe('SeatGrid: organizer seat management', () => {
   // `onLeaveSeat` is gated only on `canBook`, not on `!isOrganizer`). See
   // SeatGrid.tsx's "A member's own seat" docstring section for why
   // `organizerManageable || selfManageable` checks in that order.
+  it('reveals the seven fixed point chips after tapping "Record a win", and records the tapped value', () => {
+    const onRecordRound = vi.fn();
+    function RecordingHarness() {
+      const [openBookingId, setOpenBookingId] = useState<string | null>(null);
+      return (
+        <SeatGrid
+          tableLabel="Table 1"
+          capacity={4}
+          seats={seats}
+          otherTables={otherTables}
+          openBookingId={openBookingId}
+          onToggleManage={(id) =>
+            setOpenBookingId((current) => (current === id ? null : id))
+          }
+          onMove={vi.fn()}
+          onRemove={vi.fn()}
+          canRecordRound
+          onRecordRound={onRecordRound}
+        />
+      );
+    }
+    render(<RecordingHarness />);
+
+    fireEvent.click(screen.getByLabelText("Manage Jane P.'s seat"));
+    fireEvent.click(screen.getByLabelText('Record a win for Jane P.'));
+
+    for (const value of [25, 30, 35, 40, 45, 50, 75]) {
+      expect(screen.getByLabelText(`Record Jane P.'s win for ${value} points`)).toBeTruthy();
+    }
+
+    fireEvent.click(screen.getByLabelText("Record Jane P.'s win for 40 points"));
+    expect(onRecordRound).toHaveBeenCalledWith('p1', 40);
+  });
+
+  it('offers no "Record a win" control when canRecordRound is false', () => {
+    function Harness2() {
+      const [openBookingId, setOpenBookingId] = useState<string | null>(null);
+      return (
+        <SeatGrid
+          tableLabel="Table 1"
+          capacity={4}
+          seats={seats}
+          otherTables={otherTables}
+          openBookingId={openBookingId}
+          onToggleManage={(id) =>
+            setOpenBookingId((current) => (current === id ? null : id))
+          }
+          onMove={vi.fn()}
+          onRemove={vi.fn()}
+        />
+      );
+    }
+    render(<Harness2 />);
+    fireEvent.click(screen.getByLabelText("Manage Jane P.'s seat"));
+    expect(screen.queryByLabelText('Record a win for Jane P.')).toBeNull();
+  });
+
   it("keeps the organizer's own seat on the organizer panel even when onLeaveSeat is also supplied", () => {
     const onRemove = vi.fn();
     const onLeaveSeat = vi.fn();

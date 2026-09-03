@@ -1,8 +1,12 @@
+import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Button from './Button';
 import { StarIcon } from './icons';
 import { seatsRemaining } from '../lib/bookings';
 import { colors, radius, space, type } from '../lib/theme';
+
+/** The plan's hard rule: these seven values, everywhere, no others. */
+const POINT_VALUES = [25, 30, 35, 40, 45, 50, 75] as const;
 
 export type Seat = {
   bookingId: string;
@@ -107,6 +111,13 @@ type Props = {
    */
   openBookingId?: string | null;
   onToggleManage?: (bookingId: string) => void;
+  /** Eligibility to record a round -- computed once per table by the
+   *  caller (the same `canRecordRound` the event screen already computes:
+   *  `gameLive && (isOrganizer || iAmSeatedHere)`), not per-seat: whichever
+   *  panel a caller can already open (their own, or -- for an organizer --
+   *  anyone's) is exactly who they may record a win for. */
+  canRecordRound?: boolean;
+  onRecordRound?: (profileId: string, points: number) => void;
 };
 
 /**
@@ -235,7 +246,10 @@ export default function SeatGrid({
   onLeaveSeat,
   openBookingId,
   onToggleManage,
+  canRecordRound,
+  onRecordRound,
 }: Props) {
+  const [recordingBookingId, setRecordingBookingId] = useState<string | null>(null);
   const empties = seatsRemaining(capacity, seats.length);
   const lastSeatCall = needsFourth && empties === 1;
   const organizerManageable = Boolean(
@@ -273,7 +287,10 @@ export default function SeatGrid({
         }
 
         const isOpen = seat.bookingId === openBookingId;
-        const toggle = () => onToggleManage!(seat.bookingId);
+        const toggle = () => {
+          onToggleManage!(seat.bookingId);
+          setRecordingBookingId(null);
+        };
         const label = `Manage ${seat.name}'s seat`;
 
         if (!isOpen) {
@@ -385,6 +402,38 @@ export default function SeatGrid({
                   Leave this game
                 </Button>
               )}
+
+              {canRecordRound && onRecordRound ? (
+                recordingBookingId === seat.bookingId ? (
+                  <View style={styles.pointsRow}>
+                    {POINT_VALUES.map((value) => (
+                      <Pressable
+                        key={value}
+                        onPress={() => {
+                          onRecordRound(seat.profileId, value);
+                          setRecordingBookingId(null);
+                        }}
+                        disabled={busy}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Record ${seat.name}'s win for ${value} points`}
+                        style={styles.pointChip}
+                      >
+                        <Text style={styles.pointChipText}>{value}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                ) : (
+                  <Button
+                    variant="secondary"
+                    big={false}
+                    disabled={busy}
+                    onPress={() => setRecordingBookingId(seat.bookingId)}
+                    accessibilityLabel={`Record a win for ${seat.name}`}
+                  >
+                    Record a win
+                  </Button>
+                )
+              ) : null}
             </View>
           </View>
         );
@@ -531,6 +580,28 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: space[2],
+    backgroundColor: colors.surface,
+    borderRadius: radius.sm,
+    padding: space[2],
+  },
+  pointsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: space[2],
+  },
+  pointChip: {
+    minWidth: 44,
+    minHeight: 44,
+    borderRadius: radius.pill,
+    backgroundColor: colors.accentColor,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: space[3],
+  },
+  pointChipText: {
+    fontFamily: type.bodySemiBold,
+    fontSize: type.size.body,
+    color: colors.bg,
   },
   emptyText: {
     fontFamily: type.bodyRegular,
