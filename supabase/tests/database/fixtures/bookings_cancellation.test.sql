@@ -467,7 +467,7 @@ insert into public.event_tables
    'c1c1c1c1-0000-0000-0000-000000000001', 'Table 1', 4, 1),
   ('7ab1e000-0000-0000-0000-000000000005',
    'e4e4e4e4-0000-0000-0000-000000000004',
-   'c1c1c1c1-0000-0000-0000-000000000001', 'Table 2', 4, 1);
+   'c1c1c1c1-0000-0000-0000-000000000001', 'Table 2', 4, 2);
 
 -- Carol is already seated at Table 1 (to exercise a table-to-table move).
 insert into public.booking_groups
