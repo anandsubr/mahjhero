@@ -26,15 +26,10 @@ export function useNotificationsUnread(): number {
       }
       let cancelled = false;
 
-      void fetchNotificationUnreadCount()
-        .then((result) => {
-          if (cancelled) return;
-          setCount(result);
-        })
-        .catch(() => {
-          if (cancelled) return;
-          setCount(0);
-        });
+      void fetchNotificationUnreadCount().then((result) => {
+        if (cancelled) return;
+        setCount(result);
+      });
 
       return () => {
         cancelled = true;

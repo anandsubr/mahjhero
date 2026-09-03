@@ -63,13 +63,6 @@ describe('useNotificationsUnread', () => {
     expect(fetchNotificationUnreadCount).toHaveBeenCalledTimes(1);
   });
 
-  it('resolves to 0 (not throwing) when the fetch itself fails', async () => {
-    fetchNotificationUnreadCount.mockRejectedValueOnce(new Error('Network error'));
-    render(<Probe />);
-    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('0'));
-    expect(fetchNotificationUnreadCount).toHaveBeenCalledTimes(1);
-  });
-
   it('does not refetch when a new session object arrives for the same user', async () => {
     const { rerender } = render(<Probe />);
     await waitFor(() => expect(fetchNotificationUnreadCount).toHaveBeenCalledTimes(1));
