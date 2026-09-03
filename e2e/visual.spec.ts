@@ -7,6 +7,7 @@ import {
   seedPopulatedBoard,
   seedPopulatedMessagesList,
   seedPopulatedThread,
+  seedTableWithRound,
   seedUnreadClubMessage,
   storageKeyFor,
 } from './session';
@@ -685,6 +686,46 @@ test.describe('signed in', () => {
         ).toBeVisible();
         await expect(page.getByText('2 seats free')).toBeVisible();
         await captureScreen(page, vp, `event-detail-${vp.name}.png`);
+      });
+
+      // The rounds section, pictured for the first time -- and the only
+      // baseline in this suite where it has anything to show. Every other
+      // seeded event here (this describe's own `seeded.eventId` above, and
+      // the four booking-state games from `seedBookings`) reads as upcoming
+      // or past, never live, to `gameLive`
+      // (app/clubs/[id]/events/[eventId]/index.tsx) -- RoundLog's totals
+      // line and round row, and RoundTimer's duration pills, all render
+      // nothing or nothing but their own gated-off state on the seeded
+      // event above. `seedTableWithRound` (e2e/session.ts) seeds a SEPARATE
+      // event, windowed to be live at the suite's own frozen clock, with one
+      // table two of whose four seats are confirmed and one round already
+      // recorded for it.
+      test(`event detail, live with a round recorded, at ${vp.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        const { eventId, winnerName, points } = await seedTableWithRound(
+          seeded.clubId,
+          userId,
+          userId.slice(0, 8),
+        );
+        await page.goto(`/clubs/${seeded.clubId}/events/${eventId}`);
+        await expect(page.getByText('1 table · 4 seats')).toBeVisible();
+        await expect(page.getByText('2 seats free')).toBeVisible();
+        // RoundLog's own running-totals line, "<name>: <points>"
+        // (components/RoundLog.tsx's `totalsLine`), and the round row
+        // itself, "<name> · <points> pts" -- proof the seeded round reached
+        // the screen, not just the fixture.
+        await expect(page.getByText(`${winnerName}: ${points}`)).toBeVisible();
+        await expect(page.getByText(`${winnerName} · ${points} pts`)).toBeVisible();
+        // RoundTimer's own duration pills -- the other half of this
+        // screen's rounds section, and the one thing on this baseline that
+        // needs no seeded data at all, only a live game (RoundLog/
+        // RoundTimer both render whenever `rounds` is not undefined, i.e.
+        // once the table_rounds fetch has landed -- see TableCard's own
+        // docstring on that prop).
+        await expect(
+          page.getByRole('button', { name: 'Start a 10-minute timer for Table 1' }),
+        ).toBeVisible();
+        await captureScreen(page, vp, `event-detail-round-${vp.name}.png`);
       });
 
       test(`new event at ${vp.name}`, async ({ page }) => {
