@@ -18,6 +18,11 @@ vi.mock('../../lib/messages', async () => {
   };
 });
 
+let alertsUnreadCount = 0;
+vi.mock('../../lib/use-notifications-unread', () => ({
+  useNotificationsUnread: () => alertsUnreadCount,
+}));
+
 // Module-scoped constant, not a fresh object per render: TabBar now reads
 // `useSession` (via `useUnreadCounts`), and a fresh object there would break
 // the referential stability `useUnreadCounts`'s `useCallback([session])`
@@ -52,6 +57,7 @@ vi.mock('expo-router', () => ({
 
 beforeEach(() => {
   replace.mockClear();
+  alertsUnreadCount = 0;
   // A route none of the four tabs' hrefs match, so a test that doesn't care
   // about the "already there" comparison (most of them) can't accidentally
   // pass because the default happens to coincide with a real tab route.
@@ -80,7 +86,7 @@ describe('TabBar', () => {
     ['Club', '/clubs', 'alerts'],
     ['Messages', '/messages', 'club'],
     ['Profile', '/profile', 'club'],
-    ['Alerts', '/notifications', 'club'],
+    ['Alerts', '/alerts', 'club'],
   ] as const)('routes %s to %s', (label, href, otherActive) => {
     // Rendered with a different tab active than the one under test: the
     // active tab itself is a documented no-op (see the test below), so
@@ -151,5 +157,24 @@ describe('TabBar', () => {
     render(<TabBar active="club" />);
     await waitFor(() => expect(unreadCounts).toHaveBeenCalled());
     expect(screen.getByRole('button', { name: 'Messages' })).toBeTruthy();
+  });
+
+  it('badges the Alerts tab with the unread notification count', async () => {
+    alertsUnreadCount = 2;
+    render(<TabBar active="club" />);
+    expect(await screen.findByText('2')).toBeTruthy();
+  });
+
+  it('shows no badge on Alerts when nothing is unread', async () => {
+    alertsUnreadCount = 0;
+    render(<TabBar active="club" />);
+    await waitFor(() => expect(screen.queryByText('0')).toBeNull());
+    expect(screen.queryByText('0')).toBeNull();
+  });
+
+  it("composes the unread notification count into the Alerts tab's accessible name", async () => {
+    alertsUnreadCount = 3;
+    render(<TabBar active="club" />);
+    expect(await screen.findByRole('button', { name: 'Alerts, 3 unread' })).toBeTruthy();
   });
 });

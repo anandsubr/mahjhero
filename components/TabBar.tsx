@@ -4,6 +4,7 @@ import { BellIcon, HomeIcon, MessageIcon, PersonIcon } from './icons';
 import UnreadBadge from './UnreadBadge';
 import { unreadSuffix } from '../lib/messages';
 import { colors, space, type } from '../lib/theme';
+import { useNotificationsUnread } from '../lib/use-notifications-unread';
 import { useUnreadCounts } from '../lib/use-unread';
 
 export type TabKey = 'club' | 'messages' | 'profile' | 'alerts';
@@ -12,7 +13,7 @@ const TABS: { key: TabKey; label: string; href: string }[] = [
   { key: 'club', label: 'Club', href: '/clubs' },
   { key: 'messages', label: 'Messages', href: '/messages' },
   { key: 'profile', label: 'Profile', href: '/profile' },
-  { key: 'alerts', label: 'Alerts', href: '/notifications' },
+  { key: 'alerts', label: 'Alerts', href: '/alerts' },
 ];
 
 function icon(key: TabKey, color: string) {
@@ -55,6 +56,7 @@ export default function TabBar({ active }: { active: TabKey }) {
   const router = useRouter();
   const pathname = usePathname();
   const { total } = useUnreadCounts();
+  const alertsUnread = useNotificationsUnread();
 
   return (
     <View style={styles.bar}>
@@ -67,9 +69,10 @@ export default function TabBar({ active }: { active: TabKey }) {
         // 5.09:1 and clears AA. Same failure, and the same fix, as
         // components/NeedAFourthCard.tsx's own card background.
         const tint = selected ? colors.accent[700] : colors.neutral[700];
-        // Only the Messages tab carries a badge, so every other tab's
+        // Messages and Alerts both carry a badge; the other two tabs'
         // suffix is always empty.
-        const badgeCount = tab.key === 'messages' ? total : 0;
+        const badgeCount =
+          tab.key === 'messages' ? total : tab.key === 'alerts' ? alertsUnread : 0;
         return (
           <Pressable
             key={tab.key}
@@ -89,9 +92,9 @@ export default function TabBar({ active }: { active: TabKey }) {
           >
             <View style={styles.iconWrap}>
               {icon(tab.key, tint)}
-              {tab.key === 'messages' ? (
+              {tab.key === 'messages' || tab.key === 'alerts' ? (
                 <View style={styles.badge}>
-                  <UnreadBadge count={total} />
+                  <UnreadBadge count={badgeCount} />
                 </View>
               ) : null}
             </View>
