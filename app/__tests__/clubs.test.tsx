@@ -498,7 +498,8 @@ describe('dashboard artboard', () => {
     const label = await screen.findByText('West Chapter Mahjong Society');
     // react-native-web renders `numberOfLines` as `-webkit-line-clamp` — 1
     // clips to a single line (what today's bug does); this asserts the fix
-    // allows a second line instead.
+    // allows a second line instead. Using getComputedStyle here because
+    // this project uses vitest with Chai (not Jest), which lacks toHaveStyle.
     expect(window.getComputedStyle(label).webkitLineClamp).toBe('2');
   });
 
