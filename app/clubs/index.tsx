@@ -34,6 +34,9 @@ import {
 import type { BookingOutcome, MyBooking } from '../../lib/bookings';
 import { canInvite, fetchMyClubs, fetchMyRoles } from '../../lib/clubs';
 import type { Club, ClubRole } from '../../lib/clubs';
+import { applyGreetingTemplate, fetchGreetings, pickDailyGreeting } from '../../lib/greetings';
+import type { Greeting } from '../../lib/greetings';
+import { fetchProfile } from '../../lib/profile';
 import { GENERIC_ERROR } from '../../lib/constants';
 import {
   ALL_CLUBS,
@@ -132,6 +135,8 @@ export default function ClubsScreen() {
   const [selected, setSelected] = useState<string>(ALL_CLUBS);
   const [notice, setNotice] = useState<string | null>(null);
   const { byClub: unreadByClub } = useUnreadCounts();
+  const [displayName, setDisplayName] = useState('');
+  const [greetings, setGreetings] = useState<Greeting[]>([]);
 
   // Every write below awaits the network and then calls setState. Nothing
   // checked the screen was still mounted, so navigating away mid-write —
@@ -174,6 +179,14 @@ export default function ClubsScreen() {
     fetchMyRoles(userId).then((result) => {
       if (cancelled) return;
       setRoles(result ?? []);
+    });
+    fetchProfile(userId).then((result) => {
+      if (cancelled) return;
+      if (result) setDisplayName(result.display_name);
+    });
+    fetchGreetings().then((result) => {
+      if (cancelled) return;
+      setGreetings(result ?? []);
     });
     return () => {
       cancelled = true;
@@ -496,8 +509,14 @@ export default function ClubsScreen() {
     list.find((club) => club.id === selected)?.id ??
     (list.length === 1 ? list[0].id : null);
 
+  const todaysGreeting = pickDailyGreeting(greetings, new Date());
+  const greetingText = todaysGreeting
+    ? applyGreetingTemplate(todaysGreeting.text, displayName)
+    : null;
+
   return (
     <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="club" />}>
+      {greetingText ? <Text style={styles.greeting}>{greetingText}</Text> : null}
       {scope.kicker === 'Your club' ? (
         <DashboardHeader
           kicker={scope.kicker}
@@ -913,6 +932,11 @@ const styles = StyleSheet.create({
     gap: space[4],
   },
   heading: {
+    fontFamily: type.heading,
+    fontSize: type.size.h2,
+    color: colors.text,
+  },
+  greeting: {
     fontFamily: type.heading,
     fontSize: type.size.h2,
     color: colors.text,

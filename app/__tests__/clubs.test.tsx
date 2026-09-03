@@ -78,6 +78,7 @@ const fetchMyUpcomingBookings = vi.fn();
 const commitBooking = vi.fn();
 const cancelBooking = vi.fn();
 const fetchProfile = vi.fn();
+const fetchGreetings = vi.fn();
 
 // One partial mock for the whole file, not one per describe block. Two
 // `vi.mock` calls for the same specifier are both hoisted and only one
@@ -126,6 +127,26 @@ vi.mock('../../lib/bookings', async (importOriginal) => {
 vi.mock('../../lib/profile', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../lib/profile')>();
   return { ...actual, fetchProfile: (...args: unknown[]) => fetchProfile(...args) };
+});
+
+// Only fetchGreetings is a network call worth stubbing -- pickDailyGreeting
+// and applyGreetingTemplate are pure, already covered directly by
+// lib/greetings.test.ts (Task 7), and this test wants them to run for
+// real so it is exercising the actual substitution logic, not a second
+// hand-rolled copy of it. `vi.importActual` (not a plain object spread
+// referencing an outer `import`) is required here: `vi.mock` factories are
+// hoisted above every `import` in the file, so a factory that closed over
+// a normally-imported binding would run before that import's assignment
+// exists. Declaring `fetchGreetings` as a bare `vi.fn()` below works
+// because — same as this file's existing `fetchPendingInvites` mock — the
+// factory only reads it through a closure at call time, not at hoist time.
+vi.mock('../../lib/greetings', async () => {
+  const actual =
+    await vi.importActual<typeof import('../../lib/greetings')>('../../lib/greetings');
+  return {
+    ...actual,
+    fetchGreetings: (...args: unknown[]) => fetchGreetings(...args),
+  };
 });
 
 // TabBar (carried by every screen in this file) and, on the dashboard,
@@ -275,6 +296,9 @@ beforeEach(() => {
   commitBooking.mockResolvedValue({ result: null, error: null });
   cancelBooking.mockResolvedValue({ error: null });
   fetchProfile.mockResolvedValue(null);
+  fetchGreetings.mockResolvedValue([
+    { id: 'g1', text: 'Ready to shuffle, {name}?', created_at: '2026-09-01T00:00:00Z' },
+  ]);
 });
 
 describe('clubs list', () => {
@@ -377,6 +401,28 @@ describe('dashboard artboard', () => {
 
     await screen.findByRole('button', { name: /Riverside/ }); // a chip has rendered
     expect(screen.queryByText('Your clubs')).toBeNull();
+  });
+
+  it('greets the member by name at the top of the dashboard', async () => {
+    fetchMyClubs.mockResolvedValue([CLUB]);
+    fetchProfile.mockResolvedValue({
+      id: 'you',
+      display_name: 'Anand',
+      skill_level: null,
+      avatar_url: null,
+      timezone: 'America/New_York',
+      is_admin: false,
+    });
+    render(<ClubsScreen />);
+    expect(await screen.findByText('Ready to shuffle, Anand?')).toBeTruthy();
+  });
+
+  it('shows no greeting line when there are none to show', async () => {
+    fetchGreetings.mockResolvedValue([]);
+    fetchMyClubs.mockResolvedValue([CLUB]);
+    render(<ClubsScreen />);
+    await screen.findAllByText('Riverside Mah Jongg');
+    expect(screen.queryByText(/Ready to shuffle/)).toBeNull();
   });
 
   // The rows were inert: the one thing a member wants from a game they can
