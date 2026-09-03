@@ -591,12 +591,12 @@ function toClubEvent(row: EventRow): ClubEvent {
 }
 
 /**
- * Every event still relevant to this club: not yet ended, not `starts_at >=
- * now()`. Matches the same "relevant until it ends" rule
- * `my_upcoming_bookings` (20260827070000_my_upcoming_bookings_check_in.sql)
- * and `record_round`'s own guard (20260902070000_table_rounds_mutations.sql)
- * already use — dropping an event the instant it started used to hide it
- * from `buildDashboardRows`' organizing-row branch (lib/dashboard.ts) for
+ * Every event still relevant to this club: not yet ended. No longer gated
+ * on `starts_at` the way it used to be — matches the same "relevant until
+ * it ends" rule `my_upcoming_bookings`
+ * (20260827070000_my_upcoming_bookings_check_in.sql) already uses.
+ * Dropping an event the instant it started used to hide it from
+ * `buildDashboardRows`' organizing-row branch (lib/dashboard.ts) for
  * exactly the games that most need to stay reachable: an organizer's own
  * in-progress game they never booked a seat at.
  *

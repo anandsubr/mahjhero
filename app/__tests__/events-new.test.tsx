@@ -487,7 +487,7 @@ describe('clearing a date field', () => {
 describe('a date in the past is not offered', () => {
   /*
    * A game dated in the past used to save, redirect on success, and then be
-   * visible nowhere: `fetchUpcomingEvents` filters `starts_at >= now()` and
+   * visible nowhere: `fetchUpcomingEvents` filters `ends_at >= now()` and
    * is the only events listing the app has, so a mistyped year produced a
    * game that existed only in the database.
    *
