@@ -130,6 +130,26 @@ describe('ClubChips', () => {
     expect(screen.queryByRole('button', { name: 'Start a club' })).toBeNull();
     expect(screen.queryByText('New club')).toBeNull();
   });
+
+  it('shows each club as a mahjong tile, not a circular avatar', () => {
+    render(<ClubChips chips={CHIPS} selected="club-1" onSelect={() => {}} />);
+    // The old circular-avatar testID this replaces.
+    expect(screen.queryByTestId('thread-avatar-club')).toBeNull();
+    // Both initials still read, now on the tile face rather than a circle.
+    expect(screen.getByText('RM')).toBeTruthy();
+    expect(screen.getByText('HT')).toBeTruthy();
+  });
+
+  it("gives the same club the same glyph every time, matching lib/dashboard's own glyphForClub", () => {
+    render(<ClubChips chips={CHIPS} selected="club-1" onSelect={() => {}} />);
+    // Rendered twice (re-render, not remount) to prove it's not a fresh
+    // random pick per render -- a real regression a naive
+    // Math.random()-based glyph pick would pass the single-render version
+    // of this test but fail here.
+    const firstGlyph = screen.getByTestId('chip-glyph-club-1').textContent;
+    render(<ClubChips chips={CHIPS} selected="club-1" onSelect={() => {}} />);
+    expect(screen.getAllByTestId('chip-glyph-club-1')[0].textContent).toBe(firstGlyph);
+  });
 });
 
 import DashboardHeader from '../DashboardHeader';
