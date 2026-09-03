@@ -4,9 +4,9 @@ import { describe, expect, it, vi } from 'vitest';
 import SeatGrid from '../SeatGrid';
 
 const seats = [
-  { bookingId: 'b1', name: 'Jane P.', isYou: false },
-  { bookingId: 'b2', name: 'Mei L.', isYou: false },
-  { bookingId: 'b3', name: 'You', isYou: true },
+  { bookingId: 'b1', profileId: 'p1', name: 'Jane P.', isYou: false },
+  { bookingId: 'b2', profileId: 'p2', name: 'Mei L.', isYou: false },
+  { bookingId: 'b3', profileId: 'p3', name: 'You', isYou: true },
 ];
 
 describe('SeatGrid', () => {
@@ -231,6 +231,63 @@ describe('SeatGrid: organizer seat management', () => {
   // `onLeaveSeat` is gated only on `canBook`, not on `!isOrganizer`). See
   // SeatGrid.tsx's "A member's own seat" docstring section for why
   // `organizerManageable || selfManageable` checks in that order.
+  it('reveals the seven fixed point chips after tapping "Record a win", and records the tapped value', () => {
+    const onRecordRound = vi.fn();
+    function RecordingHarness() {
+      const [openBookingId, setOpenBookingId] = useState<string | null>(null);
+      return (
+        <SeatGrid
+          tableLabel="Table 1"
+          capacity={4}
+          seats={seats}
+          otherTables={otherTables}
+          openBookingId={openBookingId}
+          onToggleManage={(id) =>
+            setOpenBookingId((current) => (current === id ? null : id))
+          }
+          onMove={vi.fn()}
+          onRemove={vi.fn()}
+          canRecordRound
+          onRecordRound={onRecordRound}
+        />
+      );
+    }
+    render(<RecordingHarness />);
+
+    fireEvent.click(screen.getByLabelText("Manage Jane P.'s seat"));
+    fireEvent.click(screen.getByLabelText('Record a win for Jane P.'));
+
+    for (const value of [25, 30, 35, 40, 45, 50, 75]) {
+      expect(screen.getByLabelText(`Record Jane P.'s win for ${value} points`)).toBeTruthy();
+    }
+
+    fireEvent.click(screen.getByLabelText("Record Jane P.'s win for 40 points"));
+    expect(onRecordRound).toHaveBeenCalledWith('p1', 40);
+  });
+
+  it('offers no "Record a win" control when canRecordRound is false', () => {
+    function Harness2() {
+      const [openBookingId, setOpenBookingId] = useState<string | null>(null);
+      return (
+        <SeatGrid
+          tableLabel="Table 1"
+          capacity={4}
+          seats={seats}
+          otherTables={otherTables}
+          openBookingId={openBookingId}
+          onToggleManage={(id) =>
+            setOpenBookingId((current) => (current === id ? null : id))
+          }
+          onMove={vi.fn()}
+          onRemove={vi.fn()}
+        />
+      );
+    }
+    render(<Harness2 />);
+    fireEvent.click(screen.getByLabelText("Manage Jane P.'s seat"));
+    expect(screen.queryByLabelText('Record a win for Jane P.')).toBeNull();
+  });
+
   it("keeps the organizer's own seat on the organizer panel even when onLeaveSeat is also supplied", () => {
     const onRemove = vi.fn();
     const onLeaveSeat = vi.fn();
@@ -277,8 +334,8 @@ describe('SeatGrid: member self-service (leave own seat)', () => {
   // accessibility label here is built from `seat.name`, exactly like the
   // organizer panel's, so a realistic name keeps the assertions readable.
   const selfSeats = [
-    { bookingId: 'b1', name: 'Jane P.', isYou: false },
-    { bookingId: 'b3', name: 'Ada', isYou: true },
+    { bookingId: 'b1', profileId: 'p1', name: 'Jane P.', isYou: false },
+    { bookingId: 'b3', profileId: 'p3', name: 'Ada', isYou: true },
   ];
 
   function Harness({
@@ -357,5 +414,94 @@ describe('SeatGrid: member self-service (leave own seat)', () => {
       />,
     );
     expect(screen.queryByLabelText("Manage Ada's seat")).toBeNull();
+  });
+
+  // The bug this covers: `canBook` (which gates `onLeaveSeat`) and
+  // `gameLive` (which gates `canRecordRound`) are mutually exclusive by
+  // construction on the event screen -- before vs. after kickoff. Gating the
+  // panel's own open/close on `onLeaveSeat` alone meant a plain seated
+  // member's own seat was UNREACHABLE for the entire window recording a
+  // round is legal, because `onLeaveSeat` is never supplied then. The panel
+  // must open off EITHER of the seat's own actions.
+  it('opens your own seat panel to record a win even when onLeaveSeat is not supplied (a live game)', () => {
+    const onRecordRound = vi.fn();
+    function LiveGameHarness() {
+      const [openBookingId, setOpenBookingId] = useState<string | null>(null);
+      return (
+        <SeatGrid
+          tableLabel="Table 1"
+          capacity={4}
+          seats={selfSeats}
+          openBookingId={openBookingId}
+          onToggleManage={(id) =>
+            setOpenBookingId((current) => (current === id ? null : id))
+          }
+          canRecordRound
+          onRecordRound={onRecordRound}
+        />
+      );
+    }
+    render(<LiveGameHarness />);
+
+    // Without the fix, this seat is a plain read-only <View> and this label
+    // does not exist at all.
+    fireEvent.click(screen.getByLabelText("Manage Ada's seat"));
+    expect(screen.getByLabelText('Record a win for Ada')).toBeTruthy();
+    expect(screen.queryByLabelText('Leave this game')).toBeNull();
+
+    fireEvent.click(screen.getByLabelText('Record a win for Ada'));
+    fireEvent.click(screen.getByLabelText("Record Ada's win for 50 points"));
+    expect(onRecordRound).toHaveBeenCalledWith('p3', 50);
+  });
+
+  // The inverse: before kickoff, only leaving is offered, never recording.
+  it('shows only "Leave this game" -- no record control -- when canRecordRound is false', () => {
+    render(<Harness onLeaveSeat={vi.fn()} />);
+    fireEvent.click(screen.getByLabelText("Manage Ada's seat"));
+    expect(screen.getByLabelText('Leave this game')).toBeTruthy();
+    expect(screen.queryByLabelText('Record a win for Ada')).toBeNull();
+  });
+});
+
+// Each occupied seat's own running point total, plus a star badge for
+// whoever is currently tied for the lead. Display-only -- see TableCard's
+// own tests for how the totals/leader are actually computed from rounds.
+describe('SeatGrid: the point badge', () => {
+  it('shows no badge for a seat with no recorded points', () => {
+    render(
+      <SeatGrid
+        tableLabel="Table 1"
+        capacity={4}
+        seats={[{ bookingId: 'b1', profileId: 'p1', name: 'Jane P.', isYou: false, points: null, isLeader: false }]}
+      />,
+    );
+    // No badge means no point number is rendered at all.
+    expect(screen.queryByText('0')).toBeNull();
+  });
+
+  it('shows a plain round badge with the point total for a non-leading winner', () => {
+    render(
+      <SeatGrid
+        tableLabel="Table 1"
+        capacity={4}
+        seats={[{ bookingId: 'b1', profileId: 'p1', name: 'Jane P.', isYou: false, points: 30, isLeader: false }]}
+      />,
+    );
+    expect(screen.getByText('30')).toBeTruthy();
+  });
+
+  it('shows a star badge for the current leader', () => {
+    render(
+      <SeatGrid
+        tableLabel="Table 1"
+        capacity={4}
+        seats={[{ bookingId: 'b1', profileId: 'p1', name: 'Jane P.', isYou: false, points: 75, isLeader: true }]}
+      />,
+    );
+    expect(screen.getByText('75')).toBeTruthy();
+    // The star and plain-round badges are distinct testIDs -- this fails if
+    // the star path were ever removed or collapsed into the round one.
+    expect(screen.getByTestId('badge-star-b1')).toBeTruthy();
+    expect(screen.queryByTestId('badge-round-b1')).toBeNull();
   });
 });

@@ -51,8 +51,10 @@ const fetchEvent = vi.fn();
 const fetchSeries = vi.fn();
 const fetchOverriddenOccurrences = vi.fn();
 const fetchFutureOccurrenceCount = vi.fn();
+const fetchEventTables = vi.fn();
 const updateEvent = vi.fn();
 const updateEventSeries = vi.fn();
+const updateEventTable = vi.fn();
 const endEventSeries = vi.fn();
 
 // formatEventWhen, frequencyLabel and eventStartTimeInZone stay real (pure) —
@@ -66,8 +68,10 @@ vi.mock('../../lib/events', async (importOriginal) => {
     fetchSeries: (...args: unknown[]) => fetchSeries(...args),
     fetchOverriddenOccurrences: (...args: unknown[]) => fetchOverriddenOccurrences(...args),
     fetchFutureOccurrenceCount: (...args: unknown[]) => fetchFutureOccurrenceCount(...args),
+    fetchEventTables: (...args: unknown[]) => fetchEventTables(...args),
     updateEvent: (...args: unknown[]) => updateEvent(...args),
     updateEventSeries: (...args: unknown[]) => updateEventSeries(...args),
+    updateEventTable: (...args: unknown[]) => updateEventTable(...args),
     endEventSeries: (...args: unknown[]) => endEventSeries(...args),
   };
 });
@@ -189,6 +193,22 @@ const SERIES = {
   check_in_required: false,
 };
 
+const TABLE_1 = {
+  id: 'table-1',
+  label: 'Table 1',
+  skill_tier: 'mixed' as const,
+  capacity: 4,
+  position: 1,
+};
+
+const TABLE_2 = {
+  id: 'table-2',
+  label: 'Table 2',
+  skill_tier: 'beginner' as const,
+  capacity: 4,
+  position: 2,
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
   for (const key of Object.keys(searchParams)) delete searchParams[key];
@@ -203,8 +223,10 @@ beforeEach(() => {
   fetchSeries.mockResolvedValue(null);
   fetchOverriddenOccurrences.mockResolvedValue([]);
   fetchFutureOccurrenceCount.mockResolvedValue(0);
+  fetchEventTables.mockResolvedValue([]);
   updateEvent.mockResolvedValue({ error: null });
   updateEventSeries.mockResolvedValue({ error: null });
+  updateEventTable.mockResolvedValue({ error: null });
   endEventSeries.mockResolvedValue({ error: null });
   // Defaults to the common case (reached via a push from the event screen).
   // Tests for the no-history path override this to false.
@@ -775,5 +797,121 @@ describe('a series that failed to load', () => {
     fireEvent.click(screen.getByText('Save'));
     await vi.waitFor(() => expect(updateEvent).toHaveBeenCalled());
     expect(updateEventSeries).not.toHaveBeenCalled();
+  });
+});
+
+// Task 8: this screen is the OTHER half of "expand, then contract" for
+// TierPicker -- Task 7 removed the interactive picker from the game/event
+// screen, and it reappears here instead. Tables are per-occurrence, not
+// part of either the "This game" or "The whole series" field sets tracked
+// above, so this section renders regardless of `scope`.
+describe('the Tables section', () => {
+  it('renders one TierPicker per table once tables load', async () => {
+    fetchEventTables.mockResolvedValue([TABLE_1, TABLE_2]);
+    render(<EditEventScreen />);
+    await screen.findByDisplayValue('Thursday Mahjong');
+
+    expect(screen.getByText('Tables')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Table 1: Any level' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Table 2: Beginner' })).toBeTruthy();
+  });
+
+  it("calls updateEventTable with the table's id and the newly picked tier", async () => {
+    fetchEventTables.mockResolvedValue([TABLE_1]);
+    render(<EditEventScreen />);
+    await screen.findByDisplayValue('Thursday Mahjong');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Table 1: Advanced' }));
+
+    await vi.waitFor(() =>
+      expect(updateEventTable).toHaveBeenCalledWith('table-1', { tier: 'advanced' }),
+    );
+  });
+
+  it("reflects the new tier locally once the update succeeds, without a full reload", async () => {
+    fetchEventTables.mockResolvedValue([TABLE_1]);
+    render(<EditEventScreen />);
+    await screen.findByDisplayValue('Thursday Mahjong');
+
+    // TABLE_1 starts as 'mixed' ("Any level"), shown as the current label
+    // beside the pips.
+    expect(screen.getByText('Any level')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Table 1: Advanced' }));
+
+    await screen.findByText('Advanced');
+    expect(screen.queryByText('Any level')).toBeNull();
+    // Only the initial mount load, not a second round-trip through the
+    // tables fetch, proving the update is applied optimistically.
+    expect(fetchEventTables).toHaveBeenCalledTimes(1);
+  });
+
+  // Minor #12 from the whole-branch review: this section's TierPickers had
+  // no busy/disabled state at all, unlike the game-screen picker they
+  // replaced (which had `disabled={busy}`) -- rapid taps could fire
+  // concurrent updates for the same table. The guard is per-table, not
+  // screen-wide, so an unrelated table's picker stays usable while this
+  // one's own update is in flight.
+  it("disables a table's own TierPicker while its update is in flight, but not another table's", async () => {
+    fetchEventTables.mockResolvedValue([TABLE_1, TABLE_2]);
+    let resolveUpdate: (value: { error: string | null }) => void = () => {};
+    updateEventTable.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveUpdate = resolve;
+      }),
+    );
+    render(<EditEventScreen />);
+    await screen.findByDisplayValue('Thursday Mahjong');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Table 1: Advanced' }));
+
+    await vi.waitFor(() =>
+      expect(
+        screen
+          .getByRole('button', { name: 'Table 1: Advanced' })
+          .getAttribute('aria-disabled'),
+      ).toBe('true'),
+    );
+    // Table 2's picker is a wholly separate update -- untouched by Table 1's
+    // own in-flight guard.
+    expect(
+      screen
+        .getByRole('button', { name: 'Table 2: Advanced' })
+        .getAttribute('aria-disabled'),
+    ).toBeNull();
+
+    resolveUpdate({ error: null });
+
+    await vi.waitFor(() =>
+      expect(
+        screen
+          .getByRole('button', { name: 'Table 1: Advanced' })
+          .getAttribute('aria-disabled'),
+      ).toBeNull(),
+    );
+  });
+
+  it('is absent, but everything else on the screen still renders, when there are no tables', async () => {
+    fetchEventTables.mockResolvedValue([]);
+    render(<EditEventScreen />);
+    await screen.findByDisplayValue('Thursday Mahjong');
+
+    expect(screen.queryByText('Tables')).toBeNull();
+    expect(screen.queryByText("Could not load this game's tables.")).toBeNull();
+  });
+
+  it("degrades gracefully, leaving the rest of the form usable, when the tables fetch fails", async () => {
+    fetchEventTables.mockResolvedValue(null);
+    render(<EditEventScreen />);
+    await screen.findByDisplayValue('Thursday Mahjong');
+
+    expect(
+      await screen.findByText("Could not load this game's tables."),
+    ).toBeTruthy();
+    expect(screen.queryByText('Tables')).toBeNull();
+
+    // The rest of the form -- unrelated to the tables fetch -- still works.
+    fireEvent.click(screen.getByText('Save'));
+    await vi.waitFor(() => expect(updateEvent).toHaveBeenCalled());
   });
 });

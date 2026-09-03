@@ -1,4 +1,5 @@
-import { render, screen } from '@testing-library/react';
+import { useState } from 'react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import TableCard from '../TableCard';
 
@@ -38,43 +39,8 @@ describe('TableCard', () => {
     );
     expect(screen.getByText('Table 2')).toBeTruthy();
     expect(screen.getByText('Advanced')).toBeTruthy();
-  });
-
-  it('says how many seats are left', () => {
-    render(
-      <TableCard
-        table={table}
-        occupants={occupants}
-        youId="p9"
-        onTakeSeat={vi.fn()}
-      />,
-    );
-    expect(screen.getByText('3 seats free')).toBeTruthy();
-  });
-
-  it('singularises one seat', () => {
-    render(
-      <TableCard
-        table={{ ...table, capacity: 2 }}
-        occupants={occupants}
-        youId="p9"
-        onTakeSeat={vi.fn()}
-      />,
-    );
-    expect(screen.getByText('1 seat free')).toBeTruthy();
-  });
-
-  it('says Full rather than "0 seats free"', () => {
-    render(
-      <TableCard
-        table={{ ...table, capacity: 1 }}
-        occupants={occupants}
-        youId="p9"
-        onTakeSeat={vi.fn()}
-      />,
-    );
-    expect(screen.getByText('Full')).toBeTruthy();
-    expect(screen.queryByText('0 seats free')).toBeNull();
+    // Assert that seats-free text is no longer rendered
+    expect(screen.queryByText(/seats? free/)).toBeNull();
   });
 
   it('shows your own seat as yours', () => {
@@ -168,21 +134,61 @@ describe('TableCard', () => {
     expect(screen.getByText('Ravi K. · 8 pts')).toBeTruthy();
   });
 
-  it('offers the record form only when canRecordRound is true', () => {
+  it('shows a round badge for a seated player with recorded points, and a star for the leader', () => {
     render(
       <TableCard
         table={table}
         occupants={occupants}
         youId="p9"
         onTakeSeat={vi.fn()}
-        rounds={[]}
-        canRecordRound
+        rounds={[
+          { id: 'r1', winner_profile_id: 'p1', winner_name: 'Ravi K.', points: 30 },
+        ]}
+        canRecordRound={false}
         canDeleteRound={false}
         onRecordRound={vi.fn()}
         onDeleteRound={vi.fn()}
       />,
     );
-    expect(screen.getByRole('button', { name: 'Winner: Ravi K.' })).toBeTruthy();
+    expect(screen.getByTestId('badge-star-b1')).toBeTruthy();
+    expect(screen.getByText('30')).toBeTruthy();
+  });
+
+  // canRecordRound alone never opens a panel that wasn't already
+  // open-able -- see SeatGrid's own docstring: recording rides on the SAME
+  // organizer/self panel-access rule as Move/Remove/Leave, with no separate
+  // per-seat gate of its own. So this test pairs canRecordRound with the
+  // organizer bundle (otherTables/onMove/onRemove/openBookingId/
+  // onToggleManage), matching how the event screen actually calls this --
+  // canRecordRound is only ever true for an organizer or for your own seat,
+  // both of which are already manageable seats by then.
+  it('offers "Record a win" on an occupied seat once canRecordRound is true', () => {
+    function Harness() {
+      const [openBookingId, setOpenBookingId] = useState<string | null>(null);
+      return (
+        <TableCard
+          table={table}
+          occupants={occupants}
+          youId="p9"
+          onTakeSeat={vi.fn()}
+          rounds={[]}
+          canRecordRound
+          canDeleteRound={false}
+          onRecordRound={vi.fn()}
+          onDeleteRound={vi.fn()}
+          otherTables={[{ id: 't2', label: 'Table 2' }]}
+          onMove={vi.fn()}
+          onRemove={vi.fn()}
+          openBookingId={openBookingId}
+          onToggleManage={(id) =>
+            setOpenBookingId((current) => (current === id ? null : id))
+          }
+        />
+      );
+    }
+    render(<Harness />);
+    fireEvent.click(screen.getByLabelText("Manage Ravi K.'s seat"));
+    expect(screen.getByLabelText('Record a win for Ravi K.')).toBeTruthy();
   });
 
   it('offers a round timer', () => {

@@ -60,7 +60,6 @@ const fetchEventTables = vi.fn();
 const fetchSeries = vi.fn();
 const cancelEvent = vi.fn();
 const addEventTable = vi.fn();
-const updateEventTable = vi.fn();
 const removeEventTable = vi.fn();
 const resetEventToSeries = vi.fn();
 
@@ -76,7 +75,6 @@ vi.mock('../../lib/events', async (importOriginal) => {
     fetchSeries: (...args: unknown[]) => fetchSeries(...args),
     cancelEvent: (...args: unknown[]) => cancelEvent(...args),
     addEventTable: (...args: unknown[]) => addEventTable(...args),
-    updateEventTable: (...args: unknown[]) => updateEventTable(...args),
     removeEventTable: (...args: unknown[]) => removeEventTable(...args),
     resetEventToSeries: (...args: unknown[]) => resetEventToSeries(...args),
   };
@@ -190,8 +188,15 @@ const EVENT = {
   venue_id: 'venue-1',
   venue_name: 'The Annexe',
   notes: '',
-  starts_at: '2026-09-03T13:00:00.000Z',
-  ends_at: '2026-09-03T16:00:00.000Z',
+  // Relative to Date.now(), not a fixed calendar timestamp -- an earlier,
+  // hardcoded '2026-09-03T13:00:00.000Z' drifted from "upcoming" to "live"
+  // to "ended" as real wall-clock time passed it, intermittently breaking
+  // every test here that assumes this default event hasn't started yet
+  // (see OUTSIDE_WINDOW_EVENT below for the same, already-established
+  // pattern). 2 days out keeps `canBook` true and `gameLive` false no
+  // matter when this suite actually runs.
+  starts_at: new Date(Date.now() + 2 * 86_400_000).toISOString(),
+  ends_at: new Date(Date.now() + 2 * 86_400_000 + 3 * 3_600_000).toISOString(),
   status: 'published' as const,
   occurrence_date: null as string | null,
   overrides: [] as string[],
@@ -289,7 +294,6 @@ beforeEach(() => {
   fetchSeries.mockResolvedValue(null);
   cancelEvent.mockResolvedValue({ error: null });
   addEventTable.mockResolvedValue({ error: null });
-  updateEventTable.mockResolvedValue({ error: null });
   removeEventTable.mockResolvedValue({ error: null });
   resetEventToSeries.mockResolvedValue({ error: null });
   fetchEventSeating.mockReset();
@@ -398,6 +402,11 @@ describe('a section that fails does not blank the rest of the screen', () => {
 });
 
 describe('member view: what is shown, and what is not', () => {
+  it('shows the club name for context', async () => {
+    render(<EventScreen />);
+    expect(await screen.findByText(CLUB.name)).toBeTruthy();
+  });
+
   it('renders the event time in the club timezone, not the device/process one', async () => {
     fetchClub.mockResolvedValue(TOKYO_CLUB);
     const { formatEventWhen } = await import('../../lib/events');
@@ -420,13 +429,12 @@ describe('member view: what is shown, and what is not', () => {
   // are about the event's own rendering, not about seating, and a
   // `seatingFailed` state would put an unrelated error banner on every one
   // of them.
-  it('renders each table with tier as text and seat count, no edit controls', async () => {
+  it('renders each table with tier as text, no edit controls', async () => {
     fetchEventTables.mockResolvedValue([
       { id: 'table-1', label: 'Table 1', skill_tier: 'advanced' as const, capacity: 4, position: 1 },
     ]);
     render(<EventScreen />);
     expect(await screen.findByText('Table 1')).toBeTruthy();
-    expect(screen.getByText('4 seats free')).toBeTruthy();
     expect(screen.getByText('Advanced')).toBeTruthy();
     // No tier chip buttons -- a member cannot retier a table.
     expect(screen.queryByLabelText('Table 1: Any level')).toBeNull();
@@ -729,39 +737,6 @@ describe('organizer view', () => {
       await screen.findByRole('button', { name: 'Open the game thread' }),
     ).toBeTruthy();
     expect(screen.queryByText('Message everyone booked')).toBeNull();
-  });
-
-  it('shows tier chip buttons and retiers a table', async () => {
-    render(<EventScreen />);
-    await screen.findByText('Thursday Mahjong');
-
-    fireEvent.click(screen.getByLabelText('Table 1: Advanced'));
-    await vi.waitFor(() =>
-      expect(updateEventTable).toHaveBeenCalledWith('table-1', { tier: 'advanced' }),
-    );
-    // A mutation always reloads, so the retiered table is reflected without
-    // a manual refresh.
-    await vi.waitFor(() => expect(fetchEventTables).toHaveBeenCalledTimes(2));
-  });
-
-  // This chip used to be a `Button` with `accessibilityState={{ selected }}`
-  // — a prop react-native-web's createDOMProps never forwards to the DOM
-  // (see Toggle.tsx's docstring), so a screen reader on web could never
-  // tell the current tier from the other three. Task 10's review flagged
-  // it and deferred the fix here. Asserts the rendered `aria-selected`
-  // attribute itself, not just the click behaviour above, on both the
-  // selected chip and an unselected one — a regression back to
-  // `accessibilityState` would leave this `null` on both.
-  it('marks the table\'s current tier, and only that one, as aria-selected', async () => {
-    render(<EventScreen />);
-    await screen.findByText('Thursday Mahjong');
-
-    expect(screen.getByLabelText('Table 1: Any level').getAttribute('aria-selected')).toBe(
-      'true',
-    );
-    expect(
-      screen.getByLabelText('Table 1: Advanced').getAttribute('aria-selected'),
-    ).toBe('false');
   });
 
   describe('seat-tap host controls: wired into the event screen', () => {
@@ -1354,6 +1329,12 @@ describe('table rounds', () => {
   });
 
   it('lets an organizer record a round while the game is live', async () => {
+    // Recording now happens through the seat's own tap panel (SeatGrid,
+    // Tasks 3-4), not a picker inside RoundLog (Task 5 removed that
+    // entirely) -- so this opens Ravi's seat panel, taps "Record a win",
+    // then taps one of the seven fixed point chips, matching how SeatGrid
+    // itself is exercised elsewhere in this file (e.g. "Manage Ravi K.'s
+    // seat" / "Move Ravi K. to Table 2" above).
     fetchRoster.mockResolvedValue(HOST_ROSTER_WITH_RAVI);
     fetchEvent.mockResolvedValue(liveEvent());
     fetchEventSeating.mockResolvedValue([SEATED_ADA, SEATED_RAVI]);
@@ -1362,24 +1343,62 @@ describe('table rounds', () => {
 
     render(<EventScreen />);
 
+    fireEvent.click(await screen.findByLabelText("Manage Ravi K.'s seat"));
+    fireEvent.click(screen.getByLabelText('Record a win for Ravi K.'));
     fireEvent.click(
-      await screen.findByRole('button', { name: 'Winner: Ravi K.' }),
+      screen.getByLabelText("Record Ravi K.'s win for 30 points"),
     );
-    fireEvent.change(screen.getByLabelText('Points'), {
-      target: { value: '8' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Record a round' }));
 
     await waitFor(() =>
       expect(recordRound).toHaveBeenCalledWith({
         tableId: 'table-1',
         winnerProfileId: 'p1',
-        points: 8,
+        points: 30,
       }),
     );
   });
 
-  it('hides the record form before the game has started', async () => {
+  // Critical #1 from the whole-branch review: `canBook` (which gates
+  // `onLeaveSeat`) and `gameLive` (which gates `canRecordRound`) are
+  // mutually exclusive by construction -- before vs. after kickoff. Gating
+  // SeatGrid's own panel open/close on `onLeaveSeat` alone meant a plain
+  // seated member's own seat was unreachable for the ENTIRE window
+  // recording a round is legal, since `onLeaveSeat` is never supplied then.
+  // This is the primary audience the feature was built for -- a non-
+  // organizer recording their own win -- and had no test anywhere in the
+  // codebase before this one; every existing recording test used an
+  // organizer roster.
+  it('lets a plain seated member record their own win while the game is live', async () => {
+    fetchRoster.mockResolvedValue(MEMBER_ROLE); // test-user is a plain member, not organizer.
+    fetchEvent.mockResolvedValue(liveEvent());
+    fetchEventSeating.mockResolvedValue([SEATED_ADA, SEATED_RAVI]); // test-user (Ada) is seated.
+    fetchTableRounds.mockResolvedValue([]);
+    recordRound.mockResolvedValue({ round: ROUND_1, error: null });
+
+    render(<EventScreen />);
+
+    fireEvent.click(await screen.findByLabelText("Manage Ada's seat"));
+    // The organizer bundle never applies to a plain member, and during a
+    // live game `onLeaveSeat` isn't supplied either (leaving is only
+    // offered before kickoff) -- the panel that opened here must be the
+    // recording one, not a Move/Remove or "Leave this game" one.
+    expect(screen.queryByLabelText('Leave this game')).toBeNull();
+    expect(screen.queryByText(/^Move to /)).toBeNull();
+    expect(screen.queryByLabelText('Remove Ada from this game')).toBeNull();
+
+    fireEvent.click(screen.getByLabelText('Record a win for Ada'));
+    fireEvent.click(screen.getByLabelText("Record Ada's win for 25 points"));
+
+    await waitFor(() =>
+      expect(recordRound).toHaveBeenCalledWith({
+        tableId: 'table-1',
+        winnerProfileId: 'test-user',
+        points: 25,
+      }),
+    );
+  });
+
+  it('hides the "Record a win" control before the game has started', async () => {
     // EVENT's default fixture starts in the future, so gameLive is false --
     // the same guard assert_round_writable enforces server-side ("this
     // game has not started yet").
@@ -1389,9 +1408,9 @@ describe('table rounds', () => {
 
     render(<EventScreen />);
 
-    await screen.findByText('Thursday Mahjong');
+    fireEvent.click(await screen.findByLabelText("Manage Ravi K.'s seat"));
     expect(
-      screen.queryByRole('button', { name: 'Record a round' }),
+      screen.queryByLabelText('Record a win for Ravi K.'),
     ).toBeNull();
   });
 

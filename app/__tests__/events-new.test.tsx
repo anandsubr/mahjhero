@@ -329,7 +329,7 @@ describe('a failed save', () => {
     expect(replace).not.toHaveBeenCalled();
   });
 
-  it('navigates to the club once the save actually succeeds', async () => {
+  it('navigates to the clubs dashboard once the save actually succeeds', async () => {
     render(<NewEventScreen />);
     await screen.findByText('Add a game');
     pickVenue();
@@ -338,7 +338,23 @@ describe('a failed save', () => {
     });
     fireEvent.click(screen.getByText('Save'));
 
-    await vi.waitFor(() => expect(replace).toHaveBeenCalledWith('/clubs/club-1'));
+    // The clubs dashboard, not this specific club's own page -- a newly
+    // created game already shows up there. Different from Cancel above,
+    // which deliberately stays on `/clubs/club-1`.
+    await vi.waitFor(() => expect(replace).toHaveBeenCalledWith('/clubs'));
+  });
+
+  it('navigates to the clubs dashboard once a series save succeeds too', async () => {
+    render(<NewEventScreen />);
+    await screen.findByText('Add a game');
+    fireEvent.click(screen.getByText('Every week'));
+    pickVenue();
+    fireEvent.change(screen.getByLabelText('Game name'), {
+      target: { value: 'Real series' },
+    });
+    fireEvent.click(screen.getByText('Save'));
+
+    await vi.waitFor(() => expect(replace).toHaveBeenCalledWith('/clubs'));
   });
 });
 

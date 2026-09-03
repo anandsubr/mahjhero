@@ -8,6 +8,7 @@ import ErrorBanner from '../../../../../components/ErrorBanner';
 import Screen from '../../../../../components/Screen';
 import TabBar from '../../../../../components/TabBar';
 import TextField from '../../../../../components/TextField';
+import TierPicker from '../../../../../components/TierPicker';
 import TimeField from '../../../../../components/TimeField';
 import Toggle from '../../../../../components/Toggle';
 import VenuePicker from '../../../../../components/VenuePicker';
@@ -16,6 +17,7 @@ import {
   endEventSeries,
   eventStartTimeInZone,
   fetchEvent,
+  fetchEventTables,
   fetchFutureOccurrenceCount,
   fetchOverriddenOccurrences,
   fetchSeries,
@@ -23,8 +25,10 @@ import {
   frequencyLabel,
   updateEvent,
   updateEventSeries,
+  updateEventTable,
   type ClubEvent,
   type EventSeries,
+  type EventTable,
 } from '../../../../../lib/events';
 import { useSession } from '../../../../../lib/session';
 import { dateToDateString } from '../../../../../lib/time';
@@ -199,6 +203,24 @@ export default function EditEventScreen() {
   // null after `ready` means the count could not be loaded, not "zero" --
   // the same reasoning as seriesFailed above.
   const [futureCount, setFutureCount] = useState<number | null>(null);
+  // This game's tables, editable below regardless of `scope` -- tables are
+  // per-occurrence, not part of either the "This game" or "The whole
+  // series" field sets tracked elsewhere on this screen. `tablesFailed`
+  // follows the same "distinct from empty" reasoning as `seriesFailed`
+  // above: a failed fetch must not read as "this game has no tables".
+  const [tables, setTables] = useState<EventTable[]>([]);
+  const [tablesFailed, setTablesFailed] = useState(false);
+  // Per-table in-flight guard for the Tables section's TierPickers below --
+  // distinct from `saving` (which only covers the Save/End-series buttons,
+  // an entirely separate `updateEvent`/`updateEventSeries` call), matching
+  // the game screen's own tier picker this replaced, which disabled itself
+  // via `busy` while its own update was pending. A Set keyed by table id,
+  // not one shared boolean, so tapping one table's tier does not also
+  // freeze every other table's picker while its own unrelated update is in
+  // flight.
+  const [updatingTierTableIds, setUpdatingTierTableIds] = useState<Set<string>>(
+    new Set(),
+  );
   const [ready, setReady] = useState(false);
 
   const [scope, setScope] = useState<Scope>('event');
@@ -250,14 +272,17 @@ export default function EditEventScreen() {
     let cancelled = false;
 
     (async () => {
-      const [loadedClub, loadedEvent] = await Promise.all([
+      const [loadedClub, loadedEvent, loadedTables] = await Promise.all([
         fetchClub(clubId),
         fetchEvent(eventId),
+        fetchEventTables(eventId),
       ]);
       if (cancelled) return;
 
       setClub(loadedClub);
       setEvent(loadedEvent);
+      setTablesFailed(loadedTables === null);
+      setTables(loadedTables ?? []);
 
       if (loadedEvent && loadedClub) {
         const initialStartTime = eventStartTimeInZone(
@@ -654,6 +679,55 @@ export default function EditEventScreen() {
         </Text>
       ) : null}
 
+      {/*
+        Per-occurrence, so rendered regardless of `scope` -- unlike every
+        block above, a table's tier is not part of either the "This game" or
+        "The whole series" field sets this screen otherwise tracks.
+        Optimistic local update on a successful `updateEventTable`, not a
+        full reload: unlike `onSave`'s `router.replace` (which leaves this
+        screen entirely) there is no other state here a tier change could
+        put out of sync, so patching just the changed row is enough. On
+        failure, this reuses the same `error`/`ErrorBanner` this screen
+        already shows for `onSave`/`onEndSeries` failures, rather than
+        swallowing it silently.
+      */}
+      {tablesFailed ? (
+        <Text style={styles.help}>Could not load this game's tables.</Text>
+      ) : tables.length > 0 ? (
+        <Card>
+          <Text style={styles.sectionTitle}>Tables</Text>
+          {tables.map((t) => (
+            <TierPicker
+              key={t.id}
+              tableLabel={t.label}
+              tier={t.skill_tier}
+              disabled={updatingTierTableIds.has(t.id)}
+              onChange={(nextTier) => {
+                setUpdatingTierTableIds(
+                  (current) => new Set(current).add(t.id),
+                );
+                void updateEventTable(t.id, { tier: nextTier }).then((result) => {
+                  setUpdatingTierTableIds((current) => {
+                    const next = new Set(current);
+                    next.delete(t.id);
+                    return next;
+                  });
+                  if (result.error) {
+                    setError(result.error);
+                    return;
+                  }
+                  setTables((current) =>
+                    current.map((row) =>
+                      row.id === t.id ? { ...row, skill_tier: nextTier } : row,
+                    ),
+                  );
+                })
+              }}
+            />
+          ))}
+        </Card>
+      ) : null}
+
       <Button onPress={onSave} loading={saving} accessibilityLabel="Save changes">
         Save
       </Button>
@@ -730,6 +804,14 @@ const styles = StyleSheet.create({
     fontFamily: type.bodySemiBold,
     fontSize: type.size.helper,
     color: colors.textLabel,
+  },
+  // Matches the game screen's own `sectionTitle` (index.tsx) for
+  // consistency between the two screens' Tables sections.
+  sectionTitle: {
+    fontFamily: type.bodyBold,
+    fontSize: type.size.body,
+    color: colors.text,
+    marginTop: space[4],
   },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space[2] },
   shareRow: {

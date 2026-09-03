@@ -1,13 +1,50 @@
+import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Button from './Button';
+import { StarIcon } from './icons';
 import { seatsRemaining } from '../lib/bookings';
 import { colors, radius, space, type } from '../lib/theme';
 
+/** The plan's hard rule: these seven values, everywhere, no others. */
+const POINT_VALUES = [25, 30, 35, 40, 45, 50, 75] as const;
+
 export type Seat = {
   bookingId: string;
+  /** Needed for `onRecordRound` (Task 4) -- record_round takes a winner's
+   *  profile id, not a booking id. */
+  profileId: string;
   name: string;
   isYou: boolean;
+  /** This seat's running point total at this table, or null/omitted if
+   *  they have never won a round here -- no badge renders in that case.
+   *  Optional (not just nullable) so every existing test fixture that
+   *  predates scoring keeps compiling unchanged -- TableCard's own
+   *  mapping (Step 6 below) always sets this explicitly. */
+  points?: number | null;
+  /** True if tied for (or alone in) the current lead among this table's
+   *  occupants who have won at least one round. Ties: everyone tied for
+   *  the lead gets the star, not just whoever reached it first. Optional,
+   *  same reasoning as `points` -- defaults to false when omitted. */
+  isLeader?: boolean;
 };
+
+function SeatBadge({ seat }: { seat: Seat }) {
+  const points = seat.points ?? null;
+  if (points === null) return null;
+  if (seat.isLeader) {
+    return (
+      <View style={styles.badge} testID={`badge-star-${seat.bookingId}`}>
+        <StarIcon size={40} color={colors.accent[400]} style={styles.badgeStarIcon} />
+        <Text style={[styles.badgeText, styles.badgeTextStar]}>{points}</Text>
+      </View>
+    );
+  }
+  return (
+    <View style={[styles.badge, styles.badgeRound]} testID={`badge-round-${seat.bookingId}`}>
+      <Text style={styles.badgeText}>{points}</Text>
+    </View>
+  );
+}
 
 /** Only what a "Move to {table}" button needs — not the full EventTable. */
 type SeatableTable = { id: string; label: string };
@@ -41,9 +78,12 @@ type Props = {
    * above, this is a SINGLE prop guarding a SINGLE action — there is no
    * second prop it could disagree with, so there is no "half-wired" shape
    * for it to fall into: either a caller supplies it (that seat's own
-   * occupant may open the panel and leave) or it doesn't (nothing renders).
-   * A boolean flag alongside it would only restate what its own presence
-   * already says, so there isn't one.
+   * occupant may open the panel and leave) or it doesn't (that action alone
+   * doesn't render -- the panel itself may still open via `canRecordRound`/
+   * `onRecordRound` below, since either of the seat's own two actions is
+   * enough to make it worth opening; see `selfManageable`). A boolean flag
+   * alongside it would only restate what its own presence already says, so
+   * there isn't one.
    *
    * Gated per-seat on `seat.isYou`, not on any role — an organizer's own
    * seat still goes through `organizerManageable` instead (see below),
@@ -74,6 +114,18 @@ type Props = {
    */
   openBookingId?: string | null;
   onToggleManage?: (bookingId: string) => void;
+  /** Eligibility to record a round -- computed once per table by the
+   *  caller (the same `canRecordRound` the event screen already computes:
+   *  `gameLive && (isOrganizer || iAmSeatedHere)`), not per-seat: whichever
+   *  panel a caller can already open (their own, or -- for an organizer --
+   *  anyone's) is exactly who they may record a win for. Together with
+   *  `onRecordRound`, this is also (as of the whole-branch review's Critical
+   *  #1 fix) one of the two things that can make a NON-organizer's own seat
+   *  `selfManageable` -- `canBook` (which gates `onLeaveSeat`) and
+   *  `gameLive` (which gates this) are mutually exclusive on the event
+   *  screen, so the panel has to open on either one alone. */
+  canRecordRound?: boolean;
+  onRecordRound?: (profileId: string, points: number) => void;
 };
 
 /**
@@ -120,15 +172,27 @@ type Props = {
  * occupant, the database was never the gap, only the UI was (see
  * .superpowers/sdd/member-leave-seat.md). So a SECOND, narrower kind of
  * "manageable" exists alongside the organizer one: `selfManageable`, true
- * only for the one seat where `seat.isYou` and the caller supplied
- * `onLeaveSeat` (plus the shared `onToggleManage`/`openBookingId` above).
- * It opens the exact same panel shape as the organizer one — same closed
- * Pressable, same header, same `aria-expanded` — with a single action,
- * "Leave this game", instead of Move-to-… plus Remove. Wording deliberately
- * NOT "Leave the club" (WaitlistPanel's "Leave the waitlist" and this
- * screen's own "Cancel this game" are both already-established, and
- * DIFFERENT, pieces of vocabulary this needed to stay clearly apart from):
- * `cancel_booking` ends this one booking, for this one game, nothing more.
+ * for the one seat where `seat.isYou` and the caller supplied
+ * `onToggleManage` (the shared open/close plumbing above) plus EITHER of
+ * that seat's own two actions — `onLeaveSeat`, or `canRecordRound` together
+ * with `onRecordRound`. Those two actions are legal at mutually exclusive
+ * times (leaving only before kickoff, recording only during a live game),
+ * so gating the panel on `onLeaveSeat` alone would make a plain member's own
+ * seat unreachable for the entire window recording is legal — the panel has
+ * to open whenever ANY of the seat's own actions is available, and each
+ * action then renders (or doesn't) independently inside, exactly as it
+ * always has.
+ *
+ * When the panel opens via `onLeaveSeat`, it renders the exact same panel
+ * shape as the organizer one — same closed Pressable, same header, same
+ * `aria-expanded` — with a single action, "Leave this game", instead of
+ * Move-to-… plus Remove. Wording deliberately NOT "Leave the club"
+ * (WaitlistPanel's "Leave the waitlist" and this screen's own "Cancel this
+ * game" are both already-established, and DIFFERENT, pieces of vocabulary
+ * this needed to stay clearly apart from): `cancel_booking` ends this one
+ * booking, for this one game, nothing more. That button itself only renders
+ * when `onLeaveSeat` is actually present — the panel can now open on the
+ * recording path alone, with `onLeaveSeat` undefined.
  *
  * `organizerManageable || selfManageable` is checked in that order — an
  * organizer looking at their OWN seat gets the organizer panel (Move +
@@ -202,7 +266,10 @@ export default function SeatGrid({
   onLeaveSeat,
   openBookingId,
   onToggleManage,
+  canRecordRound,
+  onRecordRound,
 }: Props) {
+  const [recordingBookingId, setRecordingBookingId] = useState<string | null>(null);
   const empties = seatsRemaining(capacity, seats.length);
   const lastSeatCall = needsFourth && empties === 1;
   const organizerManageable = Boolean(
@@ -216,8 +283,20 @@ export default function SeatGrid({
         // See the "A member's own seat" section of this component's
         // docstring for why these two are separate booleans rather than one
         // shared flag, and why the organizer one wins when both are true.
+        // The panel opens for EITHER of the seat's own two independently
+        // gated actions -- leaving (`onLeaveSeat`) or recording a win
+        // (`canRecordRound`/`onRecordRound`) -- since the two are legal at
+        // mutually exclusive times (before vs. during a live game): during
+        // the window recording is allowed, `onLeaveSeat` is never supplied,
+        // so gating the panel on `onLeaveSeat` alone would make a plain
+        // member's own seat unreachable for the entire time recording is
+        // legal. Each action inside still renders conditionally on its own
+        // prop, exactly as before.
         const selfManageable = Boolean(
-          !organizerManageable && seat.isYou && onToggleManage && onLeaveSeat,
+          !organizerManageable &&
+            seat.isYou &&
+            onToggleManage &&
+            (onLeaveSeat || (canRecordRound && onRecordRound)),
         );
         const manageable = organizerManageable || selfManageable;
 
@@ -225,17 +304,25 @@ export default function SeatGrid({
           return (
             <View
               key={seat.bookingId}
-              style={[styles.seat, seat.isYou && styles.seatYou]}
+              style={[styles.seat, seat.isYou && styles.seatYou, styles.seatRow]}
             >
-              <Text style={[styles.name, seat.isYou && styles.nameYou]}>
+              <Text
+                style={[styles.name, seat.isYou && styles.nameYou]}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
                 {displayName}
               </Text>
+              <SeatBadge seat={seat} />
             </View>
           );
         }
 
         const isOpen = seat.bookingId === openBookingId;
-        const toggle = () => onToggleManage!(seat.bookingId);
+        const toggle = () => {
+          onToggleManage!(seat.bookingId);
+          setRecordingBookingId(null);
+        };
         const label = `Manage ${seat.name}'s seat`;
 
         if (!isOpen) {
@@ -264,13 +351,18 @@ export default function SeatGrid({
                 name, with the decorative glyph entirely outside it.
               */}
               <View style={styles.nameRow}>
-                <Text style={[styles.name, seat.isYou && styles.nameYou]}>
+                <Text
+                  style={[styles.name, seat.isYou && styles.nameYou]}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
                   {displayName}
                 </Text>
                 {/* Decorative only — the Pressable's own accessibilityLabel
                     and aria-expanded already say everything a screen reader
                     needs; this glyph is purely the sighted hint. */}
                 <Text aria-hidden style={[styles.chevron, seat.isYou && styles.chevronYou]}>▾</Text>
+                <SeatBadge seat={seat} />
               </View>
             </Pressable>
           );
@@ -290,10 +382,15 @@ export default function SeatGrid({
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
               <View style={styles.nameRow}>
-                <Text style={[styles.name, seat.isYou && styles.nameYou]}>
+                <Text
+                  style={[styles.name, seat.isYou && styles.nameYou]}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
                   {displayName}
                 </Text>
                 <Text aria-hidden style={[styles.chevron, seat.isYou && styles.chevronYou]}>▴</Text>
+                <SeatBadge seat={seat} />
               </View>
             </Pressable>
 
@@ -322,21 +419,58 @@ export default function SeatGrid({
                     Remove from game
                   </Button>
                 </>
-              ) : (
+              ) : onLeaveSeat ? (
                 // The member's own single action — see the "A member's own
                 // seat" section of this component's docstring. "Leave this
                 // game" and NOT "Leave the club" or "Cancel this game":
                 // this ends one booking, for this one game, nothing wider.
+                // Guarded on `onLeaveSeat` itself (not just `!organizerManageable`)
+                // because `selfManageable` can now be true from the recording
+                // path alone, with `onLeaveSeat` undefined (e.g. during a live
+                // game, when leaving isn't offered) -- rendering this
+                // unconditionally would call an undefined handler.
                 <Button
                   variant="ghost"
                   big={false}
                   disabled={busy}
-                  onPress={() => onLeaveSeat!(seat.bookingId)}
+                  onPress={() => onLeaveSeat(seat.bookingId)}
                   accessibilityLabel="Leave this game"
                 >
                   Leave this game
                 </Button>
-              )}
+              ) : null}
+
+              {canRecordRound && onRecordRound ? (
+                recordingBookingId === seat.bookingId ? (
+                  <View style={styles.pointsRow}>
+                    {POINT_VALUES.map((value) => (
+                      <Pressable
+                        key={value}
+                        onPress={() => {
+                          onRecordRound(seat.profileId, value);
+                          setRecordingBookingId(null);
+                        }}
+                        disabled={busy}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Record ${seat.name}'s win for ${value} points`}
+                        style={styles.pointChip}
+                      >
+                        <Text style={styles.pointChipText}>{value}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                ) : (
+                  <Button
+                    variant="secondary"
+                    big={false}
+                    disabled={busy}
+                    onPress={() => setRecordingBookingId(seat.bookingId)}
+                    accessibilityLabel={`Record a win for ${seat.name}`}
+                  >
+                    Record a win
+                  </Button>
+                )
+              ) : null}
             </View>
           </View>
         );
@@ -400,6 +534,49 @@ const styles = StyleSheet.create({
     gap: space[2],
   },
   seatYou: { backgroundColor: colors.accent2Color },
+  // Read-only occupied seats have no nameRow of their own (that wrapper is
+  // only used by the manageable Pressable/open-panel branches) -- this puts
+  // the name and the trailing badge on the same row for that plain case.
+  seatRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  // marginLeft: 'auto' pushes the badge to the row's trailing edge without
+  // disturbing the name/chevron pair's own adjacency in `nameRow` (a plain
+  // `justifyContent: 'space-between'` on `nameRow` would instead space all
+  // three children apart evenly, dragging the chevron away from the name it
+  // decorates). In `seatRow` (the read-only render, which already sets its
+  // own `justifyContent: 'space-between'` with just two children: name and
+  // badge) this is redundant but harmless -- the badge is already the
+  // trailing child there.
+  badge: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 'auto',
+  },
+  // colors.accent[700], NOT colors.accentColor -- lib/theme.test.ts pins a
+  // regression proving colors.bg text on colors.accentColor fails WCAG AA at
+  // this weight/size (~3.03:1); accent[700] is the established fix
+  // (~5.72:1). See that file's contrast-pin table, which this call site is
+  // also registered in.
+  badgeRound: {
+    backgroundColor: colors.accent[700],
+  },
+  badgeStarIcon: {
+    position: 'absolute',
+  },
+  badgeText: {
+    fontFamily: type.bodyBold,
+    fontSize: type.size.helper,
+    color: colors.bg,
+  },
+  badgeTextStar: {
+    color: colors.accent[900],
+  },
   empty: {
     backgroundColor: 'transparent',
     borderWidth: 2,
@@ -419,10 +596,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: space[1],
   },
+  // flexShrink: 1 (Yoga's own default is 0, unlike CSS flexbox) so a long
+  // name shrinks to make room for the fixed-size badge/chevron that share
+  // its row (nameRow, seatRow) instead of pushing them past the seat's
+  // rounded background. Paired with numberOfLines/ellipsizeMode at every
+  // render site below so the shrunk name truncates rather than wrapping or
+  // clipping mid-glyph.
   name: {
     fontFamily: type.bodyRegular,
     fontSize: type.size.body,
     color: colors.text,
+    flexShrink: 1,
   },
   nameYou: {
     fontFamily: type.bodySemiBold,
@@ -447,6 +631,39 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: space[2],
+    backgroundColor: colors.surface,
+    borderRadius: radius.sm,
+    padding: space[2],
+  },
+  pointsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: space[2],
+    // `manageActions` is itself a flex-wrap row, so without a width of its
+    // own this row of 7 chips has no bound to wrap against -- Yoga sizes it
+    // to its unwrapped max-content width by default (flexShrink defaults to
+    // 0, unlike CSS), and the trailing chips get clipped past the panel's
+    // edge instead of wrapping onto a second line. Forcing it onto its own
+    // full-width line first is what lets its own `flexWrap` actually do
+    // anything.
+    flexBasis: '100%',
+  },
+  // colors.accent[700], NOT colors.accentColor -- same WCAG AA regression
+  // this codebase already pins a test against; see badgeRound's comment
+  // above.
+  pointChip: {
+    minWidth: 44,
+    minHeight: 44,
+    borderRadius: radius.pill,
+    backgroundColor: colors.accent[700],
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: space[3],
+  },
+  pointChipText: {
+    fontFamily: type.bodySemiBold,
+    fontSize: type.size.body,
+    color: colors.bg,
   },
   emptyText: {
     fontFamily: type.bodyRegular,

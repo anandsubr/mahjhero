@@ -179,3 +179,22 @@ describe('alerts feed avatar initials clear AA on their fill', () => {
     expect(contrast(colors.bg, colors.accent[700])).toBeGreaterThanOrEqual(AA);
   });
 });
+
+// components/SeatGrid.tsx's per-seat scoring UI first shipped both its round
+// point badge (`badgeRound`) and its point-value chips (`pointChip`) with
+// `colors.bg` text directly on `colors.accentColor` -- the exact 3.03:1
+// failing pair this file already pins a regression against above ("unread
+// badge text clears AA on its background"). Fixed the same way: both switched
+// to `colors.accent[700]` (5.72:1). Given their own describe block, same
+// reasoning as the alerts avatar above -- so a future palette change (or a
+// SeatGrid edit that reverts to `accentColor`) fails a test named for the
+// seat badge/chip it actually breaks, not just the unrelated unread badge.
+describe('seat grid round badge and point chips clear AA on their fill', () => {
+  it('clears AA on accent[700] (round badge text)', () => {
+    expect(contrast(colors.bg, colors.accent[700])).toBeGreaterThanOrEqual(AA);
+  });
+
+  it('clears AA on accent[700] (point chip text)', () => {
+    expect(contrast(colors.bg, colors.accent[700])).toBeGreaterThanOrEqual(AA);
+  });
+});

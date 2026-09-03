@@ -684,7 +684,12 @@ test.describe('signed in', () => {
         await expect(
           page.getByRole('button', { name: 'Bring someone', exact: true }),
         ).toBeVisible();
-        await expect(page.getByText('2 seats free')).toBeVisible();
+        // TableCard no longer prints a "N seats free" sentence (Task 6) --
+        // room left is now only visible as unoccupied seat tiles themselves.
+        // Table 1 seats You + Priya at a capacity-4 table, so exactly two of
+        // its tiles render SeatGrid's own "Empty" label; Table 2 (seeded
+        // full in e2e/session.ts) contributes none.
+        await expect(page.getByText('Empty')).toHaveCount(2);
         await captureScreen(page, vp, `event-detail-${vp.name}.png`);
       });
 
@@ -709,13 +714,21 @@ test.describe('signed in', () => {
         );
         await page.goto(`/clubs/${seeded.clubId}/events/${eventId}`);
         await expect(page.getByText('1 table · 4 seats')).toBeVisible();
-        await expect(page.getByText('2 seats free')).toBeVisible();
-        // RoundLog's own running-totals line, "<name>: <points>"
-        // (components/RoundLog.tsx's `totalsLine`), and the round row
-        // itself, "<name> · <points> pts" -- proof the seeded round reached
-        // the screen, not just the fixture.
-        await expect(page.getByText(`${winnerName}: ${points}`)).toBeVisible();
+        // TableCard no longer prints a "N seats free" sentence (Task 6) --
+        // the winner and runner-up fill two of this table's four seats, so
+        // exactly two tiles render SeatGrid's own "Empty" label.
+        await expect(page.getByText('Empty')).toHaveCount(2);
+        // RoundLog's own read-only row format, "<name> · <points> pts"
+        // (components/RoundLog.tsx) -- proof the seeded round reached the
+        // screen, not just the fixture. The running-totals line this used to
+        // also assert here ("<name>: <points>") was removed by Task 5;
+        // totals moved to the winner's own seat tile badge instead, which is
+        // what the second assertion below checks.
         await expect(page.getByText(`${winnerName} · ${points} pts`)).toBeVisible();
+        // The winner's seat tile badge (components/SeatGrid.tsx) -- the
+        // running total's new home. Sole winner so far, so this is the star
+        // variant, but the visible text is just the point value either way.
+        await expect(page.getByText(`${points}`, { exact: true })).toBeVisible();
         // RoundTimer's own duration pills -- the other half of this
         // screen's rounds section, and the one thing on this baseline that
         // needs no seeded data at all, only a live game (RoundLog/
@@ -829,12 +842,13 @@ test.describe('signed in', () => {
         await page.goto(
           `/clubs/${seeded.bookingClubId}/events/${seeded.fullEventId}`,
         );
-        // TableCard now says "Full" rather than "0 seats free" (seatsFreeLabel,
-        // lib/bookings.ts) -- a bare zero-count sentence nobody writes.
-        // `exact: true` is load-bearing: this event's own title is "Full
-        // house game" (bookingClubId fixture), which also matches a bare
-        // substring search.
-        await expect(page.getByText('Full', { exact: true })).toBeVisible();
+        // TableCard no longer prints its own per-table "Full" label (Task 6
+        // dropped the whole seats-free sentence, "0 seats free" included).
+        // `seatsFreeLabel` (lib/bookings.ts) still owns the SAME "Full" word
+        // for a different screen (the club/dashboard list's own summary
+        // line) -- unrelated to this one, not touched here. The fullness of
+        // this table is instead proven by the state it actually drives: no
+        // seat for the signed-in member to take, so the waitlist renders.
         await expect(page.getByText('Waiting for a seat')).toBeVisible();
         await expect(
           page.getByRole('button', { name: 'Join the waitlist' }),
@@ -872,18 +886,18 @@ test.describe('signed in', () => {
       // signed-in member, inside `needsAFourth`'s 48-hour window — and the
       // signed-in member is this club's host, so the event screen's own
       // early "Call for a 4th now" control renders too, not just the Tag.
-      // "1 seat free", not "3 seats free": `needsAFourth`'s own definition
-      // (lib/bookings.ts) is `confirmed === capacity - 1`, which on a
-      // 4-seat table always leaves exactly one seat, never three — the
-      // brief's own example snippet uses "3 seats free" only to illustrate
-      // the anchor-before-capture PATTERN, not this table's actual count.
+      // TableCard no longer prints a "1 seat free" sentence (Task 6) --
+      // `needsAFourth`'s own definition (lib/bookings.ts) is
+      // `confirmed === capacity - 1`, which on a 4-seat table always leaves
+      // exactly one seat, never three, so "Last seat" (SeatGrid's own
+      // special label for that one remaining tile, distinct from a plain
+      // "Empty" one) already proves the exact same count on its own.
       test(`event needs a fourth at ${vp.name}`, async ({ page }) => {
         await page.setViewportSize({ width: vp.width, height: vp.height });
         await page.goto(
           `/clubs/${seeded.bookingClubId}/events/${seeded.needsAFourthEventId}`,
         );
         await expect(page.getByText('Needs a 4th')).toBeVisible();
-        await expect(page.getByText('1 seat free')).toBeVisible();
         await expect(page.getByText('Last seat')).toBeVisible();
         await expect(page.getByText('Call for a 4th now')).toBeVisible();
         await captureScreen(page, vp, `event-needs-a-fourth-${vp.name}.png`);
