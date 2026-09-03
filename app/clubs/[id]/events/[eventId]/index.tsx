@@ -920,6 +920,7 @@ export default function EventScreen() {
               rounds={roundsFailed ? undefined : displayRounds}
               canRecordRound={gameLive && (isOrganizer || iAmSeatedHere)}
               canDeleteRound={isOrganizer}
+              gameLive={gameLive}
               onRecordRound={(winnerId, points) => {
                 setOpenBookingId(null);
                 void recordTableRound(table.id, winnerId, points);

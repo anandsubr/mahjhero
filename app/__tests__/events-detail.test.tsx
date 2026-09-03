@@ -1342,6 +1342,7 @@ describe('Reset to the series', () => {
 describe('table rounds', () => {
   it("shows a table's recorded rounds", async () => {
     fetchRoster.mockResolvedValue(ROSTER_WITH_RAVI);
+    fetchEvent.mockResolvedValue(liveEvent());
     fetchEventSeating.mockResolvedValue([SEATED_RAVI]);
     fetchTableRounds.mockResolvedValue([ROUND_1]);
 
@@ -1438,6 +1439,7 @@ describe('table rounds', () => {
 
   it('lets only the organizer delete a round', async () => {
     fetchRoster.mockResolvedValue(ROSTER_WITH_RAVI); // 'member', not organizer
+    fetchEvent.mockResolvedValue(liveEvent());
     fetchEventSeating.mockResolvedValue([SEATED_RAVI]);
     fetchTableRounds.mockResolvedValue([ROUND_1]);
 
