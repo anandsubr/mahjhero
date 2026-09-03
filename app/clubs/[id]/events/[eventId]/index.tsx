@@ -10,7 +10,6 @@ import Screen from '../../../../../components/Screen';
 import Tag from '../../../../../components/Tag';
 import TabBar from '../../../../../components/TabBar';
 import TableCard from '../../../../../components/TableCard';
-import TierPicker from '../../../../../components/TierPicker';
 import WaitlistPanel from '../../../../../components/WaitlistPanel';
 import { ChevronLeftIcon, PencilIcon } from '../../../../../components/icons';
 import {
@@ -50,7 +49,6 @@ import {
   frequencyLabel,
   removeEventTable,
   resetEventToSeries,
-  updateEventTable,
   type ClubEvent,
   type EventSeries,
   type EventTable,
@@ -86,8 +84,10 @@ import { colors, space, type } from '../../../../../lib/theme';
  *
  * Organizers (host or co-organizer — `canInvite`, the same test the SQL
  * functions below enforce) additionally get table management and seating
- * controls: `TierPicker` and Remove table rendered into `TableCard`'s
- * `children` slot, "Call for a 4th now" (also in `children`, computed by
+ * controls: Remove table rendered into `TableCard`'s `children` slot
+ * (tier editing itself moved to the edit screen — Task 8; this screen keeps
+ * only the read-only `SkillTierPips` + word on each table's heading line),
+ * "Call for a 4th now" (also in `children`, computed by
  * `canCallForAFourth` below), and — inside `TableCard`'s own `SeatGrid` —
  * tapping an occupied seat reveals THAT person's actions (move to another
  * table, or remove them from the game entirely) instead of everyone's at
@@ -734,6 +734,7 @@ export default function EventScreen() {
         Clubs
       </Button>
 
+      <Text style={styles.clubKicker}>{club.name}</Text>
       <View style={styles.row}>
         <View style={styles.titleRow}>
           <Text style={styles.heading}>{event.title}</Text>
@@ -916,15 +917,6 @@ export default function EventScreen() {
             >
               {isOrganizer ? (
                 <>
-                  <TierPicker
-                    tableLabel={table.label}
-                    tier={table.skill_tier}
-                    disabled={busy}
-                    onChange={(nextTier) =>
-                      run(() => updateEventTable(table.id, { tier: nextTier }))
-                    }
-                  />
-
                   {tables.length > 1 ? (
                     <Button
                       variant="ghost"
@@ -1213,6 +1205,13 @@ const styles = StyleSheet.create({
   container: { padding: space[6], gap: space[4] },
   centered: { alignItems: 'center' },
   backButton: { alignSelf: 'flex-start' },
+  clubKicker: {
+    fontFamily: type.bodySemiBold,
+    fontSize: type.size.helper,
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    color: colors.accentColor,
+  },
   heading: {
     fontFamily: type.heading,
     fontSize: type.size.h2,

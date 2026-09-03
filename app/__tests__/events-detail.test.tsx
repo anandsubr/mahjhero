@@ -398,6 +398,11 @@ describe('a section that fails does not blank the rest of the screen', () => {
 });
 
 describe('member view: what is shown, and what is not', () => {
+  it('shows the club name for context', async () => {
+    render(<EventScreen />);
+    expect(await screen.findByText(CLUB.name)).toBeTruthy();
+  });
+
   it('renders the event time in the club timezone, not the device/process one', async () => {
     fetchClub.mockResolvedValue(TOKYO_CLUB);
     const { formatEventWhen } = await import('../../lib/events');
@@ -728,39 +733,6 @@ describe('organizer view', () => {
       await screen.findByRole('button', { name: 'Open the game thread' }),
     ).toBeTruthy();
     expect(screen.queryByText('Message everyone booked')).toBeNull();
-  });
-
-  it('shows tier chip buttons and retiers a table', async () => {
-    render(<EventScreen />);
-    await screen.findByText('Thursday Mahjong');
-
-    fireEvent.click(screen.getByLabelText('Table 1: Advanced'));
-    await vi.waitFor(() =>
-      expect(updateEventTable).toHaveBeenCalledWith('table-1', { tier: 'advanced' }),
-    );
-    // A mutation always reloads, so the retiered table is reflected without
-    // a manual refresh.
-    await vi.waitFor(() => expect(fetchEventTables).toHaveBeenCalledTimes(2));
-  });
-
-  // This chip used to be a `Button` with `accessibilityState={{ selected }}`
-  // — a prop react-native-web's createDOMProps never forwards to the DOM
-  // (see Toggle.tsx's docstring), so a screen reader on web could never
-  // tell the current tier from the other three. Task 10's review flagged
-  // it and deferred the fix here. Asserts the rendered `aria-selected`
-  // attribute itself, not just the click behaviour above, on both the
-  // selected chip and an unselected one — a regression back to
-  // `accessibilityState` would leave this `null` on both.
-  it('marks the table\'s current tier, and only that one, as aria-selected', async () => {
-    render(<EventScreen />);
-    await screen.findByText('Thursday Mahjong');
-
-    expect(screen.getByLabelText('Table 1: Any level').getAttribute('aria-selected')).toBe(
-      'true',
-    );
-    expect(
-      screen.getByLabelText('Table 1: Advanced').getAttribute('aria-selected'),
-    ).toBe('false');
   });
 
   describe('seat-tap host controls: wired into the event screen', () => {
