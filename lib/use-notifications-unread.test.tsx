@@ -30,7 +30,7 @@ const SESSION_A = { session: { user: { id: 'test-user' } }, loading: false };
 const SESSION_B = { session: { user: { id: 'test-user' } }, loading: false };
 const NO_SESSION = { session: null, loading: false };
 
-let current: typeof SESSION_A = SESSION_A;
+let current: typeof SESSION_A | typeof NO_SESSION = SESSION_A;
 vi.mock('./session', () => ({ useSession: () => current }));
 
 import { useNotificationsUnread } from './use-notifications-unread';
