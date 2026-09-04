@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(7);
+select plan(8);
 
 insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-000000000001', 'alice@example.com'),
@@ -73,12 +73,23 @@ select throws_ok(
   'sort_order is bounded to 0-3'
 );
 
+-- Alice, a legitimate member of Riverside, can read the attachment.
 set local role authenticated;
 set local request.jwt.claims =
-  '{"sub":"bbbbbbbb-0000-0000-0000-000000000002","role":"authenticated"}';
+  '{"sub":"aaaaaaaa-0000-0000-0000-000000000001","role":"authenticated"}';
+
+select is(
+  (select count(*)::int from public.message_attachments
+    where thread_id = '11111111-0000-0000-0000-000000000001'),
+  1,
+  'a thread member can read their own attachments'
+);
 
 -- Bob is not a member of Riverside's club (Lakeside only, via the seed
 -- above -- actually neither; check_read below proves the deny).
+set local request.jwt.claims =
+  '{"sub":"bbbbbbbb-0000-0000-0000-000000000002","role":"authenticated"}';
+
 select is(
   (select count(*)::int from public.message_attachments
     where thread_id = '11111111-0000-0000-0000-000000000001'),
