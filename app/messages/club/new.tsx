@@ -223,11 +223,14 @@ export default function NewPostScreen() {
   }, []);
 
   const handleBack = useCallback(() => {
-    // An empty draft costs nothing to lose -- checked first, and
-    // unconditionally, so it also covers a member who armed the confirm
-    // and then deleted everything they'd typed rather than tapping back
-    // again: the second tap should just leave, not discard nothing.
-    if (!body.trim()) {
+    // Nothing to lose -- checked first, and unconditionally, so it also
+    // covers a member who armed the confirm and then deleted everything
+    // they'd typed (and removed any attachment) rather than tapping back
+    // again: the second tap should just leave, not discard nothing. An
+    // attached image counts as something to lose here too, the same as
+    // typed text -- a member who attached a photo but never typed a word
+    // must not have it silently discarded on the first tap.
+    if (!body.trim() && attachments.length === 0) {
       router.push(`/messages/club/${threadId}`);
       return;
     }
@@ -236,7 +239,7 @@ export default function NewPostScreen() {
       return;
     }
     router.push(`/messages/club/${threadId}`);
-  }, [body, confirmingCancel, threadId, router]);
+  }, [body, attachments, confirmingCancel, threadId, router]);
 
   const submit = useCallback(async () => {
     if (busyRef.current || attachmentsPending || !threadId) return;
@@ -405,7 +408,12 @@ export default function NewPostScreen() {
 
       <Button
         onPress={() => void submit()}
-        disabled={busy || attachmentsPending || body.trim().length === 0}
+        // Empty body is only a blocker when there's ALSO nothing attached --
+        // the same "body OR attachment" bound postMessage's own guard
+        // enforces (lib/messages.ts, mirroring post_message's SQL check).
+        // An attachment makes the body optional; it does not need one of
+        // its own to be worth sending.
+        disabled={busy || attachmentsPending || (body.trim().length === 0 && attachments.length === 0)}
         accessibilityLabel="Post it"
       >
         {busy ? 'Posting…' : 'Post it'}

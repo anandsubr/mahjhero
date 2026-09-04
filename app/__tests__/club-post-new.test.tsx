@@ -52,11 +52,18 @@ vi.mock('../../lib/use-notifications-unread', () => ({
 // expo-image-manipulator and expo-image-picker. None of these tests want to
 // actually load those native modules, so this is mocked wholesale the same
 // way app/__tests__/club-post.test.tsx and thread.test.tsx already do for
-// their own renders.
+// their own renders. Named, controllable spies (not bare `vi.fn()` inline)
+// the same way components/messages/__tests__/AttachmentPicker.test.tsx
+// mocks this module -- the "empty body but an attachment is ready" test
+// below needs to drive pickImages/compressImage/uploadAttachment through a
+// real pick-and-upload flow to get AttachmentPicker into a "ready" state.
+const pickImages = vi.fn();
+const compressImage = vi.fn();
+const uploadAttachment = vi.fn();
 vi.mock('../../lib/attachments', () => ({
-  pickImages: vi.fn(),
-  compressImage: vi.fn(),
-  uploadAttachment: vi.fn(),
+  pickImages: (...a: unknown[]) => pickImages(...a),
+  compressImage: (...a: unknown[]) => compressImage(...a),
+  uploadAttachment: (...a: unknown[]) => uploadAttachment(...a),
   MAX_ATTACHMENTS: 4,
 }));
 
@@ -122,6 +129,58 @@ describe('composing a post', () => {
         [],
       ),
     );
+  });
+
+  // The approved spec: body is optional ONLY when at least one attachment
+  // is present -- mirroring postMessage's own guard (lib/messages.ts) and
+  // post_message's SQL check. Drives AttachmentPicker through a real
+  // pick-and-upload flow (same as components/messages/__tests__/
+  // AttachmentPicker.test.tsx) rather than stubbing the component, so this
+  // exercises the actual `onAttachmentsChange` wiring, not an assumption
+  // about it.
+  it('enables Post it once an attachment is ready, even with an empty body', async () => {
+    fetchRoster.mockResolvedValue(member('member'));
+    pickImages.mockResolvedValueOnce([{ uri: 'file://a.jpg', width: 400, height: 300 }]);
+    compressImage.mockResolvedValueOnce({ uri: 'file://a-small.jpg', width: 400, height: 300 });
+    uploadAttachment.mockResolvedValueOnce({ storagePath: 't1/a.jpg', error: null });
+
+    render(<NewPostScreen />);
+    await screen.findByLabelText('Post');
+    fireEvent.click(screen.getByLabelText('Attach an image'));
+    fireEvent.click(screen.getByText('Choose from library'));
+
+    await waitFor(() => expect(screen.getByTestId('attachment-strip')).toBeTruthy());
+
+    // Retries the click itself inside waitFor rather than pre-waiting on
+    // some other signal: AttachmentPicker clears its "uploading" overlay in
+    // one render, then reports the ready attachment upward through a
+    // useEffect that lands a render later, so no single piece of the DOM
+    // marks the exact moment `attachmentsPending` catches up. A click on a
+    // still-disabled button is a harmless no-op, so retrying it here until
+    // postMessage actually fires is the reliable way to land the click once
+    // this screen's own state is truly ready -- not a guess about timing.
+    await waitFor(() => {
+      fireEvent.click(screen.getByLabelText('Post it'));
+      expect(postMessage).toHaveBeenCalledWith(
+        't1',
+        '',
+        false,
+        null,
+        null,
+        [{ storage_path: 't1/a.jpg', width: 400, height: 300 }],
+      );
+    });
+  });
+
+  // Unchanged existing behaviour: with neither a typed body nor an
+  // attachment, there is genuinely nothing to post -- Post it must stay
+  // inert.
+  it('keeps Post it disabled with an empty body and no attachments', async () => {
+    fetchRoster.mockResolvedValue(member('member'));
+    render(<NewPostScreen />);
+    await screen.findByLabelText('Post');
+    fireEvent.click(screen.getByLabelText('Post it'));
+    expect(postMessage).not.toHaveBeenCalled();
   });
 
   it('hides the Announcement toggle from a plain member', async () => {
