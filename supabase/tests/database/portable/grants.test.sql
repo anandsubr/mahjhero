@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(112);
+select plan(113);
 
 /*
  * Guards the privileges themselves, not the policies.
@@ -34,6 +34,14 @@ select ok(
 select ok(
   not has_table_privilege('authenticated', 'public.club_invites', 'TRUNCATE'),
   'authenticated cannot TRUNCATE club_invites'
+);
+
+-- An organizer can revoke a pending invite (20260905000000). Row filtering
+-- is club_invites_delete_organizer's job; this only guards the privilege
+-- itself exists, same reasoning as the TRUNCATE guards above.
+select ok(
+  has_table_privilege('authenticated', 'public.club_invites', 'DELETE'),
+  'authenticated can DELETE from club_invites'
 );
 
 -- Memberships are created only by security definer functions. An insert

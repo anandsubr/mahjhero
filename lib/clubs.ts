@@ -31,6 +31,10 @@ export type ClubInvite = {
   email: string | null;
   display_name: string | null;
   skill_level: SkillLevel | null;
+  /** Same select grant and RLS as the rest of the row (organizer-only) --
+   *  the same role that could already read this by creating a NEW invite
+   *  right after this one can read this one's token too. */
+  token: string;
 };
 
 export type RosterRow = {
@@ -42,7 +46,7 @@ export type RosterRow = {
 export type RosterError = { row: number; message: string };
 
 const CLUB_COLUMNS = 'id, name, slug, rhythm, visibility, timezone';
-const INVITE_COLUMNS = 'id, email, display_name, skill_level';
+const INVITE_COLUMNS = 'id, email, display_name, skill_level, token';
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const SKILL_LEVELS: SkillLevel[] = ['beginner', 'intermediate', 'advanced'];
 
@@ -446,6 +450,41 @@ export async function createInvite(
   } catch (cause) {
     console.error('createInvite failed', cause);
     return { token: null, error: GENERIC_ERROR };
+  }
+}
+
+/**
+ * Revokes a pending invite. `club_invites_delete_organizer` (20260905000000)
+ * scopes this to the deleter's own club, same check as create/select --
+ * a host or co-organizer, active, of the invite's club.
+ *
+ * `.select('id')` after the delete, and a zero-row result treated as failure
+ * rather than silent success, the same guard `deleteGreeting` needed: RLS
+ * denies a delete it disallows by matching zero rows, not by erroring, so an
+ * unchecked delete would report success for an invite it never touched.
+ */
+export async function deleteInvite(
+  inviteId: string,
+): Promise<{ error: string | null }> {
+  try {
+    const { data, error } = await supabase
+      .from('club_invites')
+      .delete()
+      .eq('id', inviteId)
+      .select('id');
+
+    if (error) {
+      console.error('deleteInvite failed', error);
+      return { error: GENERIC_ERROR };
+    }
+    if (!data || data.length === 0) {
+      console.error('deleteInvite affected no rows', inviteId);
+      return { error: GENERIC_ERROR };
+    }
+    return { error: null };
+  } catch (cause) {
+    console.error('deleteInvite failed', cause);
+    return { error: GENERIC_ERROR };
   }
 }
 
