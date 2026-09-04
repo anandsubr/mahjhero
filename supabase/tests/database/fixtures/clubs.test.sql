@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(41);
+select plan(44);
 
 -- Structure
 select has_table('public', 'clubs', 'clubs table exists');
@@ -307,6 +307,43 @@ select is(
      and profile_id = 'bbbbbbbb-0000-0000-0000-000000000002'),
   'active',
   'a removed member who redeems a fresh invite is reactivated, not stranded'
+);
+
+-- Observed live (20260905010000): a signed-up caller whose `profiles` row
+-- never got created by handle_new_user's trigger -- a one-off, not
+-- reproduced elsewhere, but accept_club_invite must not depend on that
+-- trigger having already run. No `auth.users` row for this caller either,
+-- deliberately: an insert there would fire the trigger and defeat the
+-- point of the test, and accept_club_invite only ever reads auth.uid()
+-- from the JWT anyway, never auth.users itself.
+set local role postgres;
+insert into public.club_invites (club_id, token, invited_by, expires_at) values
+  ('c1c1c1c1-0000-0000-0000-000000000001', 'no-profile-token',
+   'aaaaaaaa-0000-0000-0000-000000000001', now() + interval '7 days');
+
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "dddddddd-0000-0000-0000-000000000004", "role": "authenticated"}';
+
+select is(
+  public.accept_club_invite('no-profile-token'),
+  'c1c1c1c1-0000-0000-0000-000000000001'::uuid,
+  'redeeming an invite succeeds even when the caller has no profiles row yet'
+);
+
+select is(
+  (select count(*)::int from public.profiles
+   where id = 'dddddddd-0000-0000-0000-000000000004'),
+  1,
+  'the missing profile is backfilled as part of redeeming the invite'
+);
+
+select is(
+  (select count(*)::int from public.club_members
+   where club_id = 'c1c1c1c1-0000-0000-0000-000000000001'
+     and profile_id = 'dddddddd-0000-0000-0000-000000000004'),
+  1,
+  'the membership itself is still created for a caller with no prior profile'
 );
 
 -- ---------------------------------------------------------------------------
