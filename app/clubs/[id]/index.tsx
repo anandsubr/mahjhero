@@ -196,6 +196,14 @@ export default function ClubDetailScreen() {
         backLabel="Back to your clubs"
       />
 
+      <Button
+        variant="secondary"
+        onPress={() => router.push(`/clubs/${id}/leaderboard`)}
+        accessibilityLabel="Leaderboard"
+      >
+        Leaderboard
+      </Button>
+
       {mayInvite ? (
         // "Message members" -- this button's label before it stopped
         // pushing to a compose screen that emailed the roster -- is

@@ -1635,6 +1635,21 @@ describe('club detail screen', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Back to your clubs' }));
     expect(push).toHaveBeenCalledWith('/clubs');
   });
+
+  // The leaderboard screen (app/clubs/[id]/leaderboard.tsx) is a standings
+  // view, not an organizer tool -- unlike "Open the club thread" and the
+  // rest of the `mayInvite`-gated row, every member should be able to reach
+  // it from here, not just hosts/co-organizers.
+  it('shows a Leaderboard button to every member, not just organizers', async () => {
+    fetchRoster.mockResolvedValue([
+      { profile_id: 'test-user', role: 'member', display_name: 'Ada', skill_level: null },
+    ]);
+    render(<ClubDetailScreen />);
+
+    const button = await screen.findByRole('button', { name: 'Leaderboard' });
+    fireEvent.click(button);
+    expect(push).toHaveBeenCalledWith('/clubs/club-1/leaderboard');
+  });
 });
 
 // ---------------------------------------------------------------------------
