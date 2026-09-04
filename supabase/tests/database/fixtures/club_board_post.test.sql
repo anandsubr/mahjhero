@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(15);
+select plan(22);
 
 -- Alice hosts Riverside. Bob is a plain member. Both are in the club thread.
 insert into auth.users (id, email) values
@@ -191,6 +191,74 @@ select lives_ok(
        false,
        (select id from public.messages where body = 'first in the group thread')) $$,
   'a quote is legal anywhere in a flat thread'
+);
+
+-- Attachments: a message may now carry images with no body.
+select lives_ok(
+  $$ select public.post_message('11111111-0000-0000-0000-000000000001',
+       '', false, null, null,
+       '[{"storage_path":"11111111-0000-0000-0000-000000000001/a.jpg","width":800,"height":600}]'::jsonb) $$,
+  'an empty body is allowed when an attachment is present'
+);
+
+select is(
+  (select count(*)::int from public.message_attachments ma
+     join public.messages m on m.id = ma.message_id
+    where m.body = ''),
+  1,
+  'the attachment row was inserted'
+);
+
+-- Still refused with neither body nor attachments.
+select throws_ok(
+  $$ select public.post_message('11111111-0000-0000-0000-000000000001',
+       '', false, null, null, null) $$,
+  '22023',
+  'write something first',
+  'empty body with no attachments is still refused'
+);
+
+-- A 5th attachment is refused before any row is written.
+select throws_ok(
+  $$ select public.post_message('11111111-0000-0000-0000-000000000001',
+       'five', false, null, null,
+       '[{"storage_path":"11111111-0000-0000-0000-000000000001/1.jpg","width":1,"height":1},
+         {"storage_path":"11111111-0000-0000-0000-000000000001/2.jpg","width":1,"height":1},
+         {"storage_path":"11111111-0000-0000-0000-000000000001/3.jpg","width":1,"height":1},
+         {"storage_path":"11111111-0000-0000-0000-000000000001/4.jpg","width":1,"height":1},
+         {"storage_path":"11111111-0000-0000-0000-000000000001/5.jpg","width":1,"height":1}]'::jsonb) $$,
+  '22023',
+  'a message can carry at most 4 images',
+  'a fifth attachment is refused'
+);
+
+-- A path naming a different thread's folder is refused, belt-and-braces
+-- alongside the storage INSERT policy (Task 2) that already makes writing
+-- the object itself impossible.
+select throws_ok(
+  $$ select public.post_message('11111111-0000-0000-0000-000000000001',
+       'mismatched', false, null, null,
+       '[{"storage_path":"99999999-0000-0000-0000-000000000009/x.jpg","width":1,"height":1}]'::jsonb) $$,
+  '22023',
+  'an attachment must belong to this conversation',
+  'a path naming another thread is refused'
+);
+
+-- Order is preserved.
+select lives_ok(
+  $$ select public.post_message('11111111-0000-0000-0000-000000000001',
+       'ordered', false, null, null,
+       '[{"storage_path":"11111111-0000-0000-0000-000000000001/first.jpg","width":1,"height":1},
+         {"storage_path":"11111111-0000-0000-0000-000000000001/second.jpg","width":1,"height":1}]'::jsonb) $$,
+  'two attachments post together'
+);
+
+select is(
+  (select ma.storage_path from public.message_attachments ma
+     join public.messages m on m.id = ma.message_id
+    where m.body = 'ordered' and ma.sort_order = 0),
+  '11111111-0000-0000-0000-000000000001/first.jpg',
+  'sort_order 0 is the first attachment in array order'
 );
 
 select * from finish();
