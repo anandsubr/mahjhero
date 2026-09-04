@@ -709,7 +709,9 @@ function GameRow({
           >
             <DateTile startsAt={row.startsAt} timezone={row.timezone} />
             <View style={styles.gameBody}>
-              <Text style={styles.gameClubName}>{row.clubName}</Text>
+              <Text style={styles.gameClubName} numberOfLines={1}>
+                {row.clubName}
+              </Text>
               <Text style={styles.gameTime}>
                 {formatEventTime(row.startsAt, row.timezone)}
               </Text>
@@ -729,30 +731,44 @@ function GameRow({
             </View>
           </Pressable>
         </Link>
-        {booking === null ? (
-          row.organizing ? (
-            <Tag variant="accent">Hosting</Tag>
-          ) : (
-            <Button
-              variant="secondary"
-              big={false}
-              disabled={busy}
-              onPress={() => onJoin(row)}
-              accessibilityLabel={`Join ${row.title}`}
-              style={styles.gameAction}
-            >
-              Join
-            </Button>
-          )
-        ) : booking.status === 'confirmed' ? (
-          // The table used to render as its own separate line below the
-          // tag, then as a second line under it (both tried and confirmed
-          // misaligned live) -- one message, one pill: the table is part
-          // of what "Seated" means, not a footnote next to it.
-          <Tag variant="accent2">
-            {booking.table_label ? `Seated · ${booking.table_label}` : 'Seated'}
-          </Tag>
-        ) : null}
+        {/*
+          Absolutely positioned, not a flex sibling of `gameOpen` -- a flex
+          row reserves this column's width for the sibling's FULL height,
+          not just the one line the badge/button actually occupies, which
+          was squeezing gameBody's later lines (the fee line especially)
+          into an unnecessary wrap with visibly empty space beside them
+          (confirmed live). Taking it out of flow lets gameBody use the
+          card's full width; only the top-right corner, where the club
+          name/time already sit well clear of it in practice, is spoken
+          for.
+        */}
+        <View style={styles.gameTrailing}>
+          {booking === null ? (
+            row.organizing ? (
+              <Tag variant="accent">Hosting</Tag>
+            ) : (
+              <Button
+                variant="secondary"
+                big={false}
+                disabled={busy}
+                onPress={() => onJoin(row)}
+                accessibilityLabel={`Join ${row.title}`}
+                style={styles.gameAction}
+              >
+                Join
+              </Button>
+            )
+          ) : booking.status === 'confirmed' ? (
+            // The table used to render as its own separate line below the
+            // tag, then as a second line under it (both tried and
+            // confirmed misaligned live) -- one message, one pill: the
+            // table is part of what "Seated" means, not a footnote next
+            // to it.
+            <Tag variant="accent2">
+              {booking.table_label ? `Seated · ${booking.table_label}` : 'Seated'}
+            </Tag>
+          ) : null}
+        </View>
       </View>
 
       {booking !== null ? (
@@ -1000,29 +1016,34 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     lineHeight: 24,
   },
+  // `position: relative` is the anchor `gameTrailing`'s absolute
+  // positioning below is relative to -- see that style's own comment for
+  // why the trailing badge/button lives outside the normal flex flow now.
   gameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space[3],
+    position: 'relative',
   },
   gameBody: {
     flex: 1,
     minWidth: 0,
   },
-  // Takes over `gameRow`'s row layout for the part of the row that is now
-  // one press target, so the tile and the text still sit side by side and
-  // the trailing control still gets whatever width it needs.
   gameOpen: {
-    flex: 1,
-    minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
     gap: space[3],
+  },
+  gameTrailing: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
   },
   gameClubName: {
     fontFamily: type.bodySemiBold,
     fontSize: type.size.helper,
     color: colors.textMuted,
+    // A club name long enough to reach the trailing badge/button's corner
+    // truncates instead of running under it -- the other lines below (time,
+    // venue, fee) have the full card width to themselves and don't need this.
+    paddingRight: space[3],
   },
   gameTime: {
     fontFamily: type.bodyBold,
