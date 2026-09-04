@@ -360,43 +360,46 @@ export default function ClubDetailScreen() {
                   <Text style={styles.memberName}>{inviteLabel}</Text>
                   <Tag>Invited</Tag>
                 </View>
-                <Text style={styles.help}>
-                  {invite.display_name &&
-                  invite.display_name.trim().length > 0 &&
-                  invite.email
-                    ? invite.email
-                    : 'Has not joined yet'}
-                </Text>
                 {/*
                   Once created, the link itself had nowhere left to go: not
                   shown again, no way to resend it, no way to revoke it
                   short of the 30-day expiry. These two actions close that
                   gap for every pending invite, not just the one just
                   created (inviteUrl's own card below stays for the
-                  freshly-made link, which is copyable there too).
+                  freshly-made link, which is copyable there too). Sharing
+                  this row with the status line, not a row of its own,
+                  keeps the card as tight as a roster member's.
                 */}
-                <View style={styles.inviteActions}>
-                  {copiedInviteId === invite.id ? (
-                    <Text style={styles.help}>Copied</Text>
-                  ) : null}
-                  <Pressable
-                    onPress={() => onCopyInvite(invite)}
-                    disabled={busy}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Copy the invite link for ${inviteLabel}`}
-                    hitSlop={8}
-                  >
-                    <CopyIcon size={18} color={colors.accentColor} />
-                  </Pressable>
-                  <Pressable
-                    onPress={() => onDeleteInvite(invite)}
-                    disabled={busy}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Delete the invite for ${inviteLabel}`}
-                    hitSlop={8}
-                  >
-                    <TrashIcon size={18} color={busy ? colors.textMuted : colors.text} />
-                  </Pressable>
+                <View style={styles.inviteMetaRow}>
+                  <Text style={styles.inviteMetaText} numberOfLines={1}>
+                    {copiedInviteId === invite.id
+                      ? 'Copied'
+                      : invite.display_name &&
+                          invite.display_name.trim().length > 0 &&
+                          invite.email
+                        ? invite.email
+                        : 'Has not joined yet'}
+                  </Text>
+                  <View style={styles.inviteActions}>
+                    <Pressable
+                      onPress={() => onCopyInvite(invite)}
+                      disabled={busy}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Copy the invite link for ${inviteLabel}`}
+                      hitSlop={8}
+                    >
+                      <CopyIcon size={18} color={colors.accentColor} />
+                    </Pressable>
+                    <Pressable
+                      onPress={() => onDeleteInvite(invite)}
+                      disabled={busy}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Delete the invite for ${inviteLabel}`}
+                      hitSlop={8}
+                    >
+                      <TrashIcon size={18} color={busy ? colors.textMuted : colors.text} />
+                    </Pressable>
+                  </View>
                 </View>
               </Card>
             );
@@ -459,12 +462,24 @@ const styles = StyleSheet.create({
     color: colors.text,
     marginTop: space[4],
   },
+  inviteMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: space[2],
+  },
+  inviteMetaText: {
+    fontFamily: type.bodyRegular,
+    fontSize: type.size.helper,
+    color: colors.textMuted,
+    lineHeight: 24,
+    flex: 1,
+    minWidth: 0,
+  },
   inviteActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-end',
     gap: space[3],
-    marginTop: space[2],
   },
   row: {
     flexDirection: 'row',
