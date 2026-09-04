@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(14);
+select plan(16);
 
 -- Alice and Carol share NO club -- that is the whole point. Alice hosts
 -- Riverside, Carol hosts a second, unrelated club, and the only thing that
@@ -75,6 +75,19 @@ insert into public.messages
    'cccccccc-0000-0000-0000-000000000003',
    'Yes, I am in.', 'e5e5e5e5-0000-0000-0000-000000000001',
    now() - interval '1 minute');
+
+-- Two attachments on Alice's first message, inserted in the REVERSE of
+-- their sort_order so the ordering assertion below cannot pass by accident
+-- of insertion order -- it only passes if the read truly orders by
+-- sort_order.
+insert into public.message_attachments
+  (message_id, thread_id, storage_path, width, height, sort_order) values
+  ('e5e5e5e5-0000-0000-0000-000000000001',
+   '77777777-0000-0000-0000-000000000001',
+   '77777777-0000-0000-0000-000000000001/b.jpg', 400, 300, 1),
+  ('e5e5e5e5-0000-0000-0000-000000000001',
+   '77777777-0000-0000-0000-000000000001',
+   '77777777-0000-0000-0000-000000000001/a.jpg', 800, 600, 0);
 
 set local role authenticated;
 set local request.jwt.claims =
@@ -183,6 +196,23 @@ select is(
    where reply_to_id is not null),
   'Alice Ng',
   'and the quoted parent''s author is named too'
+);
+
+select is(
+  jsonb_array_length(
+    (select attachments from public.fetch_thread_messages(
+      '77777777-0000-0000-0000-000000000001')
+     where reply_to_id is null)
+  ),
+  2,
+  'fetch_thread_messages returns both attachments on the first message'
+);
+select is(
+  (select attachments -> 0 ->> 'storage_path' from public.fetch_thread_messages(
+    '77777777-0000-0000-0000-000000000001')
+   where reply_to_id is null),
+  '77777777-0000-0000-0000-000000000001/a.jpg',
+  'attachments come back ordered by sort_order'
 );
 
 -- ---------------------------------------------------------------------
