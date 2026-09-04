@@ -781,6 +781,7 @@ describe('fetchThreadMessages', () => {
           reply_to_id: null,
           reply_to_body: null,
           reply_to_author: null,
+          attachments: [],
         },
         {
           id: 'm2',
@@ -793,6 +794,7 @@ describe('fetchThreadMessages', () => {
           reply_to_id: 'm1',
           reply_to_body: 'Anyone free Tuesday?',
           reply_to_author: 'Alice Ng',
+          attachments: [],
         },
       ],
       error: null,
@@ -809,6 +811,7 @@ describe('fetchThreadMessages', () => {
         profiles: { display_name: 'Alice Ng' },
         reply_to_id: null,
         reply_to: null,
+        attachments: [],
       },
       {
         id: 'm2',
@@ -820,9 +823,37 @@ describe('fetchThreadMessages', () => {
         profiles: { display_name: 'Carol Chen' },
         reply_to_id: 'm1',
         reply_to: { id: 'm1', body: 'Anyone free Tuesday?', profiles: { display_name: 'Alice Ng' } },
+        attachments: [],
       },
     ]);
     expect(rpcMock).toHaveBeenCalledWith('fetch_thread_messages', { target_thread: 't1' });
+  });
+
+  it('maps attachments in order', async () => {
+    rpcMock.mockResolvedValueOnce({
+      data: [
+        {
+          id: 'm1',
+          author_id: 'u1',
+          author_name: 'Alice',
+          body: '',
+          subject: null,
+          is_announcement: false,
+          created_at: '2026-09-04T10:00:00Z',
+          reply_to_id: null,
+          reply_to_body: null,
+          reply_to_author: null,
+          attachments: [
+            { id: 'a1', storage_path: 't1/a.jpg', width: 800, height: 600 },
+          ],
+        },
+      ],
+      error: null,
+    });
+    const rows = await fetchThreadMessages('t1');
+    expect(rows?.[0]?.attachments).toEqual([
+      { id: 'a1', storage_path: 't1/a.jpg', width: 800, height: 600 },
+    ]);
   });
 
   it('resolves null on failure rather than rejecting', async () => {
@@ -933,6 +964,7 @@ describe('postMessage', () => {
       p_announce: false,
       p_reply_to: null,
       p_root: null,
+      p_attachments: null,
     });
   });
 
@@ -945,15 +977,33 @@ describe('postMessage', () => {
       p_announce: false,
       p_reply_to: 'm1',
       p_root: null,
+      p_attachments: null,
     });
   });
 
-  it('refuses an empty body before ever calling the RPC', async () => {
+  it('refuses an empty body with no attachments before ever calling the RPC', async () => {
     await expect(postMessage('t1', '   ')).resolves.toEqual({
       id: null,
       error: 'Write something first.',
     });
     expect(rpcMock).not.toHaveBeenCalled();
+  });
+
+  it('allows an empty body when an attachment is present', async () => {
+    rpcMock.mockResolvedValueOnce({ data: 'm5', error: null });
+    await expect(
+      postMessage('t1', '   ', false, null, null, [
+        { storage_path: 't1/a.jpg', width: 800, height: 600 },
+      ]),
+    ).resolves.toEqual({ id: 'm5', error: null });
+    expect(rpcMock).toHaveBeenCalledWith('post_message', {
+      target_thread: 't1',
+      p_body: '',
+      p_announce: false,
+      p_reply_to: null,
+      p_root: null,
+      p_attachments: [{ storage_path: 't1/a.jpg', width: 800, height: 600 }],
+    });
   });
 
   // post_message's refusals are already written to be read by a member --
@@ -1095,6 +1145,7 @@ describe('fetchPostMessages', () => {
           reply_to_id: null,
           reply_to_body: null,
           reply_to_author: null,
+          attachments: [],
         },
         {
           id: 'p2',
@@ -1107,6 +1158,7 @@ describe('fetchPostMessages', () => {
           reply_to_id: 'p1',
           reply_to_body: 'Anyone free Tuesday?',
           reply_to_author: 'Alice Ng',
+          attachments: [],
         },
       ],
       error: null,
@@ -1123,6 +1175,7 @@ describe('fetchPostMessages', () => {
         profiles: { display_name: 'Alice Ng' },
         reply_to_id: null,
         reply_to: null,
+        attachments: [],
       },
       {
         id: 'p2',
@@ -1138,6 +1191,7 @@ describe('fetchPostMessages', () => {
           body: 'Anyone free Tuesday?',
           profiles: { display_name: 'Alice Ng' },
         },
+        attachments: [],
       },
     ]);
     expect(rpcMock).toHaveBeenCalledWith('fetch_post_messages', { p_root: 'p1' });
@@ -1201,6 +1255,7 @@ describe('postMessage with a root', () => {
       p_announce: false,
       p_reply_to: null,
       p_root: 'root1',
+      p_attachments: null,
     });
   });
 
@@ -1213,6 +1268,7 @@ describe('postMessage with a root', () => {
       p_announce: false,
       p_reply_to: null,
       p_root: null,
+      p_attachments: null,
     });
   });
 });

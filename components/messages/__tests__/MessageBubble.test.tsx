@@ -18,6 +18,7 @@ function message(over: Partial<ThreadMessage> = {}): ThreadMessage {
     profiles: { display_name: 'Alice Chen' },
     reply_to_id: null,
     reply_to: null,
+    attachments: [],
     ...over,
   };
 }

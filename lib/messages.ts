@@ -59,6 +59,21 @@ export type ThreadMessage = {
    * quote.
    */
   reply_to: { id: string; body: string; profiles: { display_name: string } | null } | null;
+  attachments: MessageAttachment[];
+};
+
+export type MessageAttachment = {
+  id: string;
+  storage_path: string;
+  width: number;
+  height: number;
+};
+
+/** What `postMessage` sends for a not-yet-attached image — no `id` yet. */
+export type MessageAttachmentInput = {
+  storage_path: string;
+  width: number;
+  height: number;
 };
 
 export type ThreadDetail = {
@@ -749,6 +764,7 @@ type ThreadMessageRow = {
   reply_to_id: string | null;
   reply_to_body: string | null;
   reply_to_author: string | null;
+  attachments: MessageAttachment[];
 };
 
 /**
@@ -775,6 +791,7 @@ function mapThreadMessageRow(r: ThreadMessageRow): ThreadMessage {
           profiles: r.reply_to_author ? { display_name: r.reply_to_author } : null,
         }
       : null,
+    attachments: r.attachments ?? [],
   };
 }
 
@@ -935,6 +952,9 @@ export function leaveGroupThread(threadId: string) {
   return voidRpc('leave_group_thread', { target_thread: threadId });
 }
 
+/** How many images a single message may carry. Mirrors post_message's own bound. */
+export const MAX_ATTACHMENTS = 4;
+
 export async function postMessage(
   threadId: string,
   body: string,
@@ -943,11 +963,14 @@ export async function postMessage(
   // Null in a game or direct thread, and null for a NEW post on a club
   // board. Set only when replying inside a post.
   rootId: string | null = null,
+  attachments: MessageAttachmentInput[] = [],
 ): Promise<{ id: string | null; error: string | null }> {
   const trimmed = (body ?? '').trim();
   // Checked here as well as in post_message so a member who taps Send on an
-  // empty composer gets an answer without a round trip.
-  if (trimmed.length === 0) {
+  // empty composer with no attachments gets an answer without a round trip.
+  // An attachment gives this bound a second way to be satisfied -- it does
+  // not relax it.
+  if (trimmed.length === 0 && attachments.length === 0) {
     return { id: null, error: 'Write something first.' };
   }
   if (trimmed.length > BODY_MAX) {
@@ -959,6 +982,7 @@ export async function postMessage(
     p_announce: announce,
     p_reply_to: replyToId,
     p_root: rootId,
+    p_attachments: attachments.length > 0 ? attachments : null,
   });
 }
 

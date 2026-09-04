@@ -19,6 +19,7 @@ function reply(over: Partial<ThreadMessage> = {}): ThreadMessage {
     profiles: { display_name: 'Sara Lindqvist' },
     reply_to_id: null,
     reply_to: null,
+    attachments: [],
     ...over,
   };
 }

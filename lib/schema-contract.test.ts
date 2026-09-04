@@ -2683,9 +2683,12 @@ describe.runIf(reachable || required)('messages schema contract', () => {
     expect(error).toBeNull();
     const row = data as unknown as Record<string, unknown>;
 
-    // Every key of ThreadMessage EXCEPT reply_to, which fetchThreadMessages
-    // fills in from a second query rather than this select list.
-    const declaredFields: Record<Exclude<keyof ThreadMessage, 'reply_to'>, true> = {
+    // Every key of ThreadMessage EXCEPT reply_to and attachments, neither of
+    // which this raw select produces: reply_to is filled in by
+    // fetchThreadMessages from a second query, and attachments only ever
+    // comes from the fetch_thread_messages/fetch_post_messages RPCs -- this
+    // MESSAGE_COLUMNS select was not extended to carry it.
+    const declaredFields: Record<Exclude<keyof ThreadMessage, 'reply_to' | 'attachments'>, true> = {
       id: true,
       author_id: true,
       body: true,
