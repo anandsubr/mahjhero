@@ -207,6 +207,17 @@ export default function ProfileScreen() {
         {saved ? 'Saved' : 'Save'}
       </Button>
 
+      {/*
+        Read-only: no edit link, unlike every other card in this group.
+        Changing the account's email is a full re-verification flow this
+        app does not have yet -- showing it without a control that cannot
+        do anything is more honest than a dead "Edit" link.
+      */}
+      <Card style={styles.settingsCard}>
+        <Text style={styles.settingsLabel}>Email</Text>
+        <Text style={styles.help}>{session.user.email ?? 'Not on file'}</Text>
+      </Card>
+
       <Card style={styles.settingsCard}>
         <View style={styles.settingsRow}>
           <Text style={styles.settingsLabel}>Notifications</Text>

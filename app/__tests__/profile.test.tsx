@@ -23,7 +23,10 @@ vi.mock('expo-router', () => ({
 // reads `useSession` too (via `useUnreadCounts`), and a fresh object here
 // breaks the referential stability its `useCallback([session])` depends on,
 // refiring the fetch on every render.
-const SESSION = { session: { user: { id: 'test-user' } }, loading: false };
+const SESSION = {
+  session: { user: { id: 'test-user', email: 'test-user@example.com' } },
+  loading: false,
+};
 vi.mock('../../lib/session', () => ({
   useSession: () => SESSION,
 }));
@@ -121,6 +124,21 @@ describe('profile screen', () => {
       ),
     ).toBe('true');
     expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
+  });
+
+  // There was previously no place on this screen (or anywhere else) that
+  // showed a member their own account's email -- it comes from the auth
+  // session, not the profiles table, since profiles has no email column.
+  it('shows the signed-in account email, read-only', async () => {
+    fetchProfile.mockResolvedValueOnce({
+      id: 'test-user',
+      display_name: 'Pat',
+      skill_level: 'intermediate',
+      avatar_url: null,
+      timezone: 'America/New_York',
+    });
+    render(<ProfileScreen />);
+    expect(await screen.findByText('test-user@example.com')).toBeTruthy();
   });
 
   // Profile was reachable only by pushing onto a stack when this link was
