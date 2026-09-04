@@ -8,8 +8,9 @@ import AttachmentPicker from '../AttachmentPicker';
 // this component's tests want to actually load. Every export the component
 // uses is replaced -- pickImages/compressImage/uploadAttachment as
 // controllable spies, MAX_ATTACHMENTS as the same literal the real module
-// exports (lib/messages.ts's own MAX_ATTACHMENTS docstring records that the
-// two are meant to mirror each other).
+// exports (lib/attachments.ts's own MAX_ATTACHMENTS docstring records this
+// is now the only export of that name in the app -- lib/messages.ts used to
+// keep an unused, same-valued second copy, which was removed).
 const pickImages = vi.fn();
 const compressImage = vi.fn();
 const uploadAttachment = vi.fn();

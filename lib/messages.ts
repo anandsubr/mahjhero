@@ -964,9 +964,6 @@ export function leaveGroupThread(threadId: string) {
   return voidRpc('leave_group_thread', { target_thread: threadId });
 }
 
-/** How many images a single message may carry. Mirrors post_message's own bound. */
-export const MAX_ATTACHMENTS = 4;
-
 export async function postMessage(
   threadId: string,
   body: string,
@@ -988,6 +985,23 @@ export async function postMessage(
   if (trimmed.length > BODY_MAX) {
     return { id: null, error: 'That message is too long.' };
   }
+  // No client-side attachment-count guard here, deliberately -- unlike
+  // BODY_MAX just above. `lib/attachments.ts` pulls in expo-crypto,
+  // expo-image-manipulator and expo-image-picker; importing even one export
+  // from it here would make THIS module (imported by nearly every messaging
+  // screen and by components/UnreadBadge.tsx, itself pulled into most of the
+  // app's own test suite) drag those native modules into every test file
+  // that touches ANY of that, transitively -- which is exactly the "Cannot
+  // find module './setupFastRefresh'" crash lib/attachments.test.ts's own
+  // header comment documents, just with a much wider blast radius than one
+  // file. `post_message` itself still refuses the send server-side ("a
+  // message can carry at most 4 images", 20260905040000) -- this just isn't
+  // duplicated as a second, earlier check the way BODY_MAX is. The over-cap
+  // case is already unreachable through the UI in practice: AttachmentPicker
+  // disables its own attach control at MAX_ATTACHMENTS, and finding #2's fix
+  // (lib/attachments.ts's pickImages) clamps a picker result to `remaining`
+  // even where the underlying platform picker does not honour the limit
+  // itself.
   return idRpc('post_message', {
     target_thread: threadId,
     p_body: trimmed,

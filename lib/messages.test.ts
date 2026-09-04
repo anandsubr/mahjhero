@@ -1043,6 +1043,32 @@ describe('postMessage', () => {
       error: GENERIC_ERROR,
     });
   });
+
+  // No client-side attachment-count guard exists in postMessage (see its
+  // own comment on why -- importing lib/attachments.ts here would drag
+  // native-only modules into every test file that touches lib/messages.ts,
+  // directly or transitively). This message carries 5, one over
+  // post_message's own bound, and the RPC (not this module) is what refuses
+  // it -- proving the send is NOT short-circuited client-side the way an
+  // over-length body is just above.
+  it('lets an over-the-cap attachment count reach the RPC, unlike an over-length body', async () => {
+    rpcMock.mockResolvedValueOnce({
+      data: null,
+      error: { message: 'a message can carry at most 4 images' },
+    });
+    const attachments = Array.from({ length: 5 }, (_, i) => ({
+      storage_path: `t1/${i}.jpg`,
+      width: 10,
+      height: 10,
+    }));
+    await expect(
+      postMessage('t1', '', false, null, null, attachments),
+    ).resolves.toEqual({
+      id: null,
+      error: 'a message can carry at most 4 images',
+    });
+    expect(rpcMock).toHaveBeenCalled();
+  });
 });
 
 describe('createGroupThread', () => {

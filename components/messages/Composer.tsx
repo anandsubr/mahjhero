@@ -26,7 +26,14 @@ type Props = {
   onSend: () => void;
   sending: boolean;
   threadId: string;
-  attachments: MessageAttachmentInput[];
+  // No `attachments: MessageAttachmentInput[]` prop here, deliberately: an
+  // earlier round added one that was never read anywhere in this
+  // component's body -- AttachmentPicker below owns and reports the ready
+  // list itself, through `onAttachmentsChange`, which is this component's
+  // only real link to attachment state. Both callers (app/messages/
+  // [threadId].tsx, app/messages/club/[threadId]/[postId].tsx) still hold
+  // their own `attachments` state for `postMessage`; they just no longer
+  // pass it down here too.
   onAttachmentsChange: (ready: MessageAttachmentInput[], pending: boolean) => void;
   /** Bumped by the caller after a successful send to remount AttachmentPicker clean. */
   attachmentsResetKey: number;

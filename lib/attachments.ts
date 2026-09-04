@@ -6,7 +6,16 @@ import { supabase } from './supabase';
 
 const BUCKET = 'message-images';
 
-/** Mirrors post_message's own bound (lib/messages.ts's MAX_ATTACHMENTS). */
+/**
+ * How many images a single message may carry. Mirrors post_message's own
+ * bound. The one export of this name in the app -- lib/messages.ts used to
+ * keep a second, same-named, same-valued copy (nothing ever imported it),
+ * which was a drift hazard rather than a real second source of truth, and
+ * was removed. `postMessage` (lib/messages.ts) does not import this one
+ * either, on purpose -- see that function's own comment on why pulling
+ * anything from this module into lib/messages.ts is more than it looks
+ * like.
+ */
 export const MAX_ATTACHMENTS = 4;
 
 /** The long edge a compressed upload is resized to, and its JPEG quality. */

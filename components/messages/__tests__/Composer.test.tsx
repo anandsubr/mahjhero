@@ -21,13 +21,14 @@ vi.mock('../../../lib/attachments', () => ({
 // header gives. app/__tests__/thread.test.tsx still exercises this through
 // the real screen end to end; these tests exist so Tasks 11-12 can render
 // Composer on its own with confidence.
-// The four attachment props Task 10 added, spread into every render below --
-// none of these tests exercise attachment behaviour itself (that's
+// The attachment-related props Task 10 added, spread into every render
+// below -- none of these tests exercise attachment behaviour itself (that's
 // AttachmentPicker.test.tsx's job), so a fixed, inert set of values keeps
-// each render call focused on the prop it's actually testing.
+// each render call focused on the prop it's actually testing. No
+// `attachments` here -- Composer never read that prop (finding #10's
+// cleanup removed it from Props entirely).
 const attachmentProps = {
   threadId: 't1',
-  attachments: [],
   onAttachmentsChange: () => {},
   attachmentsResetKey: 0,
 };
