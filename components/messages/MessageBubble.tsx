@@ -9,6 +9,18 @@ type Props = {
   /** Rendered right-aligned, on the accent ground, when true. */
   mine: boolean;
   onReply: (message: ThreadMessage) => void;
+  /**
+   * `storage_path` -> signed URL for every attachment across the WHOLE
+   * message list the caller is rendering, not just this one message's own
+   * -- resolved once per screen load by the caller (app/messages/
+   * [threadId].tsx, app/messages/club/[threadId]/[postId].tsx) and handed
+   * down here so AttachmentGrid never has to ask for its own slice. See
+   * AttachmentGrid's own `urls` prop docstring for why that One True batch
+   * has to happen above this component, not inside it. Defaults to `{}` so
+   * a caller with nothing to resolve (or a test rendering this in
+   * isolation) doesn't have to pass an empty object explicitly.
+   */
+  attachmentUrls?: Record<string, string>;
 };
 
 /**
@@ -20,7 +32,7 @@ type Props = {
  * stays on that screen, since it needs the previous message for context this
  * component doesn't have; this is only the bubble itself.
  */
-export default function MessageBubble({ message: m, mine, onReply }: Props) {
+export default function MessageBubble({ message: m, mine, onReply, attachmentUrls = {} }: Props) {
   // An announcement's subject IS the body's first line (deriveSubject's own
   // contract) -- so printing `m.body` verbatim under a subject that already
   // said it once repeats it. The derivation stays untouched (post_message
@@ -80,7 +92,7 @@ export default function MessageBubble({ message: m, mine, onReply }: Props) {
         </Text>
       ) : null}
 
-      <AttachmentGrid attachments={m.attachments} />
+      <AttachmentGrid attachments={m.attachments} urls={attachmentUrls} />
 
       {displayBody ? (
         <Text

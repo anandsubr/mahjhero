@@ -1,33 +1,40 @@
 // components/messages/AttachmentGrid.tsx
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Image, Modal, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { ChevronLeftIcon, ChevronRightIcon } from '../icons';
-import { getSignedUrls } from '../../lib/attachments';
 import type { MessageAttachment } from '../../lib/messages';
 import { colors, radius, space } from '../../lib/theme';
 
-type Props = { attachments: MessageAttachment[] };
+type Props = {
+  attachments: MessageAttachment[];
+  /**
+   * `storage_path` -> signed URL, resolved by the CALLER, not by this
+   * component.
+   *
+   * This component used to call `getSignedUrls` itself, in a `useEffect`
+   * keyed on `attachments`. That looked batched -- `getSignedUrls` really
+   * does gather every path in the call into one `createSignedUrls` request
+   * -- but `AttachmentGrid` is mounted once PER MESSAGE (inside
+   * MessageBubble), so a thread with a dozen attachment-carrying messages
+   * fired a dozen separate calls on load, one per bubble, defeating the
+   * batching entirely. The screens that render a list of messages
+   * (app/messages/[threadId].tsx, app/messages/club/[threadId]/[postId].tsx)
+   * now gather every visible attachment's path ACROSS the whole message
+   * list in one place and make the one `getSignedUrls` call per load,
+   * passing the resolved map down through MessageBubble as this prop. A
+   * path missing from `urls` (not yet resolved, or the batch failed) renders
+   * the placeholder below rather than an image.
+   */
+  urls: Record<string, string>;
+};
 
 /**
  * 1-4 images as a grid: one full width, two side by side, three or four as
- * a 2x2 (a lone third slot spans the remaining width rather than leaving a
- * gap). Sized from the stored width/height so the bubble doesn't reflow
+ * a 2x2. Sized from the stored width/height so the bubble doesn't reflow
  * once the signed URL resolves and the real image loads.
  */
-export default function AttachmentGrid({ attachments }: Props) {
-  const [urls, setUrls] = useState<Record<string, string>>({});
+export default function AttachmentGrid({ attachments, urls }: Props) {
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
-
-  useEffect(() => {
-    if (attachments.length === 0) return;
-    let cancelled = false;
-    void getSignedUrls(attachments.map((a) => a.storage_path)).then((resolved) => {
-      if (!cancelled) setUrls(resolved);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [attachments]);
 
   if (attachments.length === 0) return null;
 

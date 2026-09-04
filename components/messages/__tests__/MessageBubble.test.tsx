@@ -1,23 +1,14 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import MessageBubble from '../MessageBubble';
 import type { ThreadMessage } from '../../../lib/messages';
 
-// Mocked wholesale, the same pattern AttachmentGrid.test.tsx and
-// AttachmentPicker.test.tsx use for this module: lib/attachments.ts pulls in
-// expo-crypto, expo-image-manipulator and expo-image-picker, none of which
-// MessageBubble's own tests need loaded just because it now renders
-// AttachmentGrid (which calls getSignedUrls).
-const getSignedUrls = vi.fn();
-
-vi.mock('../../../lib/attachments', () => ({
-  getSignedUrls: (...a: unknown[]) => getSignedUrls(...a),
-}));
-
-beforeEach(() => {
-  getSignedUrls.mockReset();
-  getSignedUrls.mockResolvedValue({});
-});
+// Unlike an earlier round, MessageBubble's own tests need nothing mocked for
+// lib/attachments any more: AttachmentGrid no longer calls `getSignedUrls`
+// itself (that batching now happens once per screen load, above this
+// component -- see AttachmentGrid's own `urls` prop docstring), and
+// MessageBubble just forwards whatever `attachmentUrls` map its caller
+// passes straight down as a prop.
 
 // A pure presentational component: no session, router, or focus-effect
 // dependency to mock -- unlike app/messages/[threadId].tsx (see that
@@ -161,5 +152,25 @@ describe('MessageBubble', () => {
   it('renders no attachment grid when the message carries none', () => {
     render(<MessageBubble message={message()} mine={false} onReply={() => {}} />);
     expect(screen.queryByTestId('attachment-grid')).toBeNull();
+  });
+
+  // The wiring finding #3's fix adds: `attachmentUrls` is the caller's
+  // once-per-screen-load signed URL map (app/messages/[threadId].tsx,
+  // app/messages/club/[threadId]/[postId].tsx), and MessageBubble's only job
+  // is to forward it to AttachmentGrid untouched -- proven here by an actual
+  // <img> appearing when the message's own path is a key in that map.
+  it('forwards attachmentUrls to AttachmentGrid so a resolved path renders as an image', () => {
+    render(
+      <MessageBubble
+        message={message({
+          attachments: [{ id: 'a1', storage_path: 't1/a.jpg', width: 100, height: 100 }],
+        })}
+        mine={false}
+        onReply={() => {}}
+        attachmentUrls={{ 't1/a.jpg': 'https://signed.example/a.jpg' }}
+      />,
+    );
+    const img = document.body.querySelector('img');
+    expect(img?.getAttribute('src')).toBe('https://signed.example/a.jpg');
   });
 });

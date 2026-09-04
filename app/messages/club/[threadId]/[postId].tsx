@@ -8,6 +8,7 @@ import Screen from '../../../../components/Screen';
 import TabBar from '../../../../components/TabBar';
 import ThreadAvatar from '../../../../components/ThreadAvatar';
 import { ChevronLeftIcon } from '../../../../components/icons';
+import { getSignedUrls } from '../../../../lib/attachments';
 import { GENERIC_ERROR } from '../../../../lib/constants';
 import {
   fetchPostMessages,
@@ -73,6 +74,13 @@ export default function PostScreen() {
   const viewerId = session?.user.id ?? '';
 
   const [messages, setMessages] = useState<ThreadMessage[]>([]);
+  // `storage_path` -> signed URL, for every attachment across every message
+  // currently loaded -- resolved in ONE `getSignedUrls` call per load (the
+  // effect below), not one call per message. See AttachmentGrid's own
+  // `urls` prop docstring for the batching bug this replaced, and
+  // app/messages/[threadId].tsx's identical effect for the flat thread
+  // screen's own copy of this.
+  const [attachmentUrls, setAttachmentUrls] = useState<Record<string, string>>({});
   // A best-effort read for the header alone -- see this screen's own
   // docstring on why it duplicates the board's `fetchThread` call rather
   // than trusting a value handed down from it. Its own success or failure
@@ -165,6 +173,28 @@ export default function PostScreen() {
     // lib/session.tsx's docstring: a token refresh hands out a fresh
     // `Session` that changes nothing about who is asking.
   }, [session?.user.id, threadId]);
+
+  // The one `getSignedUrls` call per screen load: every attachment path
+  // across every message currently in `messages`, gathered here rather than
+  // inside AttachmentGrid (which is mounted once PER MESSAGE via
+  // MessageBubble, and would otherwise fire one request per bubble). Runs
+  // again whenever `messages` changes -- a send, a realtime-triggered
+  // reload -- but getSignedUrls' own module-level cache means a path
+  // already signed this session is never re-requested, only genuinely new
+  // ones are.
+  useEffect(() => {
+    const paths = Array.from(
+      new Set(messages.flatMap((m) => m.attachments.map((a) => a.storage_path))),
+    );
+    if (paths.length === 0) return;
+    let cancelled = false;
+    void getSignedUrls(paths).then((resolved) => {
+      if (!cancelled) setAttachmentUrls((prev) => ({ ...prev, ...resolved }));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [messages]);
 
   useThreadRealtime(
     threadId,
@@ -294,6 +324,7 @@ export default function PostScreen() {
                     message={m}
                     mine={m.author_id === viewerId}
                     onReply={setReplyTo}
+                    attachmentUrls={attachmentUrls}
                   />
                 </Fragment>
               );
@@ -308,7 +339,6 @@ export default function PostScreen() {
             onSend={() => void send()}
             sending={sending || attachmentsPending}
             threadId={threadId ?? ''}
-            attachments={attachments}
             onAttachmentsChange={(ready, pending) => {
               setAttachments(ready);
               setAttachmentsPending(pending);

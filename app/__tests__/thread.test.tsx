@@ -99,10 +99,20 @@ vi.mock('../../lib/use-notifications-unread', () => ({
 // actually load those native modules, so this is mocked wholesale the same
 // way AttachmentPicker.test.tsx and Composer.test.tsx already do for their
 // own renders.
+//
+// `getSignedUrls` is this screen's own call now too (finding #3's fix): it
+// gathers every attachment path across the whole loaded message list and
+// resolves them in one batched call, rather than leaving each MessageBubble
+// to ask for its own (see AttachmentGrid's `urls` prop docstring). Most
+// tests below carry no attachments at all, so this never fires for them;
+// the "batches every attachment ... in one call" test further down sets its
+// own return value and asserts the call directly.
+const getSignedUrls = vi.fn();
 vi.mock('../../lib/attachments', () => ({
   pickImages: vi.fn(),
   compressImage: vi.fn(),
   uploadAttachment: vi.fn(),
+  getSignedUrls: (...a: unknown[]) => getSignedUrls(...a),
   MAX_ATTACHMENTS: 4,
 }));
 
@@ -317,6 +327,8 @@ describe('thread screen', () => {
     fetchAddablePeople.mockResolvedValue([
       { profile_id: 'p2', display_name: 'Carol Diaz', club_name: 'Riverside' },
     ]);
+    getSignedUrls.mockReset();
+    getSignedUrls.mockResolvedValue({});
   });
 
   // A couple of the tests below fake the clock (either to hold a long-press
@@ -333,6 +345,32 @@ describe('thread screen', () => {
     expect(await screen.findByText('Sara, Peter')).toBeTruthy();
     expect(screen.getByText('We are one short for Tuesday.')).toBeTruthy();
     expect(screen.getByText('I can take the seat.')).toBeTruthy();
+  });
+
+  // Finding #3's fix: this screen gathers every attachment path across the
+  // WHOLE loaded message list and asks getSignedUrls for all of them in one
+  // call, rather than each MessageBubble/AttachmentGrid asking for its own
+  // slice -- which would fire one call per attachment-carrying message. Two
+  // separate messages here each carry a different image, proving the batch
+  // spans across messages, not just within one.
+  it('batches every attachment across every message into one getSignedUrls call, not one per message', async () => {
+    fetchThreadMessages.mockResolvedValueOnce([
+      { ...MESSAGES[0], attachments: [{ id: 'a1', storage_path: 't1/one.jpg', width: 10, height: 10 }] },
+      { ...MESSAGES[1], attachments: [{ id: 'a2', storage_path: 't1/two.jpg', width: 10, height: 10 }] },
+    ]);
+    getSignedUrls.mockResolvedValueOnce({
+      't1/one.jpg': 'https://signed.example/one.jpg',
+      't1/two.jpg': 'https://signed.example/two.jpg',
+    });
+    render(<ThreadScreen />);
+    await screen.findByText('We are one short for Tuesday.');
+
+    await waitFor(() => expect(getSignedUrls).toHaveBeenCalledTimes(1));
+    expect(getSignedUrls).toHaveBeenCalledWith(['t1/one.jpg', 't1/two.jpg']);
+
+    // And the resolved urls actually reach both bubbles' images -- not just
+    // that the call happened, but that it wired all the way through.
+    await waitFor(() => expect(document.body.querySelectorAll('img')).toHaveLength(2));
   });
 
   /*

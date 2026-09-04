@@ -9,6 +9,7 @@ import Screen from '../../components/Screen';
 import TabBar from '../../components/TabBar';
 import ThreadAvatar from '../../components/ThreadAvatar';
 import { ChevronLeftIcon, ChevronRightIcon } from '../../components/icons';
+import { getSignedUrls } from '../../lib/attachments';
 import { GENERIC_ERROR } from '../../lib/constants';
 import {
   fetchThread,
@@ -71,6 +72,11 @@ export default function ThreadScreen() {
 
   const [thread, setThread] = useState<ThreadDetail | null>(null);
   const [messages, setMessages] = useState<ThreadMessage[]>([]);
+  // `storage_path` -> signed URL, for every attachment across every message
+  // currently loaded -- resolved in ONE `getSignedUrls` call per load (the
+  // effect below), not one call per message. See AttachmentGrid's own
+  // `urls` prop docstring for the batching bug this replaced.
+  const [attachmentUrls, setAttachmentUrls] = useState<Record<string, string>>({});
   const [ready, setReady] = useState(false);
   const [draft, setDraft] = useState('');
   // The message being answered, held whole rather than as an id so the
@@ -135,6 +141,27 @@ export default function ThreadScreen() {
     if (!session?.user.id) return;
     void load();
   }, [session?.user.id, load]);
+
+  // The one `getSignedUrls` call per screen load: every attachment path
+  // across every message currently in `messages`, gathered here rather than
+  // inside AttachmentGrid (which is mounted once PER MESSAGE via
+  // MessageBubble, and would otherwise fire one request per bubble). Runs
+  // again whenever `messages` changes -- a send, a realtime insert -- but
+  // getSignedUrls' own module-level cache means a path already signed this
+  // session is never re-requested, only genuinely new ones are.
+  useEffect(() => {
+    const paths = Array.from(
+      new Set(messages.flatMap((m) => m.attachments.map((a) => a.storage_path))),
+    );
+    if (paths.length === 0) return;
+    let cancelled = false;
+    void getSignedUrls(paths).then((resolved) => {
+      if (!cancelled) setAttachmentUrls((prev) => ({ ...prev, ...resolved }));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [messages]);
 
   useThreadRealtime(
     threadId,
@@ -372,7 +399,12 @@ export default function ThreadScreen() {
                       {groupSeparatorLabel(m.created_at)}
                     </Text>
                   ) : null}
-                  <MessageBubble message={m} mine={mine} onReply={setReplyTo} />
+                  <MessageBubble
+                    message={m}
+                    mine={mine}
+                    onReply={setReplyTo}
+                    attachmentUrls={attachmentUrls}
+                  />
                 </Fragment>
               );
             })}
@@ -386,7 +418,6 @@ export default function ThreadScreen() {
             onSend={() => void send()}
             sending={sending || attachmentsPending}
             threadId={threadId ?? ''}
-            attachments={attachments}
             onAttachmentsChange={(ready, pending) => {
               setAttachments(ready);
               setAttachmentsPending(pending);

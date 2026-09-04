@@ -73,10 +73,18 @@ vi.mock('../../lib/use-notifications-unread', () => ({
 // actually load those native modules, so this is mocked wholesale the same
 // way AttachmentPicker.test.tsx and Composer.test.tsx already do for their
 // own renders.
+//
+// `getSignedUrls` is this screen's own call now too (finding #3's fix): it
+// gathers every attachment path across the whole loaded message list and
+// resolves them in one batched call, rather than leaving each MessageBubble
+// to ask for its own (see AttachmentGrid's `urls` prop docstring). Most
+// tests below carry no attachments at all, so this never fires for them.
+const getSignedUrls = vi.fn();
 vi.mock('../../lib/attachments', () => ({
   pickImages: vi.fn(),
   compressImage: vi.fn(),
   uploadAttachment: vi.fn(),
+  getSignedUrls: (...a: unknown[]) => getSignedUrls(...a),
   MAX_ATTACHMENTS: 4,
 }));
 
@@ -122,6 +130,8 @@ describe('a club post', () => {
       events: null,
       thread_members: [],
     });
+    getSignedUrls.mockReset();
+    getSignedUrls.mockResolvedValue({});
   });
 
   afterEach(() => {
@@ -135,6 +145,30 @@ describe('a club post', () => {
       expect(screen.getByText('Anyone free Thursday?')).toBeTruthy(),
     );
     expect(screen.getByText('We are one short for Tuesday.')).toBeTruthy();
+  });
+
+  // Finding #3's fix: this screen gathers every attachment path across the
+  // WHOLE loaded message list (root and replies) and asks getSignedUrls for
+  // all of them in one call, rather than each MessageBubble/AttachmentGrid
+  // asking for its own slice -- which would fire one call per
+  // attachment-carrying message. The root and the reply here each carry a
+  // different image, proving the batch spans across messages.
+  it('batches every attachment across root and replies into one getSignedUrls call, not one per message', async () => {
+    fetchPostMessages.mockResolvedValue([
+      { ...root, attachments: [{ id: 'a1', storage_path: 't1/one.jpg', width: 10, height: 10 }] },
+      { ...reply, attachments: [{ id: 'a2', storage_path: 't1/two.jpg', width: 10, height: 10 }] },
+    ]);
+    getSignedUrls.mockResolvedValueOnce({
+      't1/one.jpg': 'https://signed.example/one.jpg',
+      't1/two.jpg': 'https://signed.example/two.jpg',
+    });
+    render(<PostScreen />);
+    await screen.findByText('We are one short for Tuesday.');
+
+    await waitFor(() => expect(getSignedUrls).toHaveBeenCalledTimes(1));
+    expect(getSignedUrls).toHaveBeenCalledWith(['t1/one.jpg', 't1/two.jpg']);
+
+    await waitFor(() => expect(document.body.querySelectorAll('img')).toHaveLength(2));
   });
 
   it('marks the post read once it has loaded, and asks fetch_post_messages for this root', async () => {
