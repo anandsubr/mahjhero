@@ -75,8 +75,8 @@ message — never inserted directly by the client, matching every other write
 path in this schema (`grant select` only, same as `messages`).
 
 `width`/`height` are captured client-side at pick time and stored, not
-recomputed. `MessageBubble`/`PostRow` need them to lay out a correctly-aspect-
-ratioed placeholder before the image itself has loaded, and asking Supabase to
+recomputed. `MessageBubble` needs them to lay out a correctly-aspect-ratioed
+placeholder before the image itself has loaded, and asking Supabase to
 introspect a file it never decodes is unnecessary work.
 
 ---
@@ -233,11 +233,17 @@ sheet (camera / library); selected images show as a thumbnail strip above the
 text input, each with a remove control and an upload-progress state; Send
 disables while any upload is in flight.
 
-**`components/messages/MessageBubble.tsx`** and **`components/messages/PostRow.tsx`** —
-render 1–4 images as a grid (single image full width; 2 side by side; 3–4 as a
-2×2), sized from the stored `width`/`height` before the signed URL resolves so
-the bubble doesn't reflow once it loads. Tapping opens a full-screen swipeable
-viewer scoped to that message's own images — not every image in the thread.
+**`components/messages/MessageBubble.tsx`** — renders 1–4 images as a grid
+(single image full width; 2 side by side; 3–4 as a 2×2), sized from the stored
+`width`/`height` before the signed URL resolves so the bubble doesn't reflow
+once it loads. Tapping opens a full-screen swipeable viewer scoped to that
+message's own images — not every image in the thread.
+
+**`components/messages/PostRow.tsx` is unchanged.** It renders the board's
+list row — a post's title, author and reply count, not the post's own
+content — the same surface §5 already excludes an attachment indicator from.
+A root post's images render when its post is opened, through the same
+`MessageBubble` the reply screen already uses.
 
 **`app/messages/new.tsx`** and **`app/messages/club/new.tsx`** — the same attach
 control, wired to whichever call posts their first message. Both already funnel
