@@ -1104,6 +1104,24 @@ describe('dashboard artboard', () => {
     expect(screen.queryByText('Table 1')).toBeNull();
   });
 
+  // Confirmed live: a booking can be confirmed before a physical table is
+  // assigned, and the row's "Seated" tag (GameRow, keyed only on
+  // booking.status) showed at the same time this line said "Not seated
+  // yet" -- a direct contradiction on the same card. `status` is only ever
+  // 'confirmed' or 'waitlisted' (lib/bookings.ts), so a confirmed booking
+  // with no table is the only booking that ever reached that fallback.
+  it('does not contradict its own Seated tag when a table has not been assigned yet', async () => {
+    fetchMyClubs.mockResolvedValue([CLUB]);
+    fetchMyUpcomingBookings.mockResolvedValue([
+      { ...BOOKING, event_table_id: null, table_label: null },
+    ]);
+    render(<ClubsScreen />);
+
+    expect(await screen.findByText('Seated')).toBeTruthy();
+    expect(screen.getByText('Table not assigned yet')).toBeTruthy();
+    expect(screen.queryByText('Not seated yet')).toBeNull();
+  });
+
   it('shows the dashed empty state when nothing is coming up', async () => {
     fetchMyClubs.mockResolvedValue([CLUB]);
     fetchMyUpcomingBookings.mockResolvedValue([]);

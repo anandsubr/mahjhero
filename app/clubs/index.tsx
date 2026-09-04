@@ -912,13 +912,20 @@ function BookingSeatControls({
   // next to the row's own "Seated" tag instead (GameRow) — nothing left
   // for this line to say once a table is assigned, so it renders nothing
   // rather than repeating the same label a second time.
+  //
+  // `status` is only ever 'confirmed' or 'waitlisted' (lib/bookings.ts),
+  // so the only booking that reaches the final branch below is a
+  // CONFIRMED one without a table yet -- i.e. already seated in the
+  // event, just not assigned a physical table. "Not seated yet" directly
+  // contradicted the row's own "Seated" tag in exactly this case
+  // (confirmed live: both rendered on the same row at once).
   const seatStatus = hasOffer || booking.table_label
     ? null
     : booking.status === 'waitlisted'
       ? booking.waitlist_position !== null
         ? waitlistLabel(booking.waitlist_position)
         : 'Waiting for a seat'
-      : 'Not seated yet';
+      : 'Table not assigned yet';
 
   const bookedByOther = booking.booked_by !== youId;
 
