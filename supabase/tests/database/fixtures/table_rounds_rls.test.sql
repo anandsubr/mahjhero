@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(5);
+select plan(7);
 
 insert into auth.users (id, email) values
   ('e0000000-0000-0000-0000-000000000001', 'host-a@example.com'),
@@ -49,7 +49,7 @@ values
   ('a3000000-0000-0000-0000-000000000001',
    'a2000000-0000-0000-0000-000000000001',
    'f0000000-0000-0000-0000-000000000001',
-   'e0000000-0000-0000-0000-000000000002', 8,
+   'e0000000-0000-0000-0000-000000000002', 25,
    'e0000000-0000-0000-0000-000000000001');
 
 -- A plain member of the same club reads it.
@@ -63,6 +63,14 @@ select is(
   'a member of the round''s own club can read it'
 );
 
+select is(
+  (select total_points::int from public.club_leaderboard(
+     'f0000000-0000-0000-0000-000000000001')
+   where profile_id = 'e0000000-0000-0000-0000-000000000002'),
+  25,
+  'club_leaderboard totals a member''s own club standings'
+);
+
 reset role;
 
 -- The host of an unrelated club cannot see it at all.
@@ -74,6 +82,16 @@ select is(
   (select count(*)::int from public.table_rounds),
   0,
   'a host of a different club reads nothing'
+);
+
+-- club_leaderboard is security definer, so RLS does not protect it and the
+-- is_club_member check in its body is the tenant boundary. Host B does not
+-- belong to Club A.
+select is(
+  (select count(*)::int from public.club_leaderboard(
+     'f0000000-0000-0000-0000-000000000001')),
+  0,
+  'club_leaderboard returns nothing for a club the caller does not belong to'
 );
 
 select throws_ok(

@@ -149,6 +149,12 @@ vi.mock('../../lib/greetings', async () => {
   };
 });
 
+const fetchClubLeaderboard = vi.fn();
+
+vi.mock('../../lib/leaderboard', () => ({
+  fetchClubLeaderboard: (...args: unknown[]) => fetchClubLeaderboard(...args),
+}));
+
 // TabBar (carried by every screen in this file) and, on the dashboard,
 // ClubChips both now call `useUnreadCounts`, which reaches `fetchUnreadCounts`.
 // `unreadLabel` stays real — UnreadBadge calls it, and it is the pure helper
@@ -306,6 +312,7 @@ beforeEach(() => {
   fetchGreetings.mockResolvedValue([
     { id: 'g1', text: 'Ready to shuffle, {name}?', created_at: '2026-09-01T00:00:00Z' },
   ]);
+  fetchClubLeaderboard.mockResolvedValue([]);
 });
 
 describe('clubs list', () => {
@@ -563,6 +570,43 @@ describe('dashboard artboard', () => {
     // getByText('Harbour') — that text is now ambiguous, since Harbour's
     // own chip tile renders the same label alongside the header.
     expect(screen.getByRole('button', { name: /^Manage Harbour/ })).toBeTruthy();
+  });
+
+  it('shows a tappable "Leader" line for the club in view, and navigates to its leaderboard', async () => {
+    fetchMyClubs.mockResolvedValue([CLUB]);
+    fetchClubLeaderboard.mockResolvedValue([
+      { profile_id: 'p1', display_name: 'Ada', total_points: 120, rounds_won: 4 },
+    ]);
+    render(<ClubsScreen />);
+
+    expect(await screen.findByText('Leader: Ada')).toBeTruthy();
+    fireEvent.click(screen.getByText('Leader: Ada'));
+    expect(push).toHaveBeenCalledWith(`/clubs/${CLUB.id}/leaderboard`);
+  });
+
+  it('shows no Leader line when the club has no recorded rounds', async () => {
+    fetchMyClubs.mockResolvedValue([CLUB]);
+    fetchClubLeaderboard.mockResolvedValue([]);
+    render(<ClubsScreen />);
+
+    await screen.findAllByText('Riverside Mah Jongg');
+    expect(screen.queryByText(/^Leader:/)).toBeNull();
+  });
+
+  // The all-clubs scope: several clubs, none picked, so the re-derived
+  // `clubId` in the Leader effect is null. A non-empty leaderboard is stubbed
+  // for the club that WOULD resolve if the effect ignored scope, so this only
+  // passes if the line is hidden because of scope -- not because the
+  // leaderboard happened to be empty.
+  it('shows no Leader line in the all-clubs scope, even with a non-empty leaderboard', async () => {
+    fetchMyClubs.mockResolvedValue([CLUB, { ...CLUB, id: 'club-2', name: 'Harbour' }]);
+    fetchClubLeaderboard.mockResolvedValue([
+      { profile_id: 'p1', display_name: 'Ada', total_points: 120, rounds_won: 4 },
+    ]);
+    render(<ClubsScreen />);
+
+    await screen.findByRole('button', { name: /Riverside/ }); // a chip has rendered
+    expect(screen.queryByText(/^Leader:/)).toBeNull();
   });
 
   // The chevron is app/clubs/index.tsx's own wiring, not something
@@ -1621,6 +1665,21 @@ describe('club detail screen', () => {
     render(<ClubDetailScreen />);
     fireEvent.click(await screen.findByRole('button', { name: 'Back to your clubs' }));
     expect(push).toHaveBeenCalledWith('/clubs');
+  });
+
+  // The leaderboard screen (app/clubs/[id]/leaderboard.tsx) is a standings
+  // view, not an organizer tool -- unlike "Open the club thread" and the
+  // rest of the `mayInvite`-gated row, every member should be able to reach
+  // it from here, not just hosts/co-organizers.
+  it('shows a Leaderboard button to every member, not just organizers', async () => {
+    fetchRoster.mockResolvedValue([
+      { profile_id: 'test-user', role: 'member', display_name: 'Ada', skill_level: null },
+    ]);
+    render(<ClubDetailScreen />);
+
+    const button = await screen.findByRole('button', { name: 'Leaderboard' });
+    fireEvent.click(button);
+    expect(push).toHaveBeenCalledWith('/clubs/club-1/leaderboard');
   });
 });
 

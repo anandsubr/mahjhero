@@ -36,6 +36,7 @@ import { canInvite, fetchMyClubs, fetchMyRoles } from '../../lib/clubs';
 import type { Club, ClubRole } from '../../lib/clubs';
 import { applyGreetingTemplate, fetchGreetings, pickDailyGreeting } from '../../lib/greetings';
 import type { Greeting } from '../../lib/greetings';
+import { fetchClubLeaderboard, type LeaderboardEntry } from '../../lib/leaderboard';
 import { fetchProfile } from '../../lib/profile';
 import { GENERIC_ERROR } from '../../lib/constants';
 import {
@@ -137,6 +138,7 @@ export default function ClubsScreen() {
   const { byClub: unreadByClub } = useUnreadCounts();
   const [displayName, setDisplayName] = useState('');
   const [greetings, setGreetings] = useState<Greeting[]>([]);
+  const [leader, setLeader] = useState<LeaderboardEntry | null>(null);
 
   // Every write below awaits the network and then calls setState. Nothing
   // checked the screen was still mounted, so navigating away mid-write —
@@ -192,6 +194,31 @@ export default function ClubsScreen() {
       cancelled = true;
     };
   }, [userId]);
+
+  // Mirrors `scopeClubId`'s own derivation (computed further down, past this
+  // component's early returns for loading/no-session/no-clubs) directly off
+  // `clubs` and `selected`: every hook must run on every render, including
+  // the ones that bail out early below, so this cannot wait for the `list`
+  // and `scopeClubId` locals those returns sit in front of.
+  useEffect(() => {
+    const activeClubs = clubs ?? [];
+    const clubId =
+      activeClubs.find((club) => club.id === selected)?.id ??
+      (activeClubs.length === 1 ? activeClubs[0].id : null);
+    if (!clubId) {
+      setLeader(null);
+      return;
+    }
+    setLeader(null);
+    let cancelled = false;
+    fetchClubLeaderboard(clubId).then((result) => {
+      if (cancelled) return;
+      setLeader(result && result.length > 0 ? result[0] : null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [clubs, selected]);
 
   // One read per club. Chatty by design for now — collapsing these into a
   // single RPC is deferred item 8 in the spec, and wants the screen's shape
@@ -554,6 +581,24 @@ export default function ClubsScreen() {
               : undefined
           }
         />
+      ) : null}
+
+      {scopeClubId && leader ? (
+        <Pressable
+          onPress={() => router.push(`/clubs/${scopeClubId}/leaderboard`)}
+          accessibilityRole="button"
+          accessibilityLabel={`Open ${
+            leader.display_name.trim().length > 0 ? leader.display_name : 'Member'
+          }'s club leaderboard`}
+          style={styles.leaderRow}
+        >
+          <Text style={styles.leaderText}>
+            Leader:{' '}
+            {leader.display_name.trim().length > 0
+              ? leader.display_name
+              : 'Member'}
+          </Text>
+        </Pressable>
       ) : null}
 
       {/*
@@ -981,6 +1026,15 @@ const styles = StyleSheet.create({
     fontFamily: type.heading,
     fontSize: type.size.h2,
     color: colors.text,
+  },
+  leaderRow: {
+    alignSelf: 'center',
+    marginTop: space[1],
+  },
+  leaderText: {
+    fontFamily: type.bodySemiBold,
+    fontSize: type.size.helper,
+    color: colors.accentColor,
   },
   // Used only by the `loadFailed` branch. The other two places this screen
   // could show a section tile don't need a row of their own for it: the
