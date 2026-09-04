@@ -7,7 +7,7 @@ import PlusButton from '../../../../components/PlusButton';
 import Screen from '../../../../components/Screen';
 import TabBar from '../../../../components/TabBar';
 import ThreadAvatar from '../../../../components/ThreadAvatar';
-import { ChevronLeftIcon, ChevronRightIcon } from '../../../../components/icons';
+import { ChevronLeftIcon } from '../../../../components/icons';
 import { GENERIC_ERROR } from '../../../../lib/constants';
 import {
   fetchClubPosts,
@@ -217,29 +217,16 @@ export default function ClubBoardScreen() {
             />
 
             {/*
-              Unlike the flat screen's own pill -- inert for a club/game
-              kind there, since neither has a members view to open -- this
-              one is always tappable: the board IS a club's conversation,
-              so there is always somewhere useful to send a tap, the club's
-              own page. (The flat screen's club branch is dead code in
-              practice besides: every club thread redirects to THIS screen
-              before that header ever paints, so there is no drift between
-              an inert pill there and a tappable one here -- they never
-              render the same kind side by side.) Same
-              accessibilityLabel-replaces-children caveat as the flat
-              screen's own pill applies here too.
+              A plain View, not a Pressable -- there is nowhere useful left
+              for a tap here to go (matching app/messages/club/new.tsx's own
+              inert pill, and its docstring's reasoning: no button role, no
+              chevron).
             */}
-            <Pressable
-              onPress={() => router.push(`/clubs/${thread.club_id}`)}
-              accessibilityRole="button"
-              accessibilityLabel={`${title}, view club`}
-              style={styles.namePill}
-            >
+            <View style={styles.namePill}>
               <Text numberOfLines={1} style={styles.namePillText}>
                 {title}
               </Text>
-              <ChevronRightIcon color={colors.text} size={14} />
-            </Pressable>
+            </View>
           </View>
         ) : null}
       </View>

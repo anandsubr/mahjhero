@@ -360,17 +360,15 @@ describe('the club board', () => {
       expect(push).toHaveBeenCalledWith('/messages');
     });
 
-    // Unlike the flat screen's own pill -- deliberately inert for a club
-    // thread, since it has no members view to open -- the board's pill IS
-    // tappable: a member reading the board plausibly wants the club's own
-    // page (its events, its roster), and there is nowhere else on this
-    // screen offering that.
-    it('opens the club from the name pill', async () => {
+    // The pill no longer navigates -- matching app/messages/club/new.tsx's
+    // own inert pill (a control that looks tappable and does nothing is
+    // worse than one that plainly isn't interactive).
+    it('renders the club pill as a plain label, not a button that could navigate away', async () => {
       render(<ClubBoardScreen />);
-      fireEvent.click(
-        await screen.findByLabelText('Cedar Falls Mah Jongg, view club'),
-      );
-      expect(push).toHaveBeenCalledWith('/clubs/c1');
+      await screen.findByText('Cedar Falls Mah Jongg');
+      expect(
+        screen.queryByRole('button', { name: /Cedar Falls Mah Jongg/ }),
+      ).toBeNull();
     });
 
     // A half-built header -- a pill with no name in it -- would tell a
