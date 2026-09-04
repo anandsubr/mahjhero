@@ -1,4 +1,4 @@
-import { Link, Redirect, useLocalSearchParams, useRouter } from 'expo-router';
+import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -310,9 +310,13 @@ export default function ClubDetailScreen() {
               </Text>
             </Card>
           ) : null}
-          <Link href={`/clubs/${id}/venues`} style={styles.linkRow}>
-            <Text style={styles.link}>Venues</Text>
-          </Link>
+          <Button
+            variant="secondary"
+            onPress={() => router.push(`/clubs/${id}/venues`)}
+            accessibilityLabel="Venues"
+          >
+            Venues
+          </Button>
         </>
       ) : null}
 
@@ -367,12 +371,6 @@ const styles = StyleSheet.create({
   inviteUrl: {
     fontFamily: type.bodyRegular,
     fontSize: type.size.helper,
-    color: colors.accentColor,
-  },
-  linkRow: { marginTop: space[6] },
-  link: {
-    fontFamily: type.bodySemiBold,
-    fontSize: type.size.body,
     color: colors.accentColor,
   },
 });
