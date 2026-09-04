@@ -983,7 +983,8 @@ select ok(
 -- migration: the migration calls it once at creation time, and the
 -- thread_lists fixture calls it again as the table owner to exercise it.
 -- Neither caller is a client session, so it stays fully internal, the same
--- as can_post_thread and is_club_organizer_of above.
+-- as is_club_organizer_of above (NOT the same as can_post_thread just
+-- above it, which IS granted to authenticated -- see its own comment).
 select ok(
   not has_function_privilege(
     'authenticated', 'public.backfill_broadcasts_into_threads()', 'EXECUTE'),

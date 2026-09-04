@@ -6,17 +6,20 @@ re-litigating decisions that already cost something.
 
 **Spec:** [2026-08-26-messages-and-friends-design.md](superpowers/specs/2026-08-26-messages-and-friends-design.md) for the
 original four-shape messaging feature; [2026-08-30-club-announcement-boards-design.md](superpowers/specs/2026-08-30-club-announcement-boards-design.md)
-for the board reshape below.
+for the board reshape below; [2026-09-04-message-image-attachments-design.md](superpowers/specs/2026-09-04-message-image-attachments-design.md)
+for image attachments, also below.
 **Branch history:** `feat/messages` (79 commits, stacked on `feat/dashboard-artboard`)
 shipped as [PR #9](https://github.com/anandsubr/mahjhero/pull/9), now **merged**.
-The board reshape is on `feat/club-boards`, cut from `main`.
+The board reshape is on `feat/club-boards`, cut from `main`. Image attachments are
+on `feat/message-image-attachments`, cut from `main`.
 
 ---
 
 ## What exists
 
 Two-way messaging in four shapes, plus a friends list, plus the absorption of the
-app's previous one-way broadcast feature.
+app's previous one-way broadcast feature, plus image attachments (up to 4 per
+message, see the attachments spec above).
 
 **The kind of a thread is derived, never stored:**
 
@@ -63,24 +66,31 @@ cancellation. Deriving costs one join and cannot go stale.
 | `20260830021000_board_posts_are_club_only.sql` | a game thread has no board — one flat thread still |
 | `20260830030000_board_unread.sql` | `my_unread_counts` counts per post, not per thread |
 | `20260830040000_archive_club_chat.sql` | moves a club's pre-board chat into `archived_messages` |
+| `20260905020000_message_attachments.sql` | `message_attachments` table (composite FK into `messages`, decision #4's shape again) |
+| `20260905030000_message_images_bucket.sql` | the private `message-images` Storage bucket, its RLS policies |
+| `20260905040000_post_message_attachments.sql` | `post_message` learns `p_attachments`; empty body allowed when an attachment is present |
+| `20260905050000_message_reads_attachments.sql` | `fetch_thread_messages`/`fetch_post_messages` return each message's attachments |
 
 **Client:**
 
 | file | lines | what |
 |---|---|---|
-| `lib/messages.ts` | 971 | every RPC wrapper plus the pure helpers, board included |
+| `lib/messages.ts` | 1021 | every RPC wrapper plus the pure helpers, board included |
+| `lib/attachments.ts` | 180 | pick/compress/upload an image, batch-resolve signed URLs (`getSignedUrls`) |
 | `lib/friends.ts` | — | the friends boundary |
 | `lib/use-unread.ts` | — | `useUnreadCounts()`, drives both badges |
 | `lib/use-thread-realtime.ts` | 85 | Realtime subscription, lifted into a hook shared by three screens |
 | `app/messages/index.tsx` | 208 | the list |
-| `app/messages/[threadId].tsx` | 473 | the thread — see *Refactor candidates* |
-| `app/messages/new.tsx` | 368 | compose (direct/group) — no Everyone; see decision #7 |
+| `app/messages/[threadId].tsx` | 520 | the thread — see *Refactor candidates* |
+| `app/messages/new.tsx` | 355 | pick people, then Start conversation — composing (text, images, or both) happens on the thread screen it navigates to, through the same Composer every other thread uses; see decision #7 |
 | `app/messages/club/[threadId]/index.tsx` | 200 | the board |
-| `app/messages/club/[threadId]/[postId].tsx` | 259 | a post, its replies, the composer |
+| `app/messages/club/[threadId]/[postId].tsx` | 406 | a post, its replies, the composer |
 | `app/messages/club/new.tsx` | 241 | compose a post, with the organizer-only Announcement toggle |
 | `app/friends.tsx` | 252 | friends |
 | `components/ThreadRow.tsx`, `ThreadAvatar.tsx`, `UnreadBadge.tsx` | — | shared row parts |
 | `components/messages/MessageBubble.tsx`, `Composer.tsx`, `MembersPanel.tsx`, `PostRow.tsx` | — | extracted from the thread screen — see *Refactor candidates* |
+| `components/messages/AttachmentPicker.tsx` | 262 | the compose-side pick/compress/upload flow and thumbnail strip |
+| `components/messages/AttachmentGrid.tsx` | 166 | 1-4 images in a bubble, plus the full-screen viewer; takes a resolved `urls` map as a prop rather than resolving its own — see the *one `getSignedUrls` call per screen load* note below |
 
 **Tests:** pgTAP fixtures in `supabase/tests/database/fixtures/`, the hosted-only
 grant matrix in `portable/grants.test.sql`, vitest beside each module, Playwright
@@ -140,7 +150,12 @@ Each of these looks wrong at a glance and is not. Changing one is fine — doing
    longer exists in the current code — `app/messages/new.tsx`'s Everyone
    target was removed entirely once the club board gave it a strictly
    better replacement — but the history is why the redirect exists at all,
-   not just at that one site.)
+   not just at that one site. `app/messages/new.tsx` has moved even further
+   from a compose screen since: it no longer composes *anything*, Everyone
+   or otherwise — picking people and tapping Start only creates/opens the
+   thread and navigates to it, and the first message, images included, is
+   written on the thread screen this decision is about, through the same
+   Composer every other thread already uses.)
 8. **`deriveSubject` must agree with `post_message`'s SQL character for character** —
    it is shown to an organizer as the subject their email will carry.
 9. **`lib/` never rejects.** Every exported async resolves `null` or `{ error }`.
@@ -237,6 +252,21 @@ image first*. A blindly refreshed baseline bakes in whatever regressed. Also:
 because the tab bar is a flex sibling *outside* the scroller — a screen whose
 scroller lacks `testID="screen-scroll"` gets silently truncated.
 
+**One `getSignedUrls` call per SCREEN LOAD, not per message.** `getSignedUrls`
+(`lib/attachments.ts`) really does batch every path in the one call it is given
+into a single `createSignedUrls` request — but `AttachmentGrid` used to call it
+itself, in a `useEffect` keyed on its own `attachments` prop, and it is mounted
+once *per message* (inside `MessageBubble`). A thread with a dozen
+attachment-carrying messages fired a dozen separate round trips on load, one
+per bubble — the batching function doing exactly what it promised, called from
+the wrong altitude to matter. The fix moved resolution up to the two screens
+that render a message list (`app/messages/[threadId].tsx`, `app/messages/club/
+[threadId]/[postId].tsx`): each gathers every attachment path across its whole
+loaded message list in one effect, makes one `getSignedUrls` call, and hands
+the resolved map down through `MessageBubble` → `AttachmentGrid` as a `urls`
+prop. `AttachmentGrid` no longer imports `lib/attachments` at all. Do not move
+that call back down into a per-message component.
+
 ---
 
 ## Verifying
@@ -282,8 +312,17 @@ carries project-level Realtime settings outside this repo.
 - No baseline pictures the members panel.
 - `'you are not a member of this club'` inherits `BOOKING_REFUSALS`' copy by
   substring. Inert — messaging relays verbatim and never calls `bookingErrorMessage`.
+- **Orphaned Storage objects on a failed post.** An image uploads to
+  `message-images` *before* `post_message` is ever called (the client uploads
+  first, then sends the resulting paths) — so if the upload succeeds but the
+  send fails or is abandoned, the object sits in the bucket unreferenced by
+  any message, with no cleanup path. Accepted rather than solved, the same
+  shape as the create-succeeds-then-post-fails gap just above it — see
+  [2026-09-04-message-image-attachments-design.md](superpowers/specs/2026-09-04-message-image-attachments-design.md) §3/§8. A
+  scheduled sweep of unreferenced Storage objects is a reasonable follow-up
+  if it turns out to matter, not a blocker.
 
-**Out of scope by decision:** blocking, edit/delete, reactions, attachments, typing
+**Out of scope by decision:** blocking, edit/delete, reactions, typing
 indicators, read receipts, named per-club groups, search, push. And, named when the
 board itself was designed:
 - **Pinning an announcement.** Considered and rejected — with no unpin affordance,
@@ -302,9 +341,9 @@ board itself was designed:
 
 ## Refactor candidates — an honest read
 
-**`app/messages/[threadId].tsx` was 1094 lines and is now 473** — the split this
-section used to propose actually happened, done for the board and post screens
-rather than in place. What came out of it:
+**`app/messages/[threadId].tsx` was 1094 lines and is now 473** (520 after
+image attachments) — the split this section used to propose actually happened,
+done for the board and post screens rather than in place. What came out of it:
 
 - `components/messages/MessageBubble.tsx` — one message, in its four treatments
   (yours, somebody else's, an announcement, any of those carrying a quote stub).
@@ -324,10 +363,11 @@ the board renders `PostRow` and nothing else from this list; the post screen reu
 `MessageBubble` and `Composer` exactly as the flat thread screen does, subscribing
 on the same hook.
 
-**`lib/messages.ts` is now 971 lines**, up from 798 — the board's RPC wrappers and
-its own pure helpers (`postTitle`, `replyCountLabel`, …) landed here rather than in
-a new module, the same reasoning that kept the original ~16 helpers beside every
-RPC wrapper. Still a legitimate split candidate for the same reason it was before:
+**`lib/messages.ts` is now 971 lines** (1021 after image attachments), up from
+798 — the board's RPC wrappers and its own pure helpers (`postTitle`,
+`replyCountLabel`, …) landed here rather than in a new module, the same
+reasoning that kept the original ~16 helpers beside every RPC wrapper. Still a
+legitimate split candidate for the same reason it was before:
 the pure formatting and ordering helpers are separable from the data boundary, and
 are the parts with the densest tests.
 
