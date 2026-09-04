@@ -30,6 +30,7 @@ import { colors, space, type } from '../../../lib/theme';
 export default function LeaderboardScreen() {
   const { id: clubId } = useLocalSearchParams<{ id: string }>();
   const { session, loading } = useSession();
+  const userId = session?.user.id;
   const router = useRouter();
 
   const [club, setClub] = useState<Club | null>(null);
@@ -40,7 +41,7 @@ export default function LeaderboardScreen() {
   const [entriesFailed, setEntriesFailed] = useState(false);
 
   useEffect(() => {
-    if (!session || !clubId) return;
+    if (!userId || !clubId) return;
     let cancelled = false;
     fetchClub(clubId).then((c) => {
       if (cancelled) return;
@@ -56,7 +57,7 @@ export default function LeaderboardScreen() {
     return () => {
       cancelled = true;
     };
-  }, [session, clubId]);
+  }, [userId, clubId]);
 
   if (loading) {
     return (

@@ -33,9 +33,27 @@ policies apply exactly as they already do for any other read — a non-member
 calling this function gets an empty result, not an error, the same way a
 non-member querying `table_rounds` directly today would.
 
+> **2026-09-04 post-implementation correction:** the RLS-only premise above
+> was already wrong when this was written. `profiles_select_self_or_comember`
+> had been dropped by an earlier, unrelated migration,
+> `20260822180000_club_roster_narrow_profiles.sql`, which narrowed
+> `public.profiles` SELECT to self-only — this spec's author did not catch
+> that before drafting it. Task 1's implementation review caught the gap
+> before anything shipped. The function actually shipped as `security
+> definer` with an explicit `is_club_member(target_club)` guard in its body
+> (RLS cannot protect a `security definer` function), matching the existing
+> `public.club_roster` pattern. See the "as actually shipped" SQL below and
+> `supabase/migrations/20260904000000_club_leaderboard.sql` for the real,
+> current version. The "Background" paragraphs above are left as originally
+> written, uncorrected, so the mistake stays visible rather than being
+> edited away.
+
 ## Scope
 
 ### 1. `club_leaderboard` — a new read-only Postgres function
+
+**As originally designed** (never applied — see the 2026-09-04 correction
+above and at the end of this section):
 
 ```sql
 create function public.club_leaderboard(target_club uuid)
@@ -69,6 +87,48 @@ brainstorming). No `security definer`, no explicit membership check, no
 `revoke`/re-`grant` dance — this is a brand-new function, not a
 re-signatured existing one, so it needs none of the drop-and-recreate
 ceremony the fee-mutation functions did.
+
+**As actually shipped** (`supabase/migrations/20260904000000_club_leaderboard.sql`):
+
+```sql
+create function public.club_leaderboard(target_club uuid)
+returns table (
+  profile_id   uuid,
+  display_name text,
+  total_points bigint,
+  rounds_won   bigint
+)
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select
+    tr.winner_profile_id,
+    p.display_name,
+    sum(tr.points)::bigint,
+    count(*)::bigint
+  from public.table_rounds tr
+  join public.profiles p on p.id = tr.winner_profile_id
+  where tr.club_id = target_club
+    and public.is_club_member(target_club)
+  group by tr.winner_profile_id, p.display_name
+  order by sum(tr.points) desc, count(*) desc, tr.winner_profile_id;
+$$;
+
+revoke execute on function public.club_leaderboard(uuid) from public;
+revoke execute on function public.club_leaderboard(uuid) from anon;
+grant execute on function public.club_leaderboard(uuid) to authenticated;
+```
+
+`security definer` here, unlike the original design, because `profiles` is
+self-only (see the correction above) — RLS does not protect a `security
+definer` function, so the explicit `and public.is_club_member(target_club)`
+predicate in the `where` clause is the tenant boundary, matching
+`public.club_roster`'s existing pattern. The final `order by` also adds
+`tr.winner_profile_id` as a deterministic tiebreak, so two members tied on
+both points and rounds won cannot silently swap order between page loads —
+not part of the original design, added on final review.
 
 ### 2. `lib/leaderboard.ts` — client wrapper
 

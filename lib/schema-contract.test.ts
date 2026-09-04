@@ -103,6 +103,7 @@ import {
 import type { ThreadDetail, ThreadMessage } from './messages';
 import { fetchTableRounds } from './rounds';
 import type { TableRound } from './rounds';
+import type { LeaderboardEntry } from './leaderboard';
 
 const SKILL_LEVELS = ['beginner', 'intermediate', 'advanced'];
 const NOTIFY_CHANNELS = ['push', 'email', 'both'];
@@ -2315,6 +2316,33 @@ describe.runIf(reachable || required)('table_rounds contract', () => {
         recorded_by: userId,
       }),
     ]);
+  });
+
+  it('club_leaderboard returns a row the client can read back as LeaderboardEntry', async () => {
+    const { error: recordError } = await supabase.rpc('record_round', {
+      target_table: tableId,
+      winner_profile: userId,
+      target_points: 25,
+    });
+    expect(recordError, `record_round failed: ${recordError?.message}`).toBeNull();
+
+    const { data, error } = await supabase.rpc('club_leaderboard', {
+      target_club: clubId,
+    });
+    expect(error, `club_leaderboard failed: ${error?.message}`).toBeNull();
+
+    // Cast to the client's own type -- a column club_leaderboard stops
+    // returning, or a type that drifts from what the RPC actually sends back
+    // (e.g. total_points arriving as a numeric string rather than a number),
+    // would type-check here regardless and only be caught by the assertions
+    // below, at runtime.
+    const entries = data as LeaderboardEntry[];
+    const entry = entries.find((e) => e.profile_id === userId);
+    expect(entry).toBeTruthy();
+    expect(typeof entry!.display_name).toBe('string');
+    expect(typeof entry!.total_points).toBe('number');
+    expect(typeof entry!.rounds_won).toBe('number');
+    expect(entry!.rounds_won).toBeGreaterThanOrEqual(1);
   });
 });
 

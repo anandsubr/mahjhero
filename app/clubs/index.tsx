@@ -209,6 +209,7 @@ export default function ClubsScreen() {
       setLeader(null);
       return;
     }
+    setLeader(null);
     let cancelled = false;
     fetchClubLeaderboard(clubId).then((result) => {
       if (cancelled) return;
@@ -586,6 +587,9 @@ export default function ClubsScreen() {
         <Pressable
           onPress={() => router.push(`/clubs/${scopeClubId}/leaderboard`)}
           accessibilityRole="button"
+          accessibilityLabel={`Open ${
+            leader.display_name.trim().length > 0 ? leader.display_name : 'Member'
+          }'s club leaderboard`}
           style={styles.leaderRow}
         >
           <Text style={styles.leaderText}>

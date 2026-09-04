@@ -11,6 +11,10 @@
  *
  * The return type is the exposure surface. Adding a column here is the
  * deliberate act of publishing it to every co-member.
+ *
+ * Deliberately does NOT filter on club_members.status = 'active' the way
+ * club_roster does: a departed member's historical rounds still count
+ * toward an all-time leaderboard. Intentional, not an oversight.
  */
 create function public.club_leaderboard(target_club uuid)
 returns table (
@@ -34,7 +38,7 @@ as $$
   where tr.club_id = target_club
     and public.is_club_member(target_club)
   group by tr.winner_profile_id, p.display_name
-  order by sum(tr.points) desc, count(*) desc;
+  order by sum(tr.points) desc, count(*) desc, tr.winner_profile_id;
 $$;
 
 -- PostgreSQL grants EXECUTE on a new function to PUBLIC, and Supabase's

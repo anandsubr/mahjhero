@@ -593,6 +593,22 @@ describe('dashboard artboard', () => {
     expect(screen.queryByText(/^Leader:/)).toBeNull();
   });
 
+  // The all-clubs scope: several clubs, none picked, so the re-derived
+  // `clubId` in the Leader effect is null. A non-empty leaderboard is stubbed
+  // for the club that WOULD resolve if the effect ignored scope, so this only
+  // passes if the line is hidden because of scope -- not because the
+  // leaderboard happened to be empty.
+  it('shows no Leader line in the all-clubs scope, even with a non-empty leaderboard', async () => {
+    fetchMyClubs.mockResolvedValue([CLUB, { ...CLUB, id: 'club-2', name: 'Harbour' }]);
+    fetchClubLeaderboard.mockResolvedValue([
+      { profile_id: 'p1', display_name: 'Ada', total_points: 120, rounds_won: 4 },
+    ]);
+    render(<ClubsScreen />);
+
+    await screen.findByRole('button', { name: /Riverside/ }); // a chip has rendered
+    expect(screen.queryByText(/^Leader:/)).toBeNull();
+  });
+
   // The chevron is app/clubs/index.tsx's own wiring, not something
   // dashboard-parts.test.tsx's DashboardHeader unit tests can see — this is
   // what proves the screen actually passes onPressBack through, and that

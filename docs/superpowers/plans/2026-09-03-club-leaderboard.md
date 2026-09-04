@@ -5,6 +5,8 @@
 **Goal:** Add an all-time, points-based club leaderboard aggregated from `table_rounds`, reachable from the Club Dashboard (a tappable "Leader: <name>" line) and the Club Edit page (a "Leaderboard" button), both opening the same new ranked-list screen.
 
 **Architecture:** Server-side aggregation via one new, plain (non-`security definer`) Postgres function that relies entirely on existing RLS (`table_rounds_select_member`, `profiles_select_self_or_comember`) rather than re-implementing a membership check. The new screen (`app/clubs/[id]/leaderboard.tsx`) is built directly on `app/clubs/[id]/venues.tsx`'s existing template — same guard order, same back-button treatment, same flat `DashboardHeader` shape — rather than inventing a new screen shape.
+>
+> **Post-implementation correction:** this "plain, RLS-only" design was never shippable — `profiles_select_self_or_comember` had already been dropped by an earlier migration before this plan was even written. The function shipped `security definer` with an explicit `is_club_member` guard instead, mirroring `public.club_roster`. See "Post-Implementation Correction" at the end of this document.
 
 **Tech Stack:** Expo Router (file-based routing), React Native + react-native-web, Supabase (Postgres + PostgREST + RLS), Vitest + `@testing-library/react` for tests.
 
@@ -31,6 +33,8 @@ This is a brand-new function (not a re-signatured existing one), so there is no 
 - [ ] **Step 1: Write the migration**
 
 Create `supabase/migrations/20260904000000_club_leaderboard.sql`:
+
+> **Post-implementation note:** the code block below is the ORIGINAL, as-planned SQL, which relied on a `profiles_select_self_or_comember` RLS policy that — unknown to this plan at the time it was written — had already been dropped by an earlier, unrelated migration. It was never applied. See "Post-Implementation Correction" at the end of this document for what actually shipped, and `supabase/migrations/20260904000000_club_leaderboard.sql` for the real, current SQL.
 
 ```sql
 /*
@@ -68,6 +72,61 @@ as $$
   order by sum(tr.points) desc, count(*) desc;
 $$;
 
+grant execute on function public.club_leaderboard(uuid) to authenticated;
+```
+
+**As actually shipped** (see `supabase/migrations/20260904000000_club_leaderboard.sql`):
+
+```sql
+/*
+ * The leaderboard: all-time member standings, ranked by total points then
+ * rounds won.
+ *
+ * security definer because `profiles` is self-only below — the caller cannot
+ * read a co-member's row directly, by design. RLS therefore does NOT protect
+ * this function, so it re-asks the membership question itself: the
+ * `is_club_member(target_club)` predicate is the tenant boundary, not
+ * decoration. Without it any signed-in user holding a club uuid could read
+ * that club's leaderboard.
+ *
+ * The return type is the exposure surface. Adding a column here is the
+ * deliberate act of publishing it to every co-member.
+ *
+ * Deliberately does NOT filter on club_members.status = 'active' the way
+ * club_roster does: a departed member's historical rounds still count
+ * toward an all-time leaderboard. Intentional, not an oversight.
+ */
+create function public.club_leaderboard(target_club uuid)
+returns table (
+  profile_id   uuid,
+  display_name text,
+  total_points bigint,
+  rounds_won   bigint
+)
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select
+    tr.winner_profile_id,
+    p.display_name,
+    sum(tr.points)::bigint,
+    count(*)::bigint
+  from public.table_rounds tr
+  join public.profiles p on p.id = tr.winner_profile_id
+  where tr.club_id = target_club
+    and public.is_club_member(target_club)
+  group by tr.winner_profile_id, p.display_name
+  order by sum(tr.points) desc, count(*) desc, tr.winner_profile_id;
+$$;
+
+-- PostgreSQL grants EXECUTE on a new function to PUBLIC, and Supabase's
+-- hosted bootstrap grants it directly to anon as well; `revoke from public`
+-- alone does not touch a direct grant. Both are revoked so the ACL says what
+-- it means. See 20260822045809 for where that was learned.
+revoke execute on function public.club_leaderboard(uuid) from public;
+revoke execute on function public.club_leaderboard(uuid) from anon;
 grant execute on function public.club_leaderboard(uuid) to authenticated;
 ```
 
@@ -846,3 +905,13 @@ git commit -m "feat(leaderboard): add a Leaderboard button to the club edit page
 - **Type consistency:** `LeaderboardEntry` is defined once in `lib/leaderboard.ts` (Task 2) and imported by both later consumers (Tasks 3, 4) rather than redeclared. Field names (`profile_id`, `display_name`, `total_points`, `rounds_won`) match the RPC's own `returns table` column names exactly (snake_case throughout, since this data never crosses into camelCase — unlike the fee feature, there's no client-side "leaderboardEntry.totalPoints" form anywhere in this plan).
 - **Placeholder scan:** no TBD/TODO markers; every step shows complete code.
 - **The one thing worth double-checking at implementation time:** Task 1's function is genuinely new (not a re-signature), so unlike several tasks in the prior fee-feature plan, there is no "read the latest prior migration" step needed here — confirmed by grepping the migrations directory for `club_leaderboard` before writing this plan (no matches), so there is no existing version to accidentally regress.
+
+## Post-Implementation Correction
+
+This plan's Task 1 (and the accompanying spec) assumed a plain, non-`security definer` `club_leaderboard` function could rely entirely on existing RLS — specifically a `profiles_select_self_or_comember` policy on `public.profiles` that this plan cites as already in place (`20260822033527_create_clubs.sql`).
+
+That assumption was wrong by the time this plan was written: `profiles_select_self_or_comember` had already been dropped by an earlier, unrelated migration, `20260822180000_club_roster_narrow_profiles.sql`, which narrowed `profiles` SELECT access to self-only. This plan's author did not catch that before drafting Task 1's SQL.
+
+Task 1's own review caught the gap during implementation, before anything resting on the old assumption shipped. The function that actually shipped in `supabase/migrations/20260904000000_club_leaderboard.sql` is `security definer`, carrying an explicit `is_club_member(target_club)` check in its body as the tenant boundary (RLS does not protect a `security definer` function), matching the same pattern `public.club_roster` already uses for the same reason. The code blocks above in Task 1 have been updated to show both the original (never-applied) SQL and the actual shipped SQL side by side, rather than being silently rewritten, so this mistake and its correction both stay visible.
+
+No other part of this plan (Tasks 2 through 5 — `lib/leaderboard.ts`, the screen, the two entry points) depended on the RLS-only assumption; those shipped as planned.
