@@ -2,6 +2,9 @@
 // — the same eq-then-eq-then-terminal shape other lib/*.test.ts files already
 // model for a plain filtered select with no .single()/.maybeSingle().
 const orderAfterEq = vi.fn();
+// deleteInvite's write path: `.from('club_invites').delete().eq(...).select(...)`
+// — the same shape lib/greetings.test.ts already models for deleteGreeting.
+const deleteResult = vi.fn();
 vi.mock('./supabase', () => ({
   supabase: {
     from: vi.fn(() => ({
@@ -10,20 +13,28 @@ vi.mock('./supabase', () => ({
           eq: vi.fn(() => ({ order: orderAfterEq })),
         })),
       })),
+      delete: vi.fn(() => ({ eq: vi.fn(() => ({ select: deleteResult })) })),
     })),
   },
 }));
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { GENERIC_ERROR } from './constants';
 import {
   MAX_ROSTER_ROWS,
   canAnnounce,
   canInvite,
+  deleteInvite,
   fetchMyRoles,
   importRoster,
   parseRoster,
   slugify,
 } from './clubs';
+
+beforeEach(() => {
+  deleteResult.mockReset();
+  deleteResult.mockRejectedValue(new Error('network down'));
+});
 
 describe('slugify', () => {
   it('lowercases and hyphenates', () => {
@@ -224,5 +235,30 @@ describe('importRoster', () => {
     const result = await importRoster('club-1', rows);
     expect(result.created).toBe(0);
     expect(result.error).toMatch(new RegExp(`${MAX_ROSTER_ROWS}`));
+  });
+});
+
+describe('deleteInvite', () => {
+  it('returns no error on success', async () => {
+    deleteResult.mockResolvedValue({ data: [{ id: 'invite-1' }], error: null });
+    expect(await deleteInvite('invite-1')).toEqual({ error: null });
+  });
+
+  it('returns an error when the delete itself fails', async () => {
+    deleteResult.mockResolvedValue({ data: null, error: { message: 'denied' } });
+    expect(await deleteInvite('invite-1')).toEqual({ error: GENERIC_ERROR });
+  });
+
+  // RLS denies a delete it disallows by matching zero rows, not by
+  // erroring -- club_invites_delete_organizer would otherwise report
+  // success for an invite the caller was never allowed to touch.
+  it('treats a zero-row result as failure, not silent success', async () => {
+    deleteResult.mockResolvedValue({ data: [], error: null });
+    expect(await deleteInvite('invite-1')).toEqual({ error: GENERIC_ERROR });
+  });
+
+  it('returns an error rather than throwing on a network failure', async () => {
+    deleteResult.mockRejectedValue(new Error('network down'));
+    expect(await deleteInvite('invite-1')).toEqual({ error: GENERIC_ERROR });
   });
 });

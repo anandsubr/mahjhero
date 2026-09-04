@@ -71,6 +71,7 @@ const fetchMyClubs = vi.fn();
 const fetchClub = vi.fn();
 const fetchRoster = vi.fn();
 const fetchPendingInvites = vi.fn();
+const deleteInvite = vi.fn();
 const fetchMyRoles = vi.fn();
 const importRoster = vi.fn();
 const fetchUpcomingEvents = vi.fn();
@@ -95,6 +96,7 @@ vi.mock('../../lib/clubs', async (importOriginal) => {
     fetchClub: (...args: unknown[]) => fetchClub(...args),
     fetchRoster: (...args: unknown[]) => fetchRoster(...args),
     fetchPendingInvites: (...args: unknown[]) => fetchPendingInvites(...args),
+    deleteInvite: (...args: unknown[]) => deleteInvite(...args),
     fetchMyRoles: (...args: unknown[]) => fetchMyRoles(...args),
     importRoster: (...args: unknown[]) => importRoster(...args),
   };
@@ -290,6 +292,7 @@ beforeEach(() => {
   fetchClub.mockResolvedValue(CLUB);
   fetchRoster.mockResolvedValue([]);
   fetchPendingInvites.mockResolvedValue([]);
+  deleteInvite.mockResolvedValue({ error: null });
   fetchUpcomingEvents.mockResolvedValue([]);
   fetchMyRoles.mockResolvedValue([]);
   importRoster.mockResolvedValue({ created: 2, error: null });
@@ -1487,6 +1490,58 @@ describe('club detail screen', () => {
     // No display_name on the invite, so the email is the only thing the club
     // knows about this person — showing it beats showing nothing.
     expect(screen.getByText('sam@example.com')).toBeTruthy();
+  });
+
+  // Once created, the link had nowhere left to go: not shown again, no way
+  // to resend it, no way to revoke it short of the 30-day expiry.
+  it('copies a pending invite\'s link to the clipboard', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    fetchRoster.mockResolvedValue([
+      { profile_id: 'test-user', role: 'host', display_name: 'Ada', skill_level: null },
+    ]);
+    fetchPendingInvites.mockResolvedValue([
+      { id: 'i1', email: 'jane@example.com', display_name: 'Jane Doe', skill_level: null, token: 'tok-1' },
+    ]);
+    render(<ClubDetailScreen />);
+
+    fireEvent.click(await screen.findByLabelText('Copy the invite link for Jane Doe'));
+
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith(expect.stringContaining('/join/tok-1')),
+    );
+    expect(await screen.findByText('Copied')).toBeTruthy();
+  });
+
+  it('deletes a pending invite', async () => {
+    fetchRoster.mockResolvedValue([
+      { profile_id: 'test-user', role: 'host', display_name: 'Ada', skill_level: null },
+    ]);
+    fetchPendingInvites.mockResolvedValue([
+      { id: 'i1', email: 'jane@example.com', display_name: 'Jane Doe', skill_level: null, token: 'tok-1' },
+    ]);
+    render(<ClubDetailScreen />);
+
+    fireEvent.click(await screen.findByLabelText('Delete the invite for Jane Doe'));
+
+    expect(deleteInvite).toHaveBeenCalledWith('i1');
+    await waitFor(() => expect(screen.queryByText('Jane Doe')).toBeNull());
+  });
+
+  it('keeps a pending invite on screen and shows an error when the delete fails', async () => {
+    deleteInvite.mockResolvedValue({ error: 'Something went wrong.' });
+    fetchRoster.mockResolvedValue([
+      { profile_id: 'test-user', role: 'host', display_name: 'Ada', skill_level: null },
+    ]);
+    fetchPendingInvites.mockResolvedValue([
+      { id: 'i1', email: 'jane@example.com', display_name: 'Jane Doe', skill_level: null, token: 'tok-1' },
+    ]);
+    render(<ClubDetailScreen />);
+
+    fireEvent.click(await screen.findByLabelText('Delete the invite for Jane Doe'));
+
+    expect(await screen.findByText('Something went wrong.')).toBeTruthy();
+    expect(screen.getByText('Jane Doe')).toBeTruthy();
   });
 
   it('confirms an import instead of ignoring the imported parameter', async () => {

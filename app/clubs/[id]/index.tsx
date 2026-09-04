@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Platform,
+  Pressable,
   StyleSheet,
   Text,
   View,
@@ -16,9 +17,11 @@ import SkillLevelPips from '../../../components/SkillLevelPips';
 import Tag from '../../../components/Tag';
 import TabBar from '../../../components/TabBar';
 import TextField from '../../../components/TextField';
+import { CopyIcon, TrashIcon } from '../../../components/icons';
 import {
   canInvite,
   createInvite,
+  deleteInvite,
   fetchClub,
   fetchPendingInvites,
   fetchRoster,
@@ -46,6 +49,14 @@ export default function ClubDetailScreen() {
   const [loadFailed, setLoadFailed] = useState(false);
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Which pending invite's link was just copied -- shown as inline "Copied"
+  // feedback on that one row for a couple seconds, not a page-wide notice,
+  // since a host reviewing several invites needs to tell which link it was.
+  const [copiedInviteId, setCopiedInviteId] = useState<string | null>(null);
+  const copiedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Disables just the one row's icons mid-delete, not the whole screen --
+  // deleting one invite has no bearing on any other row.
+  const [deletingInviteId, setDeletingInviteId] = useState<string | null>(null);
   // Written synchronously and cleared on every exit path, the same shape
   // app/clubs/index.tsx uses for runBookingAction: `busy` state alone is
   // read from the render closure, so a guard written as `if (busy) return`
@@ -149,6 +160,40 @@ export default function ClubDetailScreen() {
       return;
     }
     setInviteUrl(`${window.location.origin}/join/${token}`);
+  }
+
+  // Same web-only reasoning as onInvite above: `navigator.clipboard` is a
+  // browser API with no React Native equivalent installed in this app, and
+  // `window.location.origin` still throws off web regardless.
+  async function onCopyInvite(invite: ClubInvite) {
+    setError(null);
+    if (Platform.OS !== 'web') {
+      setError('Invite links can only be copied from the web app for now.');
+      return;
+    }
+    const url = `${window.location.origin}/join/${invite.token}`;
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch (cause) {
+      console.error('copy invite link failed', cause);
+      setError(GENERIC_ERROR);
+      return;
+    }
+    if (copiedTimeoutRef.current) clearTimeout(copiedTimeoutRef.current);
+    setCopiedInviteId(invite.id);
+    copiedTimeoutRef.current = setTimeout(() => setCopiedInviteId(null), 2000);
+  }
+
+  async function onDeleteInvite(invite: ClubInvite) {
+    setError(null);
+    setDeletingInviteId(invite.id);
+    const { error: deleteError } = await deleteInvite(invite.id);
+    setDeletingInviteId(null);
+    if (deleteError) {
+      setError(deleteError);
+      return;
+    }
+    setInvites((prev) => prev.filter((i) => i.id !== invite.id));
   }
 
   async function onMessageMembers() {
@@ -303,25 +348,59 @@ export default function ClubDetailScreen() {
           <Text style={styles.sectionTitle}>
             {invites.length} invited
           </Text>
-          {invites.map((invite) => (
-            <Card key={invite.id}>
-              <View style={styles.row}>
-                <Text style={styles.memberName}>
-                  {invite.display_name && invite.display_name.trim().length > 0
-                    ? invite.display_name
-                    : (invite.email ?? 'Invite link')}
+          {invites.map((invite) => {
+            const inviteLabel =
+              invite.display_name && invite.display_name.trim().length > 0
+                ? invite.display_name
+                : (invite.email ?? 'Invite link');
+            const busy = deletingInviteId === invite.id;
+            return (
+              <Card key={invite.id}>
+                <View style={styles.row}>
+                  <Text style={styles.memberName}>{inviteLabel}</Text>
+                  <Tag>Invited</Tag>
+                </View>
+                <Text style={styles.help}>
+                  {invite.display_name &&
+                  invite.display_name.trim().length > 0 &&
+                  invite.email
+                    ? invite.email
+                    : 'Has not joined yet'}
                 </Text>
-                <Tag>Invited</Tag>
-              </View>
-              <Text style={styles.help}>
-                {invite.display_name &&
-                invite.display_name.trim().length > 0 &&
-                invite.email
-                  ? invite.email
-                  : 'Has not joined yet'}
-              </Text>
-            </Card>
-          ))}
+                {/*
+                  Once created, the link itself had nowhere left to go: not
+                  shown again, no way to resend it, no way to revoke it
+                  short of the 30-day expiry. These two actions close that
+                  gap for every pending invite, not just the one just
+                  created (inviteUrl's own card below stays for the
+                  freshly-made link, which is copyable there too).
+                */}
+                <View style={styles.inviteActions}>
+                  {copiedInviteId === invite.id ? (
+                    <Text style={styles.help}>Copied</Text>
+                  ) : null}
+                  <Pressable
+                    onPress={() => onCopyInvite(invite)}
+                    disabled={busy}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Copy the invite link for ${inviteLabel}`}
+                    hitSlop={8}
+                  >
+                    <CopyIcon size={18} color={colors.accentColor} />
+                  </Pressable>
+                  <Pressable
+                    onPress={() => onDeleteInvite(invite)}
+                    disabled={busy}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Delete the invite for ${inviteLabel}`}
+                    hitSlop={8}
+                  >
+                    <TrashIcon size={18} color={busy ? colors.textMuted : colors.text} />
+                  </Pressable>
+                </View>
+              </Card>
+            );
+          })}
         </>
       ) : null}
 
@@ -379,6 +458,13 @@ const styles = StyleSheet.create({
     fontSize: type.size.body,
     color: colors.text,
     marginTop: space[4],
+  },
+  inviteActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: space[3],
+    marginTop: space[2],
   },
   row: {
     flexDirection: 'row',
