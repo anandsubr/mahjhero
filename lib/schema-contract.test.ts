@@ -2282,7 +2282,7 @@ describe.runIf(reachable || required)('table_rounds contract', () => {
     const { data, error } = await supabase.rpc('record_round', {
       target_table: tableId,
       winner_profile: userId,
-      target_points: 8,
+      target_points: 25,
     });
     expect(error, `record_round failed: ${error?.message}`).toBeNull();
 
@@ -2295,7 +2295,7 @@ describe.runIf(reachable || required)('table_rounds contract', () => {
     expect(round).toMatchObject({
       event_table_id: tableId,
       winner_profile_id: userId,
-      points: 8,
+      points: 25,
       recorded_by: userId,
     });
     expect(typeof round.id).toBe('string');
@@ -2312,7 +2312,7 @@ describe.runIf(reachable || required)('table_rounds contract', () => {
         id: round.id,
         event_table_id: tableId,
         winner_profile_id: userId,
-        points: 8,
+        points: 25,
         recorded_by: userId,
       }),
     ]);

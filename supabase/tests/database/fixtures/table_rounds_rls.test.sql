@@ -49,7 +49,7 @@ values
   ('a3000000-0000-0000-0000-000000000001',
    'a2000000-0000-0000-0000-000000000001',
    'f0000000-0000-0000-0000-000000000001',
-   'e0000000-0000-0000-0000-000000000002', 8,
+   'e0000000-0000-0000-0000-000000000002', 25,
    'e0000000-0000-0000-0000-000000000001');
 
 -- A plain member of the same club reads it.
@@ -64,10 +64,10 @@ select is(
 );
 
 select is(
-  (select total_points from public.club_leaderboard(
+  (select total_points::int from public.club_leaderboard(
      'f0000000-0000-0000-0000-000000000001')
    where profile_id = 'e0000000-0000-0000-0000-000000000002'),
-  8,
+  25,
   'club_leaderboard totals a member''s own club standings'
 );
 
