@@ -248,7 +248,9 @@ describe('Your games', () => {
     fetchMyUpcomingBookings.mockResolvedValue([booking()]);
     render(<ClubsScreen />);
     expect(await screen.findByText("St Mary's Hall")).toBeTruthy();
-    expect(screen.getByText('Table 2')).toBeTruthy();
+    // The table now folds into the "Seated" pill itself (one message, one
+    // pill), not a standalone "Table 2" element of its own.
+    expect(screen.getByText('Seated · Table 2')).toBeTruthy();
     // Task 8's row puts the formatted time and the venue on one meta line
     // separated by a middle dot, so the venue is no longer an element of its
     // own and an exact-string query cannot find it.
