@@ -808,9 +808,12 @@ function GameRow({
             // tag, then as a second line under it (both tried and
             // confirmed misaligned live) -- one message, one pill: the
             // table is part of what "Seated" means, not a footnote next
-            // to it.
+            // to it. A bare "Seated" tag with no table assigned yet used
+            // to leave the seat-status line below to say "Not seated yet"
+            // -- a contradiction on the same card (confirmed live) -- so
+            // "no table yet" is folded into this same pill too.
             <Tag variant="accent2">
-              {booking.table_label ? `Seated · ${booking.table_label}` : 'Seated'}
+              {`Seated · ${booking.table_label ?? 'No table'}`}
             </Tag>
           ) : null}
         </View>
@@ -908,17 +911,18 @@ function BookingSeatControls({
 
   // An offer being held supersedes the plain seat-status line below — a
   // member being asked to accept or decline a seat is not, in that
-  // moment, merely "waiting" for one. A seated member's table now renders
-  // next to the row's own "Seated" tag instead (GameRow) — nothing left
-  // for this line to say once a table is assigned, so it renders nothing
-  // rather than repeating the same label a second time.
-  const seatStatus = hasOffer || booking.table_label
+  // moment, merely "waiting" for one. A confirmed booking's whole story --
+  // seated, and which table or "No table" yet -- now lives in the row's
+  // own "Seated" tag instead (GameRow), so this line has nothing left to
+  // say for a confirmed booking and renders nothing rather than repeating
+  // or (worse) contradicting it: a bare "Seated" tag with no table
+  // assigned once left this line to say "Not seated yet" right next to
+  // it, confirmed live.
+  const seatStatus = hasOffer || booking.status === 'confirmed'
     ? null
-    : booking.status === 'waitlisted'
-      ? booking.waitlist_position !== null
-        ? waitlistLabel(booking.waitlist_position)
-        : 'Waiting for a seat'
-      : 'Not seated yet';
+    : booking.waitlist_position !== null
+      ? waitlistLabel(booking.waitlist_position)
+      : 'Waiting for a seat';
 
   const bookedByOther = booking.booked_by !== youId;
 
