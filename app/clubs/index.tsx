@@ -745,7 +745,18 @@ function GameRow({
             </Button>
           )
         ) : booking.status === 'confirmed' ? (
-          <Tag variant="accent2">Seated</Tag>
+          <View style={styles.seatedColumn}>
+            <Tag variant="accent2">Seated</Tag>
+            {/*
+              Was its own full-width line below the whole card
+              (BookingSeatControls' `seatStatus`) -- moved here, under the
+              tag it belongs to, since there's no reason for a member's own
+              table to sit apart from the status that names it.
+            */}
+            {booking.table_label ? (
+              <Text style={styles.tableLabel}>{booking.table_label}</Text>
+            ) : null}
+          </View>
         ) : null}
       </View>
 
@@ -841,16 +852,17 @@ function BookingSeatControls({
 
   // An offer being held supersedes the plain seat-status line below — a
   // member being asked to accept or decline a seat is not, in that
-  // moment, merely "waiting" for one.
-  const seatStatus = hasOffer
+  // moment, merely "waiting" for one. A seated member's table now renders
+  // next to the row's own "Seated" tag instead (GameRow) — nothing left
+  // for this line to say once a table is assigned, so it renders nothing
+  // rather than repeating the same label a second time.
+  const seatStatus = hasOffer || booking.table_label
     ? null
-    : booking.table_label
-      ? booking.table_label
-      : booking.status === 'waitlisted'
-        ? booking.waitlist_position !== null
-          ? waitlistLabel(booking.waitlist_position)
-          : 'Waiting for a seat'
-        : 'Not seated yet';
+    : booking.status === 'waitlisted'
+      ? booking.waitlist_position !== null
+        ? waitlistLabel(booking.waitlist_position)
+        : 'Waiting for a seat'
+      : 'Not seated yet';
 
   const bookedByOther = booking.booked_by !== youId;
 
@@ -1037,6 +1049,15 @@ const styles = StyleSheet.create({
   },
   gameAction: {
     flexShrink: 0,
+  },
+  seatedColumn: {
+    alignItems: 'flex-end',
+    gap: space[1],
+  },
+  tableLabel: {
+    fontFamily: type.bodyRegular,
+    fontSize: type.size.helper,
+    color: colors.textMuted,
   },
   emptyCard: {
     flexDirection: 'row',

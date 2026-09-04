@@ -1045,6 +1045,19 @@ describe('dashboard artboard', () => {
     expect(screen.getByRole('button', { name: /Join Open game/ })).toBeTruthy();
   });
 
+  // The table used to render twice-removed from the "Seated" tag it
+  // describes, as its own full-width line at the bottom of the card. It
+  // now sits directly under the tag instead, and only there -- not
+  // duplicated by BookingSeatControls' own seat-status line.
+  it('shows the table right under the Seated tag, not as its own line below the card', async () => {
+    fetchMyClubs.mockResolvedValue([CLUB]);
+    fetchMyUpcomingBookings.mockResolvedValue([BOOKING]);
+    render(<ClubsScreen />);
+
+    await screen.findByText('Seated');
+    expect(screen.getAllByText('Table 1')).toHaveLength(1);
+  });
+
   it('shows the dashed empty state when nothing is coming up', async () => {
     fetchMyClubs.mockResolvedValue([CLUB]);
     fetchMyUpcomingBookings.mockResolvedValue([]);
