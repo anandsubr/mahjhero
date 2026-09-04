@@ -103,7 +103,7 @@ describe('guard ordering', () => {
 });
 
 describe('LeaderboardScreen', () => {
-  it('heads the screen with the club as kicker and Leaderboard as the name', async () => {
+  it('shows the club identity header, with Leaderboard as its own heading', async () => {
     render(<LeaderboardScreen />);
     expect(await screen.findByText('Leaderboard')).toBeTruthy();
     expect(screen.getByText('Riverside Mah Jongg')).toBeTruthy();
