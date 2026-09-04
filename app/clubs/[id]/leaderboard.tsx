@@ -123,7 +123,7 @@ export default function LeaderboardScreen() {
               </Text>
               <Text style={styles.points}>{entry.total_points} pts</Text>
             </View>
-            <Text style={styles.help}>
+            <Text style={styles.roundsWon}>
               {entry.rounds_won} {entry.rounds_won === 1 ? 'round' : 'rounds'} won
             </Text>
           </Card>
@@ -165,5 +165,12 @@ const styles = StyleSheet.create({
     fontSize: type.size.helper,
     color: colors.textMuted,
     lineHeight: 24,
+  },
+  roundsWon: {
+    fontFamily: type.bodyRegular,
+    fontSize: type.size.helper,
+    color: colors.textMuted,
+    lineHeight: 24,
+    textAlign: 'right',
   },
 });
