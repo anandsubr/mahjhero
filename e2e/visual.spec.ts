@@ -8,6 +8,7 @@ import {
   seedPopulatedMessagesList,
   seedPopulatedThread,
   seedTableWithRound,
+  seedThreadWithAttachments,
   seedUnreadClubMessage,
   storageKeyFor,
 } from './session';
@@ -518,6 +519,65 @@ test.describe('signed in', () => {
           page.getByText('Hall closed this week', { exact: true }),
         ).toBeVisible();
         await captureScreen(page, vp, `thread-populated-${vp.name}.png`);
+      });
+
+      // Image attachments, pictured for the first time. Every OTHER
+      // `thread-*` baseline in this suite is text-only -- neither
+      // `AttachmentGrid`'s grid cells nor its full-screen viewer
+      // (components/messages/AttachmentGrid.tsx) had ever been screenshotted
+      // in a real browser before this task, only under jsdom in Tasks 7-9's
+      // component tests. `seedThreadWithAttachments` (e2e/session.ts) seeds
+      // a real filler's "theirs" bubble carrying ONE real image and the
+      // viewer's own "mine" bubble carrying the maximum FOUR, each a real
+      // JPEG uploaded to the actual `message-images` Storage bucket and
+      // resolved here through a real signed URL -- not a stubbed row, so a
+      // broken-image regression would show up in the PNG the same way it
+      // would to a person actually using the app.
+      test(`thread with image attachments at ${vp.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        const { threadId } = await seedThreadWithAttachments(
+          seeded.clubId,
+          seeded.eventId,
+          userId,
+          userId.slice(0, 8),
+        );
+        await page.goto(`/messages/${threadId}`);
+        await expect(
+          page.getByText('Here is the corner we set up for Tuesday.'),
+        ).toBeVisible();
+        await expect(
+          page.getByText('Found four venues to compare, what do you all think?'),
+        ).toBeVisible();
+        // One grid cell per image -- proof both messages actually rendered
+        // their attachments, not just their body text, before the
+        // screenshot below is trusted to show the same.
+        await expect(page.getByRole('button', { name: 'View image 1 of 1' })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'View image 4 of 4' })).toBeVisible();
+        await captureScreen(page, vp, `thread-attachments-${vp.name}.png`);
+      });
+
+      // The full-screen viewer, opened on the SECOND of the four-image
+      // message's images (not the first) -- deliberately, so this baseline
+      // also proves the tapped INDEX is what opens, not just that some image
+      // does. Each of the four images is a distinct colour and aspect ratio
+      // (see `ATTACHMENT_FIXTURES`, e2e/session.ts), so a regression that
+      // opened the wrong index would show a visibly different picture here,
+      // not just a byte-identical swap.
+      test(`thread image viewer open at ${vp.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        const { threadId } = await seedThreadWithAttachments(
+          seeded.clubId,
+          seeded.eventId,
+          userId,
+          userId.slice(0, 8),
+        );
+        await page.goto(`/messages/${threadId}`);
+        await expect(page.getByRole('button', { name: 'View image 2 of 4' })).toBeVisible();
+        await page.getByRole('button', { name: 'View image 2 of 4' }).click();
+        await expect(
+          page.getByRole('button', { name: 'Close image viewer' }),
+        ).toBeVisible();
+        await captureScreen(page, vp, `thread-attachments-viewer-${vp.name}.png`);
       });
 
       // The board, pictured for the first time -- and, since Task 13's own

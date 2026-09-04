@@ -1,4 +1,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 
 /**
  * The one place the service_role key is read and the one place the local-only
@@ -1452,6 +1455,190 @@ export async function seedPopulatedThread(
   if (thanksError) {
     throw new Error(
       `seedPopulatedThread: thanks message insert failed: ${JSON.stringify(thanksError)}`,
+    );
+  }
+
+  return { threadId: thread.id };
+}
+
+/** Pixel dimensions of the real JPEGs under e2e/fixtures/attachments/, read
+ * off the files themselves (`sips -g pixelWidth -g pixelHeight`) rather than
+ * guessed -- message_attachments.width/height (20260905020000) are what
+ * AttachmentGrid sizes its cells from, so a mismatch here would size the
+ * cell for a different aspect ratio than the JPEG actually decodes to. */
+const ATTACHMENT_FIXTURES = {
+  'img-red.jpg': { width: 800, height: 600 },
+  'img-teal.jpg': { width: 600, height: 800 },
+  'img-gold.jpg': { width: 500, height: 500 },
+  'img-purple.jpg': { width: 700, height: 500 },
+  'img-green.jpg': { width: 900, height: 600 },
+} as const;
+
+const ATTACHMENT_FIXTURES_DIR = path.join(__dirname, 'fixtures', 'attachments');
+
+/**
+ * Uploads one fixture JPEG to the REAL `message-images` Storage bucket, at
+ * the same `{threadId}/{uuid}.jpg` path convention lib/attachments.ts's own
+ * `uploadAttachment` uses, and returns the row shape
+ * `message_attachments` needs.
+ *
+ * A real object has to exist at this path, not just a database row: the
+ * thread screen resolves every attachment through a real signed-URL call
+ * (`getSignedUrls`, lib/attachments.ts), which the real browser this suite
+ * drives then has to actually load. A `message_attachments` row with no
+ * matching Storage object would render as a broken image in the very
+ * screenshot this baseline exists to check -- so seeding a "shaped like an
+ * attachment" row without a real upload behind it would still leave the
+ * feature this task exists to picture unpictured.
+ */
+async function uploadAttachmentFixture(
+  admin: SupabaseClient,
+  threadId: string,
+  fixture: keyof typeof ATTACHMENT_FIXTURES,
+): Promise<{ storage_path: string; width: number; height: number }> {
+  const { width, height } = ATTACHMENT_FIXTURES[fixture];
+  const bytes = readFileSync(path.join(ATTACHMENT_FIXTURES_DIR, fixture));
+  const storage_path = `${threadId}/${randomUUID()}.jpg`;
+  const { error } = await admin.storage
+    .from('message-images')
+    .upload(storage_path, bytes, { contentType: 'image/jpeg' });
+  if (error) {
+    throw new Error(
+      `uploadAttachmentFixture: upload of ${fixture} failed: ${JSON.stringify(error)}`,
+    );
+  }
+  return { storage_path, width, height };
+}
+
+/**
+ * Seeds a GAME thread carrying two messages with real image attachments --
+ * one with a single image, one with the maximum of four -- so
+ * `AttachmentGrid` (components/messages/AttachmentGrid.tsx) has real
+ * attachments to picture on the thread screen: the single-image full-width
+ * cell, the four-image 2x2 grid, and (via the test that clicks into one) the
+ * full-screen viewer. Every image is its own colour and aspect ratio (see
+ * `ATTACHMENT_FIXTURES` above) so a wrong-image regression -- the viewer
+ * opening on the wrong index, or a grid cell showing another slot's picture
+ * -- is something a person looking at the PNG can actually catch, not just
+ * something a byte-diff would happen to flag.
+ *
+ * Direct inserts into `messages` and `message_attachments`, not a
+ * `post_message` RPC call -- the same reason `seedPopulatedThread` just
+ * above inserts `messages` directly: service_role carries no JWT here, so
+ * `post_message`'s own `auth.uid()`/`can_post_thread` checks have nothing to
+ * authenticate against. The Storage upload above bypasses the storage INSERT
+ * policy (20260905030000) the same way service_role bypasses every other RLS
+ * policy in this file.
+ *
+ * A GAME thread, for the identical reason `seedPopulatedThread`'s own
+ * docstring gives: a club's conversation is a board now, and the flat thread
+ * screen (`app/messages/[threadId].tsx`) redirects a club thread straight to
+ * it, so a club thread can never be pictured there.
+ */
+export async function seedThreadWithAttachments(
+  clubId: string,
+  eventId: string,
+  viewerId: string,
+  suffix: string,
+): Promise<{ threadId: string }> {
+  const admin = adminClient('seed thread with attachments');
+
+  const need = <T>(what: string, result: { data: unknown; error: unknown }): T => {
+    if (result.error || result.data == null) {
+      throw new Error(
+        `seedThreadWithAttachments: ${what} failed: ${JSON.stringify(result.error)}`,
+      );
+    }
+    return result.data as T;
+  };
+
+  const author = await seedFillerProfile(admin, 'Nora Fitzgerald', 'thread-attachments', suffix);
+
+  const thread = need<{ id: string }>(
+    'game thread insert',
+    await admin
+      .from('message_threads')
+      .insert({
+        club_id: clubId,
+        event_id: eventId,
+        created_by: author,
+        last_message_at: '2026-08-22T15:05:00Z',
+      })
+      .select('id')
+      .single(),
+  );
+
+  // Uploaded before either message row, matching the real app's own order of
+  // operations (lib/attachments.ts's docstring: images upload first, then
+  // post_message names their paths) -- not that order matters for a direct
+  // seed, but it keeps this fixture legible against the flow it stands in
+  // for.
+  const single = await uploadAttachmentFixture(admin, thread.id, 'img-green.jpg');
+  const four = await Promise.all([
+    uploadAttachmentFixture(admin, thread.id, 'img-red.jpg'),
+    uploadAttachmentFixture(admin, thread.id, 'img-teal.jpg'),
+    uploadAttachmentFixture(admin, thread.id, 'img-gold.jpg'),
+    uploadAttachmentFixture(admin, thread.id, 'img-purple.jpg'),
+  ]);
+
+  const singleMessage = need<{ id: string }>(
+    'single-image message insert',
+    await admin
+      .from('messages')
+      .insert({
+        thread_id: thread.id,
+        author_id: author,
+        body: 'Here is the corner we set up for Tuesday.',
+        created_at: '2026-08-22T15:00:00Z',
+      })
+      .select('id')
+      .single(),
+  );
+
+  const { error: singleAttachmentError } = await admin.from('message_attachments').insert({
+    message_id: singleMessage.id,
+    thread_id: thread.id,
+    storage_path: single.storage_path,
+    width: single.width,
+    height: single.height,
+    sort_order: 0,
+  });
+  if (singleAttachmentError) {
+    throw new Error(
+      `seedThreadWithAttachments: single attachment insert failed: ${JSON.stringify(singleAttachmentError)}`,
+    );
+  }
+
+  // The VIEWER's own message, not a filler's -- so this baseline also proves
+  // the four-image grid renders correctly on the "mine" bubble treatment,
+  // not only on "theirs".
+  const fourMessage = need<{ id: string }>(
+    'four-image message insert',
+    await admin
+      .from('messages')
+      .insert({
+        thread_id: thread.id,
+        author_id: viewerId,
+        body: 'Found four venues to compare, what do you all think?',
+        created_at: '2026-08-22T15:05:00Z',
+      })
+      .select('id')
+      .single(),
+  );
+
+  const { error: fourAttachmentsError } = await admin.from('message_attachments').insert(
+    four.map((attachment, index) => ({
+      message_id: fourMessage.id,
+      thread_id: thread.id,
+      storage_path: attachment.storage_path,
+      width: attachment.width,
+      height: attachment.height,
+      sort_order: index,
+    })),
+  );
+  if (fourAttachmentsError) {
+    throw new Error(
+      `seedThreadWithAttachments: four attachments insert failed: ${JSON.stringify(fourAttachmentsError)}`,
     );
   }
 
