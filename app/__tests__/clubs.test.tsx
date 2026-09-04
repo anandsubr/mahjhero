@@ -411,7 +411,11 @@ describe('dashboard artboard', () => {
   });
 
   it('greets the member by name at the top of the dashboard', async () => {
-    fetchMyClubs.mockResolvedValue([CLUB]);
+    // Two clubs, deliberately -- a ONE-club member resolves straight into
+    // the "Your club" scope (headerScope, lib/dashboard.ts), which must
+    // never show this generic greeting (see the test below). This is the
+    // flat "all clubs" scope, the only one the greeting belongs on.
+    fetchMyClubs.mockResolvedValue([CLUB, { ...CLUB, id: 'club-2', name: 'Harbour' }]);
     fetchProfile.mockResolvedValue({
       id: 'you',
       display_name: 'Anand',
@@ -426,9 +430,33 @@ describe('dashboard artboard', () => {
 
   it('shows no greeting line when there are none to show', async () => {
     fetchGreetings.mockResolvedValue([]);
-    fetchMyClubs.mockResolvedValue([CLUB]);
+    fetchMyClubs.mockResolvedValue([CLUB, { ...CLUB, id: 'club-2', name: 'Harbour' }]);
     render(<ClubsScreen />);
     await screen.findAllByText('Riverside Mah Jongg');
+    expect(screen.queryByText(/Ready to shuffle/)).toBeNull();
+  });
+
+  it('shows no greeting line once a single club is in view', async () => {
+    // Covers both ways a member lands on the "Your club" scope: a
+    // one-club member (headerScope resolves there regardless of
+    // `selected`) and a multi-club member who filtered into one.
+    fetchMyClubs.mockResolvedValue([CLUB]);
+    render(<ClubsScreen />);
+    // A one-club member still sees the chip row alongside the centred
+    // header (nothing REAL is "filtered in" via `selected`, which stays
+    // ALL_CLUBS) -- so the club's name legitimately appears twice.
+    await screen.findAllByText('Riverside Mah Jongg');
+    expect(screen.queryByText(/Ready to shuffle/)).toBeNull();
+  });
+
+  it('drops the greeting the moment a club is filtered in from the "all clubs" scope', async () => {
+    fetchMyClubs.mockResolvedValue([CLUB, { ...CLUB, id: 'club-2', name: 'Harbour' }]);
+    render(<ClubsScreen />);
+    expect(await screen.findByText('Ready to shuffle, Anand?')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Harbour' }));
+
+    await screen.findByRole('button', { name: /^Manage Harbour/ });
     expect(screen.queryByText(/Ready to shuffle/)).toBeNull();
   });
 

@@ -513,10 +513,16 @@ export default function ClubsScreen() {
   const greetingText = todaysGreeting
     ? applyGreetingTemplate(todaysGreeting.text, displayName)
     : null;
+  // Only on the flat "all clubs" scope — a single club's own dashboard
+  // (whether reached by a one-club member, who resolves there by default
+  // per headerScope, or by filtering into one) has its own identity to
+  // show instead, and a generic dashboard greeting has nothing to do with
+  // the specific club in view.
+  const showGreeting = greetingText !== null && scope.kicker !== 'Your club';
 
   return (
     <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="club" />}>
-      {greetingText ? <Text style={styles.greeting}>{greetingText}</Text> : null}
+      {showGreeting ? <Text style={styles.greeting}>{greetingText}</Text> : null}
       {scope.kicker === 'Your club' ? (
         <DashboardHeader
           kicker={scope.kicker}
