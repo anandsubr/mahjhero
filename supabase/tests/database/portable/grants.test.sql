@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(113);
+select plan(114);
 
 /*
  * Guards the privileges themselves, not the policies.
@@ -731,6 +731,7 @@ select is(
        'public.fetch_friends()',
        'public.fetch_addable_people()',
        'public.can_read_thread(uuid)',
+       'public.can_post_thread(uuid)',
        'public.open_thread_for_club(uuid)',
        'public.open_thread_for_event(uuid)',
        'public.create_group_thread(text, uuid[])',
@@ -817,6 +818,7 @@ select is(
          'public.fetch_friends()',
          'public.fetch_addable_people()',
          'public.can_read_thread(uuid)',
+         'public.can_post_thread(uuid)',
          'public.open_thread_for_club(uuid)',
          'public.open_thread_for_event(uuid)',
          'public.create_group_thread(text, uuid[])',
@@ -957,12 +959,19 @@ select ok(
   'anon cannot execute can_read_thread'
 );
 
--- can_post_thread and is_club_organizer_of are not referenced by any
--- policy — every write goes through an RPC — so both stay fully internal.
+-- can_post_thread is referenced by the message_images_insert RLS policy
+-- (20260905030000), so it is granted to authenticated. is_club_organizer_of
+-- is not referenced by any policy — every write goes through an RPC — so it
+-- stays fully internal.
+select ok(
+  has_function_privilege(
+    'authenticated', 'public.can_post_thread(uuid)', 'EXECUTE'),
+  'authenticated can execute can_post_thread'
+);
 select ok(
   not has_function_privilege(
-    'authenticated', 'public.can_post_thread(uuid)', 'EXECUTE'),
-  'can_post_thread is revoked from authenticated'
+    'anon', 'public.can_post_thread(uuid)', 'EXECUTE'),
+  'anon cannot execute can_post_thread'
 );
 select ok(
   not has_function_privilege(
