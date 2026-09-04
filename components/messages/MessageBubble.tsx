@@ -1,5 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Tag from '../Tag';
+import AttachmentGrid from './AttachmentGrid';
 import { announcementBody, quoteStub, type ThreadMessage } from '../../lib/messages';
 import { colors, radius, space, type } from '../../lib/theme';
 
@@ -78,6 +79,8 @@ export default function MessageBubble({ message: m, mine, onReply }: Props) {
           {quoteStub(m.reply_to)}
         </Text>
       ) : null}
+
+      <AttachmentGrid attachments={m.attachments} />
 
       {displayBody ? (
         <Text
