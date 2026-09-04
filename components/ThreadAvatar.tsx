@@ -44,10 +44,13 @@ export default function ThreadAvatar({
   testID?: string;
   /** Opt-in: renders `kind="club"` as a mahjong tile (this club's own
    *  stable glyph + initials) instead of the plain circle every other
-   *  caller still gets. Default false so every existing caller — in
-   *  particular components/ThreadRow.tsx's small list-row avatars, which
-   *  must stay circular — is completely unaffected. Ignored for any
-   *  kind other than 'club'. */
+   *  caller still gets. Default false so a caller that doesn't opt in is
+   *  unaffected — including any non-club `kind` (direct/group/game), which
+   *  always stays circular regardless of this prop. components/ThreadRow.tsx
+   *  now opts in for its own club rows too (`asTile={row.kind === 'club'}`),
+   *  so club rows in the Messages list render the tile form; only the
+   *  non-club kinds it also renders keep the circle. Ignored for any kind
+   *  other than 'club'. */
   asTile?: boolean;
   /** Required (in practice) whenever `asTile` is true and `kind==='club'`
    *  — the tile's glyph is derived from this, not from `name`. */

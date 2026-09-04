@@ -57,6 +57,12 @@ type Props = {
   canDeleteRound?: boolean;
   onRecordRound?: (winnerProfileId: string, points: number) => void;
   onDeleteRound?: (roundId: string) => void;
+  /** Gates the round log and the round timer to the game's actual
+   *  start/end window — both disappear entirely before kickoff and after
+   *  the game ends, rather than staying visible the whole time. Defaults
+   *  to `true` so every caller that doesn't pass it (in particular this
+   *  component's own existing tests) keeps today's behavior unchanged. */
+  gameLive?: boolean;
 };
 
 /**
@@ -93,6 +99,7 @@ export default function TableCard({
   canDeleteRound = false,
   onRecordRound,
   onDeleteRound,
+  gameLive = true,
 }: Props) {
   const seated = occupants.filter((o) => o.status === 'confirmed');
   const bookedForYou = seated.find(
@@ -150,7 +157,7 @@ export default function TableCard({
         onRecordRound={onRecordRound}
       />
 
-      {rounds ? (
+      {rounds && gameLive ? (
         <RoundLog
           rounds={rounds}
           canDelete={canDeleteRound}
@@ -163,9 +170,11 @@ export default function TableCard({
         RoundTimer is pure local UI state with no dependence on whether the
         rounds fetch succeeded -- it stays available even when `rounds` is
         undefined (a transient fetch failure), unlike RoundLog above which
-        genuinely needs `rounds` data to render.
+        genuinely needs `rounds` data to render. It IS gated on `gameLive`
+        though -- a pacing clock has no reason to exist before the game
+        starts or after it ends.
       */}
-      <RoundTimer tableLabel={table.label} />
+      {gameLive ? <RoundTimer tableLabel={table.label} /> : null}
 
       {bookedForYou ? (
         <Text style={styles.help}>

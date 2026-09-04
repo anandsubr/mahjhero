@@ -165,6 +165,8 @@ const ONE_OFF_EVENT = {
   overrides: [] as string[],
   table_count: 1,
   check_in_required: false,
+  fee_cents: 0,
+  min_spend_cents: 0,
 };
 
 const SERIES_EVENT = {
@@ -191,6 +193,8 @@ const SERIES = {
   ends_on: '2026-12-31' as string | null,
   ended_at: null as string | null,
   check_in_required: false,
+  fee_cents: 0,
+  min_spend_cents: 0,
 };
 
 const TABLE_1 = {
@@ -355,6 +359,8 @@ describe('a one-off event', () => {
       notes: null,
       startTime: null,
       checkInRequired: null,
+      feeCents: null,
+      minSpendCents: null,
     });
     expect(replace).toHaveBeenCalledWith('/clubs/club-1/events/event-1');
   });
@@ -371,6 +377,8 @@ describe('a one-off event', () => {
       notes: null,
       startTime: null,
       checkInRequired: null,
+      feeCents: null,
+      minSpendCents: null,
     });
   });
 
@@ -391,6 +399,8 @@ describe('a one-off event', () => {
       notes: null,
       startTime: '20:30',
       checkInRequired: null,
+      feeCents: null,
+      minSpendCents: null,
     });
   });
 
@@ -422,6 +432,32 @@ describe('a one-off event', () => {
       notes: null,
       startTime: null,
       checkInRequired: true,
+      feeCents: null,
+      minSpendCents: null,
+    });
+  });
+
+  it('sends the changed fee and minimum spend, gated the same way as every other field', async () => {
+    render(<EditEventScreen />);
+    await screen.findByDisplayValue('Thursday Mahjong');
+
+    fireEvent.change(screen.getByLabelText('Cost to play'), {
+      target: { value: '15' },
+    });
+    fireEvent.change(screen.getByLabelText('Minimum spend'), {
+      target: { value: '20' },
+    });
+    fireEvent.click(screen.getByText('Save'));
+
+    await vi.waitFor(() => expect(updateEvent).toHaveBeenCalled());
+    expect(updateEvent).toHaveBeenCalledWith('event-1', {
+      title: null,
+      venueId: null,
+      notes: null,
+      startTime: null,
+      checkInRequired: null,
+      feeCents: 1500,
+      minSpendCents: 2000,
     });
   });
 });
@@ -517,6 +553,8 @@ describe('a series occurrence', () => {
       notes: '',
       startTime: '19:00',
       checkInRequired: false,
+      feeCents: 0,
+      minSpendCents: 0,
       endsOn: undefined,
       clearEndsOn: false,
       includeOverridden: false,
@@ -540,10 +578,30 @@ describe('a series occurrence', () => {
       notes: '',
       startTime: '19:00',
       checkInRequired: false,
+      feeCents: 0,
+      minSpendCents: 0,
       endsOn: undefined,
       clearEndsOn: true,
       includeOverridden: false,
     });
+  });
+
+  it('seeds the series scope’s fee fields from the series row, not the occurrence', async () => {
+    fetchEvent.mockResolvedValue({ ...SERIES_EVENT, fee_cents: 999 });
+    render(<EditEventScreen />);
+    await screen.findByText('The whole series');
+
+    // "This game" shows the occurrence's own (overridden) fee.
+    expect(
+      (screen.getByLabelText('Cost to play') as HTMLInputElement).value,
+    ).toBe('9.99');
+
+    fireEvent.click(screen.getByText('The whole series'));
+
+    // The series' own fee (0 in the SERIES fixture), not the occurrence's.
+    expect(
+      (screen.getByLabelText('Cost to play') as HTMLInputElement).value,
+    ).toBe('0');
   });
 
   // Task 14: the series-scope field is seeded from `series.check_in_required`

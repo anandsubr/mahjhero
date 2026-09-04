@@ -1,4 +1,4 @@
-import { Link, Redirect, useLocalSearchParams, useRouter } from 'expo-router';
+import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -15,7 +15,7 @@ import Screen from '../../../components/Screen';
 import SkillLevelPips from '../../../components/SkillLevelPips';
 import Tag from '../../../components/Tag';
 import TabBar from '../../../components/TabBar';
-import { ChevronLeftIcon } from '../../../components/icons';
+import TextField from '../../../components/TextField';
 import {
   canInvite,
   createInvite,
@@ -40,6 +40,7 @@ export default function ClubDetailScreen() {
 
   const [club, setClub] = useState<Club | null>(null);
   const [roster, setRoster] = useState<ClubMember[]>([]);
+  const [memberSearch, setMemberSearch] = useState('');
   const [invites, setInvites] = useState<ClubInvite[]>([]);
   const [ready, setReady] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -167,24 +168,32 @@ export default function ClubDetailScreen() {
     router.push(`/messages/club/${threadId}`);
   }
 
+  // The same fallback the roster row itself displays -- a member with no
+  // display name is still findable by typing "member", matching what a
+  // host actually sees on screen rather than an internal, always-blank field.
+  function memberLabel(member: ClubMember): string {
+    return member.display_name.trim().length > 0
+      ? member.display_name
+      : 'Member';
+  }
+
+  const trimmedSearch = memberSearch.trim().toLowerCase();
+  const filteredRoster =
+    trimmedSearch.length === 0
+      ? roster
+      : roster.filter((member) =>
+          memberLabel(member).toLowerCase().includes(trimmedSearch),
+        );
+
   return (
     <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="club" />}>
-      <Button
-        variant="ghost"
-        big={false}
-        icon={<ChevronLeftIcon color={colors.accentColor} />}
-        onPress={() => router.push('/clubs')}
-        accessibilityLabel="Back to your clubs"
-        style={styles.backButton}
-      >
-        Clubs
-      </Button>
-
       <DashboardHeader
         kicker="Your club"
         name={club.name}
         meta={club.rhythm}
         clubId={club.id}
+        onPressBack={() => router.push('/clubs')}
+        backLabel="Back to your clubs"
       />
 
       {mayInvite ? (
@@ -218,6 +227,15 @@ export default function ClubDetailScreen() {
         {roster.length} {roster.length === 1 ? 'member' : 'members'}
       </Text>
 
+      {roster.length > 0 ? (
+        <TextField
+          label="Search members"
+          value={memberSearch}
+          onChangeText={setMemberSearch}
+          placeholder="Search by name"
+        />
+      ) : null}
+
       {/*
         Every row here is somebody who has signed in. `club_members` rows are
         written only by `create_club` and `accept_club_invite`, both of which
@@ -229,36 +247,41 @@ export default function ClubDetailScreen() {
         members as absent. Genuinely-invited people are the separate section
         below, read from `club_invites`.
       */}
-      {roster.map((member) => (
+      {roster.length > 0 && filteredRoster.length === 0 ? (
+        <Text style={styles.help}>No members match "{memberSearch.trim()}".</Text>
+      ) : null}
+
+      {filteredRoster.map((member) => (
         <Card key={member.profile_id}>
           <View style={styles.row}>
-            <Text style={styles.memberName}>
-              {member.display_name.trim().length > 0
-                ? member.display_name
-                : 'Member'}
-            </Text>
+            {/*
+              Name and skill level share one row now, not two -- the pip
+              glyph beside the word, not instead of it (the word is what
+              carries the meaning; SkillLevelPips is aria-hidden, same as
+              SkillTierPips it wraps -- see that component's own docstring).
+              Nothing renders at all for a member with no skill_level: null
+              means "not set", which is not a fourth level and must never
+              draw as a dash (that reads as a table's "any level welcome",
+              which no person can be -- see SkillLevelPips's own docstring).
+            */}
+            <View style={styles.memberNameRow}>
+              <Text style={styles.memberName} numberOfLines={1}>
+                {memberLabel(member)}
+              </Text>
+              {member.skill_level ? (
+                <View style={styles.skillRow}>
+                  <SkillLevelPips level={member.skill_level} />
+                  <Text style={styles.help}>
+                    {member.skill_level.charAt(0).toUpperCase() +
+                      member.skill_level.slice(1)}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
             {member.role !== 'member' ? (
               <Tag>{member.role === 'host' ? 'Host' : 'Co-organizer'}</Tag>
             ) : null}
           </View>
-          {/*
-            The pip glyph beside the word, not instead of it -- the word is
-            what carries the meaning (SkillLevelPips is aria-hidden, same as
-            SkillTierPips it wraps; see that component's own docstring).
-            Nothing renders at all for a member with no skill_level: null
-            means "not set", which is not a fourth level and must never draw
-            as a dash (that reads as a table's "any level welcome", which no
-            person can be -- see SkillLevelPips's own docstring).
-          */}
-          {member.skill_level ? (
-            <View style={styles.skillRow}>
-              <SkillLevelPips level={member.skill_level} />
-              <Text style={styles.help}>
-                {member.skill_level.charAt(0).toUpperCase() +
-                  member.skill_level.slice(1)}
-              </Text>
-            </View>
-          ) : null}
         </Card>
       ))}
 
@@ -320,9 +343,13 @@ export default function ClubDetailScreen() {
               </Text>
             </Card>
           ) : null}
-          <Link href={`/clubs/${id}/venues`} style={styles.linkRow}>
-            <Text style={styles.link}>Venues</Text>
-          </Link>
+          <Button
+            variant="secondary"
+            onPress={() => router.push(`/clubs/${id}/venues`)}
+            accessibilityLabel="Venues"
+          >
+            Venues
+          </Button>
         </>
       ) : null}
 
@@ -339,7 +366,6 @@ const styles = StyleSheet.create({
   centered: {
     alignItems: 'center',
   },
-  backButton: { alignSelf: 'flex-start' },
   sectionTitle: {
     fontFamily: type.bodyBold,
     fontSize: type.size.body,
@@ -348,9 +374,24 @@ const styles = StyleSheet.create({
   },
   row: {
     flexDirection: 'row',
+    // Wrap, not truncate-and-cram: a host/co-organizer's role tag sharing
+    // this row with a long name plus a skill level would otherwise force
+    // the name to over-truncate and the tag's own text to wrap mid-word
+    // (confirmed live at mobile width) -- letting the tag drop to its own
+    // line instead keeps both readable. The common case (a plain member,
+    // no tag) still renders as one line.
+    flexWrap: 'wrap',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: space[2],
+  },
+  memberNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[3],
+    flexShrink: 1,
+    flexGrow: 1,
+    minWidth: '60%',
   },
   memberName: {
     fontFamily: type.bodySemiBold,
@@ -362,6 +403,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: space[2],
+    flexShrink: 0,
   },
   help: {
     fontFamily: type.bodyRegular,
@@ -378,12 +420,6 @@ const styles = StyleSheet.create({
   inviteUrl: {
     fontFamily: type.bodyRegular,
     fontSize: type.size.helper,
-    color: colors.accentColor,
-  },
-  linkRow: { marginTop: space[6] },
-  link: {
-    fontFamily: type.bodySemiBold,
-    fontSize: type.size.body,
     color: colors.accentColor,
   },
 });

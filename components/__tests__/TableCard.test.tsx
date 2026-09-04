@@ -211,4 +211,29 @@ describe('TableCard', () => {
       }),
     ).toBeTruthy();
   });
+
+  it('hides the round log and the timer once the game is not live', () => {
+    render(
+      <TableCard
+        table={table}
+        occupants={occupants}
+        youId="p9"
+        onTakeSeat={vi.fn()}
+        rounds={[
+          { id: 'r1', winner_profile_id: 'p1', winner_name: 'Ravi K.', points: 8 },
+        ]}
+        canRecordRound={false}
+        canDeleteRound={false}
+        onRecordRound={vi.fn()}
+        onDeleteRound={vi.fn()}
+        gameLive={false}
+      />,
+    );
+    expect(screen.queryByText('Ravi K. · 8 pts')).toBeNull();
+    expect(
+      screen.queryByRole('button', {
+        name: 'Start a 15-minute timer for Table 2',
+      }),
+    ).toBeNull();
+  });
 });

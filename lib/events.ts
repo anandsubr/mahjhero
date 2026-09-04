@@ -12,7 +12,9 @@ export type OverrideKey =
   | 'venue_id'
   | 'notes'
   | 'starts_at'
-  | 'check_in_required';
+  | 'check_in_required'
+  | 'fee_cents'
+  | 'min_spend_cents';
 
 export type ClubEvent = {
   id: string;
@@ -46,6 +48,11 @@ export type ClubEvent = {
    * nothing read it through `fetchEvent`/`EVENT_COLUMNS` until now.
    */
   check_in_required: boolean;
+  /** Integer cents. `0` means "no fee set" — see lib/events.ts's
+   *  formatFeeCents/parseDollarsToCents for the display/parse boundary. */
+  fee_cents: number;
+  /** Integer cents. `0` means "no minimum spend set". */
+  min_spend_cents: number;
 };
 
 export type EventTable = {
@@ -99,6 +106,11 @@ export type EventSeries = {
    * file-level comment for why).
    */
   check_in_required: boolean;
+  /** Integer cents. `0` means "no fee set" — see lib/events.ts's
+   *  formatFeeCents/parseDollarsToCents for the display/parse boundary. */
+  fee_cents: number;
+  /** Integer cents. `0` means "no minimum spend set". */
+  min_spend_cents: number;
 };
 
 export type RecurrenceRule = {
@@ -138,11 +150,12 @@ export type RecurrenceRule = {
  */
 export const EVENT_COLUMNS =
   'id, club_id, series_id, title, venue_id, notes, starts_at, ends_at, ' +
-  'status, occurrence_date, overrides, check_in_required, venues(name), ' +
+  'status, occurrence_date, overrides, check_in_required, fee_cents, ' +
+  'min_spend_cents, venues(name), ' +
   'event_tables(id, capacity, label), bookings(profile_id, status, event_table_id)';
 
 export const SERIES_COLUMNS =
-  'id, club_id, title, venue_id, notes, frequency, weekday, nth_week, start_time, duration_minutes, table_count, starts_on, ends_on, ended_at, check_in_required, venues(name)';
+  'id, club_id, title, venue_id, notes, frequency, weekday, nth_week, start_time, duration_minutes, table_count, starts_on, ends_on, ended_at, check_in_required, fee_cents, min_spend_cents, venues(name)';
 
 export const EVENT_TABLE_COLUMNS = 'id, label, skill_tier, capacity, position';
 
@@ -280,6 +293,52 @@ export function formatEventWhen(
     hour12: true,
     timeZone: timezone,
   }).format(when);
+}
+
+/**
+ * The time-only half of formatEventWhen, for a context that already shows
+ * the date another way (app/clubs/index.tsx's own DateTile badge) — showing
+ * both was a literal repeat of the same date on the same row.
+ */
+export function formatEventTime(
+  startsAt: string,
+  timezone: string,
+  locale?: string,
+): string {
+  const when = new Date(startsAt);
+  if (Number.isNaN(when.getTime())) return 'Time unavailable';
+  return new Intl.DateTimeFormat(locale ?? 'en-GB', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: timezone,
+  }).format(when);
+}
+
+/**
+ * Cents to a display string — `$15` for a whole dollar amount, `$15.50`
+ * once cents are involved. Stored/compared as integer cents everywhere
+ * above this function specifically so nothing does float arithmetic on
+ * money; this is the one place that turns cents back into a dollar string.
+ */
+export function formatFeeCents(cents: number): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: cents % 100 === 0 ? 0 : 2,
+  }).format(cents / 100);
+}
+
+/**
+ * A host's typed dollar string to integer cents. Blank or unparseable text
+ * is `0` ("not set"), and a negative amount is clamped to `0` — the
+ * database's own `check (... >= 0)` is the real backstop; this only avoids
+ * a round-trip error for an obviously-bad client value.
+ */
+export function parseDollarsToCents(value: string): number {
+  const parsed = Number.parseFloat(value.trim());
+  if (Number.isNaN(parsed) || parsed < 0) return 0;
+  return Math.round(parsed * 100);
 }
 
 /** The rhythm, in words a host would use rather than enum values. */
@@ -561,6 +620,16 @@ const RPC_ERROR_MESSAGES: { contains: string; message: string; codes: string[] }
     message: 'Only a club organizer can do that.',
     codes: ['42501'],
   },
+  {
+    contains: 'fee cannot be negative',
+    message: 'The cost to play cannot be negative.',
+    codes: ['23514'],
+  },
+  {
+    contains: 'minimum spend cannot be negative',
+    message: 'The minimum spend cannot be negative.',
+    codes: ['23514'],
+  },
 ];
 
 function rpcErrorMessage(error: RpcError): string {
@@ -792,6 +861,10 @@ export async function createEvent(input: {
    * `Toggle`, which itself defaults to off.
    */
   checkInRequired: boolean;
+  /** Integer cents. `0` for "no fee". */
+  feeCents: number;
+  /** Integer cents. `0` for "no minimum spend". */
+  minSpendCents: number;
 }): Promise<{ eventId: string | null; error: string | null }> {
   try {
     if (input.title.trim().length === 0) {
@@ -807,6 +880,8 @@ export async function createEvent(input: {
       duration_minutes: input.durationMinutes,
       table_count: input.tableCount,
       check_in: input.checkInRequired,
+      fee_cents: input.feeCents,
+      min_spend_cents: input.minSpendCents,
     });
 
     if (error || !data) {
@@ -852,6 +927,10 @@ export async function updateEvent(
      * PostgREST reports no matching function overload at call time.
      */
     checkInRequired?: boolean | null;
+    /** Null/omitted means "leave this alone". Integer cents. */
+    feeCents?: number | null;
+    /** Null/omitted means "leave this alone". Integer cents. */
+    minSpendCents?: number | null;
   },
 ): Promise<{ error: string | null }> {
   try {
@@ -864,6 +943,8 @@ export async function updateEvent(
       new_start_time: input.startTime ?? null,
       new_duration_minutes: input.durationMinutes ?? null,
       new_check_in_required: input.checkInRequired ?? null,
+      new_fee_cents: input.feeCents ?? null,
+      new_min_spend_cents: input.minSpendCents ?? null,
     });
 
     if (error) {
@@ -1025,6 +1106,8 @@ export async function createEventSeries(input: {
    * value (defaulting to off) by the time either save path runs.
    */
   checkInRequired: boolean;
+  feeCents: number;
+  minSpendCents: number;
 }): Promise<{ seriesId: string | null; error: string | null }> {
   try {
     if (input.title.trim().length === 0) {
@@ -1044,6 +1127,8 @@ export async function createEventSeries(input: {
       starts_on: input.startsOn,
       ends_on: input.endsOn,
       check_in: input.checkInRequired,
+      fee_cents: input.feeCents,
+      min_spend_cents: input.minSpendCents,
     });
 
     if (error || !data) {
@@ -1089,6 +1174,8 @@ export async function updateEventSeries(
      * se.check_in_required)` gate (supabase/migrations/20260827010000).
      */
     checkInRequired?: boolean | null;
+    feeCents?: number | null;
+    minSpendCents?: number | null;
   },
 ): Promise<{ error: string | null }> {
   try {
@@ -1104,6 +1191,8 @@ export async function updateEventSeries(
       include_overridden: input.includeOverridden ?? false,
       clear_ends_on: input.clearEndsOn ?? false,
       new_check_in_required: input.checkInRequired ?? null,
+      new_fee_cents: input.feeCents ?? null,
+      new_min_spend_cents: input.minSpendCents ?? null,
     });
 
     if (error) {

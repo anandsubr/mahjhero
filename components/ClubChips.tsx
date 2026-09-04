@@ -77,7 +77,7 @@ export default function ClubChips({
                 <UnreadBadge count={count} />
               </View>
             </View>
-            <Text style={[styles.label, active ? styles.labelActive : null]} numberOfLines={1}>
+            <Text style={[styles.label, active ? styles.labelActive : null]} numberOfLines={2}>
               {chip.label}
             </Text>
           </Pressable>

@@ -20,6 +20,7 @@ export default function ProfileScreen() {
   const { session, loading } = useSession();
   const [displayName, setDisplayName] = useState('');
   const [skillLevel, setSkillLevel] = useState<SkillLevel | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [ready, setReady] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -51,6 +52,7 @@ export default function ProfileScreen() {
       if (profile) {
         setDisplayName(profile.display_name);
         setSkillLevel(profile.skill_level);
+        setIsAdmin(profile.is_admin ?? false);
       } else {
         // fetchProfile never rejects — it resolves null on any failure
         // (network error, RLS denial, missing row). Falling through to a
@@ -224,6 +226,18 @@ export default function ProfileScreen() {
         </View>
         <Text style={styles.help}>The people you can hold seats with</Text>
       </Card>
+
+      {isAdmin ? (
+        <Card style={styles.settingsCard}>
+          <View style={styles.settingsRow}>
+            <Text style={styles.settingsLabel}>Greetings</Text>
+            <Link href="/admin/greetings" style={styles.editLink}>
+              <Text style={styles.editLinkText}>Manage</Text>
+            </Link>
+          </View>
+          <Text style={styles.help}>The dashboard's daily greeting</Text>
+        </Card>
+      ) : null}
 
       <Button
         variant="destructive"

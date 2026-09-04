@@ -388,22 +388,18 @@ describe('screen chrome', () => {
     expect(push).toHaveBeenCalledWith('/clubs');
   });
 
-  // Task 13: this screen's own small decorative club tile, between the back
-  // chevron and the club-name kicker -- the same `size="section"` treatment
-  // every other landing screen in this plan already carries, here showing
-  // THIS club's own stable glyph via `glyphForClub`. TabBar (carried by
-  // every state of this screen) renders its own `aria-hidden` tiles too, so
-  // a bare `document.querySelector('[aria-hidden="true"]')` would already
-  // pass without this tile existing -- scoped through `testID="section-tile"`
-  // first, the same wrapper convention every other landing screen's own test
-  // already uses (app/__tests__/clubs.test.tsx, messages.test.tsx,
-  // profile.test.tsx, alerts.test.tsx) for this exact false-positive risk.
-  it("shows a small mahjong tile before the club name, matching that club's own glyph elsewhere", async () => {
+  it("shows the club as a tile with its name in a pill below, matching the Club Dashboard header exactly", async () => {
     render(<EventScreen />);
     await screen.findByText(CLUB.name);
-    expect(
-      screen.getByTestId('section-tile').querySelector('[aria-hidden="true"]'),
-    ).toBeTruthy();
+    // The `section-tile` wrapper this test used to scope through is gone —
+    // this screen no longer builds its own tile row; it renders the same
+    // `DashboardHeader` "Your club" shape Club Dashboard and Club Edit do,
+    // and `thread-avatar-club-tile` alone is already a specific enough
+    // selector (it's a single, uniquely-testID'd element, not one of
+    // several decorative tiles on the page that needs disambiguating).
+    expect(screen.getByTestId('thread-avatar-club-tile')).toBeTruthy();
+    // No "+" — this screen has nothing equivalent to "add a game" here.
+    expect(screen.queryByRole('button', { name: 'Add a game' })).toBeNull();
   });
 });
 
@@ -437,6 +433,21 @@ describe('member view: what is shown, and what is not', () => {
     render(<EventScreen />);
     expect(await screen.findByText(tokyoWhen)).toBeTruthy();
     expect(screen.queryByText(newYorkWhen)).toBeNull();
+  });
+
+  it('shows no fee line when neither a fee nor a minimum spend is set', async () => {
+    render(<EventScreen />);
+    await screen.findByText('The Annexe');
+    expect(screen.queryByText(/to play/)).toBeNull();
+    expect(screen.queryByText(/min spend/)).toBeNull();
+  });
+
+  it('shows the fee line, joining cost-to-play and minimum-spend, when both are set', async () => {
+    fetchEvent.mockResolvedValue({ ...EVENT, fee_cents: 1500, min_spend_cents: 2000 });
+    render(<EventScreen />);
+    expect(
+      await screen.findByText('$15 to play · $20 min spend'),
+    ).toBeTruthy();
   });
 
   // Task 10 replaced this read-only table row with `TableCard`, which
@@ -1338,6 +1349,7 @@ describe('Reset to the series', () => {
 describe('table rounds', () => {
   it("shows a table's recorded rounds", async () => {
     fetchRoster.mockResolvedValue(ROSTER_WITH_RAVI);
+    fetchEvent.mockResolvedValue(liveEvent());
     fetchEventSeating.mockResolvedValue([SEATED_RAVI]);
     fetchTableRounds.mockResolvedValue([ROUND_1]);
 
@@ -1434,6 +1446,7 @@ describe('table rounds', () => {
 
   it('lets only the organizer delete a round', async () => {
     fetchRoster.mockResolvedValue(ROSTER_WITH_RAVI); // 'member', not organizer
+    fetchEvent.mockResolvedValue(liveEvent());
     fetchEventSeating.mockResolvedValue([SEATED_RAVI]);
     fetchTableRounds.mockResolvedValue([ROUND_1]);
 

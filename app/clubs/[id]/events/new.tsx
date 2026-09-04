@@ -17,6 +17,7 @@ import {
   createEventSeries,
   frequencyLabel,
   nextOccurrences,
+  parseDollarsToCents,
   type SeriesFrequency,
 } from '../../../../lib/events';
 import { useSession } from '../../../../lib/session';
@@ -191,6 +192,8 @@ export default function NewEventScreen() {
   // door list, and defaulting this on would teach hosts to ignore it. See
   // the help text below the toggle for the host-facing version of this.
   const [checkInRequired, setCheckInRequired] = useState(false);
+  const [feeText, setFeeText] = useState('');
+  const [minSpendText, setMinSpendText] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -286,6 +289,8 @@ export default function NewEventScreen() {
         durationMinutes: duration,
         tableCount,
         checkInRequired,
+        feeCents: parseDollarsToCents(feeText),
+        minSpendCents: parseDollarsToCents(minSpendText),
       });
       setSaving(false);
       if (result.error) {
@@ -315,6 +320,8 @@ export default function NewEventScreen() {
       startsOn: date,
       endsOn: endsOn.length > 0 ? endsOn : null,
       checkInRequired,
+      feeCents: parseDollarsToCents(feeText),
+      minSpendCents: parseDollarsToCents(minSpendText),
     });
     setSaving(false);
     if (result.error) {
@@ -409,6 +416,21 @@ export default function NewEventScreen() {
         Turn this on and this game gets a door list, so you can check people
         in as they arrive. Small games usually don't need it.
       </Text>
+
+      <TextField
+        label="Cost to play"
+        value={feeText}
+        onChangeText={setFeeText}
+        keyboardType="decimal-pad"
+        placeholder="0.00"
+      />
+      <TextField
+        label="Minimum spend"
+        value={minSpendText}
+        onChangeText={setMinSpendText}
+        keyboardType="decimal-pad"
+        placeholder="0.00"
+      />
 
       <Text style={styles.label}>Does it repeat?</Text>
       <View style={styles.chips}>

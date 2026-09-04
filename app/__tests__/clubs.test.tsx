@@ -78,6 +78,7 @@ const fetchMyUpcomingBookings = vi.fn();
 const commitBooking = vi.fn();
 const cancelBooking = vi.fn();
 const fetchProfile = vi.fn();
+const fetchGreetings = vi.fn();
 
 // One partial mock for the whole file, not one per describe block. Two
 // `vi.mock` calls for the same specifier are both hoisted and only one
@@ -126,6 +127,26 @@ vi.mock('../../lib/bookings', async (importOriginal) => {
 vi.mock('../../lib/profile', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../lib/profile')>();
   return { ...actual, fetchProfile: (...args: unknown[]) => fetchProfile(...args) };
+});
+
+// Only fetchGreetings is a network call worth stubbing -- pickDailyGreeting
+// and applyGreetingTemplate are pure, already covered directly by
+// lib/greetings.test.ts (Task 7), and this test wants them to run for
+// real so it is exercising the actual substitution logic, not a second
+// hand-rolled copy of it. `vi.importActual` (not a plain object spread
+// referencing an outer `import`) is required here: `vi.mock` factories are
+// hoisted above every `import` in the file, so a factory that closed over
+// a normally-imported binding would run before that import's assignment
+// exists. Declaring `fetchGreetings` as a bare `vi.fn()` below works
+// because — same as this file's existing `fetchPendingInvites` mock — the
+// factory only reads it through a closure at call time, not at hoist time.
+vi.mock('../../lib/greetings', async () => {
+  const actual =
+    await vi.importActual<typeof import('../../lib/greetings')>('../../lib/greetings');
+  return {
+    ...actual,
+    fetchGreetings: (...args: unknown[]) => fetchGreetings(...args),
+  };
 });
 
 // TabBar (carried by every screen in this file) and, on the dashboard,
@@ -274,7 +295,17 @@ beforeEach(() => {
   fetchMyUpcomingBookings.mockResolvedValue([]);
   commitBooking.mockResolvedValue({ result: null, error: null });
   cancelBooking.mockResolvedValue({ error: null });
-  fetchProfile.mockResolvedValue(null);
+  fetchProfile.mockResolvedValue({
+    id: 'you',
+    display_name: 'Anand',
+    skill_level: null,
+    avatar_url: null,
+    timezone: 'America/New_York',
+    is_admin: false,
+  });
+  fetchGreetings.mockResolvedValue([
+    { id: 'g1', text: 'Ready to shuffle, {name}?', created_at: '2026-09-01T00:00:00Z' },
+  ]);
 });
 
 describe('clubs list', () => {
@@ -379,6 +410,56 @@ describe('dashboard artboard', () => {
     expect(screen.queryByText('Your clubs')).toBeNull();
   });
 
+  it('greets the member by name at the top of the dashboard', async () => {
+    // Two clubs, deliberately -- a ONE-club member resolves straight into
+    // the "Your club" scope (headerScope, lib/dashboard.ts), which must
+    // never show this generic greeting (see the test below). This is the
+    // flat "all clubs" scope, the only one the greeting belongs on.
+    fetchMyClubs.mockResolvedValue([CLUB, { ...CLUB, id: 'club-2', name: 'Harbour' }]);
+    fetchProfile.mockResolvedValue({
+      id: 'you',
+      display_name: 'Anand',
+      skill_level: null,
+      avatar_url: null,
+      timezone: 'America/New_York',
+      is_admin: false,
+    });
+    render(<ClubsScreen />);
+    expect(await screen.findByText('Ready to shuffle, Anand?')).toBeTruthy();
+  });
+
+  it('shows no greeting line when there are none to show', async () => {
+    fetchGreetings.mockResolvedValue([]);
+    fetchMyClubs.mockResolvedValue([CLUB, { ...CLUB, id: 'club-2', name: 'Harbour' }]);
+    render(<ClubsScreen />);
+    await screen.findAllByText('Riverside Mah Jongg');
+    expect(screen.queryByText(/Ready to shuffle/)).toBeNull();
+  });
+
+  it('shows no greeting line once a single club is in view', async () => {
+    // Covers both ways a member lands on the "Your club" scope: a
+    // one-club member (headerScope resolves there regardless of
+    // `selected`) and a multi-club member who filtered into one.
+    fetchMyClubs.mockResolvedValue([CLUB]);
+    render(<ClubsScreen />);
+    // A one-club member still sees the chip row alongside the centred
+    // header (nothing REAL is "filtered in" via `selected`, which stays
+    // ALL_CLUBS) -- so the club's name legitimately appears twice.
+    await screen.findAllByText('Riverside Mah Jongg');
+    expect(screen.queryByText(/Ready to shuffle/)).toBeNull();
+  });
+
+  it('drops the greeting the moment a club is filtered in from the "all clubs" scope', async () => {
+    fetchMyClubs.mockResolvedValue([CLUB, { ...CLUB, id: 'club-2', name: 'Harbour' }]);
+    render(<ClubsScreen />);
+    expect(await screen.findByText('Ready to shuffle, Anand?')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Harbour' }));
+
+    await screen.findByRole('button', { name: /^Manage Harbour/ });
+    expect(screen.queryByText(/Ready to shuffle/)).toBeNull();
+  });
+
   // The rows were inert: the one thing a member wants from a game they can
   // see is to open it.
   it('opens the game when a row is tapped', async () => {
@@ -411,26 +492,73 @@ describe('dashboard artboard', () => {
     expect(join.closest('a')).toBeNull();
   });
 
+  it('shows the game row as club name, time only, and venue — not the event title', async () => {
+    fetchMyClubs.mockResolvedValueOnce([CLUB]);
+    fetchMyUpcomingBookings.mockResolvedValueOnce([]);
+    fetchUpcomingEvents.mockResolvedValueOnce([
+      {
+        ...EVENT,
+        id: 'test',
+        club_id: CLUB.id,
+        title: 'Test game',
+        starts_at: '2027-09-08T23:00:00Z',
+        bookings: [
+          { profile_id: 'a', status: 'confirmed', event_table_id: 'table-1' },
+        ],
+      },
+    ]);
+    render(<ClubsScreen />);
+    // The club name and venue are already asserted by neighboring tests
+    // using this same fixture — this test's own job is the shape: the
+    // event's own title text must be gone, and the time-only label must
+    // appear without a repeated date.
+    await screen.findByText("Sara's place");
+    expect(screen.queryByText('Test game')).toBeNull();
+    expect(screen.getByText('7:00 pm')).toBeTruthy();
+  });
+
+  it('shows a fee line only when a fee or minimum spend is set', async () => {
+    fetchMyClubs.mockResolvedValueOnce([CLUB]);
+    fetchMyUpcomingBookings.mockResolvedValueOnce([BOOKING]);
+    render(<ClubsScreen />);
+    await screen.findAllByText('Riverside Mah Jongg');
+    // The default fixture carries no fee — confirmed absent first, so the
+    // next case (a fee actually set) is a real contrast, not a tautology.
+    expect(screen.queryByText(/to play/)).toBeNull();
+    expect(screen.queryByText(/min spend/)).toBeNull();
+  });
+
+  it('joins cost-to-play and minimum-spend when both are set on the same game', async () => {
+    fetchMyClubs.mockResolvedValueOnce([CLUB]);
+    fetchMyUpcomingBookings.mockResolvedValue([
+      { ...BOOKING, fee_cents: 1500, min_spend_cents: 2000 },
+    ]);
+    render(<ClubsScreen />);
+    expect(
+      await screen.findByText('$15 to play · $20 min spend'),
+    ).toBeTruthy();
+  });
+
   it('narrows the games list to the picked club', async () => {
     fetchMyClubs.mockResolvedValue([CLUB, { ...CLUB, id: 'club-2', name: 'Harbour' }]);
     fetchMyUpcomingBookings.mockResolvedValue([
-      { ...BOOKING, event_id: 'e1', club_id: CLUB.id, club_name: CLUB.name, event_title: 'Riverside game' },
-      { ...BOOKING, booking_id: 'b2', event_id: 'e2', club_id: 'club-2', club_name: 'Harbour', event_title: 'Harbour game' },
+      { ...BOOKING, event_id: 'e1', club_id: CLUB.id, club_name: CLUB.name, venue_name: 'Riverside hall' },
+      { ...BOOKING, booking_id: 'b2', event_id: 'e2', club_id: 'club-2', club_name: 'Harbour', venue_name: 'Harbour hall' },
     ]);
     fetchUpcomingEvents.mockResolvedValue([]);
     fetchProfile.mockResolvedValue(null);
 
     render(<ClubsScreen />);
 
-    expect(await screen.findByText('Riverside game')).toBeTruthy();
-    expect(screen.getByText('Harbour game')).toBeTruthy();
+    expect(await screen.findByText('Riverside hall')).toBeTruthy();
+    expect(screen.getByText('Harbour hall')).toBeTruthy();
 
     // One "Harbour" button now: the chip. The club's own card in "Your
     // clubs" is gone — the chip row is the whole club list.
     fireEvent.click(screen.getByRole('button', { name: 'Harbour' }));
 
-    expect(screen.queryByText('Riverside game')).toBeNull();
-    expect(screen.getByText('Harbour game')).toBeTruthy();
+    expect(screen.queryByText('Riverside hall')).toBeNull();
+    expect(screen.getByText('Harbour hall')).toBeTruthy();
     // The header switched to Harbour's own scope. Role-based, not
     // getByText('Harbour') — that text is now ambiguous, since Harbour's
     // own chip tile renders the same label alongside the header.
@@ -487,6 +615,20 @@ describe('dashboard artboard', () => {
     expect(screen.getByRole('button', { name: 'Riverside Mah Jongg' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Start a club' })).toBeTruthy();
     expect(screen.getByText('New club')).toBeTruthy();
+  });
+
+  it('lets a long club name wrap to a second line instead of truncating', async () => {
+    fetchMyClubs.mockResolvedValue([
+      { ...CLUB, id: 'c2', name: 'West Chapter Mahjong Society' },
+      CLUB,
+    ]);
+    render(<ClubsScreen />);
+    const label = await screen.findByText('West Chapter Mahjong Society');
+    // react-native-web renders `numberOfLines` as `-webkit-line-clamp` — 1
+    // clips to a single line (what today's bug does); this asserts the fix
+    // allows a second line instead. Using getComputedStyle here because
+    // this project uses vitest with Chai (not Jest), which lacks toHaveStyle.
+    expect(window.getComputedStyle(label).webkitLineClamp).toBe('2');
   });
 
   it('draws the chip row at two clubs, with a New club tile', async () => {
@@ -1132,7 +1274,7 @@ describe('organizing an unbooked, in-progress game', () => {
 
     render(<ClubsScreen />);
 
-    expect(await screen.findByText('In progress now')).toBeTruthy();
+    expect(await screen.findByText("Sara's place")).toBeTruthy();
     expect(screen.getByText('Hosting')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Join/ })).toBeNull();
   });
@@ -1145,7 +1287,7 @@ describe('organizing an unbooked, in-progress game', () => {
     render(<ClubsScreen />);
 
     expect(await screen.findByRole('button', { name: 'Club' })).toBeTruthy();
-    expect(screen.queryByText('In progress now')).toBeNull();
+    expect(screen.queryByText("Sara's place")).toBeNull();
   });
 
   it('opens the event screen when the organizing row is tapped', async () => {
@@ -1155,7 +1297,7 @@ describe('organizing an unbooked, in-progress game', () => {
 
     render(<ClubsScreen />);
 
-    const link = (await screen.findByText('In progress now')).closest('a');
+    const link = (await screen.findByText("Sara's place")).closest('a');
     expect(link?.getAttribute('data-href')).toBe(
       `/clubs/${CLUB.id}/events/live-game`,
     );
@@ -1327,6 +1469,54 @@ describe('club detail screen', () => {
     expect(screen.queryByTestId('pip-dash')).toBeNull();
   });
 
+  it('filters the roster by name as the host types', async () => {
+    fetchRoster.mockResolvedValue([
+      { profile_id: 'test-user', role: 'host', display_name: 'Ada', skill_level: null },
+      { profile_id: 'user-2', role: 'member', display_name: 'Ben', skill_level: null },
+    ]);
+    render(<ClubDetailScreen />);
+    await screen.findByText('Ada');
+
+    fireEvent.change(screen.getByLabelText('Search members'), {
+      target: { value: 'ad' },
+    });
+
+    expect(screen.getByText('Ada')).toBeTruthy();
+    expect(screen.queryByText('Ben')).toBeNull();
+  });
+
+  it('finds a member with no display name by searching "member"', async () => {
+    fetchRoster.mockResolvedValue([
+      { profile_id: 'test-user', role: 'host', display_name: '', skill_level: null },
+      { profile_id: 'user-2', role: 'member', display_name: 'Ben', skill_level: null },
+    ]);
+    render(<ClubDetailScreen />);
+    await screen.findByText('Ben');
+
+    fireEvent.change(screen.getByLabelText('Search members'), {
+      target: { value: 'member' },
+    });
+
+    expect(screen.getByText('Member')).toBeTruthy();
+    expect(screen.queryByText('Ben')).toBeNull();
+  });
+
+  it('tells the host when nobody matches their search, without hiding the search field', async () => {
+    fetchRoster.mockResolvedValue([
+      { profile_id: 'test-user', role: 'host', display_name: 'Ada', skill_level: null },
+    ]);
+    render(<ClubDetailScreen />);
+    await screen.findByText('Ada');
+
+    fireEvent.change(screen.getByLabelText('Search members'), {
+      target: { value: 'zzz' },
+    });
+
+    expect(screen.queryByText('Ada')).toBeNull();
+    expect(screen.getByText('No members match "zzz".')).toBeTruthy();
+    expect(screen.getByLabelText('Search members')).toBeTruthy();
+  });
+
   // This button used to push to a compose screen that emailed the whole
   // roster; it now opens an in-app thread with the "Also email everyone"
   // toggle off by default. "Message members" was left over from the old
@@ -1394,14 +1584,16 @@ describe('club detail screen', () => {
     expect(screen.queryByRole('button', { name: 'Your profile' })).toBeNull();
   });
 
-  // This screen never had the combined back/tile/plus row Task 9/10 built
-  // for the Clubs dashboard specifically — its own separate "← Clubs" ghost
-  // button (below) is the only way back, and it never gains "Clear club
-  // filter" or "Add a game" alongside the tile.
-  it('shows the club as a tile, still with its own separate back button unchanged', async () => {
+  // The separate "← Clubs" ghost button is gone — DashboardHeader's own
+  // chevron slot (previously always empty on this screen, since it never
+  // passed onPressBack) now carries the back action, so there is exactly
+  // one way back, not two.
+  it('shows the club as a tile, with one consolidated back button', async () => {
     render(<ClubDetailScreen />);
     expect(await screen.findByTestId('thread-avatar-club-tile')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Back to your clubs' })).toBeTruthy();
+    expect(
+      screen.getAllByRole('button', { name: 'Back to your clubs' }),
+    ).toHaveLength(1);
     expect(screen.queryByRole('button', { name: 'Clear club filter' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Add a game' })).toBeNull();
   });

@@ -120,7 +120,10 @@ const CLUB_GLYPHS: ClubGlyph[] = [
 /**
  * A club's own tile face, stable for a given id -- every member sees the
  * same glyph for the same club, everywhere it's shown (its chip, its
- * header, the game screen's small tile), not a fresh pick per render.
+ * header, and the Messages list's club rows, via ThreadRow's `asTile`
+ * treatment on ThreadAvatar), not a fresh pick per render. The game
+ * screen no longer has its own small tile -- it reuses DashboardHeader's
+ * "Your club" shape instead, which already carries this same glyph.
  * No fairness/collision-resistance requirement: a plain string hash into
  * 8 buckets is enough, this is decoration, not a security boundary.
  */
@@ -150,6 +153,11 @@ export type DashboardRow = {
    * `buildDashboardRows`' own doc comment for why this exists.
    */
   organizing: boolean;
+  /** Integer cents, copied from whichever source (MyBooking or ClubEvent)
+   *  built this row. `0` means "no fee set". */
+  feeCents: number;
+  /** Integer cents. `0` means "no minimum spend set". */
+  minSpendCents: number;
 };
 
 /** Live means it holds or is queued for a seat; declined and cancelled do not. */
@@ -222,6 +230,8 @@ export function buildDashboardRows(input: {
     booking,
     joinable: false,
     organizing: false,
+    feeCents: booking.fee_cents,
+    minSpendCents: booking.min_spend_cents,
   }));
 
   const seen = new Set(rows.map((row) => row.eventId));
@@ -260,6 +270,8 @@ export function buildDashboardRows(input: {
       booking: null,
       joinable: !started,
       organizing: started && !ended,
+      feeCents: event.fee_cents,
+      minSpendCents: event.min_spend_cents,
     });
   }
 

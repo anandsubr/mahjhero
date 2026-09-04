@@ -116,12 +116,8 @@ function Glyph({ suit, color }: { suit: MahjongSuit; color: string }) {
  * row (components/ClubChips.tsx, size `"chip"`, `selected` on the chosen
  * club, suit from `glyphForClub`); a club thread's own avatar
  * (components/ThreadAvatar.tsx's `asTile` branch, size `"chip"`, suit
- * from `glyphForClub`); each of the four landing screens' own headings
- * (size `"section"`, one of the fixed 4-glyph section mapping); and a
- * single game's own screen (app/clubs/[id]/events/[eventId]/index.tsx,
- * size `"section"`, but -- unlike the other `"section"` consumers --
- * this one's suit is that specific club's own `glyphForClub` result, not
- * a fixed section glyph.
+ * from `glyphForClub`); and each of the four landing screens' own headings
+ * (size `"section"`, one of the fixed 4-glyph section mapping).
  */
 export default function MahjongTile({ suit, size, selected = false, label }: Props) {
   const glyphColor = selected ? colors.bg : GLYPH_COLOR[suit];

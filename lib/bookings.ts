@@ -71,6 +71,10 @@ export type MyBooking = {
   /** Null when the event never asked for check-in. */
   check_in_opens_at: string | null;
   check_in_closes_at: string | null;
+  /** Integer cents. `0` means "no fee set". */
+  fee_cents: number;
+  /** Integer cents. `0` means "no minimum spend set". */
+  min_spend_cents: number;
 };
 
 export type BookingOutcome = {

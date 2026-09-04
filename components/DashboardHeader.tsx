@@ -39,14 +39,15 @@ import { colors, radius, space, type } from '../lib/theme';
  * drives `onPressScope`, so a one-club member gets it too without any
  * special-casing — their header always shows this shape.
  *
- * `onPressBack`, also only meaningful in the "Your club" shape, draws a
- * chevron and is app/clubs/index.tsx's way to clear its club filter back to
- * "All clubs" — client state, not navigation. app/clubs/[id]/index.tsx
- * renders this same shape but never passes it: that screen's way back is
- * the separate ghost Button above this header
- * (2026-09-01-back-links-design.md), a real navigation rather than a filter
- * clear, so the two were kept apart rather than overloading one chevron
- * with both meanings.
+ * `onPressBack`, also only meaningful in the "Your club" shape, draws the
+ * top row's chevron -- and the chevron now does double duty rather than
+ * meaning one fixed thing everywhere. app/clubs/index.tsx passes it to clear
+ * its club filter back to "All clubs" — client state, not navigation, with
+ * `backLabel` left at its default "Clear club filter". app/clubs/[id]/index.tsx
+ * and the game screen (app/clubs/[id]/events/[eventId]/index.tsx) both pass
+ * it as real navigation instead, each with `backLabel="Back to your clubs"`
+ * — there is no separate ghost Button any more; the chevron is that screen's
+ * only way back.
  *
  * `titleAccessory`, only meaningful in the flat kicker/name/meta shape: an
  * optional element rendered inline immediately before `name` (e.g. the
@@ -68,6 +69,7 @@ export default function DashboardHeader({
   onPressScope,
   onPressAddGame,
   onPressBack,
+  backLabel = 'Clear club filter',
 }: {
   kicker: string;
   name: string;
@@ -80,6 +82,12 @@ export default function DashboardHeader({
   onPressScope?: () => void;
   onPressAddGame?: () => void;
   onPressBack?: () => void;
+  /** Accessibility label for the chevron `onPressBack` draws. Defaults to
+   *  today's "Clear club filter" (app/clubs/index.tsx's own filter-clear
+   *  chevron) — app/clubs/[id]/index.tsx passes "Back to your clubs"
+   *  instead, since its own chevron is real navigation, not a filter
+   *  clear, and the hardcoded label would misdescribe it. */
+  backLabel?: string;
 }) {
   if (kicker === 'Your club') {
     return (
@@ -94,7 +102,7 @@ export default function DashboardHeader({
               <Pressable
                 onPress={onPressBack}
                 accessibilityRole="button"
-                accessibilityLabel="Clear club filter"
+                accessibilityLabel={backLabel}
                 style={styles.clubBack}
               >
                 <ChevronLeftIcon color={colors.text} size={22} />
@@ -102,6 +110,10 @@ export default function DashboardHeader({
             ) : null}
           </View>
           {clubId ? (
+            // `size={72}` is ignored by ThreadAvatar's `asTile` branch, which
+            // always renders its fixed 48x60 chip regardless of `size` --
+            // left here as a harmless no-op rather than a functional bug, so
+            // changing this number does nothing.
             <ThreadAvatar kind="club" name={name} clubId={clubId} asTile size={72} />
           ) : null}
           <View style={styles.clubBack}>

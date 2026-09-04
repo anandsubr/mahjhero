@@ -34,6 +34,9 @@ import {
 import type { BookingOutcome, MyBooking } from '../../lib/bookings';
 import { canInvite, fetchMyClubs, fetchMyRoles } from '../../lib/clubs';
 import type { Club, ClubRole } from '../../lib/clubs';
+import { applyGreetingTemplate, fetchGreetings, pickDailyGreeting } from '../../lib/greetings';
+import type { Greeting } from '../../lib/greetings';
+import { fetchProfile } from '../../lib/profile';
 import { GENERIC_ERROR } from '../../lib/constants';
 import {
   ALL_CLUBS,
@@ -44,7 +47,7 @@ import {
   needAFourthAlerts,
 } from '../../lib/dashboard';
 import type { DashboardRow, FourthAlert } from '../../lib/dashboard';
-import { fetchUpcomingEvents, formatEventWhen } from '../../lib/events';
+import { fetchUpcomingEvents, formatEventTime, formatFeeCents, formatEventWhen } from '../../lib/events';
 import type { ClubEvent } from '../../lib/events';
 import { useSession } from '../../lib/session';
 import { colors, radius, space, type } from '../../lib/theme';
@@ -132,6 +135,8 @@ export default function ClubsScreen() {
   const [selected, setSelected] = useState<string>(ALL_CLUBS);
   const [notice, setNotice] = useState<string | null>(null);
   const { byClub: unreadByClub } = useUnreadCounts();
+  const [displayName, setDisplayName] = useState('');
+  const [greetings, setGreetings] = useState<Greeting[]>([]);
 
   // Every write below awaits the network and then calls setState. Nothing
   // checked the screen was still mounted, so navigating away mid-write —
@@ -174,6 +179,14 @@ export default function ClubsScreen() {
     fetchMyRoles(userId).then((result) => {
       if (cancelled) return;
       setRoles(result ?? []);
+    });
+    fetchProfile(userId).then((result) => {
+      if (cancelled) return;
+      if (result) setDisplayName(result.display_name);
+    });
+    fetchGreetings().then((result) => {
+      if (cancelled) return;
+      setGreetings(result ?? []);
     });
     return () => {
       cancelled = true;
@@ -496,8 +509,20 @@ export default function ClubsScreen() {
     list.find((club) => club.id === selected)?.id ??
     (list.length === 1 ? list[0].id : null);
 
+  const todaysGreeting = pickDailyGreeting(greetings, new Date());
+  const greetingText = todaysGreeting
+    ? applyGreetingTemplate(todaysGreeting.text, displayName)
+    : null;
+  // Only on the flat "all clubs" scope — a single club's own dashboard
+  // (whether reached by a one-club member, who resolves there by default
+  // per headerScope, or by filtering into one) has its own identity to
+  // show instead, and a generic dashboard greeting has nothing to do with
+  // the specific club in view.
+  const showGreeting = greetingText !== null && scope.kicker !== 'Your club';
+
   return (
     <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="club" />}>
+      {showGreeting ? <Text style={styles.greeting}>{greetingText}</Text> : null}
       {scope.kicker === 'Your club' ? (
         <DashboardHeader
           kicker={scope.kicker}
@@ -684,13 +709,23 @@ function GameRow({
           >
             <DateTile startsAt={row.startsAt} timezone={row.timezone} />
             <View style={styles.gameBody}>
-              <Text style={styles.gameKicker}>{row.clubName}</Text>
-              <Text style={styles.gameTitle}>{row.title}</Text>
-              <Text style={styles.help}>
-                {formatEventWhen(row.startsAt, row.timezone)}
-                {' · '}
-                {row.venueName}
+              <Text style={styles.gameClubName}>{row.clubName}</Text>
+              <Text style={styles.gameTime}>
+                {formatEventTime(row.startsAt, row.timezone)}
               </Text>
+              <Text style={styles.gameVenue}>{row.venueName}</Text>
+              {row.feeCents > 0 || row.minSpendCents > 0 ? (
+                <Text style={styles.gameFee}>
+                  {[
+                    row.feeCents > 0 ? `${formatFeeCents(row.feeCents)} to play` : null,
+                    row.minSpendCents > 0
+                      ? `${formatFeeCents(row.minSpendCents)} min spend`
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </Text>
+              ) : null}
             </View>
           </Pressable>
         </Link>
@@ -919,6 +954,11 @@ const styles = StyleSheet.create({
     fontSize: type.size.h2,
     color: colors.text,
   },
+  greeting: {
+    fontFamily: type.heading,
+    fontSize: type.size.h2,
+    color: colors.text,
+  },
   // Used only by the `loadFailed` branch. The other two places this screen
   // could show a section tile don't need a row of their own for it: the
   // empty-clubs-list branch passes it as `DashboardHeader`'s own
@@ -972,17 +1012,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: space[3],
   },
-  gameKicker: {
+  gameClubName: {
     fontFamily: type.bodySemiBold,
     fontSize: type.size.helper,
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
     color: colors.textMuted,
   },
-  gameTitle: {
+  gameTime: {
     fontFamily: type.bodyBold,
     fontSize: type.size.body,
     color: colors.text,
+    marginTop: 1,
+  },
+  gameVenue: {
+    fontFamily: type.bodyRegular,
+    fontSize: type.size.helper,
+    color: colors.textMuted,
+    marginTop: 1,
+  },
+  gameFee: {
+    fontFamily: type.bodyRegular,
+    fontSize: type.size.helper,
+    color: colors.textMuted,
     marginTop: 1,
   },
   gameAction: {

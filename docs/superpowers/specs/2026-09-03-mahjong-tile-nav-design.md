@@ -403,3 +403,489 @@ is already right next to it).
 - A live visual check of `app/clubs/index.tsx`'s new combined top row
   (back/tile/plus in one row) at mobile width, and of the game screen's
   new small club tile sitting next to its existing kicker text.
+
+## Addendum 3: club-identity consistency, live-only rounds/timer, and an admin-managed daily greeting
+
+A follow-up request after living with Addenda 1-2, driven by two reference
+screenshots (a clean club-identity header, and the home grid's tile row)
+and a fresh look at four screens side by side.
+
+### Part A — club tile+name consistency across every context
+
+Read fresh, not assumed, before deciding what to change:
+
+1. **Home dashboard's club chips** (`components/ClubChips.tsx`) — already
+   the correct "grid" shape from Addendum 1 (tile above, initials+name
+   below). The one bug: the name `Text` at `ClubChips.tsx:80-82` is
+   `numberOfLines={1}`, so a longer name ("Tuesday Circle", "West
+   Chapter") truncates with an ellipsis instead of wrapping to a second
+   line the way the reference screenshot shows. **Fix:** raise to
+   `numberOfLines={2}` — `styles.tile` (`width: 64`, centered text) needs
+   no other change to wrap cleanly.
+2. **Club Dashboard and Club Edit headers** — both already render
+   `DashboardHeader`'s `kicker === 'Your club'` shape (`ThreadAvatar
+   asTile`, the 48x60 chip, name pill below) — the correct "header" shape
+   from Addendum 2, and already shared correctly between the two screens.
+   No change needed to tile/name styling itself. What IS wrong: Club Edit
+   duplicates its back control — a standalone ghost `Button` reading
+   "Clubs" sits above the header (`app/clubs/[id]/index.tsx:172-181`),
+   while the header's own built-in chevron slot (`clubTopRow`) sits empty
+   because that `DashboardHeader` call passes no `onPressBack`
+   (`183-188`). **Fix:** delete the ghost Button block entirely and pass
+   `onPressBack={() => router.push('/clubs')}` into the existing
+   `DashboardHeader` call — the exact prop `app/clubs/index.tsx` already
+   uses for its own back-to-all-clubs chevron. One header block, one back
+   control, matching Club Dashboard's own shape exactly — no new
+   component required. One real difference to carry along:
+   `app/clubs/index.tsx`'s own `onPressBack` clears a client-side filter
+   ("all clubs" again), while Club Edit's is real navigation back to
+   `/clubs` — the chevron's hardcoded `accessibilityLabel="Clear club
+   filter"` (`DashboardHeader.tsx:96-97`) would misdescribe the latter.
+   `DashboardHeader` needs a new optional `backLabel` prop (defaulting to
+   today's "Clear club filter" so `app/clubs/index.tsx` is unaffected),
+   with Club Edit passing "Back to your clubs" — the exact label its
+   deleted ghost Button used — so assistive tech still hears the right
+   thing.
+3. **Message board header** (`app/messages/club/[threadId]/index.tsx`,
+   and the same pattern in `[postId].tsx` / `new.tsx`) — already calls
+   `ThreadAvatar kind="club" asTile size={72} clubId={...}`. Since
+   `ThreadAvatar`'s `asTile` branch (`ThreadAvatar.tsx:63-72`) always
+   renders `MahjongTile size="chip"` regardless of the `size` number
+   passed in, this already renders byte-identical tile chrome to Club
+   Dashboard/Club Edit today. **No change needed here** — this screen is
+   already consistent; the `size={72}` prop is simply dead code on this
+   branch, worth a one-line comment but not a functional fix.
+4. **Game screen header** (`app/clubs/[id]/events/[eventId]/index.tsx:728-749`)
+   — the one genuinely inconsistent case. It already has the right
+   *structure* (back chevron, then tile, then club name, all in one row,
+   `headerRow`) — but the tile itself is `MahjongTile size="section"`
+   (30x40, no initials label), the small decorative form Addendum 1 built
+   for the four nav landing pages, not the 48x60 chip-with-initials form
+   every other club-identity context uses. **Fix:** swap it for the same
+   `ThreadAvatar kind="club" asTile clubId={clubId} name={club.name}`
+   used everywhere else, keeping the existing `View testID="section-tile"`
+   wrapper around it (so `events-detail.test.tsx`'s existing scoped query
+   keeps working unchanged) and the existing `clubKicker` text styling
+   (already the correct uppercase/accent look — no text change needed).
+   This supersedes one piece of Addendum 2 for this specific consumer
+   only (`MahjongTile.tsx:120-124`'s own doc comment calls out "a single
+   game's own screen ... size 'section'"); the four nav landing pages
+   keep their `section` tiles unchanged.
+
+No new shared component anywhere in Part A — every context already has
+the right building block. This is three small, targeted fixes (#1, one
+prop wired through in #2, one swap in #4) rather than a refactor.
+
+### Part B — rounds and the timer show only while the game is live
+
+`app/clubs/[id]/events/[eventId]/index.tsx` already computes `gameLive`
+(lines 445-448: `status === 'published' && starts_at <= now < ends_at`),
+today used only to gate `canRecordRound`. `TableCard`
+(`components/TableCard.tsx`) always renders `RoundLog` and `RoundTimer`
+regardless of that. **Fix:** thread `gameLive` down as a new prop to
+`TableCard`, and render the `RoundLog`/`RoundTimer` block only when it's
+true — before the game starts and after it ends, that block disappears
+entirely; the seat/table roster underneath stays visible throughout,
+unaffected.
+
+### Part C — Club Dashboard's game row: three aligned lines
+
+`GameRow` (`app/clubs/index.tsx:627-732`)'s body (`gameBody`, lines
+686-693) currently shows three lines of very different weight: a small
+caps club-name kicker, a bold event title, then one combined "when ·
+venue" line. **New shape:** three lines of comparable weight — **club
+name**, **time only**, **venue** — replacing all three current lines.
+The event's own title is dropped from this row entirely (still the
+heading of the screen you land on after tapping through; the date badge
+plus club name/time/venue already identify the row in the list). This
+needs one new formatter beside `formatEventWhen` in `lib/events.ts` —
+`formatEventTime(startsAt, timezone, locale?)`, the same
+`Intl.DateTimeFormat` call minus `weekday`/`day`/`month` — since the
+`DateTile` badge already to the row's left already carries the day/date,
+and showing it twice was exactly the "time only, as the date repeats"
+complaint. The badge's own size (52x70) already sets the row's height;
+the three text lines just need even spacing within `gameBody`.
+
+### Part D — a daily, admin-managed greeting on the Dashboard
+
+Net-new — nothing like this exists in the app today.
+
+- **Admin flag** — a new migration adds `is_admin boolean not null
+  default false` to `public.profiles`, seeded `true` for the requesting
+  user's own account (matched by email against `auth.users`, since
+  `profiles` itself carries no email column).
+  `lib/schema-contract.test.ts:272`'s column whitelist needs `is_admin`
+  added alongside the new column, or that test fails on the very next
+  schema read.
+- **Storage** — a new `public.greetings` table: `id uuid primary key
+  default gen_random_uuid()`, `text text not null` (a template
+  containing a literal `{name}` token), `created_at timestamptz not null
+  default now()`. RLS: any signed-in member can `select`;
+  `insert`/`update`/`delete` require the caller's own `profiles.is_admin
+  = true`. A new `lib/greetings.ts` exposes `fetchGreetings()`,
+  `addGreeting(text)`, `updateGreeting(id, text)`, `deleteGreeting(id)` —
+  the same shape `lib/profile.ts`'s own functions already follow.
+- **Daily pick** — deterministic, not re-rolled per render: hash today's
+  local calendar date (`YYYY-MM-DD`) into an index over the fetched
+  greeting list, so every user sees the same greeting all day and it
+  changes at local midnight. An empty list means the dashboard simply
+  shows no greeting line — not an error state.
+- **Personalization** — the signed-in profile's `display_name` (via
+  `lib/profile.ts`'s existing `fetchProfile`, not currently called from
+  `app/clubs/index.tsx` — this adds that one call) replaces the
+  template's `{name}` token. An empty `display_name` (a real, reachable
+  state — see `app/clubs/[id]/index.tsx:236-238`'s own existing "Member"
+  fallback) substitutes the same fallback word used there, rather than
+  rendering "Hi , ready...".
+- **Display** — a new heading at the very top of `app/clubs/index.tsx`,
+  above `DashboardHeader`/`ClubChips`, styled with `type.heading`
+  (Caprasimo) — the same font `app/welcome.tsx`'s own headline uses — at
+  a size suited to an in-app screen heading (e.g. `profile.tsx`'s own
+  `type.size.h2` treatment) rather than the welcome screen's larger
+  marketing `type.size.display`.
+- **Admin management UI** — a new screen (e.g. `app/admin/greetings.tsx`)
+  listing every greeting with edit/delete plus an add field, following
+  `app/profile.tsx`'s existing `Card`/`settingsRow` visual pattern.
+  Linked from Profile via one new `Card`
+  (`settingsCard`/`settingsRow`/`settingsLabel`/"Manage" `editLink`,
+  copying the existing "Friends" card's exact shape at
+  `app/profile.tsx:218-226`), rendered only when the loaded profile's
+  `is_admin` is true.
+
+### Decisions locked during brainstorming (Addendum 3)
+
+| # | Decision |
+|---|---|
+| 1 | No new shared "ClubTile" component — every context already has the right building block; this is targeted fixes, not a refactor. |
+| 2 | Admin is a new `profiles.is_admin` boolean, not a reuse of per-club host/co-organizer roles. |
+| 3 | Greeting template holds a `{name}` placeholder, filled from `display_name` at render time. |
+| 4 | Greeting changes once per calendar day (deterministic hash), not on every dashboard visit. |
+| 5 | The game-row restructure (Part C) drops the event's own title from the row entirely. |
+
+### Open items for the implementation plan to resolve
+
+- Exact `formatEventTime` output format (12-hour, matching
+  `formatEventWhen`'s existing `hour12: true` convention) and the exact
+  line spacing/sizing for the three `gameBody` lines once they replace
+  today's two differently-weighted ones.
+- Exact heading font size token for the dashboard greeting — a live
+  check against the existing dashboard layout, not an assumption.
+- The date-hash function for the daily greeting pick (no security or
+  uniformity requirement, only "stable across a day, spreads reasonably"
+  — the same bar Addendum 1 set for `glyphForClub`'s own hash).
+- Whether `is_admin` should be settable only by direct SQL for now (no
+  UI to promote a second admin) — reasonable given there's exactly one
+  admin today; flag if a future admin-management UI is wanted instead.
+
+### Testing
+
+- `components/ClubChips.tsx`: existing tests updated for
+  `numberOfLines={2}`; a new case for a name long enough to wrap.
+- `app/clubs/[id]/index.tsx`: a test confirming the ghost "Clubs" button
+  is gone and `DashboardHeader`'s own chevron now calls
+  `router.push('/clubs')`.
+- `app/clubs/[id]/events/[eventId]/index.tsx`:
+  `events-detail.test.tsx`'s existing `section-tile`-scoped query keeps
+  passing; a new assertion that the tile inside it now carries the
+  club's initials label (the chip form), not the label-less section
+  form.
+- `components/TableCard.tsx`: existing round/timer tests split into
+  "game live" and "game not live" cases; a new test confirming neither
+  renders outside the live window.
+- `lib/events.ts`: a new `formatEventTime` unit test (format, and the
+  existing `RangeError` guard).
+- `lib/greetings.ts`: CRUD tests following `lib/profile.test.ts`'s
+  existing shape; a test for the deterministic daily-pick function (same
+  date -> same index; varying list lengths don't throw).
+- `lib/schema-contract.test.ts`: updated column whitelist including
+  `is_admin`, and a new `greetings` table contract test alongside the
+  existing `profiles` one.
+- A live visual check (this branch's established practice) of: the Home
+  grid with a long club name wrapping to two lines; the Club Edit header
+  with its single back chevron; the game screen's upsized tile; a game
+  row before/during/after its live window (timer/rounds appearing and
+  disappearing); and the Dashboard's new greeting line both with and
+  without a `display_name` set.
+
+## Addendum 4: the Messages list's club avatar, and an optional per-game fee
+
+Two more requests, added before implementation began on the plan built from
+Addenda 1-3.
+
+### Part A — the Messages list's club rows get the mahjong tile too
+
+`components/ThreadRow.tsx:69` renders every kind's avatar identically:
+
+```tsx
+<ThreadAvatar kind={row.kind} name={row.kind === 'club' ? row.club_name ?? '' : title} />
+```
+
+— no `size`, no `asTile`, no `clubId`, so a club thread gets `ThreadAvatar`'s
+plain-circle fallback (`accent[700]` fill, initials), not the tile treatment
+`DashboardHeader` and the club message-board header already use. The data is
+already there: `ThreadListRow` (`lib/messages.ts:16-43`, what
+`app/messages/index.tsx` maps over) already carries `club_id` on every row —
+`app/messages/index.tsx` itself already reads `row.club_id` elsewhere
+(lines 102, 107). **Fix:** pass `asTile`/`clubId` through for club rows only:
+
+```tsx
+<ThreadAvatar
+  kind={row.kind}
+  name={row.kind === 'club' ? row.club_name ?? '' : title}
+  asTile={row.kind === 'club'}
+  clubId={row.kind === 'club' ? row.club_id ?? undefined : undefined}
+/>
+```
+
+Non-club kinds ignore `asTile` (`ThreadAvatar.tsx`'s tile branch requires
+`kind === 'club'`), so this is a no-op for direct/group/game rows. Two small,
+accepted side effects, neither worth extra code to avoid:
+
+- The chip tile is 48px wide vs. the circle's 52px — `ThreadRow.tsx`'s
+  divider (`DIVIDER_INSET = space[4] + AVATAR_SIZE + space[3]`, `AVATAR_SIZE
+  = 52`) ends up 4px right of the tile's true edge on club rows. A
+  sub-pixel-scale cosmetic drift on a hairline, left alone rather than adding
+  a per-row-kind width calculation to chase it.
+- The tile is 60px tall vs. the circle's 52px — club rows grow ~8px taller
+  than other rows (the row's own `alignItems: 'center'` handles this with no
+  layout risk). Visual-only, no test currently pins an exact row height.
+
+### Part B — an optional per-game fee: cost to play and/or minimum spend
+
+Confirmed during brainstorming: two independent optional fields (a game can
+have neither, either, or both), each a flat USD amount, always per person, no
+currency picker — this app has no currency/money precedent anywhere today
+(grepped the whole codebase for `price|fee|cost|amount|currency|
+Intl.NumberFormat`; nothing). Shown on the Dashboard's game tile only as a
+small, quiet addition when actually set — never a "Free" placeholder taking
+up space on the common case.
+
+This touches every layer `check_in_required` already touches, and follows
+that exact precedent throughout (same tables, same RPCs, same dual-scope
+edit-screen pattern) rather than inventing a new shape:
+
+#### Schema
+
+`supabase/migrations/20260827000000_check_in_required.sql` is the template.
+New migration adds, to BOTH `public.events` and `public.event_series`
+(mirroring why `check_in_required` lives on both — a series is a template,
+occurrences are its materializations, and a weekly host sets an economic fact
+once, not every week):
+
+```sql
+alter table public.event_series
+  add column fee_cents        integer not null default 0 check (fee_cents >= 0),
+  add column min_spend_cents  integer not null default 0 check (min_spend_cents >= 0);
+
+alter table public.events
+  add column fee_cents        integer not null default 0 check (fee_cents >= 0),
+  add column min_spend_cents  integer not null default 0 check (min_spend_cents >= 0);
+```
+
+Stored as integer cents (not a `numeric` dollar amount) to avoid float
+rounding entirely — the client converts a host's typed dollar string to
+cents once, at submit, and every stored/compared value from then on is an
+exact integer. `0` means "not set" — there is no meaningful difference
+between "explicitly free" and "never priced" for display purposes (both mean
+"show no fee badge"), so this follows the same "always a real value, never
+NULL" convention `notes`/`check_in_required` already established, with no
+tri-state to reason about anywhere downstream.
+
+`events_overrides_known_keys` gains both new keys, the same
+drop-and-re-add-the-constraint dance `check_in_required` used (a check
+constraint's expression cannot be altered in place):
+
+```sql
+alter table public.events drop constraint events_overrides_known_keys;
+alter table public.events add constraint events_overrides_known_keys check (
+  overrides <@ array['title', 'venue_id', 'notes', 'starts_at',
+                     'check_in_required', 'fee_cents', 'min_spend_cents']
+  and array_ndims(overrides) = 1
+);
+```
+
+#### RPC surface
+
+Five functions need updating, each following the codebase's own documented
+rule (`20260827010000_event_mutations_check_in.sql`'s own header comment):
+**a parameter list or `returns table` column list cannot be changed with
+`create or replace`** — it either creates an ambiguous overload or Postgres
+outright refuses (`42P13`) — so each of these is `drop function` +
+`create function`, restating the `revoke`/`grant`, with the body copied
+byte-for-byte from its own **most recently redefined** version (confirmed by
+grepping every migration that touches each name — not necessarily the one
+that first introduced it):
+
+1. **`create_event`** (last redefined `20260827010000`) — add
+   `fee_cents int default 0, min_spend_cents int default 0` as new trailing
+   defaulted params; insert both into the `events` insert list.
+2. **`update_event`** (last redefined `20260827010000`) — add
+   `new_fee_cents int default null, new_min_spend_cents int default null`;
+   `eff_fee_cents := coalesce(new_fee_cents, ev.fee_cents)` (and the min-spend
+   twin); include both in the `update ... set` list; extend the
+   overrides-tracking block with the same "append the key if the effective
+   value differs from the stored one, only when this occurrence belongs to a
+   series" shape `check_in_required` already uses there.
+3. **`create_event_series`** (last redefined `20260827010000`) — same two
+   trailing defaulted params; insert both into `event_series`.
+4. **`update_event_series`** (last redefined `20260827010000`) — same two
+   `new_*` params defaulting to `null`; `eff_fee_cents`/`eff_min_spend_cents`
+   coalesced against the series row; `touched_fee`/`touched_min_spend` gates
+   computed the same way `touched_check_in` is; a propagation `update
+   public.events e set fee_cents = eff_fee_cents where e.series_id =
+   target_series and e.starts_at > now() and e.status <> 'cancelled' and
+   (include_overridden or not ('fee_cents' = any(e.overrides)))` block (and
+   its min-spend twin) alongside the existing title/venue/notes/check-in
+   ones; both keys added to the overrides-clearing block under
+   `include_overridden`.
+5. **`my_upcoming_bookings`** (last redefined `20260827070000`, a
+   `returns table` function — same drop/recreate rule applies to its OUT
+   columns) — add `fee_cents int, min_spend_cents int` to the `returns
+   table (...)` list and `select e.fee_cents, e.min_spend_cents` (via the
+   already-joined `e` alias) to the query body.
+
+**`materialize_one_series`** (last redefined
+`20260827000000_check_in_required.sql`, unchanged signature) needs only a
+plain `create or replace` (no drop needed — it takes the same two
+arguments and returns the same `int`), copying `s.fee_cents, s.min_spend_cents`
+into the `insert into public.events (...)` list the exact way
+`s.check_in_required` already is — **this is the one function it would be
+easy to forget**, and skipping it would silently leave every series-generated
+occurrence at the column default (0/unpriced) regardless of what the host set
+on the series.
+
+#### Client types and reads
+
+Following `check_in_required`'s exact footprint:
+
+- `lib/events.ts`: `ClubEvent` and `EventSeries` each gain `fee_cents:
+  number` and `min_spend_cents: number`; `OverrideKey` gains `'fee_cents'`
+  and `'min_spend_cents'`; `EVENT_COLUMNS`/`SERIES_COLUMNS` gain both
+  columns (`toClubEvent`/`toEventSeries` need no change — both already
+  spread `...rest` from the raw row rather than naming every field).
+  `createEvent`/`createEventSeries` take required `feeCents`/`minSpendCents`
+  numbers (defaulting to `0` at the call site the same way `checkInRequired`
+  always has an explicit value from the form); `updateEvent`/
+  `updateEventSeries` take `feeCents?: number | null` /
+  `minSpendCents?: number | null` (`null`/omitted = "leave this alone").
+- `lib/bookings.ts`: `MyBooking` gains `fee_cents: number` and
+  `min_spend_cents: number` (from `my_upcoming_bookings`'s new columns).
+- `lib/dashboard.ts`: `DashboardRow` gains the same two fields;
+  `buildDashboardRows` copies them from whichever branch built the row —
+  the booking-sourced branch from `MyBooking`, the event-sourced branch from
+  `ClubEvent`.
+
+#### Formatting
+
+New pure helpers in `lib/events.ts`, beside `formatEventTime`:
+`formatFeeCents(cents: number): string`, a plain
+`Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD',
+minimumFractionDigits: cents % 100 === 0 ? 0 : 2 }).format(cents / 100)` —
+whole-dollar fees read as `$15`, fees with cents read as `$15.50`. A second
+small helper, `parseDollarsToCents(value: string): number`, turns a form
+field's raw text into cents (blank or unparseable → `0`, negative clamped to
+`0` — the DB's own `check (... >= 0)` is the real backstop, this just avoids
+a round-trip error for an obviously-bad client value).
+
+#### Forms — add-game and edit-game screens
+
+`app/clubs/[id]/events/new.tsx`'s "Require check-in" block
+(`Text` label + control + `Text` help, lines 402-411) is the exact template.
+Two new fields, placed right after it: `TextField label="Cost to play"
+keyboardType="decimal-pad" placeholder="0.00"` and `TextField label="Minimum
+spend" keyboardType="decimal-pad" placeholder="0.00"`, each backed by its own
+plain string state (`feeText`/`minSpendText`, matching how every other typed
+field on this screen holds a string until submit), parsed via
+`parseDollarsToCents` only inside `onSave`, then passed as `feeCents`/
+`minSpendCents` to `createEvent`/`createEventSeries` alongside the existing
+`checkInRequired`.
+
+`app/clubs/[id]/events/[eventId]/edit.tsx` mirrors its own existing
+`checkInRequired` dual-scope machinery exactly: `OriginalOccurrence` gains
+`feeCents`/`minSpendCents`; the screen gets `eventFeeText`/`seriesFeeText`
+(and the min-spend twins) as separate state, seeded from the occurrence and
+the series row respectively — **never cross-seeded**, for the identical
+reason this file's own header comment already gives for
+title/venue/notes/check-in (an overridden occurrence's values differ from
+the series precisely because they're overridden; sharing state across scopes
+silently rewrites every future week the moment "The whole series" is chosen
+with nothing changed). "This game" sends `feeCents`/`minSpendCents` to
+`updateEvent` only when the parsed value differs from
+`original.feeCents`/`original.minSpendCents` (same changed-only gate every
+other field on that path already uses); "The whole series" sends both
+unconditionally to `updateEventSeries`, safe for the same reason it already
+is for title/venue/notes/check-in (seeded from the series row, so an
+untouched field round-trips as a no-op through the RPC's own `coalesce`
+gate).
+
+#### Dashboard display
+
+`app/clubs/index.tsx`'s `GameRow` (its body already restructured to three
+lines by this plan's Task 5 — club name / time / venue) gets a fourth,
+conditional line: `{(row.feeCents > 0 || row.minSpendCents > 0) ? <Text
+style={styles.gameFee}>{feeLine}</Text> : null}`, where `feeLine` joins
+whichever of `` `${formatFeeCents(row.feeCents)} to play` `` / `` `${
+formatFeeCents(row.minSpendCents)} min spend` `` apply (both, joined by
+` · `, when a host set both). Nothing renders for the common free-game case —
+matching the "small badge/line, only when set" decision, not a
+consistently-reserved "Free" slot.
+
+### Decisions locked during brainstorming (Addendum 4)
+
+| # | Decision |
+|---|---|
+| 1 | Cost-to-play and minimum-spend are two independent optional fields, not one relabeled field. |
+| 2 | Flat USD, always per person, no currency selector — matches this app's existing simplicity and its total lack of any prior money-handling code. |
+| 3 | Stored as integer cents, not a `numeric` dollar column — avoids float rounding at every layer above the database. |
+| 4 | `0` means "not set"; there is no separate NULL/"unset" state — same "always a real value" convention `notes`/`check_in_required` already follow. |
+| 5 | Both fields live on `events` AND `event_series`, and are `overrides`-eligible per occurrence — the exact same shape `check_in_required` already established, not a new pattern. |
+| 6 | The Dashboard tile shows the fee only when set, as a small extra line — never a reserved "Free" placeholder. |
+
+### Open items for the implementation plan to resolve
+
+- Exact copy for the fee line's join when both cost-to-play and min-spend
+  are set on the same game (a straw draft is above; needs a live check like
+  every other copy/layout decision on this branch).
+- Whether the add/edit forms validate an absurdly large fee client-side
+  (e.g. a typo'd `$1500` for `$15`) — the spec takes no position; the
+  database's only real constraint is non-negativity, and the implementation
+  plan should decide whether a soft warning belongs on the form or whether
+  trusting the host is enough (this app has no other input-typo guards of
+  this kind today, e.g. table count and duration are `Chip` selectors over a
+  fixed set precisely to avoid this class of problem — a fee is free text by
+  necessity, so it does not have that option).
+- Whether `formatFeeCents`/`parseDollarsToCents` belong in `lib/events.ts`
+  (co-located with the type they decorate, matching `formatEventTime`) or a
+  new `lib/currency.ts` if a future feature needs money formatting for
+  something other than an event — this spec defaults to `lib/events.ts` per
+  YAGNI (no second consumer exists yet).
+
+### Testing
+
+- `components/__tests__/ThreadRow.test.tsx`: its existing
+  `'shows the club's initials in the avatar for a club thread'` test moves
+  from asserting `getByTestId('thread-avatar-club')` to
+  `getByTestId('thread-avatar-club-tile')`. `components/__tests__/
+  ThreadAvatar.test.tsx` needs no change — the `asTile` branch it already
+  covers is reused verbatim, not modified.
+- `lib/events.test.ts`: new tests for `formatFeeCents` (whole dollars,
+  dollars-and-cents, zero) and `parseDollarsToCents` (a plain number string,
+  blank, garbage text, a negative value clamped to zero).
+- `lib/events.ts`'s `createEvent`/`updateEvent`/`createEventSeries`/
+  `updateEventSeries` tests (`lib/events.test.ts`'s existing `describe`
+  blocks for each) get a case confirming `fee_cents`/`min_spend_cents` (or
+  `new_fee_cents`/`new_min_spend_cents`) are sent with the right values,
+  matching how `check_in`/`new_check_in_required` are already asserted
+  there today.
+- `app/__tests__/events-detail.test.tsx` / the new/edit-event screen tests:
+  a case for each form asserting the typed dollar amount reaches
+  `createEvent`/`updateEvent` as the correct integer cents.
+- `app/__tests__/clubs.test.tsx`: a case asserting the fee line appears on
+  a `GameRow` only when `feeCents`/`minSpendCents` is non-zero, and asserting
+  its exact joined text when both are set.
+- `lib/schema-contract.test.ts`: `EVENT_COLUMNS`/`SERIES_COLUMNS`'s exact
+  key-set assertions (mirroring the `PROFILE_COLUMNS` one this plan's Task 6
+  already updates) gain `fee_cents`/`min_spend_cents`.
+- A live visual check of the add-game and edit-game screens' two new fields,
+  and of a Dashboard game tile with a fee set, matching this branch's
+  established practice for every other layout change.

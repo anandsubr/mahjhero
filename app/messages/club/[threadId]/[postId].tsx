@@ -7,7 +7,7 @@ import MessageBubble from '../../../../components/messages/MessageBubble';
 import Screen from '../../../../components/Screen';
 import TabBar from '../../../../components/TabBar';
 import ThreadAvatar from '../../../../components/ThreadAvatar';
-import { ChevronLeftIcon, ChevronRightIcon } from '../../../../components/icons';
+import { ChevronLeftIcon } from '../../../../components/icons';
 import { GENERIC_ERROR } from '../../../../lib/constants';
 import {
   fetchPostMessages,
@@ -249,19 +249,16 @@ export default function PostScreen() {
               clubId={kind === 'club' ? (thread.club_id ?? undefined) : undefined}
             />
 
-            {/* Tappable for the same reason the board's own pill is --
-                see its docstring. */}
-            <Pressable
-              onPress={() => router.push(`/clubs/${thread.club_id}`)}
-              accessibilityRole="button"
-              accessibilityLabel={`${title}, view club`}
-              style={styles.namePill}
-            >
+            {/*
+              A plain View, not a Pressable -- matching the board's own
+              pill (app/messages/club/[threadId]/index.tsx) and
+              app/messages/club/new.tsx's: no button role, no chevron.
+            */}
+            <View style={styles.namePill}>
               <Text numberOfLines={1} style={styles.namePillText}>
                 {title}
               </Text>
-              <ChevronRightIcon color={colors.text} size={14} />
-            </Pressable>
+            </View>
           </View>
         ) : null}
       </View>

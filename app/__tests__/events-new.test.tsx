@@ -697,3 +697,55 @@ describe('carries the tab bar', () => {
     expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
   });
 });
+
+describe('cost to play and minimum spend', () => {
+  it('sends the typed dollar amounts as integer cents', async () => {
+    render(<NewEventScreen />);
+    await screen.findByText('Add a game');
+
+    fireEvent.change(screen.getByLabelText('Date'), {
+      target: { value: '2027-09-07' },
+    });
+    fireEvent.change(screen.getByLabelText('Start time'), {
+      target: { value: '19:00' },
+    });
+    pickVenue();
+    fireEvent.change(screen.getByLabelText('Game name'), {
+      target: { value: 'Tuesday night' },
+    });
+    fireEvent.change(screen.getByLabelText('Cost to play'), {
+      target: { value: '15' },
+    });
+    fireEvent.change(screen.getByLabelText('Minimum spend'), {
+      target: { value: '20.50' },
+    });
+    fireEvent.click(screen.getByText('Save'));
+
+    await vi.waitFor(() => expect(createEvent).toHaveBeenCalled());
+    const call = createEvent.mock.calls[0][0];
+    expect(call.feeCents).toBe(1500);
+    expect(call.minSpendCents).toBe(2050);
+  });
+
+  it('defaults to zero when left blank', async () => {
+    render(<NewEventScreen />);
+    await screen.findByText('Add a game');
+
+    fireEvent.change(screen.getByLabelText('Date'), {
+      target: { value: '2027-09-07' },
+    });
+    fireEvent.change(screen.getByLabelText('Start time'), {
+      target: { value: '19:00' },
+    });
+    pickVenue();
+    fireEvent.change(screen.getByLabelText('Game name'), {
+      target: { value: 'Tuesday night' },
+    });
+    fireEvent.click(screen.getByText('Save'));
+
+    await vi.waitFor(() => expect(createEvent).toHaveBeenCalled());
+    const call = createEvent.mock.calls[0][0];
+    expect(call.feeCents).toBe(0);
+    expect(call.minSpendCents).toBe(0);
+  });
+});

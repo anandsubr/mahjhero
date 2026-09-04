@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(110);
+select plan(112);
 
 /*
  * Guards the privileges themselves, not the policies.
@@ -1042,6 +1042,34 @@ select ok(
   not has_function_privilege(
     'authenticated', 'public.assert_round_writable(uuid)', 'EXECUTE'),
   'authenticated cannot execute assert_round_writable directly'
+);
+
+-- ---------------------------------------------------------------------------
+-- profiles column-level UPDATE grant (20260903160000).
+--
+-- profiles_update_own (20260801221252) only checks WHO can update a row --
+-- its own owner -- not WHICH columns. The table-wide `grant update` that
+-- shipped alongside it therefore let any member PATCH their own is_admin to
+-- true and defeat every RLS policy gated on it (greetings_admin_write,
+-- 20260903090000). 20260903160000 revoked that table-wide grant and
+-- re-granted UPDATE on an explicit column list that excludes is_admin.
+--
+-- has_table_privilege cannot see this narrowing: Postgres reports a
+-- column-restricted grant as a plain table-level UPDATE privilege, so
+-- `has_table_privilege('authenticated', 'public.profiles', 'UPDATE')` stays
+-- true either way -- whether is_admin is in the column list or not.
+-- has_column_privilege is the granularity that actually distinguishes them,
+-- and is the only thing that would catch a future migration re-broadening
+-- the grant back to the whole table.
+-- ---------------------------------------------------------------------------
+
+select ok(
+  not has_column_privilege('authenticated', 'public.profiles', 'is_admin', 'UPDATE'),
+  'authenticated cannot UPDATE profiles.is_admin'
+);
+select ok(
+  has_column_privilege('authenticated', 'public.profiles', 'display_name', 'UPDATE'),
+  'authenticated can still UPDATE profiles.display_name'
 );
 
 select * from finish();

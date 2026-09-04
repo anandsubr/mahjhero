@@ -195,4 +195,31 @@ describe('profile screen', () => {
       screen.getByTestId('section-tile').querySelector('[aria-hidden="true"]'),
     ).toBeTruthy();
   });
+
+  it('does not show a Greetings admin card for an ordinary member', async () => {
+    fetchProfile.mockResolvedValue({
+      id: 'you',
+      display_name: 'Anand',
+      skill_level: null,
+      avatar_url: null,
+      timezone: 'America/New_York',
+      is_admin: false,
+    });
+    render(<ProfileScreen />);
+    await screen.findByText('Friends');
+    expect(screen.queryByText('Greetings')).toBeNull();
+  });
+
+  it('shows a Greetings admin card for an admin', async () => {
+    fetchProfile.mockResolvedValue({
+      id: 'you',
+      display_name: 'Anand',
+      skill_level: null,
+      avatar_url: null,
+      timezone: 'America/New_York',
+      is_admin: true,
+    });
+    render(<ProfileScreen />);
+    expect(await screen.findByText('Greetings')).toBeTruthy();
+  });
 });
