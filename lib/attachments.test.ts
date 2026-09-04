@@ -38,7 +38,8 @@ vi.mock('expo-crypto', () => ({
   randomUUID: vi.fn(() => 'test-uuid'),
 }));
 
-import { getSignedUrls, MAX_ATTACHMENTS } from './attachments';
+import * as ImagePicker from 'expo-image-picker';
+import { getSignedUrls, MAX_ATTACHMENTS, pickImages } from './attachments';
 
 describe('getSignedUrls', () => {
   beforeEach(() => {
@@ -95,5 +96,50 @@ describe('getSignedUrls', () => {
 describe('MAX_ATTACHMENTS', () => {
   it('is 4, mirroring post_message’s own bound', () => {
     expect(MAX_ATTACHMENTS).toBe(4);
+  });
+});
+
+describe('pickImages', () => {
+  // expo-image-picker's WEB implementation ignores `selectionLimit`
+  // entirely -- it just sets `multiple` on an `<input type="file">` and
+  // returns every file the member selected. Native honours the limit, so
+  // this can only be reproduced by making the picker itself misbehave, the
+  // same way a real web picker would: `remaining` is 2, but the picker
+  // hands back 4 assets anyway. Without a clamp at the call site, all 4
+  // would be compressed and uploaded before `post_message` ever gets a say.
+  it('clamps the library result to `remaining` even when the picker returns more', async () => {
+    vi.mocked(ImagePicker.requestMediaLibraryPermissionsAsync).mockResolvedValueOnce({
+      granted: true,
+    } as ImagePicker.PermissionResponse);
+    vi.mocked(ImagePicker.launchImageLibraryAsync).mockResolvedValueOnce({
+      canceled: false,
+      assets: [
+        { uri: 'a', width: 1, height: 1 },
+        { uri: 'b', width: 2, height: 2 },
+        { uri: 'c', width: 3, height: 3 },
+        { uri: 'd', width: 4, height: 4 },
+      ],
+    } as ImagePicker.ImagePickerResult);
+
+    const picked = await pickImages('library', /* alreadyPicked */ 2);
+
+    expect(picked).toEqual([
+      { uri: 'a', width: 1, height: 1 },
+      { uri: 'b', width: 2, height: 2 },
+    ]);
+  });
+
+  it('passes the full result through untouched when the picker already honours the limit', async () => {
+    vi.mocked(ImagePicker.requestMediaLibraryPermissionsAsync).mockResolvedValueOnce({
+      granted: true,
+    } as ImagePicker.PermissionResponse);
+    vi.mocked(ImagePicker.launchImageLibraryAsync).mockResolvedValueOnce({
+      canceled: false,
+      assets: [{ uri: 'a', width: 1, height: 1 }],
+    } as ImagePicker.ImagePickerResult);
+
+    const picked = await pickImages('library', 0);
+
+    expect(picked).toEqual([{ uri: 'a', width: 1, height: 1 }]);
   });
 });

@@ -56,7 +56,19 @@ export async function pickImages(
       quality: 1,
     });
     if (result.canceled) return null;
-    return result.assets.map((a) => ({ uri: a.uri, width: a.width, height: a.height }));
+    // `selectionLimit` above is honoured on native, but expo-image-picker's
+    // WEB implementation ignores it outright -- it sets `multiple` on a
+    // plain `<input type="file">` and returns every file the member
+    // selected, unclamped. Web is a first-class platform for this app, so
+    // without this slice a member could pick more than `remaining` images,
+    // all of which would be compressed and uploaded before `post_message`
+    // ever gets a say, only to have the whole send refused for carrying too
+    // many attachments -- orphaning the extra uploads for nothing. Clamping
+    // here, once, covers both platforms: a no-op on native (which already
+    // returns at most `remaining`), the actual fix on web.
+    return result.assets
+      .slice(0, remaining)
+      .map((a) => ({ uri: a.uri, width: a.width, height: a.height }));
   } catch (cause) {
     console.error('pickImages failed', cause);
     return null;

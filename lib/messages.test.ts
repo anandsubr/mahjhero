@@ -467,11 +467,27 @@ describe('messagePreview', () => {
   });
 
   // An empty club thread is listed before anybody posts. "No messages yet"
-  // is a fact; a blank line reads as a rendering bug.
+  // is a fact; a blank line reads as a rendering bug. `last_message_at` is
+  // what actually distinguishes this state -- `last_body` is null here too,
+  // but null is not what the fix below keys on (see the next test).
   it('says so when nothing has been posted', () => {
-    expect(messagePreview(row({ last_body: null, last_author: null }))).toBe(
-      'No messages yet',
-    );
+    expect(
+      messagePreview(
+        row({ last_body: null, last_author: null, last_message_at: null }),
+      ),
+    ).toBe('No messages yet');
+  });
+
+  // post_message's own body-or-attachment guard means an empty `last_body`
+  // on a row this app wrote always implies attachments -- the CHECK
+  // constraint (Task 3) refuses an empty body with no attachments. Before
+  // this fix, `!row.last_body` treated '' the same as null and misreported
+  // a real, recent image-only message as "No messages yet", with a fresh
+  // timestamp and unread badge contradicting the copy right next to them.
+  it('renders "Photo" rather than "No messages yet" for an image-only last message', () => {
+    expect(
+      messagePreview(row({ last_body: '', last_author: 'Alice Ng' })),
+    ).toBe('Alice Ng: Photo');
   });
 });
 

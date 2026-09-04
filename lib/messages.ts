@@ -341,10 +341,22 @@ export function rowSubtitle(row: ThreadListRow): string {
  * The row's one-line preview. Newlines are collapsed here rather than left
  * to `numberOfLines`, which clips at the first break — so a message that
  * begins with one would render an empty preview.
+ *
+ * Keyed on `last_message_at`, not `!row.last_body` -- `messages.body`'s
+ * CHECK constraint was relaxed (Task 3) to allow an empty body when the
+ * message carries an attachment, so `last_body` is `''` for an image-only
+ * message, and `!''` is true. Testing `last_body` directly used to make an
+ * image-only message read "No messages yet" even though it has a real,
+ * recent timestamp and can carry an unread badge. `last_message_at` is
+ * null only when the thread has genuinely never been posted in.
+ *
+ * An empty (post-trim) body falls back to "Photo": `post_message` refuses
+ * an empty body with no attachments, so for any row this app itself wrote,
+ * an empty body implies at least one attachment.
  */
 export function messagePreview(row: ThreadListRow): string {
-  if (!row.last_body) return 'No messages yet';
-  const body = row.last_body.replace(/\s+/g, ' ').trim();
+  if (row.last_message_at === null) return 'No messages yet';
+  const body = (row.last_body ?? '').replace(/\s+/g, ' ').trim() || 'Photo';
   if (!row.last_author) return body;
   return `${row.last_author}: ${body}`;
 }
