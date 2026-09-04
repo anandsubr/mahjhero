@@ -745,18 +745,13 @@ function GameRow({
             </Button>
           )
         ) : booking.status === 'confirmed' ? (
-          <View style={styles.seatedColumn}>
-            <Tag variant="accent2">Seated</Tag>
-            {/*
-              Was its own full-width line below the whole card
-              (BookingSeatControls' `seatStatus`) -- moved here, under the
-              tag it belongs to, since there's no reason for a member's own
-              table to sit apart from the status that names it.
-            */}
-            {booking.table_label ? (
-              <Text style={styles.tableLabel}>{booking.table_label}</Text>
-            ) : null}
-          </View>
+          // The table used to render as its own separate line below the
+          // tag, then as a second line under it (both tried and confirmed
+          // misaligned live) -- one message, one pill: the table is part
+          // of what "Seated" means, not a footnote next to it.
+          <Tag variant="accent2">
+            {booking.table_label ? `Seated · ${booking.table_label}` : 'Seated'}
+          </Tag>
         ) : null}
       </View>
 
@@ -1049,15 +1044,6 @@ const styles = StyleSheet.create({
   },
   gameAction: {
     flexShrink: 0,
-  },
-  seatedColumn: {
-    alignItems: 'flex-end',
-    gap: space[1],
-  },
-  tableLabel: {
-    fontFamily: type.bodyRegular,
-    fontSize: type.size.helper,
-    color: colors.textMuted,
   },
   emptyCard: {
     flexDirection: 'row',
