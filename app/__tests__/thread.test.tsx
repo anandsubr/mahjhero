@@ -93,6 +93,19 @@ vi.mock('../../lib/use-notifications-unread', () => ({
   useNotificationsUnread: () => 0,
 }));
 
+// Composer now renders AttachmentPicker (Task 10), which imports
+// lib/attachments.ts -- itself pulling in expo-crypto,
+// expo-image-manipulator and expo-image-picker. None of these tests want to
+// actually load those native modules, so this is mocked wholesale the same
+// way AttachmentPicker.test.tsx and Composer.test.tsx already do for their
+// own renders.
+vi.mock('../../lib/attachments', () => ({
+  pickImages: vi.fn(),
+  compressImage: vi.fn(),
+  uploadAttachment: vi.fn(),
+  MAX_ATTACHMENTS: 4,
+}));
+
 // The Realtime boundary, modeled after the real behavior traced in
 // node_modules/@supabase/realtime-js, not just its call shape:
 //
@@ -264,6 +277,7 @@ const MESSAGES = [
     profiles: { display_name: 'Sara Lindqvist' },
     reply_to_id: null,
     reply_to: null,
+    attachments: [],
   },
   {
     id: 'm2',
@@ -275,6 +289,7 @@ const MESSAGES = [
     profiles: { display_name: 'You' },
     reply_to_id: null,
     reply_to: null,
+    attachments: [],
   },
 ];
 
@@ -374,7 +389,7 @@ describe('thread screen', () => {
     fireEvent.change(input, { target: { value: 'On my way' } });
     fireEvent.click(screen.getByLabelText('Send'));
     await waitFor(() =>
-      expect(postMessage).toHaveBeenCalledWith('t1', 'On my way', false, null),
+      expect(postMessage).toHaveBeenCalledWith('t1', 'On my way', false, null, null, []),
     );
     await waitFor(() => expect((input as HTMLInputElement).value).toBe(''));
   });
@@ -438,6 +453,8 @@ describe('thread screen', () => {
         'Hall is closed Friday',
         false,
         null,
+        null,
+        [],
       ),
     );
     expect(screen.queryByLabelText('Confirm send')).toBeNull();
@@ -526,6 +543,7 @@ describe('thread screen', () => {
         profiles: { display_name: 'Alice Ng' },
         reply_to_id: null,
         reply_to: null,
+        attachments: [],
       },
     ]);
     render(<ThreadScreen />);
@@ -551,6 +569,7 @@ describe('thread screen', () => {
         profiles: { display_name: 'Alice Ng' },
         reply_to_id: null,
         reply_to: null,
+        attachments: [],
       },
     ]);
     render(<ThreadScreen />);
@@ -576,6 +595,7 @@ describe('thread screen', () => {
         profiles: { display_name: 'Alice Ng' },
         reply_to_id: null,
         reply_to: null,
+        attachments: [],
       },
     ]);
     render(<ThreadScreen />);
@@ -609,6 +629,7 @@ describe('thread screen', () => {
         profiles: { display_name: 'You' },
         reply_to_id: null,
         reply_to: null,
+        attachments: [],
       },
     ]);
     render(<ThreadScreen />);
@@ -692,7 +713,7 @@ describe('thread screen', () => {
     });
     fireEvent.click(screen.getByLabelText('Send'));
     await waitFor(() =>
-      expect(postMessage).toHaveBeenCalledWith('t1', 'I can play', false, 'm1'),
+      expect(postMessage).toHaveBeenCalledWith('t1', 'I can play', false, 'm1', null, []),
     );
   });
 
@@ -705,7 +726,7 @@ describe('thread screen', () => {
     });
     fireEvent.click(screen.getByLabelText('Send'));
     await waitFor(() =>
-      expect(postMessage).toHaveBeenCalledWith('t1', 'never mind', false, null),
+      expect(postMessage).toHaveBeenCalledWith('t1', 'never mind', false, null, null, []),
     );
   });
 
@@ -726,6 +747,7 @@ describe('thread screen', () => {
           body: 'I can take the seat.',
           profiles: { display_name: 'You' },
         },
+        attachments: [],
       },
     ]);
     render(<ThreadScreen />);
@@ -742,6 +764,7 @@ describe('thread screen', () => {
         body: 'Answering something that no longer exists.',
         reply_to_id: 'm-gone',
         reply_to: null,
+        attachments: [],
       },
     ]);
     render(<ThreadScreen />);
@@ -843,6 +866,7 @@ describe('thread screen', () => {
         profiles: { display_name: 'Alice Ng' },
         reply_to_id: null,
         reply_to: null,
+        attachments: [],
       },
     ]);
     render(<ThreadScreen />);
@@ -879,6 +903,7 @@ describe('thread screen', () => {
         profiles: { display_name: 'Alice Ng' },
         reply_to_id: null,
         reply_to: null,
+        attachments: [],
       },
     ]);
     render(<ThreadScreen />);
@@ -928,6 +953,7 @@ describe('thread screen', () => {
           profiles: { display_name: 'Sara Lindqvist' },
           reply_to_id: null,
           reply_to: null,
+          attachments: [],
         },
       ]);
       render(<ThreadScreen />);

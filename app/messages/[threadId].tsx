@@ -19,6 +19,7 @@ import {
   startsNewGroup,
   threadKindFor,
   threadTitleFor,
+  type MessageAttachmentInput,
   type ThreadDetail,
   type ThreadMessage,
 } from '../../lib/messages';
@@ -77,6 +78,9 @@ export default function ThreadScreen() {
   const [replyTo, setReplyTo] = useState<ThreadMessage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [attachments, setAttachments] = useState<MessageAttachmentInput[]>([]);
+  const [attachmentsPending, setAttachmentsPending] = useState(false);
+  const [attachmentsResetKey, setAttachmentsResetKey] = useState(0);
   // `sending` above is read from the render closure, so a guard written as
   // `if (sending) return` is blind to a second activation landing in the
   // same tick as an earlier `setSending(true)` -- a queued tap, a
@@ -153,19 +157,22 @@ export default function ThreadScreen() {
   );
 
   const send = useCallback(async () => {
-    if (sendingRef.current || !threadId) return;
+    if (sendingRef.current || attachmentsPending || !threadId) return;
     sendingRef.current = true;
     setSending(true);
     setError(null);
     // `false` -- composing an announcement is gone from this screen (see
     // the component's own docstring), so this never posts one any more.
     // `postMessage`'s `announce` parameter itself is untouched, for the
-    // redesign to reattach a UI to.
+    // redesign to reattach a UI to. `null` for `rootId` -- this screen never
+    // replies inside a club post.
     const { error: refusal } = await postMessage(
       threadId,
       draft,
       false,
       replyTo?.id ?? null,
+      null,
+      attachments,
     );
     if (refusal) {
       // Neither the draft NOR the quote is cleared. Losing what somebody
@@ -181,10 +188,12 @@ export default function ThreadScreen() {
     }
     setDraft('');
     setReplyTo(null);
+    setAttachments([]);
+    setAttachmentsResetKey((k) => k + 1);
     await load();
     sendingRef.current = false;
     setSending(false);
-  }, [threadId, draft, replyTo, load]);
+  }, [threadId, draft, replyTo, attachments, attachmentsPending, load]);
 
   if (loading) {
     return (
@@ -375,7 +384,14 @@ export default function ThreadScreen() {
             replyTo={replyTo}
             onClearReply={() => setReplyTo(null)}
             onSend={() => void send()}
-            sending={sending}
+            sending={sending || attachmentsPending}
+            threadId={threadId ?? ''}
+            attachments={attachments}
+            onAttachmentsChange={(ready, pending) => {
+              setAttachments(ready);
+              setAttachmentsPending(pending);
+            }}
+            attachmentsResetKey={attachmentsResetKey}
           />
         </>
       )}

@@ -18,6 +18,7 @@ import {
   startsNewGroup,
   threadKindFor,
   threadTitleFor,
+  type MessageAttachmentInput,
   type ThreadDetail,
   type ThreadMessage,
 } from '../../../../lib/messages';
@@ -99,6 +100,9 @@ export default function PostScreen() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [attachments, setAttachments] = useState<MessageAttachmentInput[]>([]);
+  const [attachmentsPending, setAttachmentsPending] = useState(false);
+  const [attachmentsResetKey, setAttachmentsResetKey] = useState(0);
   // Written SYNCHRONOUSLY alongside `setSending`, the same pattern
   // app/messages/[threadId].tsx's own `sendingRef` records: `sending` read
   // from the render closure is blind to a second activation landing before
@@ -171,7 +175,7 @@ export default function PostScreen() {
   );
 
   const send = useCallback(async () => {
-    if (sendingRef.current || !threadId || !postId) return;
+    if (sendingRef.current || attachmentsPending || !threadId || !postId) return;
     sendingRef.current = true;
     setSending(true);
     setActionError(null);
@@ -184,6 +188,7 @@ export default function PostScreen() {
       false,
       replyTo?.id ?? null,
       postId,
+      attachments,
     );
     if (refusal) {
       // Neither the draft NOR the quote is cleared. Losing what somebody
@@ -197,10 +202,12 @@ export default function PostScreen() {
     }
     setDraft('');
     setReplyTo(null);
+    setAttachments([]);
+    setAttachmentsResetKey((k) => k + 1);
     await load();
     sendingRef.current = false;
     setSending(false);
-  }, [threadId, postId, draft, replyTo, load]);
+  }, [threadId, postId, draft, replyTo, attachments, attachmentsPending, load]);
 
   if (loading) {
     return (
@@ -299,7 +306,14 @@ export default function PostScreen() {
             replyTo={replyTo}
             onClearReply={() => setReplyTo(null)}
             onSend={() => void send()}
-            sending={sending}
+            sending={sending || attachmentsPending}
+            threadId={threadId ?? ''}
+            attachments={attachments}
+            onAttachmentsChange={(ready, pending) => {
+              setAttachments(ready);
+              setAttachmentsPending(pending);
+            }}
+            attachmentsResetKey={attachmentsResetKey}
           />
         </>
       )}

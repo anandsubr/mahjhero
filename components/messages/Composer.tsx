@@ -1,8 +1,9 @@
 import { useCallback, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SendIcon } from '../icons';
-import { quoteStub, type ThreadMessage } from '../../lib/messages';
+import { quoteStub, type MessageAttachmentInput, type ThreadMessage } from '../../lib/messages';
 import { colors, radius, space, type } from '../../lib/theme';
+import AttachmentPicker from './AttachmentPicker';
 
 // The artboard's `.bigin` height (`min-height: 58px`), and this screen's own
 // Send button -- a 58x58 circle beside a 58-tall input, matched heights, one
@@ -24,6 +25,11 @@ type Props = {
   onClearReply: () => void;
   onSend: () => void;
   sending: boolean;
+  threadId: string;
+  attachments: MessageAttachmentInput[];
+  onAttachmentsChange: (ready: MessageAttachmentInput[], pending: boolean) => void;
+  /** Bumped by the caller after a successful send to remount AttachmentPicker clean. */
+  attachmentsResetKey: number;
 };
 
 /**
@@ -47,6 +53,9 @@ export default function Composer({
   onClearReply,
   onSend,
   sending,
+  threadId,
+  onAttachmentsChange,
+  attachmentsResetKey,
 }: Props) {
   // The composer input's own rendered height, MEASURED rather than trusted
   // from `minHeight` -- trusting `minHeight` is exactly what let a
@@ -91,6 +100,11 @@ export default function Composer({
         </View>
       ) : null}
 
+      <AttachmentPicker
+        key={attachmentsResetKey}
+        threadId={threadId}
+        onAttachmentsChange={onAttachmentsChange}
+      />
       <View style={styles.composer}>
         <TextInput
           style={[styles.input, { height: inputHeight }]}

@@ -67,6 +67,19 @@ vi.mock('../../lib/use-notifications-unread', () => ({
   useNotificationsUnread: () => 0,
 }));
 
+// Composer now renders AttachmentPicker (Task 10), which imports
+// lib/attachments.ts -- itself pulling in expo-crypto,
+// expo-image-manipulator and expo-image-picker. None of these tests want to
+// actually load those native modules, so this is mocked wholesale the same
+// way AttachmentPicker.test.tsx and Composer.test.tsx already do for their
+// own renders.
+vi.mock('../../lib/attachments', () => ({
+  pickImages: vi.fn(),
+  compressImage: vi.fn(),
+  uploadAttachment: vi.fn(),
+  MAX_ATTACHMENTS: 4,
+}));
+
 const root = {
   id: 'p1',
   author_id: 'a1',
@@ -77,6 +90,7 @@ const root = {
   profiles: { display_name: 'Alice Chen' },
   reply_to_id: null,
   reply_to: null,
+  attachments: [],
 };
 
 const reply = {
@@ -89,6 +103,7 @@ const reply = {
   profiles: { display_name: 'Sara Lindqvist' },
   reply_to_id: null,
   reply_to: null,
+  attachments: [],
 };
 
 describe('a club post', () => {
@@ -161,7 +176,7 @@ describe('a club post', () => {
     fireEvent.change(input, { target: { value: 'I am' } });
     fireEvent.click(screen.getByLabelText('Send'));
     await waitFor(() =>
-      expect(postMessage).toHaveBeenCalledWith('t1', 'I am', false, null, 'p1'),
+      expect(postMessage).toHaveBeenCalledWith('t1', 'I am', false, null, 'p1', []),
     );
   });
 
@@ -221,7 +236,7 @@ describe('a club post', () => {
     });
     fireEvent.click(screen.getByLabelText('Send'));
     await waitFor(() =>
-      expect(postMessage).toHaveBeenCalledWith('t1', 'I can play', false, 'm1', 'p1'),
+      expect(postMessage).toHaveBeenCalledWith('t1', 'I can play', false, 'm1', 'p1', []),
     );
   });
 
