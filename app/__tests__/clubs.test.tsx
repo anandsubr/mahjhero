@@ -1469,6 +1469,54 @@ describe('club detail screen', () => {
     expect(screen.queryByTestId('pip-dash')).toBeNull();
   });
 
+  it('filters the roster by name as the host types', async () => {
+    fetchRoster.mockResolvedValue([
+      { profile_id: 'test-user', role: 'host', display_name: 'Ada', skill_level: null },
+      { profile_id: 'user-2', role: 'member', display_name: 'Ben', skill_level: null },
+    ]);
+    render(<ClubDetailScreen />);
+    await screen.findByText('Ada');
+
+    fireEvent.change(screen.getByLabelText('Search members'), {
+      target: { value: 'ad' },
+    });
+
+    expect(screen.getByText('Ada')).toBeTruthy();
+    expect(screen.queryByText('Ben')).toBeNull();
+  });
+
+  it('finds a member with no display name by searching "member"', async () => {
+    fetchRoster.mockResolvedValue([
+      { profile_id: 'test-user', role: 'host', display_name: '', skill_level: null },
+      { profile_id: 'user-2', role: 'member', display_name: 'Ben', skill_level: null },
+    ]);
+    render(<ClubDetailScreen />);
+    await screen.findByText('Ben');
+
+    fireEvent.change(screen.getByLabelText('Search members'), {
+      target: { value: 'member' },
+    });
+
+    expect(screen.getByText('Member')).toBeTruthy();
+    expect(screen.queryByText('Ben')).toBeNull();
+  });
+
+  it('tells the host when nobody matches their search, without hiding the search field', async () => {
+    fetchRoster.mockResolvedValue([
+      { profile_id: 'test-user', role: 'host', display_name: 'Ada', skill_level: null },
+    ]);
+    render(<ClubDetailScreen />);
+    await screen.findByText('Ada');
+
+    fireEvent.change(screen.getByLabelText('Search members'), {
+      target: { value: 'zzz' },
+    });
+
+    expect(screen.queryByText('Ada')).toBeNull();
+    expect(screen.getByText('No members match "zzz".')).toBeTruthy();
+    expect(screen.getByLabelText('Search members')).toBeTruthy();
+  });
+
   // This button used to push to a compose screen that emailed the whole
   // roster; it now opens an in-app thread with the "Also email everyone"
   // toggle off by default. "Message members" was left over from the old
