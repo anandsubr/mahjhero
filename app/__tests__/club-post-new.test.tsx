@@ -47,6 +47,19 @@ vi.mock('../../lib/use-notifications-unread', () => ({
   useNotificationsUnread: () => 0,
 }));
 
+// This screen now renders AttachmentPicker directly (Task 12), which
+// imports lib/attachments.ts -- itself pulling in expo-crypto,
+// expo-image-manipulator and expo-image-picker. None of these tests want to
+// actually load those native modules, so this is mocked wholesale the same
+// way app/__tests__/club-post.test.tsx and thread.test.tsx already do for
+// their own renders.
+vi.mock('../../lib/attachments', () => ({
+  pickImages: vi.fn(),
+  compressImage: vi.fn(),
+  uploadAttachment: vi.fn(),
+  MAX_ATTACHMENTS: 4,
+}));
+
 const countBroadcastRecipients = vi.fn();
 vi.mock('../../lib/broadcasts', () => ({
   countBroadcastRecipients: (...a: unknown[]) => countBroadcastRecipients(...a),
@@ -106,6 +119,7 @@ describe('composing a post', () => {
         false,
         null,
         null,
+        [],
       ),
     );
   });
@@ -273,7 +287,7 @@ describe('composing a post', () => {
     fireEvent.click(screen.getByLabelText(/Also email/));
     fireEvent.click(screen.getByLabelText('Post it'));
     await waitFor(() =>
-      expect(postMessage).toHaveBeenCalledWith('t1', 'Doors at seven', true, null, null),
+      expect(postMessage).toHaveBeenCalledWith('t1', 'Doors at seven', true, null, null, []),
     );
   });
 
@@ -287,7 +301,7 @@ describe('composing a post', () => {
     fireEvent.click(screen.getByLabelText(/Also email/));
     fireEvent.click(screen.getByLabelText('Post it'));
     await waitFor(() =>
-      expect(postMessage).toHaveBeenCalledWith('t1', 'Doors at seven', true, null, null),
+      expect(postMessage).toHaveBeenCalledWith('t1', 'Doors at seven', true, null, null, []),
     );
   });
 
