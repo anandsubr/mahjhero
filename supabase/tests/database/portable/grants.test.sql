@@ -688,6 +688,8 @@ select is(
      from unnest(array[
        'public.is_club_member(uuid)',
        'public.is_club_organizer(uuid)',
+       'public.event_has_my_active_booking(uuid)',
+       'public.event_has_my_placed_seat(uuid)',
        'public.create_club(text, text)',
        'public.accept_club_invite(text)',
        'public.club_roster(uuid)',
@@ -776,6 +778,8 @@ select is(
        from unnest(array[
          'public.is_club_member(uuid)',
          'public.is_club_organizer(uuid)',
+         'public.event_has_my_active_booking(uuid)',
+         'public.event_has_my_placed_seat(uuid)',
          'public.create_club(text, text)',
          'public.accept_club_invite(text)',
          'public.club_roster(uuid)',
