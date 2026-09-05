@@ -8,6 +8,12 @@ const deleteResult = vi.fn();
 // acceptInvite, setDefaultGameMode, createInvite: `.rpc()` calls
 const rpcMock = vi.fn();
 const insertAfterFrom = vi.fn();
+// createInvite's write path: `.from('club_invites').insert(...).select(...).single()`
+// Capture the insertMock to assert on its call arguments
+const insertMock = vi.fn();
+const selectAfterInsert = vi.fn();
+selectAfterInsert.mockReturnValue({ single: insertAfterFrom });
+insertMock.mockReturnValue({ select: selectAfterInsert });
 vi.mock('./supabase', () => ({
   supabase: {
     rpc: (...args: unknown[]) => rpcMock(...args),
@@ -18,7 +24,7 @@ vi.mock('./supabase', () => ({
         })),
       })),
       delete: vi.fn(() => ({ eq: vi.fn(() => ({ select: deleteResult })) })),
-      insert: vi.fn(() => ({ select: vi.fn(() => ({ single: insertAfterFrom })) })),
+      insert: insertMock,
     })),
   },
 }));
@@ -44,6 +50,10 @@ beforeEach(() => {
   deleteResult.mockRejectedValue(new Error('network down'));
   rpcMock.mockReset();
   insertAfterFrom.mockReset();
+  insertMock.mockReset();
+  insertMock.mockReturnValue({ select: selectAfterInsert });
+  selectAfterInsert.mockReset();
+  selectAfterInsert.mockReturnValue({ single: insertAfterFrom });
 });
 
 describe('slugify', () => {
@@ -364,9 +374,10 @@ describe('createInvite', () => {
       error: null,
     });
     await createInvite('club-1', undefined, 'event-1');
-    // The insert is called via supabase.from('club_invites').insert(...)
-    // We verify the payload includes event_id
-    expect(insertAfterFrom).toHaveBeenCalled();
+    // Verify that the insert mock was called with the correct payload including event_id
+    expect(insertMock).toHaveBeenCalledWith(
+      expect.objectContaining({ event_id: 'event-1' }),
+    );
   });
 
   it('sets event_id to null in the insert payload when eventId is not provided', async () => {
@@ -375,8 +386,10 @@ describe('createInvite', () => {
       error: null,
     });
     await createInvite('club-1');
-    // Verify that the insert was called and the function returns success
-    expect(insertAfterFrom).toHaveBeenCalled();
+    // Verify that the insert mock was called with event_id set to null
+    expect(insertMock).toHaveBeenCalledWith(
+      expect.objectContaining({ event_id: null }),
+    );
   });
 
   it('returns an error when the insert fails', async () => {

@@ -782,6 +782,7 @@ describe.runIf(reachable || required)(
             checkInRequired: false,
             feeCents: 0,
             minSpendCents: 0,
+            gameMode: 'open_play',
           }),
       },
       {
@@ -823,6 +824,7 @@ describe.runIf(reachable || required)(
             checkInRequired: false,
             feeCents: 0,
             minSpendCents: 0,
+            gameMode: 'open_play',
           }),
       },
       {
@@ -1034,6 +1036,7 @@ describe.runIf(reachable || required)(
         checkInRequired: false,
         feeCents: 0,
         minSpendCents: 0,
+        gameMode: 'open_play',
       });
       expect(error, `createEvent reported: ${error}`).toBeNull();
       expect(eventId).not.toBeNull();
@@ -1189,6 +1192,7 @@ describe.runIf(reachable || required)(
         checkInRequired: false,
         feeCents: 0,
         minSpendCents: 0,
+        gameMode: 'open_play',
       });
       expect(error).toBeNull();
       createdEventIds.push(eventId!);
@@ -1224,6 +1228,7 @@ describe.runIf(reachable || required)(
         checkInRequired: false,
         feeCents: 0,
         minSpendCents: 0,
+        gameMode: 'open_play',
       });
       expect(error).toBeNull();
       createdEventIds.push(eventId!);
@@ -1258,6 +1263,7 @@ describe.runIf(reachable || required)(
         checkInRequired: false,
         feeCents: 0,
         minSpendCents: 0,
+        gameMode: 'open_play',
       });
       expect(error).toBeNull();
       createdEventIds.push(eventId!);
@@ -1379,6 +1385,7 @@ describe.runIf(reachable || required)('deliberate refusals reach the host as ref
       checkInRequired: false,
       feeCents: 0,
       minSpendCents: 0,
+      gameMode: 'open_play',
     });
     expect(createError, `seeding event failed: ${createError}`).toBeNull();
     eventId = created!;
@@ -1431,6 +1438,7 @@ describe.runIf(reachable || required)('deliberate refusals reach the host as ref
       checkInRequired: false,
       feeCents: 0,
       minSpendCents: 0,
+      gameMode: 'open_play',
     });
     expect(created).toBeNull();
     expect(error).toBe('That start time has already passed. Pick a later one.');
@@ -1490,6 +1498,7 @@ describe.runIf(reachable || required)('deliberate refusals reach the host as ref
       checkInRequired: false,
       feeCents: 0,
       minSpendCents: 0,
+      gameMode: 'open_play',
     });
     expect(created).toBeNull();
     expect(error).toBe('No games would be created before that end date.');

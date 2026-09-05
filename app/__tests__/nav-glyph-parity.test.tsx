@@ -180,6 +180,7 @@ describe('nav glyph parity', () => {
       rhythm: 'Thursday evenings',
       visibility: 'private' as const,
       timezone: 'America/New_York',
+      default_game_mode: 'open_play' as const,
     };
     vi.mocked(fetchMyClubs).mockResolvedValueOnce([club]);
 
