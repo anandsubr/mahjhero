@@ -647,6 +647,15 @@ describe('BOOKING_REFUSALS (self-audit against the migrations)', () => {
     // flow can never actually produce. lib/messages.ts owns it.
     'an attachment must belong to this conversation':
       'raised by post_message — lib/messages.ts is the module responsible, and by design relays error.message rather than mapping through a refusal table',
+
+    // Raised by accept_club_invite (20260905130000_club_invites_mutations.sql)
+    // when the event_id in an invite does not belong to its club_id. However,
+    // createInvite never calls bookingErrorMessage (it unconditionally returns
+    // GENERIC_ERROR on any insert error), and no other function can trigger
+    // this message through lib/bookings.ts, so this is dead code — unreachable
+    // from any client path through this module.
+    'invite event does not belong to this club':
+      'raised by accept_club_invite — only reachable through a malformed insert, never called from this module',
   };
 
   function distinctRaisedMessages(): string[] {

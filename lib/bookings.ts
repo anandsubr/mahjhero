@@ -338,11 +338,6 @@ const BOOKING_REFUSALS: { contains: string; message: string; codes: string[] }[]
     message: 'You can only undo your own check-in.',
     codes: ['42501'],
   },
-  {
-    contains: 'invite event does not belong to this club',
-    message: 'This invite link has expired or has already been used.',
-    codes: ['23514'],
-  },
 ];
 
 export function bookingErrorMessage(error: RpcError): string {

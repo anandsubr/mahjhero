@@ -402,6 +402,7 @@ describe('createEvent', () => {
     checkInRequired: false,
     feeCents: 0,
     minSpendCents: 0,
+    gameMode: 'open_play' as const,
   };
 
   /*
@@ -433,6 +434,7 @@ describe('createEvent', () => {
       check_in: false,
       fee_cents: 0,
       min_spend_cents: 0,
+      event_game_mode: 'open_play',
     });
   });
 
@@ -660,6 +662,7 @@ describe('createEventSeries', () => {
     checkInRequired: false,
     feeCents: 0,
     minSpendCents: 0,
+    gameMode: 'open_play' as const,
   };
 
   it('rejects a blank title with a friendly message, before ever calling the RPC', async () => {

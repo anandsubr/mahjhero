@@ -67,7 +67,7 @@ Create `supabase/tests/database/fixtures/game_mode.test.sql`:
 ```sql
 begin;
 set local search_path to extensions, public;
-select plan(9);
+select plan(8);
 
 select has_column('public', 'clubs', 'default_game_mode', 'clubs has default_game_mode');
 select has_column('public', 'event_series', 'game_mode', 'event_series has game_mode');
@@ -268,15 +268,13 @@ begin
       insert into public.event_tables (event_id, club_id, label, position)
       select new_event, s.club_id, 'Table ' || g, g
       from generate_series(1, s.table_count) g;
-
-      update public.event_series
-        set materialized_through = greatest(
-          coalesce(materialized_through, d), d)
-        where id = target_series;
-
       created := created + 1;
     end if;
   end loop;
+
+  update public.event_series
+    set materialized_through = window_end
+    where id = s.id;
 
   return created;
 end;
@@ -314,104 +312,104 @@ Create `supabase/tests/database/fixtures/event_visibility_and_privacy.test.sql`:
 ```sql
 begin;
 set local search_path to extensions, public;
-select plan(11);
+select plan(10);
 
 insert into auth.users (id, email) values
-  ('aaaaaaaa-0000-0000-0000-00000000ev01', 'ev-host@example.com'),
-  ('bbbbbbbb-0000-0000-0000-00000000ev02', 'ev-member@example.com'),
-  ('cccccccc-0000-0000-0000-00000000ev03', 'ev-outsider@example.com');
+  ('aaaaaaaa-0000-0000-0000-00000000ea01', 'ev-host@example.com'),
+  ('bbbbbbbb-0000-0000-0000-00000000ea02', 'ev-member@example.com'),
+  ('cccccccc-0000-0000-0000-00000000ea03', 'ev-outsider@example.com');
 
 insert into public.clubs (id, name, slug, created_by) values
-  ('c1c1c1c1-0000-0000-0000-00000000ev01', 'Visibility Club', 'visibility-club',
-   'aaaaaaaa-0000-0000-0000-00000000ev01');
+  ('c1c1c1c1-0000-0000-0000-00000000ea01', 'Visibility Club', 'visibility-club',
+   'aaaaaaaa-0000-0000-0000-00000000ea01');
 
 insert into public.club_members (club_id, profile_id, role) values
-  ('c1c1c1c1-0000-0000-0000-00000000ev01',
-   'aaaaaaaa-0000-0000-0000-00000000ev01', 'host'),
-  ('c1c1c1c1-0000-0000-0000-00000000ev01',
-   'bbbbbbbb-0000-0000-0000-00000000ev02', 'member'),
-  ('c1c1c1c1-0000-0000-0000-00000000ev01',
-   'cccccccc-0000-0000-0000-00000000ev03', 'member');
+  ('c1c1c1c1-0000-0000-0000-00000000ea01',
+   'aaaaaaaa-0000-0000-0000-00000000ea01', 'host'),
+  ('c1c1c1c1-0000-0000-0000-00000000ea01',
+   'bbbbbbbb-0000-0000-0000-00000000ea02', 'member'),
+  ('c1c1c1c1-0000-0000-0000-00000000ea01',
+   'cccccccc-0000-0000-0000-00000000ea03', 'member');
 
 insert into public.venues (id, name, added_by_club_id) values
-  ('11111111-0000-0000-0000-00000000ev01', 'Test Hall',
-   'c1c1c1c1-0000-0000-0000-00000000ev01');
+  ('11111111-0000-0000-0000-00000000ea01', 'Test Hall',
+   'c1c1c1c1-0000-0000-0000-00000000ea01');
 
 insert into public.events (
   id, club_id, title, venue_id, starts_at, ends_at, game_mode
 ) values (
-  '22222222-0000-0000-0000-00000000ev01', 'c1c1c1c1-0000-0000-0000-00000000ev01',
-  'Private Game', '11111111-0000-0000-0000-00000000ev01',
+  '22222222-0000-0000-0000-00000000ea01', 'c1c1c1c1-0000-0000-0000-00000000ea01',
+  'Private Game', '11111111-0000-0000-0000-00000000ea01',
   now() + interval '1 day', now() + interval '1 day 3 hours', 'invite_only'
 );
 
 insert into public.event_tables (id, event_id, club_id, label, position) values
-  ('44444444-0000-0000-0000-00000000ev01', '22222222-0000-0000-0000-00000000ev01',
-   'c1c1c1c1-0000-0000-0000-00000000ev01', 'Table 1', 1);
+  ('44444444-0000-0000-0000-00000000ea01', '22222222-0000-0000-0000-00000000ea01',
+   'c1c1c1c1-0000-0000-0000-00000000ea01', 'Table 1', 1);
 
 -- Bob is invited-and-booked but not yet placed at a table.
 insert into public.booking_groups (id, event_id, club_id, created_by, status) values
-  ('55555555-0000-0000-0000-00000000ev01', '22222222-0000-0000-0000-00000000ev01',
-   'c1c1c1c1-0000-0000-0000-00000000ev01',
-   'aaaaaaaa-0000-0000-0000-00000000ev01', 'confirmed');
+  ('55555555-0000-0000-0000-00000000ea01', '22222222-0000-0000-0000-00000000ea01',
+   'c1c1c1c1-0000-0000-0000-00000000ea01',
+   'aaaaaaaa-0000-0000-0000-00000000ea01', 'confirmed');
 insert into public.bookings (group_id, event_id, club_id, profile_id, booked_by) values
-  ('55555555-0000-0000-0000-00000000ev01', '22222222-0000-0000-0000-00000000ev01',
-   'c1c1c1c1-0000-0000-0000-00000000ev01',
-   'bbbbbbbb-0000-0000-0000-00000000ev02',
-   'aaaaaaaa-0000-0000-0000-00000000ev01');
+  ('55555555-0000-0000-0000-00000000ea01', '22222222-0000-0000-0000-00000000ea01',
+   'c1c1c1c1-0000-0000-0000-00000000ea01',
+   'bbbbbbbb-0000-0000-0000-00000000ea02',
+   'aaaaaaaa-0000-0000-0000-00000000ea01');
 
 -- Outsider (Carol) is a club member but never invited to this private game.
 set local role authenticated;
 set local request.jwt.claims =
-  '{"sub": "cccccccc-0000-0000-0000-00000000ev03", "role": "authenticated"}';
+  '{"sub": "cccccccc-0000-0000-0000-00000000ea03", "role": "authenticated"}';
 
 select is(
   (select count(*)::int from public.events
-   where id = '22222222-0000-0000-0000-00000000ev01'),
+   where id = '22222222-0000-0000-0000-00000000ea01'),
   0,
   'an uninvited member cannot see the invite-only event at all'
 );
 
 select is(
   (select count(*)::int from public.event_seating(
-     '22222222-0000-0000-0000-00000000ev01')),
+     '22222222-0000-0000-0000-00000000ea01')),
   0,
   'event_seating returns nothing to an uninvited member'
 );
 
 select is(
-  public.event_accepted_count('22222222-0000-0000-0000-00000000ev01'),
+  public.event_accepted_count('22222222-0000-0000-0000-00000000ea01'),
   null,
   'event_accepted_count returns null to someone who cannot see the event'
 );
 
 -- Bob: invited and booked, but not yet placed at a table.
 set local request.jwt.claims =
-  '{"sub": "bbbbbbbb-0000-0000-0000-00000000ev02", "role": "authenticated"}';
+  '{"sub": "bbbbbbbb-0000-0000-0000-00000000ea02", "role": "authenticated"}';
 
 select is(
   (select count(*)::int from public.events
-   where id = '22222222-0000-0000-0000-00000000ev01'),
+   where id = '22222222-0000-0000-0000-00000000ea01'),
   1,
   'an invited-and-booked member can see the private event'
 );
 
 select is(
   (select count(*)::int from public.event_seating(
-     '22222222-0000-0000-0000-00000000ev01')),
+     '22222222-0000-0000-0000-00000000ea01')),
   1,
   'a not-yet-placed invitee sees only their own booking via event_seating'
 );
 
 select is(
   (select profile_id from public.event_seating(
-     '22222222-0000-0000-0000-00000000ev01')),
-  'bbbbbbbb-0000-0000-0000-00000000ev02'::uuid,
+     '22222222-0000-0000-0000-00000000ea01')),
+  'bbbbbbbb-0000-0000-0000-00000000ea02'::uuid,
   'the one row a not-yet-placed invitee sees is their own'
 );
 
 select is(
-  public.event_accepted_count('22222222-0000-0000-0000-00000000ev01'),
+  public.event_accepted_count('22222222-0000-0000-0000-00000000ea01'),
   1,
   'a not-yet-placed invitee still gets the headcount'
 );
@@ -419,45 +417,45 @@ select is(
 -- Now place Bob at a table -- the full list should unlock for him.
 set local role postgres;
 reset request.jwt.claims;
-update public.bookings set event_table_id = '44444444-0000-0000-0000-00000000ev01'
-where group_id = '55555555-0000-0000-0000-00000000ev01';
+update public.bookings set event_table_id = '44444444-0000-0000-0000-00000000ea01'
+where group_id = '55555555-0000-0000-0000-00000000ea01';
 
 -- A second, still-unplaced invitee (Carol, now invited) so there is
 -- something for placement to unlock visibility of.
 insert into public.booking_groups (id, event_id, club_id, created_by, status) values
-  ('66666666-0000-0000-0000-00000000ev01', '22222222-0000-0000-0000-00000000ev01',
-   'c1c1c1c1-0000-0000-0000-00000000ev01',
-   'aaaaaaaa-0000-0000-0000-00000000ev01', 'confirmed');
+  ('66666666-0000-0000-0000-00000000ea01', '22222222-0000-0000-0000-00000000ea01',
+   'c1c1c1c1-0000-0000-0000-00000000ea01',
+   'aaaaaaaa-0000-0000-0000-00000000ea01', 'confirmed');
 insert into public.bookings (group_id, event_id, club_id, profile_id, booked_by) values
-  ('66666666-0000-0000-0000-00000000ev01', '22222222-0000-0000-0000-00000000ev01',
-   'c1c1c1c1-0000-0000-0000-00000000ev01',
-   'cccccccc-0000-0000-0000-00000000ev03',
-   'aaaaaaaa-0000-0000-0000-00000000ev01');
+  ('66666666-0000-0000-0000-00000000ea01', '22222222-0000-0000-0000-00000000ea01',
+   'c1c1c1c1-0000-0000-0000-00000000ea01',
+   'cccccccc-0000-0000-0000-00000000ea03',
+   'aaaaaaaa-0000-0000-0000-00000000ea01');
 
 set local role authenticated;
 set local request.jwt.claims =
-  '{"sub": "bbbbbbbb-0000-0000-0000-00000000ev02", "role": "authenticated"}';
+  '{"sub": "bbbbbbbb-0000-0000-0000-00000000ea02", "role": "authenticated"}';
 
 select is(
   (select count(*)::int from public.event_seating(
-     '22222222-0000-0000-0000-00000000ev01')),
+     '22222222-0000-0000-0000-00000000ea01')),
   2,
   'once placed at a table, the invitee sees every booking for the event'
 );
 
 -- Organizer always sees everything, placed or not.
 set local request.jwt.claims =
-  '{"sub": "aaaaaaaa-0000-0000-0000-00000000ev01", "role": "authenticated"}';
+  '{"sub": "aaaaaaaa-0000-0000-0000-00000000ea01", "role": "authenticated"}';
 
 select is(
   (select count(*)::int from public.event_seating(
-     '22222222-0000-0000-0000-00000000ev01')),
+     '22222222-0000-0000-0000-00000000ea01')),
   2,
   'the organizer sees every booking regardless of placement'
 );
 
 select is(
-  public.event_accepted_count('22222222-0000-0000-0000-00000000ev01'),
+  public.event_accepted_count('22222222-0000-0000-0000-00000000ea01'),
   2,
   'the organizer gets the correct headcount too'
 );
@@ -641,7 +639,14 @@ git commit -m "feat(db): gate event visibility and attendee lists for invite-onl
 
 **Interfaces:**
 - Consumes: `events.game_mode` (Task 1).
-- Produces: `bookings_select_member` RLS (updated `using` clause). This is what gates `lib/events.ts`'s `EVENT_COLUMNS` embed (`bookings(profile_id, status, event_table_id)`), used by the club dashboard's `eventStatusLine`.
+- Produces: `bookings_select_member` RLS (updated `using` clause) — this is what gates `lib/events.ts`'s `EVENT_COLUMNS` embed (`bookings(profile_id, status, event_table_id)`), used by the club dashboard's `eventStatusLine`. Also produces two new security-definer predicate functions (`event_has_my_active_booking`, `event_has_my_placed_seat`) and a **second** drop+recreate of Task 2's `events_select_member` policy — see the note below.
+
+**Important — this task also fixes a cross-table RLS recursion in Task 2's policy.** Task 2's `events_select_member` queries `bookings` directly inside its `using` clause; this task's `bookings_select_member` needs to query `events`. Combined, that's a genuine cycle — evaluating either policy under RLS requires evaluating the other — and Postgres refuses it outright with "infinite recursion detected in policy for relation bookings" (confirmed by actually running it). Every other cross-table (and same-table) RLS predicate in this schema already avoids this by going through a `security definer` function instead of a raw subquery (`is_club_member`, `is_club_organizer`, `is_booking_group_member` all exist for exactly this reason — a definer function runs as its owner and bypasses RLS on the tables *it* reads, breaking the cycle at that link). This task follows the same pattern for both directions of this new cycle:
+- `event_has_my_active_booking(target_event uuid)` — replaces Task 2's raw `exists (select 1 from public.bookings b where ...)` inside `events_select_member`.
+- `event_has_my_placed_seat(target_event uuid)` — replaces the same-table self-reference this task's own `bookings_select_member` would otherwise need (`exists (select 1 from public.bookings mine where ...)`), removing any ambiguity about self-referencing policies as well.
+- `bookings_select_member` still queries `events` directly in one raw subquery (checking `game_mode = 'open_play'`) — safe, because after the fix above, evaluating `events_select_member` no longer queries `bookings` under RLS at all (it goes through the security-definer function instead), so this is a one-directional dependency, not a cycle.
+
+Re-dropping and recreating `events_select_member` here (rather than editing Task 2's already-applied migration file) follows this project's forward-only migration rule — Task 2's file and commit are untouched; this is simply a second, later migration that supersedes that policy's definition, exactly the way any later `drop policy`/`create policy` pair would.
 
 - [ ] **Step 1: Write the failing migration test**
 
@@ -653,71 +658,71 @@ set local search_path to extensions, public;
 select plan(4);
 
 insert into auth.users (id, email) values
-  ('aaaaaaaa-0000-0000-0000-00000000bk01', 'bk-host@example.com'),
-  ('bbbbbbbb-0000-0000-0000-00000000bk02', 'bk-member@example.com'),
-  ('cccccccc-0000-0000-0000-00000000bk03', 'bk-outsider@example.com');
+  ('aaaaaaaa-0000-0000-0000-00000000eb01', 'bk-host@example.com'),
+  ('bbbbbbbb-0000-0000-0000-00000000eb02', 'bk-member@example.com'),
+  ('cccccccc-0000-0000-0000-00000000eb03', 'bk-outsider@example.com');
 
 insert into public.clubs (id, name, slug, created_by) values
-  ('c1c1c1c1-0000-0000-0000-00000000bk01', 'Bookings Privacy Club',
-   'bookings-privacy-club', 'aaaaaaaa-0000-0000-0000-00000000bk01');
+  ('c1c1c1c1-0000-0000-0000-00000000eb01', 'Bookings Privacy Club',
+   'bookings-privacy-club', 'aaaaaaaa-0000-0000-0000-00000000eb01');
 
 insert into public.club_members (club_id, profile_id, role) values
-  ('c1c1c1c1-0000-0000-0000-00000000bk01',
-   'aaaaaaaa-0000-0000-0000-00000000bk01', 'host'),
-  ('c1c1c1c1-0000-0000-0000-00000000bk01',
-   'bbbbbbbb-0000-0000-0000-00000000bk02', 'member'),
-  ('c1c1c1c1-0000-0000-0000-00000000bk01',
-   'cccccccc-0000-0000-0000-00000000bk03', 'member');
+  ('c1c1c1c1-0000-0000-0000-00000000eb01',
+   'aaaaaaaa-0000-0000-0000-00000000eb01', 'host'),
+  ('c1c1c1c1-0000-0000-0000-00000000eb01',
+   'bbbbbbbb-0000-0000-0000-00000000eb02', 'member'),
+  ('c1c1c1c1-0000-0000-0000-00000000eb01',
+   'cccccccc-0000-0000-0000-00000000eb03', 'member');
 
 insert into public.venues (id, name, added_by_club_id) values
-  ('11111111-0000-0000-0000-00000000bk01', 'Test Hall',
-   'c1c1c1c1-0000-0000-0000-00000000bk01');
+  ('11111111-0000-0000-0000-00000000eb01', 'Test Hall',
+   'c1c1c1c1-0000-0000-0000-00000000eb01');
 
 insert into public.events (
   id, club_id, title, venue_id, starts_at, ends_at, game_mode
 ) values (
-  '22222222-0000-0000-0000-00000000bk01', 'c1c1c1c1-0000-0000-0000-00000000bk01',
-  'Private Game', '11111111-0000-0000-0000-00000000bk01',
+  '22222222-0000-0000-0000-00000000eb01', 'c1c1c1c1-0000-0000-0000-00000000eb01',
+  'Private Game', '11111111-0000-0000-0000-00000000eb01',
   now() + interval '1 day', now() + interval '1 day 3 hours', 'invite_only'
 );
 
 insert into public.booking_groups (id, event_id, club_id, created_by, status) values
-  ('55555555-0000-0000-0000-00000000bk01', '22222222-0000-0000-0000-00000000bk01',
-   'c1c1c1c1-0000-0000-0000-00000000bk01',
-   'aaaaaaaa-0000-0000-0000-00000000bk01', 'confirmed');
+  ('55555555-0000-0000-0000-00000000eb01', '22222222-0000-0000-0000-00000000eb01',
+   'c1c1c1c1-0000-0000-0000-00000000eb01',
+   'aaaaaaaa-0000-0000-0000-00000000eb01', 'confirmed');
 insert into public.bookings (group_id, event_id, club_id, profile_id, booked_by) values
-  ('55555555-0000-0000-0000-00000000bk01', '22222222-0000-0000-0000-00000000bk01',
-   'c1c1c1c1-0000-0000-0000-00000000bk01',
-   'bbbbbbbb-0000-0000-0000-00000000bk02',
-   'aaaaaaaa-0000-0000-0000-00000000bk01');
+  ('55555555-0000-0000-0000-00000000eb01', '22222222-0000-0000-0000-00000000eb01',
+   'c1c1c1c1-0000-0000-0000-00000000eb01',
+   'bbbbbbbb-0000-0000-0000-00000000eb02',
+   'aaaaaaaa-0000-0000-0000-00000000eb01');
 
 set local role authenticated;
 set local request.jwt.claims =
-  '{"sub": "cccccccc-0000-0000-0000-00000000bk03", "role": "authenticated"}';
+  '{"sub": "cccccccc-0000-0000-0000-00000000eb03", "role": "authenticated"}';
 
 select is(
   (select count(*)::int from public.bookings
-   where event_id = '22222222-0000-0000-0000-00000000bk01'),
+   where event_id = '22222222-0000-0000-0000-00000000eb01'),
   0,
   'an uninvited member reads zero booking rows for a private event'
 );
 
 set local request.jwt.claims =
-  '{"sub": "bbbbbbbb-0000-0000-0000-00000000bk02", "role": "authenticated"}';
+  '{"sub": "bbbbbbbb-0000-0000-0000-00000000eb02", "role": "authenticated"}';
 
 select is(
   (select count(*)::int from public.bookings
-   where event_id = '22222222-0000-0000-0000-00000000bk01'),
+   where event_id = '22222222-0000-0000-0000-00000000eb01'),
   1,
   'a not-yet-placed invitee reads only their own booking row'
 );
 
 set local request.jwt.claims =
-  '{"sub": "aaaaaaaa-0000-0000-0000-00000000bk01", "role": "authenticated"}';
+  '{"sub": "aaaaaaaa-0000-0000-0000-00000000eb01", "role": "authenticated"}';
 
 select is(
   (select count(*)::int from public.bookings
-   where event_id = '22222222-0000-0000-0000-00000000bk01'),
+   where event_id = '22222222-0000-0000-0000-00000000eb01'),
   1,
   'the organizer reads the booking row too'
 );
@@ -726,15 +731,15 @@ select is(
 set local role postgres;
 reset request.jwt.claims;
 update public.events set game_mode = 'open_play'
-where id = '22222222-0000-0000-0000-00000000bk01';
+where id = '22222222-0000-0000-0000-00000000eb01';
 
 set local role authenticated;
 set local request.jwt.claims =
-  '{"sub": "cccccccc-0000-0000-0000-00000000bk03", "role": "authenticated"}';
+  '{"sub": "cccccccc-0000-0000-0000-00000000eb03", "role": "authenticated"}';
 
 select is(
   (select count(*)::int from public.bookings
-   where event_id = '22222222-0000-0000-0000-00000000bk01'),
+   where event_id = '22222222-0000-0000-0000-00000000eb01'),
   1,
   'open_play bookings are unaffected -- any club member reads every row'
 );
@@ -754,12 +759,86 @@ Create `supabase/migrations/20260905080000_bookings_privacy.sql`:
 
 ```sql
 /*
- * The same invite-only visibility/placement rule Task 2 applies to
- * event_seating (used by the event detail screen), applied here to the
- * bookings table itself -- what actually gates lib/events.ts's EVENT_COLUMNS
- * embed (`bookings(profile_id, status, event_table_id)`), read directly by
- * PostgREST rather than through a security-definer function, so RLS is the
- * only place this can be enforced for that path.
+ * Two security-definer predicates that break a cross-table RLS recursion:
+ * events_select_member (Task 2) queries bookings, and this file's own
+ * bookings_select_member needs to query events. Combined, that is a real
+ * cycle -- evaluating either policy under RLS would require evaluating the
+ * other -- which Postgres refuses outright ("infinite recursion detected
+ * in policy for relation bookings"). Every other cross-table RLS question
+ * in this schema already avoids this the same way (is_club_member,
+ * is_club_organizer, is_booking_group_member): a security-definer function
+ * runs as its owner and bypasses RLS on the tables it reads, so routing
+ * through one severs the cycle at that link. Both directions of this new
+ * cycle go through a function rather than a raw subquery, so neither a
+ * cross-table nor a same-table self-reference remains ambiguous.
+ *
+ * Plain boolean predicates like these, and like is_club_member/
+ * is_club_organizer before them, are harmless to expose broadly (they leak
+ * nothing beyond a yes/no this caller could otherwise derive), but this
+ * project is explicit rather than relying on Postgres's default grant to
+ * PUBLIC -- see the grant statements below.
+ */
+create function public.event_has_my_active_booking(target_event uuid)
+returns boolean
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.bookings
+    where event_id = target_event
+      and profile_id = auth.uid()
+      and status in ('confirmed', 'waitlisted')
+  );
+$$;
+
+create function public.event_has_my_placed_seat(target_event uuid)
+returns boolean
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.bookings
+    where event_id = target_event
+      and profile_id = auth.uid()
+      and event_table_id is not null
+      and status in ('confirmed', 'waitlisted')
+  );
+$$;
+
+revoke execute on function public.event_has_my_active_booking(uuid) from public, anon;
+revoke execute on function public.event_has_my_placed_seat(uuid) from public, anon;
+grant execute on function public.event_has_my_active_booking(uuid) to authenticated;
+grant execute on function public.event_has_my_placed_seat(uuid) to authenticated;
+
+/*
+ * A second drop+recreate of Task 2's events_select_member -- not an edit to
+ * Task 2's already-applied migration file, which stays untouched, per this
+ * project's forward-only migration rule. Identical to Task 2's version
+ * except the raw `exists (select 1 from public.bookings b where ...)` is
+ * replaced with the definer-function call above.
+ */
+drop policy events_select_member on public.events;
+
+create policy events_select_member on public.events
+  for select using (
+    public.is_club_member(club_id)
+    and (status <> 'draft' or public.is_club_organizer(club_id))
+    and (
+      game_mode = 'open_play'
+      or public.is_club_organizer(club_id)
+      or public.event_has_my_active_booking(id)
+    )
+  );
+
+/*
+ * The bookings-table policy itself. Safe to reference `events` directly in
+ * a subquery: events_select_member no longer references bookings under RLS
+ * (it goes through event_has_my_active_booking instead), so this is a
+ * one-directional dependency, not a cycle.
  */
 drop policy bookings_select_member on public.bookings;
 
@@ -773,13 +852,7 @@ create policy bookings_select_member on public.bookings
       )
       or public.is_club_organizer(club_id)
       or profile_id = auth.uid()
-      or exists (
-        select 1 from public.bookings mine
-        where mine.event_id = bookings.event_id
-          and mine.profile_id = auth.uid()
-          and mine.event_table_id is not null
-          and mine.status in ('confirmed', 'waitlisted')
-      )
+      or public.event_has_my_placed_seat(bookings.event_id)
     )
   );
 ```
@@ -787,12 +860,29 @@ create policy bookings_select_member on public.bookings
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx supabase db reset && npx supabase test db --local`
-Expected: PASS (all 4 assertions), and `bookings_schema.test.sql`/`bookings_commit.test.sql`/`bookings_cancellation.test.sql` (existing, all use `open_play`-default events) still pass.
+Expected: PASS (all 4 assertions), and `bookings_schema.test.sql`/`bookings_commit.test.sql`/`bookings_cancellation.test.sql`/`events.test.sql`/`event_visibility_and_privacy.test.sql` (existing, all use `open_play`-default events except the last, which this task must not regress) still pass.
+
+- [ ] **Step 4a: Add the two new functions to `grants.test.sql`'s allowlist**
+
+`public.is_club_member(uuid)` and `public.is_club_organizer(uuid)` are
+already tracked in both allowlist arrays in
+`supabase/tests/database/portable/grants.test.sql` (search for
+`'public.is_club_member(uuid)',`) even though they're policy-internal
+predicates, not RPCs an app screen calls directly — this project's
+convention is to track every function reachable by `authenticated`,
+regardless of how it's reached. Add `'public.event_has_my_active_booking(uuid)',`
+and `'public.event_has_my_placed_seat(uuid)',` to BOTH arrays, near
+`'public.is_club_member(uuid)',`/`'public.is_club_organizer(uuid)',`. Do
+not change `select plan(114)`.
+
+Note: running the whole `grants.test.sql` file will still fail on the
+separate, pre-existing, out-of-scope bug described in Task 2's Step 4a —
+that is expected; just make sure your two array edits are correct.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add supabase/migrations/20260905080000_bookings_privacy.sql supabase/tests/database/fixtures/bookings_privacy.test.sql
+git add supabase/migrations/20260905080000_bookings_privacy.sql supabase/tests/database/fixtures/bookings_privacy.test.sql supabase/tests/database/portable/grants.test.sql
 git commit -m "feat(db): restrict the bookings dashboard embed for invite-only games"
 ```
 
@@ -818,54 +908,54 @@ set local search_path to extensions, public;
 select plan(6);
 
 insert into auth.users (id, email) values
-  ('aaaaaaaa-0000-0000-0000-00000000ig01', 'ig-host@example.com'),
-  ('bbbbbbbb-0000-0000-0000-00000000ig02', 'ig-member@example.com'),
-  ('cccccccc-0000-0000-0000-00000000ig03', 'ig-friend@example.com');
+  ('aaaaaaaa-0000-0000-0000-00000000ec01', 'ig-host@example.com'),
+  ('bbbbbbbb-0000-0000-0000-00000000ec02', 'ig-member@example.com'),
+  ('cccccccc-0000-0000-0000-00000000ec03', 'ig-friend@example.com');
 
 insert into public.clubs (id, name, slug, created_by) values
-  ('c1c1c1c1-0000-0000-0000-00000000ig01', 'Gate Club', 'gate-club',
-   'aaaaaaaa-0000-0000-0000-00000000ig01');
+  ('c1c1c1c1-0000-0000-0000-00000000ec01', 'Gate Club', 'gate-club',
+   'aaaaaaaa-0000-0000-0000-00000000ec01');
 
 insert into public.club_members (club_id, profile_id, role) values
-  ('c1c1c1c1-0000-0000-0000-00000000ig01',
-   'aaaaaaaa-0000-0000-0000-00000000ig01', 'host'),
-  ('c1c1c1c1-0000-0000-0000-00000000ig01',
-   'bbbbbbbb-0000-0000-0000-00000000ig02', 'member'),
-  ('c1c1c1c1-0000-0000-0000-00000000ig01',
-   'cccccccc-0000-0000-0000-00000000ig03', 'member');
+  ('c1c1c1c1-0000-0000-0000-00000000ec01',
+   'aaaaaaaa-0000-0000-0000-00000000ec01', 'host'),
+  ('c1c1c1c1-0000-0000-0000-00000000ec01',
+   'bbbbbbbb-0000-0000-0000-00000000ec02', 'member'),
+  ('c1c1c1c1-0000-0000-0000-00000000ec01',
+   'cccccccc-0000-0000-0000-00000000ec03', 'member');
 
 insert into public.venues (id, name, added_by_club_id) values
-  ('11111111-0000-0000-0000-00000000ig01', 'Test Hall',
-   'c1c1c1c1-0000-0000-0000-00000000ig01');
+  ('11111111-0000-0000-0000-00000000ec01', 'Test Hall',
+   'c1c1c1c1-0000-0000-0000-00000000ec01');
 
 insert into public.events (
   id, club_id, title, venue_id, starts_at, ends_at, game_mode
 ) values (
-  '22222222-0000-0000-0000-00000000ig01', 'c1c1c1c1-0000-0000-0000-00000000ig01',
-  'Private Game', '11111111-0000-0000-0000-00000000ig01',
+  '22222222-0000-0000-0000-00000000ec01', 'c1c1c1c1-0000-0000-0000-00000000ec01',
+  'Private Game', '11111111-0000-0000-0000-00000000ec01',
   now() + interval '1 day', now() + interval '1 day 3 hours', 'invite_only'
 );
 
 insert into public.event_tables (id, event_id, club_id, label, position) values
-  ('44444444-0000-0000-0000-00000000ig01', '22222222-0000-0000-0000-00000000ig01',
-   'c1c1c1c1-0000-0000-0000-00000000ig01', 'Table 1', 1);
+  ('44444444-0000-0000-0000-00000000ec01', '22222222-0000-0000-0000-00000000ec01',
+   'c1c1c1c1-0000-0000-0000-00000000ec01', 'Table 1', 1);
 
 -- A plain member cannot book themselves onto the private game.
 set local role authenticated;
 set local request.jwt.claims =
-  '{"sub": "bbbbbbbb-0000-0000-0000-00000000ig02", "role": "authenticated"}';
+  '{"sub": "bbbbbbbb-0000-0000-0000-00000000ec02", "role": "authenticated"}';
 
 select throws_ok(
-  $$select public.commit_booking('22222222-0000-0000-0000-00000000ig01',
-      array['bbbbbbbb-0000-0000-0000-00000000ig02']::uuid[], null, true)$$,
+  $$select public.commit_booking('22222222-0000-0000-0000-00000000ec01',
+      array['bbbbbbbb-0000-0000-0000-00000000ec02']::uuid[], null, true)$$,
   '42501',
   null,
   'a plain member cannot self-book onto an invite-only game'
 );
 
 select throws_ok(
-  $$select public.propose_booking('22222222-0000-0000-0000-00000000ig01',
-      array['bbbbbbbb-0000-0000-0000-00000000ig02']::uuid[], null, true)$$,
+  $$select public.propose_booking('22222222-0000-0000-0000-00000000ec01',
+      array['bbbbbbbb-0000-0000-0000-00000000ec02']::uuid[], null, true)$$,
   '42501',
   null,
   'a plain member cannot even propose a booking onto an invite-only game'
@@ -873,8 +963,8 @@ select throws_ok(
 
 -- A plain member cannot bring a friend onto it either.
 select throws_ok(
-  $$select public.commit_booking('22222222-0000-0000-0000-00000000ig01',
-      array['cccccccc-0000-0000-0000-00000000ig03']::uuid[], null, true)$$,
+  $$select public.commit_booking('22222222-0000-0000-0000-00000000ec01',
+      array['cccccccc-0000-0000-0000-00000000ec03']::uuid[], null, true)$$,
   '42501',
   null,
   'a plain member cannot bring someone else onto an invite-only game either'
@@ -882,19 +972,19 @@ select throws_ok(
 
 -- The organizer CAN book a member in.
 set local request.jwt.claims =
-  '{"sub": "aaaaaaaa-0000-0000-0000-00000000ig01", "role": "authenticated"}';
+  '{"sub": "aaaaaaaa-0000-0000-0000-00000000ec01", "role": "authenticated"}';
 
 select lives_ok(
-  $$select public.commit_booking('22222222-0000-0000-0000-00000000ig01',
-      array['bbbbbbbb-0000-0000-0000-00000000ig02']::uuid[],
-      '44444444-0000-0000-0000-00000000ig01', true)$$,
+  $$select public.commit_booking('22222222-0000-0000-0000-00000000ec01',
+      array['bbbbbbbb-0000-0000-0000-00000000ec02']::uuid[],
+      '44444444-0000-0000-0000-00000000ec01', true)$$,
   'the organizer can invite (book) a member onto an invite-only game'
 );
 
 select is(
   (select count(*)::int from public.bookings
-   where event_id = '22222222-0000-0000-0000-00000000ig01'
-     and profile_id = 'bbbbbbbb-0000-0000-0000-00000000ig02'
+   where event_id = '22222222-0000-0000-0000-00000000ec01'
+     and profile_id = 'bbbbbbbb-0000-0000-0000-00000000ec02'
      and status = 'confirmed'),
   1,
   'the invited member is actually seated'
@@ -904,15 +994,15 @@ select is(
 set local role postgres;
 reset request.jwt.claims;
 update public.events set game_mode = 'open_play'
-where id = '22222222-0000-0000-0000-00000000ig01';
+where id = '22222222-0000-0000-0000-00000000ec01';
 
 set local role authenticated;
 set local request.jwt.claims =
-  '{"sub": "cccccccc-0000-0000-0000-00000000ig03", "role": "authenticated"}';
+  '{"sub": "cccccccc-0000-0000-0000-00000000ec03", "role": "authenticated"}';
 
 select lives_ok(
-  $$select public.commit_booking('22222222-0000-0000-0000-00000000ig01',
-      array['cccccccc-0000-0000-0000-00000000ig03']::uuid[], null, true)$$,
+  $$select public.commit_booking('22222222-0000-0000-0000-00000000ec01',
+      array['cccccccc-0000-0000-0000-00000000ec03']::uuid[], null, true)$$,
   'open_play events are unaffected -- a plain member can still self-book'
 );
 
@@ -1100,56 +1190,56 @@ set local search_path to extensions, public;
 select plan(4);
 
 insert into auth.users (id, email) values
-  ('aaaaaaaa-0000-0000-0000-00000000sd01', 'sd-host@example.com'),
-  ('bbbbbbbb-0000-0000-0000-00000000sd02', 'sd-coorg@example.com'),
-  ('cccccccc-0000-0000-0000-00000000sd03', 'sd-member@example.com');
+  ('aaaaaaaa-0000-0000-0000-00000000ed01', 'sd-host@example.com'),
+  ('bbbbbbbb-0000-0000-0000-00000000ed02', 'sd-coorg@example.com'),
+  ('cccccccc-0000-0000-0000-00000000ed03', 'sd-member@example.com');
 
 insert into public.clubs (id, name, slug, created_by) values
-  ('c1c1c1c1-0000-0000-0000-00000000sd01', 'Settings Club', 'settings-club',
-   'aaaaaaaa-0000-0000-0000-00000000sd01');
+  ('c1c1c1c1-0000-0000-0000-00000000ed01', 'Settings Club', 'settings-club',
+   'aaaaaaaa-0000-0000-0000-00000000ed01');
 
 insert into public.club_members (club_id, profile_id, role) values
-  ('c1c1c1c1-0000-0000-0000-00000000sd01',
-   'aaaaaaaa-0000-0000-0000-00000000sd01', 'host'),
-  ('c1c1c1c1-0000-0000-0000-00000000sd01',
-   'bbbbbbbb-0000-0000-0000-00000000sd02', 'co_organizer'),
-  ('c1c1c1c1-0000-0000-0000-00000000sd01',
-   'cccccccc-0000-0000-0000-00000000sd03', 'member');
+  ('c1c1c1c1-0000-0000-0000-00000000ed01',
+   'aaaaaaaa-0000-0000-0000-00000000ed01', 'host'),
+  ('c1c1c1c1-0000-0000-0000-00000000ed01',
+   'bbbbbbbb-0000-0000-0000-00000000ed02', 'co_organizer'),
+  ('c1c1c1c1-0000-0000-0000-00000000ed01',
+   'cccccccc-0000-0000-0000-00000000ed03', 'member');
 
 set local role authenticated;
 set local request.jwt.claims =
-  '{"sub": "cccccccc-0000-0000-0000-00000000sd03", "role": "authenticated"}';
+  '{"sub": "cccccccc-0000-0000-0000-00000000ed03", "role": "authenticated"}';
 
 select throws_ok(
   $$select public.set_default_game_mode(
-      'c1c1c1c1-0000-0000-0000-00000000sd01', 'invite_only')$$,
+      'c1c1c1c1-0000-0000-0000-00000000ed01', 'invite_only')$$,
   '42501',
   null,
   'a plain member cannot change the club default'
 );
 
 set local request.jwt.claims =
-  '{"sub": "bbbbbbbb-0000-0000-0000-00000000sd02", "role": "authenticated"}';
+  '{"sub": "bbbbbbbb-0000-0000-0000-00000000ed02", "role": "authenticated"}';
 
 select lives_ok(
   $$select public.set_default_game_mode(
-      'c1c1c1c1-0000-0000-0000-00000000sd01', 'invite_only')$$,
+      'c1c1c1c1-0000-0000-0000-00000000ed01', 'invite_only')$$,
   'a co-organizer can change the club default'
 );
 
 select is(
   (select default_game_mode::text from public.clubs
-   where id = 'c1c1c1c1-0000-0000-0000-00000000sd01'),
+   where id = 'c1c1c1c1-0000-0000-0000-00000000ed01'),
   'invite_only',
   'the default was actually updated'
 );
 
 set local request.jwt.claims =
-  '{"sub": "aaaaaaaa-0000-0000-0000-00000000sd01", "role": "authenticated"}';
+  '{"sub": "aaaaaaaa-0000-0000-0000-00000000ed01", "role": "authenticated"}';
 
 select lives_ok(
   $$select public.set_default_game_mode(
-      'c1c1c1c1-0000-0000-0000-00000000sd01', 'open_play')$$,
+      'c1c1c1c1-0000-0000-0000-00000000ed01', 'open_play')$$,
   'the host can change it back'
 );
 
@@ -1204,10 +1294,28 @@ grant execute on function public.set_default_game_mode(uuid, public.game_mode)
 Run: `npx supabase db reset && npx supabase test db --local`
 Expected: PASS (all 4 assertions).
 
+- [ ] **Step 4a: Add the new grant to `grants.test.sql`'s allowlist**
+
+`supabase/tests/database/portable/grants.test.sql` maintains an explicit
+allowlist of every client-facing function grant, in two array literals
+inside that file (search for `'public.event_accepted_count(uuid)',` —
+Task 2 added it right after `'public.event_seating(uuid)',` in both
+arrays; that's the pattern to follow here too). Add
+`'public.set_default_game_mode(uuid, public.game_mode)',` to BOTH arrays
+(the "Direction 1" and "Direction 2" checks), near the club-related
+entries (e.g. next to `'public.create_club(text, text)',`). Do not change
+`select plan(114)` — adding an array element doesn't add a pgTAP assertion.
+
+Note: running the whole `grants.test.sql` file will still fail on an
+unrelated, pre-existing bug (a stale `create_event` signature check around
+line 252, predating this plan) — that failure is out of scope here; just
+make sure your two array edits are syntactically correct (balanced
+quotes/commas, matching the file's existing style).
+
 - [ ] **Step 5: Commit**
 
 ```bash
-git add supabase/migrations/20260905100000_set_default_game_mode.sql supabase/tests/database/fixtures/set_default_game_mode.test.sql
+git add supabase/migrations/20260905100000_set_default_game_mode.sql supabase/tests/database/fixtures/set_default_game_mode.test.sql supabase/tests/database/portable/grants.test.sql
 git commit -m "feat(db): add set_default_game_mode RPC for the club-level toggle"
 ```
 
@@ -1233,29 +1341,29 @@ set local search_path to extensions, public;
 select plan(7);
 
 insert into auth.users (id, email) values
-  ('aaaaaaaa-0000-0000-0000-00000000em01', 'em-host@example.com');
+  ('aaaaaaaa-0000-0000-0000-00000000ee01', 'em-host@example.com');
 
 insert into public.clubs (id, name, slug, default_game_mode, created_by) values
-  ('c1c1c1c1-0000-0000-0000-00000000em01', 'Mutation Club', 'mutation-club',
-   'invite_only', 'aaaaaaaa-0000-0000-0000-00000000em01');
+  ('c1c1c1c1-0000-0000-0000-00000000ee01', 'Mutation Club', 'mutation-club',
+   'invite_only', 'aaaaaaaa-0000-0000-0000-00000000ee01');
 
 insert into public.club_members (club_id, profile_id, role) values
-  ('c1c1c1c1-0000-0000-0000-00000000em01',
-   'aaaaaaaa-0000-0000-0000-00000000em01', 'host');
+  ('c1c1c1c1-0000-0000-0000-00000000ee01',
+   'aaaaaaaa-0000-0000-0000-00000000ee01', 'host');
 
 insert into public.venues (id, name, added_by_club_id) values
-  ('11111111-0000-0000-0000-00000000em01', 'Test Hall',
-   'c1c1c1c1-0000-0000-0000-00000000em01');
+  ('11111111-0000-0000-0000-00000000ee01', 'Test Hall',
+   'c1c1c1c1-0000-0000-0000-00000000ee01');
 
 set local role authenticated;
 set local request.jwt.claims =
-  '{"sub": "aaaaaaaa-0000-0000-0000-00000000em01", "role": "authenticated"}';
+  '{"sub": "aaaaaaaa-0000-0000-0000-00000000ee01", "role": "authenticated"}';
 
 -- create_event with no explicit game_mode inherits the club default.
 create temporary table created_event on commit drop as
   select public.create_event(
-    'c1c1c1c1-0000-0000-0000-00000000em01', 'Inherited Game',
-    '11111111-0000-0000-0000-00000000em01', '', current_date + 1, '19:00'
+    'c1c1c1c1-0000-0000-0000-00000000ee01', 'Inherited Game',
+    '11111111-0000-0000-0000-00000000ee01', '', current_date + 1, '19:00'
   ) as id;
 
 select is(
@@ -1268,8 +1376,8 @@ select is(
 -- create_event with an explicit override wins over the club default.
 create temporary table created_event2 on commit drop as
   select public.create_event(
-    'c1c1c1c1-0000-0000-0000-00000000em01', 'Overridden Game',
-    '11111111-0000-0000-0000-00000000em01', '', current_date + 1, '20:00',
+    'c1c1c1c1-0000-0000-0000-00000000ee01', 'Overridden Game',
+    '11111111-0000-0000-0000-00000000ee01', '', current_date + 1, '20:00',
     180, 1, false, 0, 0, 'open_play'
   ) as id;
 
@@ -1304,8 +1412,8 @@ select is(
 -- create_event_series / materialization / update_event_series push-down.
 create temporary table created_series on commit drop as
   select public.create_event_series(
-    'c1c1c1c1-0000-0000-0000-00000000em01', 'Weekly Series',
-    '11111111-0000-0000-0000-00000000em01', '', 'weekly', 2, null, '19:00',
+    'c1c1c1c1-0000-0000-0000-00000000ee01', 'Weekly Series',
+    '11111111-0000-0000-0000-00000000ee01', '', 'weekly', 2, null, '19:00',
     180, 1, current_date, null, false, 0, 0, 'open_play'
   ) as id;
 
@@ -1965,10 +2073,42 @@ grant execute on function public.update_event_series(
 Run: `npx supabase db reset && npx supabase test db --local`
 Expected: PASS (all 7 assertions), and `event_mutations.test.sql`/`event_series_edits.test.sql`/`event_recurrence.test.sql` (existing) still pass.
 
+- [ ] **Step 4a: Update `grants.test.sql`'s allowlist for these four functions' new signatures**
+
+This task changes the signatures of `create_event`, `update_event`,
+`create_event_series`, and `update_event_series` (each gains one trailing
+`game_mode`/`new_game_mode`/`series_game_mode` argument). All four already
+have entries in `supabase/tests/database/portable/grants.test.sql`'s two
+allowlist arrays (search for `'public.create_event(...)',` — you'll find
+it in both the "Direction 1" and "Direction 2" arrays), but those existing
+entries are ALREADY STALE — they're missing the `fee_cents, min_spend_cents`
+integer arguments a separate, earlier, unrelated migration
+(`20260903140000_event_fee_mutations.sql`, merged before this plan started)
+already added. That staleness is a pre-existing bug, not something this
+task introduced — but since this task is already changing these exact four
+functions' signatures again, fix the four array entries (in BOTH arrays) to
+the FULL, ACTUALLY-CURRENT signature plus your new trailing argument:
+
+```
+'public.create_event(uuid, text, uuid, text, date, time, int, int, boolean, int, int, public.game_mode)',
+'public.update_event(uuid, text, uuid, text, date, time, int, boolean, int, int, public.game_mode)',
+'public.create_event_series(uuid, text, uuid, text, public.series_frequency, smallint, smallint, time, int, int, date, date, boolean, int, int, public.game_mode)',
+'public.update_event_series(uuid, text, uuid, text, time, int, int, date, boolean, boolean, boolean, int, int, public.game_mode)',
+```
+
+Replace each of the four existing (stale) entries with its corresponding
+line above, in both arrays. Do not touch any other array entry, and do not
+change `select plan(114)`. Note: running the whole `grants.test.sql` file
+will still fail — an earlier, separate, brittle assertion block (around
+lines 232-281, NOT the two arrays you're editing) has its own hardcoded
+copies of these same stale signatures and independently errors out before
+ever reaching the two arrays. That block is out of scope for this task —
+do not touch it; just make sure your two array edits are correct.
+
 - [ ] **Step 5: Commit**
 
 ```bash
-git add supabase/migrations/20260905110000_event_game_mode_mutations.sql supabase/tests/database/fixtures/event_game_mode_mutations.test.sql
+git add supabase/migrations/20260905110000_event_game_mode_mutations.sql supabase/tests/database/fixtures/event_game_mode_mutations.test.sql supabase/tests/database/portable/grants.test.sql
 git commit -m "feat(db): thread game_mode through event and series create/update"
 ```
 
@@ -1995,44 +2135,44 @@ select plan(4);
 select has_column('public', 'club_invites', 'event_id', 'club_invites has event_id');
 
 insert into auth.users (id, email) values
-  ('aaaaaaaa-0000-0000-0000-00000000ci01', 'ci-host@example.com');
+  ('aaaaaaaa-0000-0000-0000-00000000ef01', 'ci-host@example.com');
 
 insert into public.clubs (id, name, slug, created_by) values
-  ('c1c1c1c1-0000-0000-0000-00000000ci01', 'Invite Event Club',
-   'invite-event-club', 'aaaaaaaa-0000-0000-0000-00000000ci01'),
-  ('c2c2c2c2-0000-0000-0000-00000000ci02', 'Other Club', 'other-club-ci',
-   'aaaaaaaa-0000-0000-0000-00000000ci01');
+  ('c1c1c1c1-0000-0000-0000-00000000ef01', 'Invite Event Club',
+   'invite-event-club', 'aaaaaaaa-0000-0000-0000-00000000ef01'),
+  ('c2c2c2c2-0000-0000-0000-00000000ef02', 'Other Club', 'other-club-ci',
+   'aaaaaaaa-0000-0000-0000-00000000ef01');
 
 insert into public.club_members (club_id, profile_id, role) values
-  ('c1c1c1c1-0000-0000-0000-00000000ci01',
-   'aaaaaaaa-0000-0000-0000-00000000ci01', 'host'),
-  ('c2c2c2c2-0000-0000-0000-00000000ci02',
-   'aaaaaaaa-0000-0000-0000-00000000ci01', 'host');
+  ('c1c1c1c1-0000-0000-0000-00000000ef01',
+   'aaaaaaaa-0000-0000-0000-00000000ef01', 'host'),
+  ('c2c2c2c2-0000-0000-0000-00000000ef02',
+   'aaaaaaaa-0000-0000-0000-00000000ef01', 'host');
 
 insert into public.venues (id, name, added_by_club_id) values
-  ('11111111-0000-0000-0000-00000000ci01', 'Test Hall',
-   'c1c1c1c1-0000-0000-0000-00000000ci01');
+  ('11111111-0000-0000-0000-00000000ef01', 'Test Hall',
+   'c1c1c1c1-0000-0000-0000-00000000ef01');
 
 insert into public.events (id, club_id, title, venue_id, starts_at, ends_at) values
-  ('22222222-0000-0000-0000-00000000ci01', 'c1c1c1c1-0000-0000-0000-00000000ci01',
-   'Test Game', '11111111-0000-0000-0000-00000000ci01',
+  ('22222222-0000-0000-0000-00000000ef01', 'c1c1c1c1-0000-0000-0000-00000000ef01',
+   'Test Game', '11111111-0000-0000-0000-00000000ef01',
    now() + interval '1 day', now() + interval '1 day 3 hours');
 
 set local role authenticated;
 set local request.jwt.claims =
-  '{"sub": "aaaaaaaa-0000-0000-0000-00000000ci01", "role": "authenticated"}';
+  '{"sub": "aaaaaaaa-0000-0000-0000-00000000ef01", "role": "authenticated"}';
 
 select lives_ok(
   $$insert into public.club_invites (club_id, event_id)
-    values ('c1c1c1c1-0000-0000-0000-00000000ci01',
-            '22222222-0000-0000-0000-00000000ci01')$$,
+    values ('c1c1c1c1-0000-0000-0000-00000000ef01',
+            '22222222-0000-0000-0000-00000000ef01')$$,
   'an invite tied to an event of the SAME club is accepted'
 );
 
 select throws_ok(
   $$insert into public.club_invites (club_id, event_id)
-    values ('c2c2c2c2-0000-0000-0000-00000000ci02',
-            '22222222-0000-0000-0000-00000000ci01')$$,
+    values ('c2c2c2c2-0000-0000-0000-00000000ef02',
+            '22222222-0000-0000-0000-00000000ef01')$$,
   '23514',
   null,
   'an invite cannot tie a DIFFERENT club to this event'
@@ -2040,7 +2180,7 @@ select throws_ok(
 
 select lives_ok(
   $$insert into public.club_invites (club_id)
-    values ('c1c1c1c1-0000-0000-0000-00000000ci01')$$,
+    values ('c1c1c1c1-0000-0000-0000-00000000ef01')$$,
   'a plain club invite with no event_id is still accepted'
 );
 
@@ -2131,56 +2271,56 @@ set local search_path to extensions, public;
 select plan(8);
 
 insert into auth.users (id, email) values
-  ('aaaaaaaa-0000-0000-0000-00000000ai01', 'ai-host@example.com'),
-  ('bbbbbbbb-0000-0000-0000-00000000ai02', 'ai-guest@example.com'),
-  ('cccccccc-0000-0000-0000-00000000ai03', 'ai-guest2@example.com');
+  ('aaaaaaaa-0000-0000-0000-00000000fa01', 'ai-host@example.com'),
+  ('bbbbbbbb-0000-0000-0000-00000000fa02', 'ai-guest@example.com'),
+  ('cccccccc-0000-0000-0000-00000000fa03', 'ai-guest2@example.com');
 
 insert into public.clubs (id, name, slug, created_by) values
-  ('c1c1c1c1-0000-0000-0000-00000000ai01', 'Accept Club', 'accept-club',
-   'aaaaaaaa-0000-0000-0000-00000000ai01');
+  ('c1c1c1c1-0000-0000-0000-00000000fa01', 'Accept Club', 'accept-club',
+   'aaaaaaaa-0000-0000-0000-00000000fa01');
 
 insert into public.club_members (club_id, profile_id, role) values
-  ('c1c1c1c1-0000-0000-0000-00000000ai01',
-   'aaaaaaaa-0000-0000-0000-00000000ai01', 'host');
+  ('c1c1c1c1-0000-0000-0000-00000000fa01',
+   'aaaaaaaa-0000-0000-0000-00000000fa01', 'host');
 
 insert into public.venues (id, name, added_by_club_id) values
-  ('11111111-0000-0000-0000-00000000ai01', 'Test Hall',
-   'c1c1c1c1-0000-0000-0000-00000000ai01');
+  ('11111111-0000-0000-0000-00000000fa01', 'Test Hall',
+   'c1c1c1c1-0000-0000-0000-00000000fa01');
 
 insert into public.events (
   id, club_id, title, venue_id, starts_at, ends_at, game_mode
 ) values (
-  '22222222-0000-0000-0000-00000000ai01', 'c1c1c1c1-0000-0000-0000-00000000ai01',
-  'Private Game', '11111111-0000-0000-0000-00000000ai01',
+  '22222222-0000-0000-0000-00000000fa01', 'c1c1c1c1-0000-0000-0000-00000000fa01',
+  'Private Game', '11111111-0000-0000-0000-00000000fa01',
   now() + interval '1 day', now() + interval '1 day 3 hours', 'invite_only'
 ), (
-  '33333333-0000-0000-0000-00000000ai01', 'c1c1c1c1-0000-0000-0000-00000000ai01',
-  'Cancelled Game', '11111111-0000-0000-0000-00000000ai01',
+  '33333333-0000-0000-0000-00000000fa01', 'c1c1c1c1-0000-0000-0000-00000000fa01',
+  'Cancelled Game', '11111111-0000-0000-0000-00000000fa01',
   now() + interval '1 day', now() + interval '1 day 3 hours', 'invite_only'
 );
 
 update public.events set status = 'cancelled'
-where id = '33333333-0000-0000-0000-00000000ai01';
+where id = '33333333-0000-0000-0000-00000000fa01';
 
 insert into public.event_tables (id, event_id, club_id, label, position) values
-  ('44444444-0000-0000-0000-00000000ai01', '22222222-0000-0000-0000-00000000ai01',
-   'c1c1c1c1-0000-0000-0000-00000000ai01', 'Table 1', 1);
+  ('44444444-0000-0000-0000-00000000fa01', '22222222-0000-0000-0000-00000000fa01',
+   'c1c1c1c1-0000-0000-0000-00000000fa01', 'Table 1', 1);
 
 insert into public.club_invites (club_id, token, event_id, expires_at) values
-  ('c1c1c1c1-0000-0000-0000-00000000ai01', 'game-invite-token',
-   '22222222-0000-0000-0000-00000000ai01', now() + interval '7 days'),
-  ('c1c1c1c1-0000-0000-0000-00000000ai01', 'plain-invite-token',
+  ('c1c1c1c1-0000-0000-0000-00000000fa01', 'game-invite-token',
+   '22222222-0000-0000-0000-00000000fa01', now() + interval '7 days'),
+  ('c1c1c1c1-0000-0000-0000-00000000fa01', 'plain-invite-token',
    null, now() + interval '7 days'),
-  ('c1c1c1c1-0000-0000-0000-00000000ai01', 'cancelled-game-token',
-   '33333333-0000-0000-0000-00000000ai01', now() + interval '7 days');
+  ('c1c1c1c1-0000-0000-0000-00000000fa01', 'cancelled-game-token',
+   '33333333-0000-0000-0000-00000000fa01', now() + interval '7 days');
 
 set local role authenticated;
 set local request.jwt.claims =
-  '{"sub": "bbbbbbbb-0000-0000-0000-00000000ai02", "role": "authenticated"}';
+  '{"sub": "bbbbbbbb-0000-0000-0000-00000000fa02", "role": "authenticated"}';
 
 select is(
   (public.accept_club_invite('game-invite-token')->>'club_id')::uuid,
-  'c1c1c1c1-0000-0000-0000-00000000ai01'::uuid,
+  'c1c1c1c1-0000-0000-0000-00000000fa01'::uuid,
   'accepting a game-tied invite returns the club id'
 );
 
@@ -2191,20 +2331,20 @@ select is(
 );
 
 set local request.jwt.claims =
-  '{"sub": "cccccccc-0000-0000-0000-00000000ai03", "role": "authenticated"}';
+  '{"sub": "cccccccc-0000-0000-0000-00000000fa03", "role": "authenticated"}';
 
 select is(
   (select count(*)::int from public.club_members
-   where club_id = 'c1c1c1c1-0000-0000-0000-00000000ai01'
-     and profile_id = 'bbbbbbbb-0000-0000-0000-00000000ai02'),
+   where club_id = 'c1c1c1c1-0000-0000-0000-00000000fa01'
+     and profile_id = 'bbbbbbbb-0000-0000-0000-00000000fa02'),
   1,
   'redeeming a game-tied invite still creates club membership'
 );
 
 select is(
   (select count(*)::int from public.bookings
-   where event_id = '22222222-0000-0000-0000-00000000ai01'
-     and profile_id = 'bbbbbbbb-0000-0000-0000-00000000ai02'
+   where event_id = '22222222-0000-0000-0000-00000000fa01'
+     and profile_id = 'bbbbbbbb-0000-0000-0000-00000000fa02'
      and status = 'confirmed'),
   1,
   'redeeming a game-tied invite seats the guest at the tied event'
@@ -2219,17 +2359,17 @@ select is(
 
 select is(
   (select count(*)::int from public.club_members
-   where club_id = 'c1c1c1c1-0000-0000-0000-00000000ai01'
-     and profile_id = 'cccccccc-0000-0000-0000-00000000ai03'),
+   where club_id = 'c1c1c1c1-0000-0000-0000-00000000fa01'
+     and profile_id = 'cccccccc-0000-0000-0000-00000000fa03'),
   1,
   'a plain club invite still creates membership'
 );
 
 -- A guest invited to a since-cancelled game still becomes a member.
 insert into auth.users (id, email) values
-  ('dddddddd-0000-0000-0000-00000000ai04', 'ai-guest3@example.com');
+  ('dddddddd-0000-0000-0000-00000000fa04', 'ai-guest3@example.com');
 set local request.jwt.claims =
-  '{"sub": "dddddddd-0000-0000-0000-00000000ai04", "role": "authenticated"}';
+  '{"sub": "dddddddd-0000-0000-0000-00000000fa04", "role": "authenticated"}';
 
 select lives_ok(
   $$select public.accept_club_invite('cancelled-game-token')$$,
@@ -2238,8 +2378,8 @@ select lives_ok(
 
 select is(
   (select count(*)::int from public.club_members
-   where club_id = 'c1c1c1c1-0000-0000-0000-00000000ai01'
-     and profile_id = 'dddddddd-0000-0000-0000-00000000ai04'),
+   where club_id = 'c1c1c1c1-0000-0000-0000-00000000fa01'
+     and profile_id = 'dddddddd-0000-0000-0000-00000000fa04'),
   1,
   'membership is still created even though seating was skipped'
 );
@@ -2371,6 +2511,16 @@ begin
 end;
 $$;
 
+-- The drop above wipes the function's ACL back to Postgres/Supabase
+-- defaults. The original migration (20260822044023) only granted to
+-- authenticated, and a later corrective migration
+-- (20260822045809_revoke_accept_club_invite_from_anon.sql) explicitly
+-- revoked anon's default direct EXECUTE grant (present on hosted
+-- bootstrap, not locally) -- "harmless in practice since caller is null
+-- returns null for anon, but the ACL should say what it means." Both
+-- statements are repeated here so the drop+create doesn't silently
+-- re-open that already-fixed gap.
+revoke execute on function public.accept_club_invite(text) from anon;
 grant execute on function public.accept_club_invite(text) to authenticated;
 ```
 

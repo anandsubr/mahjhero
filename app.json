@@ -9,10 +9,16 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "app.mahjhero.client",
-      "usesAppleSignIn": true
+      "usesAppleSignIn": true,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
-      "package": "app.mahjhero.client"
+      "package": "app.mahjhero.client",
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -32,6 +38,12 @@
           "cameraPermission": "MahjHero uses your camera to attach a photo to a message."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "5eef1b49-fad5-45b5-9d3e-69591d1fbd83"
+      }
+    }
   }
 }
