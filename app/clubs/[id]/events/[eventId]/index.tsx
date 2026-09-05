@@ -36,6 +36,7 @@ import {
   cancelBooking,
   commitBooking,
   declinePromotionOffer,
+  fetchEventAcceptedCount,
   fetchEventSeating,
   fetchOpenOffer,
   needsAFourth,
@@ -167,6 +168,15 @@ export default function EventScreen() {
   const [seating, setSeating] = useState<SeatOccupant[]>([]);
   const [seatingFailed, setSeatingFailed] = useState(false);
 
+  // The headcount a not-yet-placed invitee sees instead of the full table
+  // view on an `invite_only` game (see `canSeeFullRoster` below) --
+  // `fetchEventAcceptedCount` (Task 9), via `event_accepted_count`. `null`
+  // covers both "not loaded yet" and a failed fetch; there is no separate
+  // failed-vs-empty distinction to preserve here the way there is for
+  // `seating`, since the headcount note's own copy already reads sensibly
+  // for a null count ("This is an invite-only game.").
+  const [acceptedCount, setAcceptedCount] = useState<number | null>(null);
+
   // Every round across every table of this event, newest first, plus
   // whether the fetch itself failed -- kept separate from `tablesFailed`
   // for the same reason `seatingFailed` is: a failed rounds fetch must not
@@ -256,6 +266,7 @@ export default function EventScreen() {
       openOffer,
       myCheckInState,
       loadedRounds,
+      headcount,
     ] = await Promise.all([
       fetchClub(clubId),
       fetchEvent(eventId),
@@ -265,6 +276,7 @@ export default function EventScreen() {
       fetchOpenOffer(eventId),
       fetchMyCheckIn(eventId),
       fetchTableRounds(eventId),
+      fetchEventAcceptedCount(eventId),
     ]);
 
     setClub(loadedClub);
@@ -311,6 +323,8 @@ export default function EventScreen() {
 
     setRosterFailed(rosterRows === null);
     setRoster(rosterRows ?? []);
+
+    setAcceptedCount(headcount);
 
     setSeries(
       loadedEvent?.series_id ? await fetchSeries(loadedEvent.series_id) : null,
@@ -469,6 +483,20 @@ export default function EventScreen() {
     (o) => o.profile_id === me && (o.status === 'confirmed' || o.status === 'waitlisted'),
   );
   const myHoldsSeat = myBooking !== undefined;
+
+  // The privacy gate this task adds: on an `invite_only` game, an accepted
+  // member who is not yet placed at a table can see only the headcount
+  // note below, never the tables/roster themselves -- the database layer
+  // (Tasks 2/3) already restricts what such a viewer's own `seating` fetch
+  // can return (just their own row), so this is purely about which JSX
+  // renders, not an additional access check. `open_play` and an organizer
+  // always see the full roster; a placed booking (`event_table_id != null`)
+  // means the game has already revealed who else is at that person's own
+  // table, so there is nothing left to hide from them either.
+  const canSeeFullRoster =
+    event.game_mode === 'open_play' ||
+    isOrganizer ||
+    myBooking?.event_table_id != null;
 
   // The member's own check-in window: starts_at - 1h to ends_at, no
   // organizer tail — once the game ends, self-check-in is done. The
@@ -858,183 +886,205 @@ export default function EventScreen() {
             })()}`}
       </Text>
 
-      {tablesFailed ? (
-        <Text style={styles.help}>Could not load the tables for this game.</Text>
+      {canSeeFullRoster ? (
+        <>
+          {tablesFailed ? (
+            <Text style={styles.help}>Could not load the tables for this game.</Text>
+          ) : (
+            tables.map((table) => {
+                  const tableOccupants = seating.filter(
+                    (o) => o.event_table_id === table.id,
+                  );
+                  const confirmedAtTable = tableOccupants.filter(
+                    (o) => o.status === 'confirmed',
+                  );
+                  const confirmedHere = confirmedAtTable.length;
+                  const displayRounds = rounds
+                    .filter((r) => r.event_table_id === table.id)
+                    .map((r) => ({
+                      id: r.id,
+                      winner_profile_id: r.winner_profile_id,
+                      winner_name:
+                        roster.find((m) => m.profile_id === r.winner_profile_id)
+                          ?.display_name ?? 'Unknown',
+                      points: r.points,
+                    }));
+                  const iAmSeatedHere = seating.some(
+                    (o) =>
+                      o.profile_id === me &&
+                      o.status === 'confirmed' &&
+                      o.event_table_id === table.id,
+                  );
+                  return (
+                    <TableCard
+                      key={table.id}
+                      table={table}
+                      occupants={tableOccupants}
+                      youId={me}
+                      // Omitted entirely — not a disabled control — for a cancelled
+                      // or already-started game (see `canBook`'s own comment), for
+                      // every seat once this member's own booking is only
+                      // waitlisted (`place_booking` refuses a non-confirmed
+                      // booking, so there is nothing a tap here could do), and for
+                      // this specific table once a confirmed booking is already
+                      // seated at it — tapping a seat you already hold has nothing
+                      // to do. Any other seat — a fresh booking, or a confirmed
+                      // booking elsewhere (a different table, or "any table")
+                      // wanting to move — still offers a tap; `takeSeat` (via
+                      // `commitSeat`) is what decides book vs. move. Note that
+                      // "already-started" above only rules out the fresh-booking
+                      // branch (`canBook`); moving an existing confirmed booking is
+                      // instead gated on `canManageOwnSeat`, allowed through the
+                      // whole live game (see its own comment above, "A member's own
+                      // already-confirmed booking...", for why).
+                      onTakeSeat={
+                        (myBooking && myBooking.status === 'confirmed'
+                          ? canManageOwnSeat
+                          : canBook) &&
+                        (!myBooking ||
+                          (myBooking.status === 'confirmed' &&
+                            myBooking.event_table_id !== table.id))
+                          ? () => takeSeat(table)
+                          : undefined
+                      }
+                      busy={busy}
+                      needsFourth={needsAFourth(
+                        table.capacity,
+                        confirmedHere,
+                        new Date(event.starts_at),
+                        now,
+                      )}
+                      // Seat-tap management, forwarded to SeatGrid via TableCard.
+                      // `otherTables`/`onMove`/`onRemove` are the organizer bundle —
+                      // all three supplied together for an organizer and omitted
+                      // together for a member, so the seat grid falls back to its
+                      // plain read-only render for that seat (see SeatGrid's own
+                      // docstring) rather than a half-wired tappable seat with
+                      // nothing to move to. `onLeaveSeat` is the separate,
+                      // single-prop member capability (give up YOUR OWN seat) —
+                      // gated on `canBook` alone, not on `isOrganizer`: an
+                      // organizer is also a member and gets this
+                      // too, it just never wins the branch for their own seat
+                      // (SeatGrid's `organizerManageable || selfManageable` always
+                      // picks the organizer panel first — see its docstring). Note
+                      // `onTakeSeat` above no longer uses `canBook` alone for every
+                      // case — only for its fresh-booking branch, moving to
+                      // `canManageOwnSeat` for an existing confirmed booking —
+                      // while `onLeaveSeat` here stays on `canBook` unconditionally:
+                      // giving up a seat is deliberately out of scope for this fix
+                      // and remains frozen at kickoff.
+                      // `openBookingId`/`onToggleManage` are the shared open/close
+                      // plumbing BOTH features need, so — unlike the organizer
+                      // bundle — they are no longer gated on `isOrganizer`: a
+                      // member with nothing else must still be able to open their
+                      // own seat's panel.
+                      otherTables={
+                        isOrganizer
+                          ? tables
+                              .filter((t) => t.id !== table.id)
+                              .map((t) => ({ id: t.id, label: t.label }))
+                          : undefined
+                      }
+                      onMove={isOrganizer ? hostPlace : undefined}
+                      onRemove={isOrganizer ? hostRemove : undefined}
+                      onLeaveSeat={canBook ? leaveSeat : undefined}
+                      openBookingId={openBookingId}
+                      onToggleManage={toggleManageSeat}
+                      rounds={roundsFailed ? undefined : displayRounds}
+                      canRecordRound={gameLive && (isOrganizer || iAmSeatedHere)}
+                      canDeleteRound={isOrganizer}
+                      gameLive={gameLive}
+                      onRecordRound={(winnerId, points) => {
+                        setOpenBookingId(null);
+                        void recordTableRound(table.id, winnerId, points);
+                      }}
+                      onDeleteRound={(roundId) => void removeTableRound(roundId)}
+                    >
+                      {isOrganizer ? (
+                        <>
+                          {tables.length > 1 ? (
+                            <Button
+                              variant="ghost"
+                              big={false}
+                              disabled={busy}
+                              onPress={() => run(() => removeEventTable(table.id))}
+                              accessibilityLabel={`Remove ${table.label}`}
+                            >
+                              Remove this table
+                            </Button>
+                          ) : null}
+
+                          {/*
+                            canCallForAFourth mirrors need_a_fourth_stage's own
+                            occupancy check (20260825050000) minus the 48-hour
+                            window — "a host calling early is asking to skip
+                            exactly that window", per that migration's own comment.
+                            `canBook` already carries the "published and not yet
+                            started" half of that rule.
+
+                            `table.capacity >= 2` mirrors `needsAFourth`'s own
+                            `capacity < 2` guard (and need_a_fourth_stage's identical
+                            `when t.capacity < 2 then null`), which the expression
+                            below would otherwise drop: on a capacity-1 table with
+                            zero confirmed, `0 === 1 - 1` is true even though such a
+                            table can never need a fourth. Not delegated to
+                            `needsAFourth` itself, since that function also applies
+                            the 48-hour window this gate deliberately skips.
+
+                            Inlined here directly rather than through a component —
+                            this used to be HostSeating's one non-per-person control;
+                            now that the per-person list it sat below is gone (moved
+                            into SeatGrid's own seat-tap panel), a single button
+                            doesn't need its own wrapper component.
+                          */}
+                          {table.capacity >= 2 &&
+                          confirmedHere === table.capacity - 1 &&
+                          canBook ? (
+                            <Button
+                              variant="secondary"
+                              big={false}
+                              disabled={busy}
+                              onPress={() => hostCallForAFourth(table.id)}
+                              accessibilityLabel={`Call for a fourth at ${table.label}`}
+                            >
+                              Call for a 4th now
+                            </Button>
+                          ) : null}
+                        </>
+                      ) : null}
+                    </TableCard>
+                  );
+                })
+          )}
+
+          {seatingFailed ? (
+            <Text style={styles.help}>
+              Could not load who is coming to this game.
+            </Text>
+          ) : !tablesFailed &&
+            seating.filter((o) => o.status === 'confirmed').length === 0 ? (
+            <Text style={styles.help}>Nobody has booked yet.</Text>
+          ) : null}
+        </>
       ) : (
-        tables.map((table) => {
-          const tableOccupants = seating.filter(
-            (o) => o.event_table_id === table.id,
-          );
-          const confirmedAtTable = tableOccupants.filter(
-            (o) => o.status === 'confirmed',
-          );
-          const confirmedHere = confirmedAtTable.length;
-          const displayRounds = rounds
-            .filter((r) => r.event_table_id === table.id)
-            .map((r) => ({
-              id: r.id,
-              winner_profile_id: r.winner_profile_id,
-              winner_name:
-                roster.find((m) => m.profile_id === r.winner_profile_id)
-                  ?.display_name ?? 'Unknown',
-              points: r.points,
-            }));
-          const iAmSeatedHere = seating.some(
-            (o) =>
-              o.profile_id === me &&
-              o.status === 'confirmed' &&
-              o.event_table_id === table.id,
-          );
-          return (
-            <TableCard
-              key={table.id}
-              table={table}
-              occupants={tableOccupants}
-              youId={me}
-              // Omitted entirely — not a disabled control — for a cancelled
-              // or already-started game (see `canBook`'s own comment), for
-              // every seat once this member's own booking is only
-              // waitlisted (`place_booking` refuses a non-confirmed
-              // booking, so there is nothing a tap here could do), and for
-              // this specific table once a confirmed booking is already
-              // seated at it — tapping a seat you already hold has nothing
-              // to do. Any other seat — a fresh booking, or a confirmed
-              // booking elsewhere (a different table, or "any table")
-              // wanting to move — still offers a tap; `takeSeat` (via
-              // `commitSeat`) is what decides book vs. move. Note that
-              // "already-started" above only rules out the fresh-booking
-              // branch (`canBook`); moving an existing confirmed booking is
-              // instead gated on `canManageOwnSeat`, allowed through the
-              // whole live game (see its own comment above, "A member's own
-              // already-confirmed booking...", for why).
-              onTakeSeat={
-                (myBooking && myBooking.status === 'confirmed'
-                  ? canManageOwnSeat
-                  : canBook) &&
-                (!myBooking ||
-                  (myBooking.status === 'confirmed' &&
-                    myBooking.event_table_id !== table.id))
-                  ? () => takeSeat(table)
-                  : undefined
-              }
-              busy={busy}
-              needsFourth={needsAFourth(
-                table.capacity,
-                confirmedHere,
-                new Date(event.starts_at),
-                now,
-              )}
-              // Seat-tap management, forwarded to SeatGrid via TableCard.
-              // `otherTables`/`onMove`/`onRemove` are the organizer bundle —
-              // all three supplied together for an organizer and omitted
-              // together for a member, so the seat grid falls back to its
-              // plain read-only render for that seat (see SeatGrid's own
-              // docstring) rather than a half-wired tappable seat with
-              // nothing to move to. `onLeaveSeat` is the separate,
-              // single-prop member capability (give up YOUR OWN seat) —
-              // gated on `canBook` alone, not on `isOrganizer`: an
-              // organizer is also a member and gets this
-              // too, it just never wins the branch for their own seat
-              // (SeatGrid's `organizerManageable || selfManageable` always
-              // picks the organizer panel first — see its docstring). Note
-              // `onTakeSeat` above no longer uses `canBook` alone for every
-              // case — only for its fresh-booking branch, moving to
-              // `canManageOwnSeat` for an existing confirmed booking —
-              // while `onLeaveSeat` here stays on `canBook` unconditionally:
-              // giving up a seat is deliberately out of scope for this fix
-              // and remains frozen at kickoff.
-              // `openBookingId`/`onToggleManage` are the shared open/close
-              // plumbing BOTH features need, so — unlike the organizer
-              // bundle — they are no longer gated on `isOrganizer`: a
-              // member with nothing else must still be able to open their
-              // own seat's panel.
-              otherTables={
-                isOrganizer
-                  ? tables
-                      .filter((t) => t.id !== table.id)
-                      .map((t) => ({ id: t.id, label: t.label }))
-                  : undefined
-              }
-              onMove={isOrganizer ? hostPlace : undefined}
-              onRemove={isOrganizer ? hostRemove : undefined}
-              onLeaveSeat={canBook ? leaveSeat : undefined}
-              openBookingId={openBookingId}
-              onToggleManage={toggleManageSeat}
-              rounds={roundsFailed ? undefined : displayRounds}
-              canRecordRound={gameLive && (isOrganizer || iAmSeatedHere)}
-              canDeleteRound={isOrganizer}
-              gameLive={gameLive}
-              onRecordRound={(winnerId, points) => {
-                setOpenBookingId(null);
-                void recordTableRound(table.id, winnerId, points);
-              }}
-              onDeleteRound={(roundId) => void removeTableRound(roundId)}
-            >
-              {isOrganizer ? (
-                <>
-                  {tables.length > 1 ? (
-                    <Button
-                      variant="ghost"
-                      big={false}
-                      disabled={busy}
-                      onPress={() => run(() => removeEventTable(table.id))}
-                      accessibilityLabel={`Remove ${table.label}`}
-                    >
-                      Remove this table
-                    </Button>
-                  ) : null}
-
-                  {/*
-                    canCallForAFourth mirrors need_a_fourth_stage's own
-                    occupancy check (20260825050000) minus the 48-hour
-                    window — "a host calling early is asking to skip
-                    exactly that window", per that migration's own comment.
-                    `canBook` already carries the "published and not yet
-                    started" half of that rule.
-
-                    `table.capacity >= 2` mirrors `needsAFourth`'s own
-                    `capacity < 2` guard (and need_a_fourth_stage's identical
-                    `when t.capacity < 2 then null`), which the expression
-                    below would otherwise drop: on a capacity-1 table with
-                    zero confirmed, `0 === 1 - 1` is true even though such a
-                    table can never need a fourth. Not delegated to
-                    `needsAFourth` itself, since that function also applies
-                    the 48-hour window this gate deliberately skips.
-
-                    Inlined here directly rather than through a component —
-                    this used to be HostSeating's one non-per-person control;
-                    now that the per-person list it sat below is gone (moved
-                    into SeatGrid's own seat-tap panel), a single button
-                    doesn't need its own wrapper component.
-                  */}
-                  {table.capacity >= 2 &&
-                  confirmedHere === table.capacity - 1 &&
-                  canBook ? (
-                    <Button
-                      variant="secondary"
-                      big={false}
-                      disabled={busy}
-                      onPress={() => hostCallForAFourth(table.id)}
-                      accessibilityLabel={`Call for a fourth at ${table.label}`}
-                    >
-                      Call for a 4th now
-                    </Button>
-                  ) : null}
-                </>
-              ) : null}
-            </TableCard>
-          );
-        })
+        // The privacy note replacing the full tables/roster view for an
+        // accepted-but-not-yet-placed invitee on an `invite_only` game --
+        // `acceptedCount` is the total headcount, with no identities
+        // attached (see `fetchEventAcceptedCount`'s own doc comment).
+        // `null` covers both "still loading" and a failed fetch, so the
+        // copy falls back to a plain statement of the game's mode rather
+        // than a stray "null people have accepted."
+        <Card>
+          <Text style={styles.help}>
+            {acceptedCount === null
+              ? 'This is an invite-only game.'
+              : `${acceptedCount} ${acceptedCount === 1 ? 'person has' : 'people have'} accepted.`}
+            {' '}
+            You won&apos;t see who else is playing until you&apos;re placed on
+            a table.
+          </Text>
+        </Card>
       )}
-
-      {seatingFailed ? (
-        <Text style={styles.help}>
-          Could not load who is coming to this game.
-        </Text>
-      ) : !tablesFailed &&
-        seating.filter((o) => o.status === 'confirmed').length === 0 ? (
-        <Text style={styles.help}>Nobody has booked yet.</Text>
-      ) : null}
 
       {roundsFailed ? (
         <Text style={styles.help}>Could not load rounds for this game.</Text>

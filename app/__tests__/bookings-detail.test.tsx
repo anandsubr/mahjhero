@@ -77,6 +77,10 @@ const fetchEventSeating = vi.fn();
 const fetchOpenOffer = vi.fn();
 const acceptPromotionOffer = vi.fn();
 const declinePromotionOffer = vi.fn();
+// Task 15: same trap as `fetchOpenOffer`/`fetchMyCheckIn`/`fetchTableRounds`
+// below -- left unmocked, this screen's new `fetchEventAcceptedCount` call
+// in `load()` would hit the real, network-blocked `supabase.rpc` call.
+const fetchEventAcceptedCount = vi.fn();
 
 vi.mock('../../lib/bookings', async () => {
   const actual = await vi.importActual<typeof import('../../lib/bookings')>(
@@ -91,6 +95,8 @@ vi.mock('../../lib/bookings', async () => {
     fetchOpenOffer: (...a: unknown[]) => fetchOpenOffer(...a),
     acceptPromotionOffer: (...a: unknown[]) => acceptPromotionOffer(...a),
     declinePromotionOffer: (...a: unknown[]) => declinePromotionOffer(...a),
+    fetchEventAcceptedCount: (...a: unknown[]) =>
+      fetchEventAcceptedCount(...a),
   };
 });
 
@@ -224,6 +230,8 @@ beforeEach(() => {
   fetchEventSeating.mockResolvedValue([]);
   fetchOpenOffer.mockReset();
   fetchOpenOffer.mockResolvedValue(null);
+  fetchEventAcceptedCount.mockReset();
+  fetchEventAcceptedCount.mockResolvedValue(null);
   fetchMyCheckIn.mockReset();
   fetchMyCheckIn.mockResolvedValue(null);
   fetchTableRounds.mockReset();
