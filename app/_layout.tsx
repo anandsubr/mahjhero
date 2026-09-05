@@ -8,6 +8,7 @@ import { Stack } from 'expo-router';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useAuthDeepLink } from '../lib/auth-deep-link';
 import { SessionProvider } from '../lib/session';
 
@@ -59,8 +60,10 @@ export default function RootLayout() {
   }
 
   return (
-    <SessionProvider>
-      <Stack screenOptions={{ headerShown: false }} />
-    </SessionProvider>
+    <SafeAreaProvider>
+      <SessionProvider>
+        <Stack screenOptions={{ headerShown: false }} />
+      </SessionProvider>
+    </SafeAreaProvider>
   );
 }
