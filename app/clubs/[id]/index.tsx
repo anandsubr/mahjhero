@@ -17,6 +17,7 @@ import SkillLevelPips from '../../../components/SkillLevelPips';
 import Tag from '../../../components/Tag';
 import TabBar from '../../../components/TabBar';
 import TextField from '../../../components/TextField';
+import Toggle from '../../../components/Toggle';
 import { CopyIcon, TrashIcon } from '../../../components/icons';
 import {
   canInvite,
@@ -25,6 +26,7 @@ import {
   fetchClub,
   fetchPendingInvites,
   fetchRoster,
+  setDefaultGameMode,
 } from '../../../lib/clubs';
 import type { Club, ClubInvite, ClubMember } from '../../../lib/clubs';
 import { GENERIC_ERROR } from '../../../lib/constants';
@@ -49,6 +51,7 @@ export default function ClubDetailScreen() {
   const [loadFailed, setLoadFailed] = useState(false);
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [gameModeBusy, setGameModeBusy] = useState(false);
   // Which pending invite's link was just copied -- shown as inline "Copied"
   // feedback on that one row for a couple seconds, not a page-wide notice,
   // since a host reviewing several invites needs to tell which link it was.
@@ -194,6 +197,20 @@ export default function ClubDetailScreen() {
       return;
     }
     setInvites((prev) => prev.filter((i) => i.id !== invite.id));
+  }
+
+  async function onToggleDefaultGameMode(nextInviteOnly: boolean) {
+    if (!club) return;
+    setError(null);
+    setGameModeBusy(true);
+    const nextMode = nextInviteOnly ? 'invite_only' : 'open_play';
+    const { error: toggleError } = await setDefaultGameMode(club.id, nextMode);
+    setGameModeBusy(false);
+    if (toggleError) {
+      setError(toggleError);
+      return;
+    }
+    setClub({ ...club, default_game_mode: nextMode });
   }
 
   async function onMessageMembers() {
@@ -440,6 +457,16 @@ export default function ClubDetailScreen() {
           >
             Venues
           </Button>
+          <View style={styles.gameModeRow}>
+            <Text style={styles.help}>
+              New games default to invite-only
+            </Text>
+            <Toggle
+              value={club.default_game_mode === 'invite_only'}
+              onValueChange={onToggleDefaultGameMode}
+              accessibilityLabel="New games default to invite-only"
+            />
+          </View>
         </>
       ) : null}
 
@@ -530,5 +557,12 @@ const styles = StyleSheet.create({
     fontFamily: type.bodyRegular,
     fontSize: type.size.helper,
     color: colors.accentColor,
+  },
+  gameModeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: space[3],
+    marginTop: space[2],
   },
 });
