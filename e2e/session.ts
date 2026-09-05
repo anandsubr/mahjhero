@@ -1642,6 +1642,49 @@ export async function seedThreadWithAttachments(
     );
   }
 
+  // An image-only message -- empty body, one attachment -- the shape
+  // "body optional when an attachment is present" (post_message's own
+  // guard, 20260905040000) exists to allow. Never covered before this: both
+  // messages above carry caption text, which is exactly what let a real bug
+  // ship undetected -- MessageBubble's bubble has no width of its own, it
+  // shrink-wraps its content, and a caption gives that shrink-wrap something
+  // to measure before AttachmentGrid's own (then-percentage) width was ever
+  // asked to resolve. With nothing but the grid in the bubble, the
+  // percentage was a percentage of a box whose size depended on the
+  // percentage resolving first -- a circular reference the browser broke by
+  // computing it as zero, collapsing the whole bubble to nothing. A real
+  // Chromium layout pass is the only way this is catchable at all; jsdom has
+  // no layout engine and every existing component test mounts this
+  // component without one.
+  const imageOnly = await uploadAttachmentFixture(admin, thread.id, 'img-green.jpg');
+  const imageOnlyMessage = need<{ id: string }>(
+    'image-only message insert',
+    await admin
+      .from('messages')
+      .insert({
+        thread_id: thread.id,
+        author_id: viewerId,
+        body: '',
+        created_at: '2026-08-22T15:10:00Z',
+      })
+      .select('id')
+      .single(),
+  );
+
+  const { error: imageOnlyAttachmentError } = await admin.from('message_attachments').insert({
+    message_id: imageOnlyMessage.id,
+    thread_id: thread.id,
+    storage_path: imageOnly.storage_path,
+    width: imageOnly.width,
+    height: imageOnly.height,
+    sort_order: 0,
+  });
+  if (imageOnlyAttachmentError) {
+    throw new Error(
+      `seedThreadWithAttachments: image-only attachment insert failed: ${JSON.stringify(imageOnlyAttachmentError)}`,
+    );
+  }
+
   return { threadId: thread.id };
 }
 

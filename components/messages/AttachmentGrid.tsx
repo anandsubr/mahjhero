@@ -134,11 +134,29 @@ function AttachmentViewer({
   );
 }
 
+/**
+ * A fixed pixel width, not a percentage of the bubble. `MessageBubble`'s
+ * bubble has no width of its own -- it shrink-wraps its content, bounded
+ * only by `maxWidth: '78%'` -- and a message that carries only images (no
+ * caption, which is exactly what "body optional when an attachment is
+ * present" exists to allow) has nothing else to give that shrink-wrap a
+ * number to wrap around. A percentage width here is a percentage of a box
+ * whose own size depends on this percentage resolving first: a circular
+ * reference browsers resolve by computing it as 0, collapsing the whole
+ * bubble to an invisible point. A fixed width breaks the cycle -- the grid
+ * always has a real size, so the bubble always has something to shrink-wrap.
+ * Reproduced and confirmed via a real Chromium layout pass (jsdom has no
+ * layout engine and cannot exercise this at all); a captioned image message
+ * never hit it because the caption text was already giving the bubble a
+ * width before the grid needed one.
+ */
+const GRID_WIDTH = 240;
+
 const styles = StyleSheet.create({
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: space[1], marginBottom: space[2] },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: space[1], marginBottom: space[2], width: GRID_WIDTH },
   cell: { borderRadius: radius.md, overflow: 'hidden', backgroundColor: 'transparent' },
-  cellSingle: { width: '100%' },
-  cellGrid: { width: '48%' },
+  cellSingle: { width: GRID_WIDTH },
+  cellGrid: { width: (GRID_WIDTH - space[1]) / 2 },
   image: { width: '100%', height: '100%' },
   placeholder: { width: '100%', height: '100%', backgroundColor: 'rgba(32, 30, 29, 0.08)' },
   viewerBackdrop: {

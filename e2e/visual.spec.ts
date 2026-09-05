@@ -533,6 +533,19 @@ test.describe('signed in', () => {
       // resolved here through a real signed URL -- not a stubbed row, so a
       // broken-image regression would show up in the PNG the same way it
       // would to a person actually using the app.
+      //
+      // A THIRD message here -- captionless, image-only -- is what this
+      // suite was missing when it shipped: every message it pictured paired
+      // an image with caption text, so `AttachmentGrid`'s cell width (then a
+      // PERCENTAGE of the bubble) always had that caption already giving the
+      // bubble a real width to resolve against. A member's first genuinely
+      // captionless photo collapsed to an invisible 0x0 bubble in
+      // production -- a percentage of a box whose own size depends on that
+      // percentage resolving first, which the browser breaks by computing
+      // it as zero. `.toBeVisible()` below is a real assertion of this: a
+      // 0x0 element is not visible to it. jsdom cannot exercise this at
+      // all -- it has no layout engine -- which is the whole reason this
+      // scenario belongs here and not only in a component test.
       test(`thread with image attachments at ${vp.name}`, async ({ page }) => {
         await page.setViewportSize({ width: vp.width, height: vp.height });
         const { threadId } = await seedThreadWithAttachments(
@@ -551,7 +564,15 @@ test.describe('signed in', () => {
         // One grid cell per image -- proof both messages actually rendered
         // their attachments, not just their body text, before the
         // screenshot below is trusted to show the same.
-        await expect(page.getByRole('button', { name: 'View image 1 of 1' })).toBeVisible();
+        const singleImageButtons = page.getByRole('button', { name: 'View image 1 of 1' });
+        await expect(singleImageButtons).toHaveCount(2);
+        await expect(singleImageButtons.first()).toBeVisible();
+        // The captionless message's own bubble: it renders LAST (its
+        // created_at is the latest of the three), so it's the third
+        // attachment-grid on the screen -- and the one whose single-image
+        // button is the SECOND of the two matching "View image 1 of 1".
+        await expect(page.locator('[data-testid="attachment-grid"]')).toHaveCount(3);
+        await expect(singleImageButtons.last()).toBeVisible();
         await expect(page.getByRole('button', { name: 'View image 4 of 4' })).toBeVisible();
         await captureScreen(page, vp, `thread-attachments-${vp.name}.png`);
       });

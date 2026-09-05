@@ -267,6 +267,28 @@ the resolved map down through `MessageBubble` → `AttachmentGrid` as a `urls`
 prop. `AttachmentGrid` no longer imports `lib/attachments` at all. Do not move
 that call back down into a per-message component.
 
+**`AttachmentGrid`'s cell width must stay a fixed pixel number, never a
+percentage.** It shipped as `width: '100%'` / `'48%'` and passed every review
+and every automated test, because every test paired an image with caption
+text. `MessageBubble`'s bubble has no width of its own — it shrink-wraps its
+content, bounded only by `maxWidth: '78%'` — and a caption gives that
+shrink-wrap something to measure. A message that carries only images (no
+caption — exactly what `post_message`'s "body optional when an attachment is
+present" guard, 20260905040000, exists to allow) has nothing else in the
+bubble at all: the grid's percentage width is a percentage of a box whose own
+size depends on that percentage resolving first, a circular reference the
+browser breaks by computing it as zero, collapsing the whole bubble to an
+invisible 0×0 point. Shipped to production before it was caught, because
+**jsdom has no layout engine and cannot exercise this at all** — every
+component test in `components/messages/__tests__/` mounts `AttachmentGrid`
+happily and reports a passing render regardless. Only a real browser's
+layout pass shows it, which is why `e2e/session.ts`'s
+`seedThreadWithAttachments` now seeds a third, genuinely captionless message
+specifically for this, and `e2e/visual.spec.ts`'s `.toBeVisible()` on its
+image button is a real assertion — a 0×0 element fails it. `GRID_WIDTH`
+(`components/messages/AttachmentGrid.tsx`) is a fixed constant for exactly
+this reason; do not turn it back into a percentage of the bubble.
+
 ---
 
 ## Verifying
