@@ -1,7 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import MessageBubble from '../MessageBubble';
 import type { ThreadMessage } from '../../../lib/messages';
+
+// Unlike an earlier round, MessageBubble's own tests need nothing mocked for
+// lib/attachments any more: AttachmentGrid no longer calls `getSignedUrls`
+// itself (that batching now happens once per screen load, above this
+// component -- see AttachmentGrid's own `urls` prop docstring), and
+// MessageBubble just forwards whatever `attachmentUrls` map its caller
+// passes straight down as a prop.
 
 // A pure presentational component: no session, router, or focus-effect
 // dependency to mock -- unlike app/messages/[threadId].tsx (see that
@@ -18,6 +25,7 @@ function message(over: Partial<ThreadMessage> = {}): ThreadMessage {
     profiles: { display_name: 'Alice Chen' },
     reply_to_id: null,
     reply_to: null,
+    attachments: [],
     ...over,
   };
 }
@@ -104,5 +112,65 @@ describe('MessageBubble', () => {
     render(<MessageBubble message={m} mine={false} onReply={onReply} />);
     fireEvent.click(screen.getByLabelText('Reply to Alice Chen'));
     expect(onReply).toHaveBeenCalledWith(m);
+  });
+
+  // The wiring this task adds: AttachmentGrid actually renders when a
+  // message carries attachments (not just that the prop compiles).
+  it('renders the attachment grid for a message that carries attachments', async () => {
+    render(
+      <MessageBubble
+        message={message({
+          attachments: [{ id: 'a1', storage_path: 't1/a.jpg', width: 100, height: 100 }],
+        })}
+        mine={false}
+        onReply={() => {}}
+      />,
+    );
+    await waitFor(() => expect(screen.getByTestId('attachment-grid')).toBeTruthy());
+  });
+
+  // ThreadMessage.body can now be '' for an image-only message (Task 3/5).
+  // AttachmentGrid renders null for an empty array, so the ordinary case
+  // (no attachments, no body) must keep showing neither -- and an
+  // image-only message must show the images with no empty gap where the
+  // body text would have been.
+  it('renders an image-only message (empty body) with its images and no empty body element', async () => {
+    render(
+      <MessageBubble
+        message={message({
+          body: '',
+          attachments: [{ id: 'a1', storage_path: 't1/a.jpg', width: 100, height: 100 }],
+        })}
+        mine={false}
+        onReply={() => {}}
+      />,
+    );
+    await waitFor(() => expect(screen.getByTestId('attachment-grid')).toBeTruthy());
+    expect(screen.queryByText('Anyone free Thursday?')).toBeNull();
+  });
+
+  it('renders no attachment grid when the message carries none', () => {
+    render(<MessageBubble message={message()} mine={false} onReply={() => {}} />);
+    expect(screen.queryByTestId('attachment-grid')).toBeNull();
+  });
+
+  // The wiring finding #3's fix adds: `attachmentUrls` is the caller's
+  // once-per-screen-load signed URL map (app/messages/[threadId].tsx,
+  // app/messages/club/[threadId]/[postId].tsx), and MessageBubble's only job
+  // is to forward it to AttachmentGrid untouched -- proven here by an actual
+  // <img> appearing when the message's own path is a key in that map.
+  it('forwards attachmentUrls to AttachmentGrid so a resolved path renders as an image', () => {
+    render(
+      <MessageBubble
+        message={message({
+          attachments: [{ id: 'a1', storage_path: 't1/a.jpg', width: 100, height: 100 }],
+        })}
+        mine={false}
+        onReply={() => {}}
+        attachmentUrls={{ 't1/a.jpg': 'https://signed.example/a.jpg' }}
+      />,
+    );
+    const img = document.body.querySelector('img');
+    expect(img?.getAttribute('src')).toBe('https://signed.example/a.jpg');
   });
 });

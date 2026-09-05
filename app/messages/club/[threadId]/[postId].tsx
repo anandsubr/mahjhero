@@ -8,6 +8,7 @@ import Screen from '../../../../components/Screen';
 import TabBar from '../../../../components/TabBar';
 import ThreadAvatar from '../../../../components/ThreadAvatar';
 import { ChevronLeftIcon } from '../../../../components/icons';
+import { getSignedUrls } from '../../../../lib/attachments';
 import { GENERIC_ERROR } from '../../../../lib/constants';
 import {
   fetchPostMessages,
@@ -18,6 +19,7 @@ import {
   startsNewGroup,
   threadKindFor,
   threadTitleFor,
+  type MessageAttachmentInput,
   type ThreadDetail,
   type ThreadMessage,
 } from '../../../../lib/messages';
@@ -72,6 +74,13 @@ export default function PostScreen() {
   const viewerId = session?.user.id ?? '';
 
   const [messages, setMessages] = useState<ThreadMessage[]>([]);
+  // `storage_path` -> signed URL, for every attachment across every message
+  // currently loaded -- resolved in ONE `getSignedUrls` call per load (the
+  // effect below), not one call per message. See AttachmentGrid's own
+  // `urls` prop docstring for the batching bug this replaced, and
+  // app/messages/[threadId].tsx's identical effect for the flat thread
+  // screen's own copy of this.
+  const [attachmentUrls, setAttachmentUrls] = useState<Record<string, string>>({});
   // A best-effort read for the header alone -- see this screen's own
   // docstring on why it duplicates the board's `fetchThread` call rather
   // than trusting a value handed down from it. Its own success or failure
@@ -99,6 +108,9 @@ export default function PostScreen() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [attachments, setAttachments] = useState<MessageAttachmentInput[]>([]);
+  const [attachmentsPending, setAttachmentsPending] = useState(false);
+  const [attachmentsResetKey, setAttachmentsResetKey] = useState(0);
   // Written SYNCHRONOUSLY alongside `setSending`, the same pattern
   // app/messages/[threadId].tsx's own `sendingRef` records: `sending` read
   // from the render closure is blind to a second activation landing before
@@ -162,6 +174,28 @@ export default function PostScreen() {
     // `Session` that changes nothing about who is asking.
   }, [session?.user.id, threadId]);
 
+  // The one `getSignedUrls` call per screen load: every attachment path
+  // across every message currently in `messages`, gathered here rather than
+  // inside AttachmentGrid (which is mounted once PER MESSAGE via
+  // MessageBubble, and would otherwise fire one request per bubble). Runs
+  // again whenever `messages` changes -- a send, a realtime-triggered
+  // reload -- but getSignedUrls' own module-level cache means a path
+  // already signed this session is never re-requested, only genuinely new
+  // ones are.
+  useEffect(() => {
+    const paths = Array.from(
+      new Set(messages.flatMap((m) => m.attachments.map((a) => a.storage_path))),
+    );
+    if (paths.length === 0) return;
+    let cancelled = false;
+    void getSignedUrls(paths).then((resolved) => {
+      if (!cancelled) setAttachmentUrls((prev) => ({ ...prev, ...resolved }));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [messages]);
+
   useThreadRealtime(
     threadId,
     session?.user.id,
@@ -171,7 +205,7 @@ export default function PostScreen() {
   );
 
   const send = useCallback(async () => {
-    if (sendingRef.current || !threadId || !postId) return;
+    if (sendingRef.current || attachmentsPending || !threadId || !postId) return;
     sendingRef.current = true;
     setSending(true);
     setActionError(null);
@@ -184,6 +218,7 @@ export default function PostScreen() {
       false,
       replyTo?.id ?? null,
       postId,
+      attachments,
     );
     if (refusal) {
       // Neither the draft NOR the quote is cleared. Losing what somebody
@@ -197,10 +232,12 @@ export default function PostScreen() {
     }
     setDraft('');
     setReplyTo(null);
+    setAttachments([]);
+    setAttachmentsResetKey((k) => k + 1);
     await load();
     sendingRef.current = false;
     setSending(false);
-  }, [threadId, postId, draft, replyTo, load]);
+  }, [threadId, postId, draft, replyTo, attachments, attachmentsPending, load]);
 
   if (loading) {
     return (
@@ -287,6 +324,7 @@ export default function PostScreen() {
                     message={m}
                     mine={m.author_id === viewerId}
                     onReply={setReplyTo}
+                    attachmentUrls={attachmentUrls}
                   />
                 </Fragment>
               );
@@ -299,7 +337,13 @@ export default function PostScreen() {
             replyTo={replyTo}
             onClearReply={() => setReplyTo(null)}
             onSend={() => void send()}
-            sending={sending}
+            sending={sending || attachmentsPending}
+            threadId={threadId ?? ''}
+            onAttachmentsChange={(ready, pending) => {
+              setAttachments(ready);
+              setAttachmentsPending(pending);
+            }}
+            attachmentsResetKey={attachmentsResetKey}
           />
         </>
       )}

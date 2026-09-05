@@ -467,11 +467,27 @@ describe('messagePreview', () => {
   });
 
   // An empty club thread is listed before anybody posts. "No messages yet"
-  // is a fact; a blank line reads as a rendering bug.
+  // is a fact; a blank line reads as a rendering bug. `last_message_at` is
+  // what actually distinguishes this state -- `last_body` is null here too,
+  // but null is not what the fix below keys on (see the next test).
   it('says so when nothing has been posted', () => {
-    expect(messagePreview(row({ last_body: null, last_author: null }))).toBe(
-      'No messages yet',
-    );
+    expect(
+      messagePreview(
+        row({ last_body: null, last_author: null, last_message_at: null }),
+      ),
+    ).toBe('No messages yet');
+  });
+
+  // post_message's own body-or-attachment guard means an empty `last_body`
+  // on a row this app wrote always implies attachments -- the CHECK
+  // constraint (Task 3) refuses an empty body with no attachments. Before
+  // this fix, `!row.last_body` treated '' the same as null and misreported
+  // a real, recent image-only message as "No messages yet", with a fresh
+  // timestamp and unread badge contradicting the copy right next to them.
+  it('renders "Photo" rather than "No messages yet" for an image-only last message', () => {
+    expect(
+      messagePreview(row({ last_body: '', last_author: 'Alice Ng' })),
+    ).toBe('Alice Ng: Photo');
   });
 });
 
@@ -781,6 +797,7 @@ describe('fetchThreadMessages', () => {
           reply_to_id: null,
           reply_to_body: null,
           reply_to_author: null,
+          attachments: [],
         },
         {
           id: 'm2',
@@ -793,6 +810,7 @@ describe('fetchThreadMessages', () => {
           reply_to_id: 'm1',
           reply_to_body: 'Anyone free Tuesday?',
           reply_to_author: 'Alice Ng',
+          attachments: [],
         },
       ],
       error: null,
@@ -809,6 +827,7 @@ describe('fetchThreadMessages', () => {
         profiles: { display_name: 'Alice Ng' },
         reply_to_id: null,
         reply_to: null,
+        attachments: [],
       },
       {
         id: 'm2',
@@ -820,9 +839,37 @@ describe('fetchThreadMessages', () => {
         profiles: { display_name: 'Carol Chen' },
         reply_to_id: 'm1',
         reply_to: { id: 'm1', body: 'Anyone free Tuesday?', profiles: { display_name: 'Alice Ng' } },
+        attachments: [],
       },
     ]);
     expect(rpcMock).toHaveBeenCalledWith('fetch_thread_messages', { target_thread: 't1' });
+  });
+
+  it('maps attachments in order', async () => {
+    rpcMock.mockResolvedValueOnce({
+      data: [
+        {
+          id: 'm1',
+          author_id: 'u1',
+          author_name: 'Alice',
+          body: '',
+          subject: null,
+          is_announcement: false,
+          created_at: '2026-09-04T10:00:00Z',
+          reply_to_id: null,
+          reply_to_body: null,
+          reply_to_author: null,
+          attachments: [
+            { id: 'a1', storage_path: 't1/a.jpg', width: 800, height: 600 },
+          ],
+        },
+      ],
+      error: null,
+    });
+    const rows = await fetchThreadMessages('t1');
+    expect(rows?.[0]?.attachments).toEqual([
+      { id: 'a1', storage_path: 't1/a.jpg', width: 800, height: 600 },
+    ]);
   });
 
   it('resolves null on failure rather than rejecting', async () => {
@@ -933,6 +980,7 @@ describe('postMessage', () => {
       p_announce: false,
       p_reply_to: null,
       p_root: null,
+      p_attachments: null,
     });
   });
 
@@ -945,15 +993,33 @@ describe('postMessage', () => {
       p_announce: false,
       p_reply_to: 'm1',
       p_root: null,
+      p_attachments: null,
     });
   });
 
-  it('refuses an empty body before ever calling the RPC', async () => {
+  it('refuses an empty body with no attachments before ever calling the RPC', async () => {
     await expect(postMessage('t1', '   ')).resolves.toEqual({
       id: null,
       error: 'Write something first.',
     });
     expect(rpcMock).not.toHaveBeenCalled();
+  });
+
+  it('allows an empty body when an attachment is present', async () => {
+    rpcMock.mockResolvedValueOnce({ data: 'm5', error: null });
+    await expect(
+      postMessage('t1', '   ', false, null, null, [
+        { storage_path: 't1/a.jpg', width: 800, height: 600 },
+      ]),
+    ).resolves.toEqual({ id: 'm5', error: null });
+    expect(rpcMock).toHaveBeenCalledWith('post_message', {
+      target_thread: 't1',
+      p_body: '',
+      p_announce: false,
+      p_reply_to: null,
+      p_root: null,
+      p_attachments: [{ storage_path: 't1/a.jpg', width: 800, height: 600 }],
+    });
   });
 
   // post_message's refusals are already written to be read by a member --
@@ -976,6 +1042,32 @@ describe('postMessage', () => {
       id: null,
       error: GENERIC_ERROR,
     });
+  });
+
+  // No client-side attachment-count guard exists in postMessage (see its
+  // own comment on why -- importing lib/attachments.ts here would drag
+  // native-only modules into every test file that touches lib/messages.ts,
+  // directly or transitively). This message carries 5, one over
+  // post_message's own bound, and the RPC (not this module) is what refuses
+  // it -- proving the send is NOT short-circuited client-side the way an
+  // over-length body is just above.
+  it('lets an over-the-cap attachment count reach the RPC, unlike an over-length body', async () => {
+    rpcMock.mockResolvedValueOnce({
+      data: null,
+      error: { message: 'a message can carry at most 4 images' },
+    });
+    const attachments = Array.from({ length: 5 }, (_, i) => ({
+      storage_path: `t1/${i}.jpg`,
+      width: 10,
+      height: 10,
+    }));
+    await expect(
+      postMessage('t1', '', false, null, null, attachments),
+    ).resolves.toEqual({
+      id: null,
+      error: 'a message can carry at most 4 images',
+    });
+    expect(rpcMock).toHaveBeenCalled();
   });
 });
 
@@ -1095,6 +1187,7 @@ describe('fetchPostMessages', () => {
           reply_to_id: null,
           reply_to_body: null,
           reply_to_author: null,
+          attachments: [],
         },
         {
           id: 'p2',
@@ -1107,6 +1200,7 @@ describe('fetchPostMessages', () => {
           reply_to_id: 'p1',
           reply_to_body: 'Anyone free Tuesday?',
           reply_to_author: 'Alice Ng',
+          attachments: [],
         },
       ],
       error: null,
@@ -1123,6 +1217,7 @@ describe('fetchPostMessages', () => {
         profiles: { display_name: 'Alice Ng' },
         reply_to_id: null,
         reply_to: null,
+        attachments: [],
       },
       {
         id: 'p2',
@@ -1138,6 +1233,7 @@ describe('fetchPostMessages', () => {
           body: 'Anyone free Tuesday?',
           profiles: { display_name: 'Alice Ng' },
         },
+        attachments: [],
       },
     ]);
     expect(rpcMock).toHaveBeenCalledWith('fetch_post_messages', { p_root: 'p1' });
@@ -1201,6 +1297,7 @@ describe('postMessage with a root', () => {
       p_announce: false,
       p_reply_to: null,
       p_root: 'root1',
+      p_attachments: null,
     });
   });
 
@@ -1213,6 +1310,7 @@ describe('postMessage with a root', () => {
       p_announce: false,
       p_reply_to: null,
       p_root: null,
+      p_attachments: null,
     });
   });
 });

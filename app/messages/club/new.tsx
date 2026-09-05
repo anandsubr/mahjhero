@@ -10,10 +10,16 @@ import TextField from '../../../components/TextField';
 import ThreadAvatar from '../../../components/ThreadAvatar';
 import Toggle from '../../../components/Toggle';
 import { ChevronLeftIcon } from '../../../components/icons';
+import AttachmentPicker from '../../../components/messages/AttachmentPicker';
 import { countBroadcastRecipients } from '../../../lib/broadcasts';
 import { canAnnounce, fetchClub, fetchRoster } from '../../../lib/clubs';
 import { GENERIC_ERROR } from '../../../lib/constants';
-import { BODY_MAX, deriveSubject, postMessage } from '../../../lib/messages';
+import {
+  BODY_MAX,
+  deriveSubject,
+  postMessage,
+  type MessageAttachmentInput,
+} from '../../../lib/messages';
 import { useSession } from '../../../lib/session';
 import { colors, radius, space, type } from '../../../lib/theme';
 
@@ -156,6 +162,14 @@ export default function NewPostScreen() {
   const [recipients, setRecipients] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // No reset key here, unlike the club post's reply composer
+  // (app/messages/club/[threadId]/[postId].tsx): that screen stays mounted
+  // after a successful send and needs AttachmentPicker remounted clean for
+  // the next one. `submit` below `router.replace`s away on success, so this
+  // screen unmounts instead -- there is no second submission for a stale
+  // AttachmentPicker to leak into.
+  const [attachments, setAttachments] = useState<MessageAttachmentInput[]>([]);
+  const [attachmentsPending, setAttachmentsPending] = useState(false);
   // Written synchronously alongside the async call it guards, the same
   // pattern app/messages/club/[threadId]/[postId].tsx's `sendingRef`
   // records: `busy` read from the render closure is blind to a second tap
@@ -209,11 +223,14 @@ export default function NewPostScreen() {
   }, []);
 
   const handleBack = useCallback(() => {
-    // An empty draft costs nothing to lose -- checked first, and
-    // unconditionally, so it also covers a member who armed the confirm
-    // and then deleted everything they'd typed rather than tapping back
-    // again: the second tap should just leave, not discard nothing.
-    if (!body.trim()) {
+    // Nothing to lose -- checked first, and unconditionally, so it also
+    // covers a member who armed the confirm and then deleted everything
+    // they'd typed (and removed any attachment) rather than tapping back
+    // again: the second tap should just leave, not discard nothing. An
+    // attached image counts as something to lose here too, the same as
+    // typed text -- a member who attached a photo but never typed a word
+    // must not have it silently discarded on the first tap.
+    if (!body.trim() && attachments.length === 0) {
       router.push(`/messages/club/${threadId}`);
       return;
     }
@@ -222,10 +239,10 @@ export default function NewPostScreen() {
       return;
     }
     router.push(`/messages/club/${threadId}`);
-  }, [body, confirmingCancel, threadId, router]);
+  }, [body, attachments, confirmingCancel, threadId, router]);
 
   const submit = useCallback(async () => {
-    if (busyRef.current || !threadId) return;
+    if (busyRef.current || attachmentsPending || !threadId) return;
     busyRef.current = true;
     setBusy(true);
     setError(null);
@@ -238,6 +255,7 @@ export default function NewPostScreen() {
       null,
       // The post's own root -- always null. A new post IS the root.
       null,
+      attachments,
     );
     if (refusal || !id) {
       // The draft survives a refusal, same contract every composer in this
@@ -251,7 +269,7 @@ export default function NewPostScreen() {
     busyRef.current = false;
     setBusy(false);
     router.replace(`/messages/club/${threadId}/${id}`);
-  }, [threadId, body, announce, mayAnnounce, router]);
+  }, [threadId, body, announce, mayAnnounce, attachments, attachmentsPending, router]);
 
   if (loading) {
     return (
@@ -357,6 +375,20 @@ export default function NewPostScreen() {
         maxLength={BODY_MAX}
       />
 
+      {/*
+        `threadId` is a route param, already in hand at mount -- unlike
+        app/messages/new.tsx (no thread exists until submission), this
+        screen always composes onto an EXISTING club board, so the picker
+        can render immediately rather than waiting on anything.
+      */}
+      <AttachmentPicker
+        threadId={threadId}
+        onAttachmentsChange={(ready, pending) => {
+          setAttachments(ready);
+          setAttachmentsPending(pending);
+        }}
+      />
+
       {mayAnnounce ? (
         <View style={styles.toggleRow}>
           <Text style={styles.toggleLabel}>Also email everyone in the club</Text>
@@ -376,7 +408,12 @@ export default function NewPostScreen() {
 
       <Button
         onPress={() => void submit()}
-        disabled={busy || body.trim().length === 0}
+        // Empty body is only a blocker when there's ALSO nothing attached --
+        // the same "body OR attachment" bound postMessage's own guard
+        // enforces (lib/messages.ts, mirroring post_message's SQL check).
+        // An attachment makes the body optional; it does not need one of
+        // its own to be worth sending.
+        disabled={busy || attachmentsPending || (body.trim().length === 0 && attachments.length === 0)}
         accessibilityLabel="Post it"
       >
         {busy ? 'Posting…' : 'Post it'}

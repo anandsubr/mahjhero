@@ -5,7 +5,6 @@ import {
   Pressable,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import Button from '../../components/Button';
@@ -21,7 +20,7 @@ import {
   type AddablePerson,
   type Friend,
 } from '../../lib/friends';
-import { createGroupThread, postMessage } from '../../lib/messages';
+import { createGroupThread } from '../../lib/messages';
 import { useSession } from '../../lib/session';
 import { colors, radius, space, type } from '../../lib/theme';
 
@@ -38,14 +37,18 @@ type Candidate = { profile_id: string; display_name: string; meta: string };
  * `/messages` route, but renders as *already active* here, which reads as
  * "you are here" rather than a way out.
  *
- * One step, not two: the message box and Send live on THIS screen, not on
- * a thread screen reached after picking who to message. The old two-step
- * flow was never a design decision -- it fell out of fetch_my_threads
- * listing a group thread from the moment it is created, with no message
- * required. Pick somebody, tap Start, close the app, and they had an empty
- * conversation from you reading "No messages yet." One step makes that
- * unrepresentable: the thread does not exist until there is something to
- * say, so a message is always required below.
+ * Two visible steps, on purpose: picking people and tapping Start
+ * conversation only creates (or opens) the thread and navigates straight to
+ * it. The message itself -- text, images, or both -- is composed on that
+ * thread screen, through the same Composer every other thread already uses
+ * (attachments included, since Task 10). No thread exists yet while people
+ * are still being picked here, so there is nowhere to upload an image to
+ * until the thread does; rather than build a second, cut-down attach flow
+ * just for this screen, the first message is handled on the thread screen
+ * like any other message. That does mean a still-empty group thread is
+ * representable again -- pick somebody, tap Start, and "No messages yet."
+ * is a real state, same as any other conversation nobody has written in
+ * yet -- accepted here as the smaller cost next to a duplicated composer.
  *
  * There is no separate "group" choice, either. That would mean a NAMED
  * per-club list -- "Tuesday table", "Hosts" -- that somebody maintains.
@@ -93,7 +96,6 @@ export default function NewMessageScreen() {
   const [friends, setFriends] = useState<Friend[] | null>(null);
   const [people, setPeople] = useState<AddablePerson[] | null>(null);
   const [picked, setPicked] = useState<string[]>([]);
-  const [draft, setDraft] = useState('');
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -104,17 +106,6 @@ export default function NewMessageScreen() {
   // `busyRef`/`openingRef`/`sendingRef` in app/clubs/index.tsx,
   // app/friends.tsx, app/messages/index.tsx and app/messages/[threadId].tsx.
   const busyRef = useRef(false);
-  // The thread id from a create/open that SUCCEEDED, kept only across a
-  // subsequent post that failed. create_group_thread is a creation-time
-  // convenience with no dedup (see
-  // supabase/migrations/20260829030000_group_threads.sql) -- it makes a new
-  // thread every call. Without remembering the id here, tapping the button
-  // again after a failed post would create a second, near-duplicate group
-  // thread for the same people instead of retrying the post into the one
-  // that already exists. Cleared whenever the picked selection changes
-  // underneath it, since at that point the remembered thread no longer
-  // matches what the member is asking to send.
-  const createdThreadRef = useRef<string | null>(null);
 
   // Keyed on the user id, NOT on `session` itself -- lib/session.tsx hands
   // out a fresh Session object on every onAuthStateChange (TOKEN_REFRESHED
@@ -148,7 +139,6 @@ export default function NewMessageScreen() {
   }, [userId]);
 
   const toggle = useCallback((id: string) => {
-    createdThreadRef.current = null;
     setPicked((current) =>
       current.includes(id) ? current.filter((x) => x !== id) : [...current, id],
     );
@@ -171,65 +161,23 @@ export default function NewMessageScreen() {
       return;
     }
 
-    const trimmed = draft.trim();
-    // Creating the thread in someone else's list for the first time always
-    // needs something to say -- refused here, before any RPC call, the same
-    // way the empty-picked case above is refused, and with postMessage's
-    // own wording for an empty body, since that is the refusal this would
-    // otherwise get one round trip later.
-    if (trimmed.length === 0) {
+    const result = await createGroupThread('', picked);
+    if (result.error || !result.id) {
       busyRef.current = false;
       setBusy(false);
-      setError('Write something first.');
-      return;
-    }
-
-    let threadId = createdThreadRef.current;
-    if (!threadId) {
-      const result = await createGroupThread('', picked);
-
-      if (result.error || !result.id) {
-        // Cleared on this exit path too — a ref set and never cleared makes
-        // the picker permanently dead, which is worse than the double-submit
-        // bug it guards against.
-        busyRef.current = false;
-        setBusy(false);
-        setError(result.error ?? GENERIC_ERROR);
-        return;
-      }
-      threadId = result.id;
-      createdThreadRef.current = threadId;
-    }
-
-    // `p_root` null: this is a member starting a new post, not replying
-    // inside one -- the same call app/messages/club/new.tsx makes for the
-    // identical reason. The guard above guarantees `trimmed` is non-empty
-    // by the time this runs, so the post always happens.
-    const { error: refusal } = await postMessage(threadId, trimmed, false, null);
-    if (refusal) {
-      // The thread now exists whether or not this post succeeds --
-      // create_group_thread has already run, and undoing that isn't a call
-      // this module exposes. What stays in this screen's control: not
-      // losing what they typed (draft and picked are untouched) and not
-      // swallowing the refusal (relayed verbatim below) -- the same "keep
-      // the text, show the error" contract [threadId].tsx's own `send`
-      // keeps on a failed post. createdThreadRef keeps the id so the next
-      // tap retries the post into this same thread instead of creating
-      // another one.
-      busyRef.current = false;
-      setBusy(false);
-      setError(refusal);
+      setError(result.error ?? GENERIC_ERROR);
       return;
     }
 
     busyRef.current = false;
     setBusy(false);
-    createdThreadRef.current = null;
-    // `replace`, not `push`: the compose screen has served its purpose and
-    // backing out of a thread should land on the list, not on a picker with
-    // stale selections.
-    router.replace(`/messages/${threadId}`);
-  }, [picked, draft, router]);
+    // `replace`, not `push`: the picker has served its purpose, and backing
+    // out of the new thread should land on the list, not on a picker with
+    // stale selections. The first message -- text, images, or both -- is
+    // composed on the thread screen itself now, through the same Composer
+    // every other thread already uses (Task 10), not here.
+    router.replace(`/messages/${result.id}`);
+  }, [picked, router]);
 
   if (loading) {
     return (
@@ -322,30 +270,14 @@ export default function NewMessageScreen() {
             );
           })}
 
-          <Text style={styles.label}>Message</Text>
-          <TextInput
-            style={styles.input}
-            value={draft}
-            onChangeText={setDraft}
-            placeholder="Message"
-            accessibilityLabel="Message"
-            multiline
-          />
-
-          {/*
-            Always "Send" now -- People always requires a message (guarded
-            in `start` above), so there is no "Open a thread with nothing
-            typed" case left to label for. That case belonged to the
-            removed Everyone target; see this screen's own docstring.
-          */}
           <Button
             block
-            accessibilityLabel="Send"
+            accessibilityLabel="Start conversation"
             disabled={busy}
             loading={busy}
             onPress={() => void start()}
           >
-            Send
+            Start conversation
           </Button>
         </>
       )}
@@ -419,19 +351,5 @@ const styles = StyleSheet.create({
     fontFamily: type.bodyRegular,
     fontSize: type.size.helper,
     color: colors.textMuted,
-  },
-  // Same input treatment as [threadId].tsx's composer, minus that screen's
-  // `flex: 1` -- there it shares a row with an inline Send control, here the
-  // primary action is its own full-width Button below.
-  input: {
-    minHeight: 58,
-    maxHeight: 140,
-    borderRadius: radius.lg,
-    backgroundColor: colors.surface,
-    paddingHorizontal: space[4],
-    paddingVertical: space[3],
-    fontFamily: type.bodyRegular,
-    fontSize: type.size.body,
-    color: colors.text,
   },
 });

@@ -634,6 +634,19 @@ describe('BOOKING_REFUSALS (self-audit against the migrations)', () => {
     // lib/messages.ts owns it.
     'only a club has posts to list':
       'raised by fetch_club_posts — lib/messages.ts is the module responsible, and by design relays error.message rather than mapping through a refusal table',
+    // Raised by post_message (20260905040000_post_message_attachments.sql)
+    // when p_attachments carries more than 4 entries. The picker caps
+    // selection at 4 images client-side, so a caller hitting this is
+    // malicious or buggy. lib/messages.ts owns it.
+    'a message can carry at most 4 images':
+      'raised by post_message — lib/messages.ts is the module responsible, and by design relays error.message rather than mapping through a refusal table',
+    // Raised by post_message when an attachment's storage_path does not
+    // start with the target thread's own folder. The storage INSERT policy
+    // (20260905030000) already makes writing a mismatched path impossible,
+    // so this is a readable-words wrapper around a case the client upload
+    // flow can never actually produce. lib/messages.ts owns it.
+    'an attachment must belong to this conversation':
+      'raised by post_message — lib/messages.ts is the module responsible, and by design relays error.message rather than mapping through a refusal table',
   };
 
   function distinctRaisedMessages(): string[] {

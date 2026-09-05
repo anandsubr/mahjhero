@@ -131,49 +131,28 @@ describe('new message screen', () => {
     expect(names.map((n) => n.textContent)).toEqual(['Bob Reyes', 'Carol Diaz']);
   });
 
-  // Creating a thread in someone else's list for the first time always
-  // needs something to say -- the one-step flow's whole point is that an
-  // empty person-to-person thread can no longer be created.
-  it('refuses an empty message to People before any RPC call', async () => {
-    render(<NewMessageScreen />);
-    fireEvent.click(await screen.findByLabelText('Bob Reyes'));
-    fireEvent.click(screen.getByLabelText('Send'));
-    expect(await screen.findByText('Write something first.')).toBeTruthy();
-    expect(createGroupThread).not.toHaveBeenCalled();
-    expect(postMessage).not.toHaveBeenCalled();
-    expect(replace).not.toHaveBeenCalled();
-  });
-
-  it('creates a group from the picked people and posts the first message', async () => {
+  // The one-step "write here, send here" flow is gone: picking people is
+  // now enough on its own to create (or open) the thread. The first
+  // message -- text, images, or both -- is composed on the thread screen
+  // itself afterward, through the same Composer every other thread already
+  // uses (Task 10), never here.
+  it('creates the thread and navigates to it, with no message posted here', async () => {
     render(<NewMessageScreen />);
     fireEvent.click(await screen.findByLabelText('Bob Reyes'));
     fireEvent.click(screen.getByLabelText('Carol Diaz'));
-    fireEvent.change(screen.getByLabelText('Message'), {
-      target: { value: 'Table for four Tuesday?' },
-    });
-    fireEvent.click(screen.getByLabelText('Send'));
+    fireEvent.click(screen.getByLabelText('Start conversation'));
     await waitFor(() =>
       expect(createGroupThread).toHaveBeenCalledWith('', ['p1', 'p2']),
     );
-    await waitFor(() =>
-      expect(postMessage).toHaveBeenCalledWith(
-        't9',
-        'Table for four Tuesday?',
-        false,
-        null,
-      ),
-    );
     await waitFor(() => expect(replace).toHaveBeenCalledWith('/messages/t9'));
+    expect(postMessage).not.toHaveBeenCalled();
   });
 
   it('deselects somebody picked by mistake', async () => {
     render(<NewMessageScreen />);
     fireEvent.click(await screen.findByLabelText('Bob Reyes'));
     fireEvent.click(screen.getByLabelText('Bob Reyes'));
-    fireEvent.change(screen.getByLabelText('Message'), {
-      target: { value: 'Hello' },
-    });
-    fireEvent.click(screen.getByLabelText('Send'));
+    fireEvent.click(screen.getByLabelText('Start conversation'));
     await waitFor(() => expect(createGroupThread).not.toHaveBeenCalled());
     expect(await screen.findByText('Pick somebody to message.')).toBeTruthy();
   });
@@ -185,10 +164,7 @@ describe('new message screen', () => {
     });
     render(<NewMessageScreen />);
     fireEvent.click(await screen.findByLabelText('Bob Reyes'));
-    fireEvent.change(screen.getByLabelText('Message'), {
-      target: { value: 'Hello' },
-    });
-    fireEvent.click(screen.getByLabelText('Send'));
+    fireEvent.click(screen.getByLabelText('Start conversation'));
     expect(
       await screen.findByText(
         'you can only message people from your clubs or your friends',
@@ -196,45 +172,6 @@ describe('new message screen', () => {
     ).toBeTruthy();
     expect(postMessage).not.toHaveBeenCalled();
     expect(replace).not.toHaveBeenCalled();
-  });
-
-  // The thread was already created by the time the post fails -- undoing
-  // that isn't a call this screen can make. What it owes the member: the
-  // text they typed is still there (not silently dropped), the refusal is
-  // shown (not swallowed), and they are NOT bounced into a half-created
-  // thread. A second tap retries the POST into the thread that already
-  // exists rather than creating a second, near-duplicate one.
-  it('keeps the message and retries the post, not the create, after a failed post', async () => {
-    postMessage.mockResolvedValueOnce({
-      id: null,
-      error: 'that message could not be sent',
-    });
-    render(<NewMessageScreen />);
-    fireEvent.click(await screen.findByLabelText('Bob Reyes'));
-    const input = screen.getByLabelText('Message');
-    fireEvent.change(input, { target: { value: 'Table for four Tuesday?' } });
-    fireEvent.click(screen.getByLabelText('Send'));
-
-    expect(
-      await screen.findByText('that message could not be sent'),
-    ).toBeTruthy();
-    expect((input as HTMLTextAreaElement).value).toBe('Table for four Tuesday?');
-    expect(replace).not.toHaveBeenCalled();
-    expect(createGroupThread).toHaveBeenCalledTimes(1);
-
-    fireEvent.click(screen.getByLabelText('Send'));
-    await waitFor(() =>
-      expect(postMessage).toHaveBeenCalledWith(
-        't9',
-        'Table for four Tuesday?',
-        false,
-        null,
-      ),
-    );
-    await waitFor(() => expect(replace).toHaveBeenCalledWith('/messages/t9'));
-    // Retried the post into the thread already created -- did not create a
-    // second one.
-    expect(createGroupThread).toHaveBeenCalledTimes(1);
   });
 
   // TabBar navigates with router.replace off an entry route that is itself

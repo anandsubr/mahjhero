@@ -3,11 +3,36 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import Composer from '../Composer';
 import type { ThreadMessage } from '../../../lib/messages';
 
+// Composer now renders AttachmentPicker (Task 10), which imports
+// lib/attachments.ts -- itself pulling in expo-crypto,
+// expo-image-manipulator and expo-image-picker. None of these tests want to
+// actually load those native modules, so lib/attachments is mocked wholesale
+// here the same way AttachmentPicker.test.tsx already mocks it for its own
+// direct render of that component.
+vi.mock('../../../lib/attachments', () => ({
+  pickImages: vi.fn(),
+  compressImage: vi.fn(),
+  uploadAttachment: vi.fn(),
+  MAX_ATTACHMENTS: 4,
+}));
+
 // A pure presentational component: no session, router, or focus-effect
 // dependency to mock -- the same reasoning MessageBubble.test.tsx's own
 // header gives. app/__tests__/thread.test.tsx still exercises this through
 // the real screen end to end; these tests exist so Tasks 11-12 can render
 // Composer on its own with confidence.
+// The attachment-related props Task 10 added, spread into every render
+// below -- none of these tests exercise attachment behaviour itself (that's
+// AttachmentPicker.test.tsx's job), so a fixed, inert set of values keeps
+// each render call focused on the prop it's actually testing. No
+// `attachments` here -- Composer never read that prop (finding #10's
+// cleanup removed it from Props entirely).
+const attachmentProps = {
+  threadId: 't1',
+  onAttachmentsChange: () => {},
+  attachmentsResetKey: 0,
+};
+
 function reply(over: Partial<ThreadMessage> = {}): ThreadMessage {
   return {
     id: 'm1',
@@ -19,6 +44,7 @@ function reply(over: Partial<ThreadMessage> = {}): ThreadMessage {
     profiles: { display_name: 'Sara Lindqvist' },
     reply_to_id: null,
     reply_to: null,
+    attachments: [],
     ...over,
   };
 }
@@ -34,6 +60,7 @@ describe('Composer', () => {
         onClearReply={() => {}}
         onSend={() => {}}
         sending={false}
+        {...attachmentProps}
       />,
     );
     fireEvent.change(screen.getByLabelText('Message'), {
@@ -57,6 +84,7 @@ describe('Composer', () => {
         onClearReply={() => {}}
         onSend={onSend}
         sending={false}
+        {...attachmentProps}
       />,
     );
     fireEvent.click(screen.getByLabelText('Send'));
@@ -79,6 +107,7 @@ describe('Composer', () => {
         onClearReply={() => {}}
         onSend={onSend}
         sending
+        {...attachmentProps}
       />,
     );
     fireEvent.click(screen.getByLabelText('Send'));
@@ -94,6 +123,7 @@ describe('Composer', () => {
         onClearReply={() => {}}
         onSend={() => {}}
         sending={false}
+        {...attachmentProps}
       />,
     );
     expect(screen.queryByLabelText('Cancel reply')).toBeNull();
@@ -109,6 +139,7 @@ describe('Composer', () => {
         onClearReply={onClearReply}
         onSend={() => {}}
         sending={false}
+        {...attachmentProps}
       />,
     );
     expect(
@@ -131,6 +162,7 @@ describe('Composer', () => {
         onClearReply={() => {}}
         onSend={() => {}}
         sending={false}
+        {...attachmentProps}
       />,
     );
     const input = screen.getByLabelText('Message');

@@ -9,6 +9,7 @@ import Screen from '../../components/Screen';
 import TabBar from '../../components/TabBar';
 import ThreadAvatar from '../../components/ThreadAvatar';
 import { ChevronLeftIcon, ChevronRightIcon } from '../../components/icons';
+import { getSignedUrls } from '../../lib/attachments';
 import { GENERIC_ERROR } from '../../lib/constants';
 import {
   fetchThread,
@@ -19,6 +20,7 @@ import {
   startsNewGroup,
   threadKindFor,
   threadTitleFor,
+  type MessageAttachmentInput,
   type ThreadDetail,
   type ThreadMessage,
 } from '../../lib/messages';
@@ -70,6 +72,11 @@ export default function ThreadScreen() {
 
   const [thread, setThread] = useState<ThreadDetail | null>(null);
   const [messages, setMessages] = useState<ThreadMessage[]>([]);
+  // `storage_path` -> signed URL, for every attachment across every message
+  // currently loaded -- resolved in ONE `getSignedUrls` call per load (the
+  // effect below), not one call per message. See AttachmentGrid's own
+  // `urls` prop docstring for the batching bug this replaced.
+  const [attachmentUrls, setAttachmentUrls] = useState<Record<string, string>>({});
   const [ready, setReady] = useState(false);
   const [draft, setDraft] = useState('');
   // The message being answered, held whole rather than as an id so the
@@ -77,6 +84,9 @@ export default function ThreadScreen() {
   const [replyTo, setReplyTo] = useState<ThreadMessage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [attachments, setAttachments] = useState<MessageAttachmentInput[]>([]);
+  const [attachmentsPending, setAttachmentsPending] = useState(false);
+  const [attachmentsResetKey, setAttachmentsResetKey] = useState(0);
   // `sending` above is read from the render closure, so a guard written as
   // `if (sending) return` is blind to a second activation landing in the
   // same tick as an earlier `setSending(true)` -- a queued tap, a
@@ -132,6 +142,27 @@ export default function ThreadScreen() {
     void load();
   }, [session?.user.id, load]);
 
+  // The one `getSignedUrls` call per screen load: every attachment path
+  // across every message currently in `messages`, gathered here rather than
+  // inside AttachmentGrid (which is mounted once PER MESSAGE via
+  // MessageBubble, and would otherwise fire one request per bubble). Runs
+  // again whenever `messages` changes -- a send, a realtime insert -- but
+  // getSignedUrls' own module-level cache means a path already signed this
+  // session is never re-requested, only genuinely new ones are.
+  useEffect(() => {
+    const paths = Array.from(
+      new Set(messages.flatMap((m) => m.attachments.map((a) => a.storage_path))),
+    );
+    if (paths.length === 0) return;
+    let cancelled = false;
+    void getSignedUrls(paths).then((resolved) => {
+      if (!cancelled) setAttachmentUrls((prev) => ({ ...prev, ...resolved }));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [messages]);
+
   useThreadRealtime(
     threadId,
     session?.user.id,
@@ -153,19 +184,22 @@ export default function ThreadScreen() {
   );
 
   const send = useCallback(async () => {
-    if (sendingRef.current || !threadId) return;
+    if (sendingRef.current || attachmentsPending || !threadId) return;
     sendingRef.current = true;
     setSending(true);
     setError(null);
     // `false` -- composing an announcement is gone from this screen (see
     // the component's own docstring), so this never posts one any more.
     // `postMessage`'s `announce` parameter itself is untouched, for the
-    // redesign to reattach a UI to.
+    // redesign to reattach a UI to. `null` for `rootId` -- this screen never
+    // replies inside a club post.
     const { error: refusal } = await postMessage(
       threadId,
       draft,
       false,
       replyTo?.id ?? null,
+      null,
+      attachments,
     );
     if (refusal) {
       // Neither the draft NOR the quote is cleared. Losing what somebody
@@ -181,10 +215,12 @@ export default function ThreadScreen() {
     }
     setDraft('');
     setReplyTo(null);
+    setAttachments([]);
+    setAttachmentsResetKey((k) => k + 1);
     await load();
     sendingRef.current = false;
     setSending(false);
-  }, [threadId, draft, replyTo, load]);
+  }, [threadId, draft, replyTo, attachments, attachmentsPending, load]);
 
   if (loading) {
     return (
@@ -363,7 +399,12 @@ export default function ThreadScreen() {
                       {groupSeparatorLabel(m.created_at)}
                     </Text>
                   ) : null}
-                  <MessageBubble message={m} mine={mine} onReply={setReplyTo} />
+                  <MessageBubble
+                    message={m}
+                    mine={mine}
+                    onReply={setReplyTo}
+                    attachmentUrls={attachmentUrls}
+                  />
                 </Fragment>
               );
             })}
@@ -375,7 +416,13 @@ export default function ThreadScreen() {
             replyTo={replyTo}
             onClearReply={() => setReplyTo(null)}
             onSend={() => void send()}
-            sending={sending}
+            sending={sending || attachmentsPending}
+            threadId={threadId ?? ''}
+            onAttachmentsChange={(ready, pending) => {
+              setAttachments(ready);
+              setAttachmentsPending(pending);
+            }}
+            attachmentsResetKey={attachmentsResetKey}
           />
         </>
       )}

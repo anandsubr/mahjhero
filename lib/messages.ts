@@ -59,6 +59,21 @@ export type ThreadMessage = {
    * quote.
    */
   reply_to: { id: string; body: string; profiles: { display_name: string } | null } | null;
+  attachments: MessageAttachment[];
+};
+
+export type MessageAttachment = {
+  id: string;
+  storage_path: string;
+  width: number;
+  height: number;
+};
+
+/** What `postMessage` sends for a not-yet-attached image — no `id` yet. */
+export type MessageAttachmentInput = {
+  storage_path: string;
+  width: number;
+  height: number;
 };
 
 export type ThreadDetail = {
@@ -326,10 +341,22 @@ export function rowSubtitle(row: ThreadListRow): string {
  * The row's one-line preview. Newlines are collapsed here rather than left
  * to `numberOfLines`, which clips at the first break — so a message that
  * begins with one would render an empty preview.
+ *
+ * Keyed on `last_message_at`, not `!row.last_body` -- `messages.body`'s
+ * CHECK constraint was relaxed (Task 3) to allow an empty body when the
+ * message carries an attachment, so `last_body` is `''` for an image-only
+ * message, and `!''` is true. Testing `last_body` directly used to make an
+ * image-only message read "No messages yet" even though it has a real,
+ * recent timestamp and can carry an unread badge. `last_message_at` is
+ * null only when the thread has genuinely never been posted in.
+ *
+ * An empty (post-trim) body falls back to "Photo": `post_message` refuses
+ * an empty body with no attachments, so for any row this app itself wrote,
+ * an empty body implies at least one attachment.
  */
 export function messagePreview(row: ThreadListRow): string {
-  if (!row.last_body) return 'No messages yet';
-  const body = row.last_body.replace(/\s+/g, ' ').trim();
+  if (row.last_message_at === null) return 'No messages yet';
+  const body = (row.last_body ?? '').replace(/\s+/g, ' ').trim() || 'Photo';
   if (!row.last_author) return body;
   return `${row.last_author}: ${body}`;
 }
@@ -749,6 +776,7 @@ type ThreadMessageRow = {
   reply_to_id: string | null;
   reply_to_body: string | null;
   reply_to_author: string | null;
+  attachments: MessageAttachment[];
 };
 
 /**
@@ -775,6 +803,7 @@ function mapThreadMessageRow(r: ThreadMessageRow): ThreadMessage {
           profiles: r.reply_to_author ? { display_name: r.reply_to_author } : null,
         }
       : null,
+    attachments: r.attachments ?? [],
   };
 }
 
@@ -943,22 +972,43 @@ export async function postMessage(
   // Null in a game or direct thread, and null for a NEW post on a club
   // board. Set only when replying inside a post.
   rootId: string | null = null,
+  attachments: MessageAttachmentInput[] = [],
 ): Promise<{ id: string | null; error: string | null }> {
   const trimmed = (body ?? '').trim();
   // Checked here as well as in post_message so a member who taps Send on an
-  // empty composer gets an answer without a round trip.
-  if (trimmed.length === 0) {
+  // empty composer with no attachments gets an answer without a round trip.
+  // An attachment gives this bound a second way to be satisfied -- it does
+  // not relax it.
+  if (trimmed.length === 0 && attachments.length === 0) {
     return { id: null, error: 'Write something first.' };
   }
   if (trimmed.length > BODY_MAX) {
     return { id: null, error: 'That message is too long.' };
   }
+  // No client-side attachment-count guard here, deliberately -- unlike
+  // BODY_MAX just above. `lib/attachments.ts` pulls in expo-crypto,
+  // expo-image-manipulator and expo-image-picker; importing even one export
+  // from it here would make THIS module (imported by nearly every messaging
+  // screen and by components/UnreadBadge.tsx, itself pulled into most of the
+  // app's own test suite) drag those native modules into every test file
+  // that touches ANY of that, transitively -- which is exactly the "Cannot
+  // find module './setupFastRefresh'" crash lib/attachments.test.ts's own
+  // header comment documents, just with a much wider blast radius than one
+  // file. `post_message` itself still refuses the send server-side ("a
+  // message can carry at most 4 images", 20260905040000) -- this just isn't
+  // duplicated as a second, earlier check the way BODY_MAX is. The over-cap
+  // case is already unreachable through the UI in practice: AttachmentPicker
+  // disables its own attach control at MAX_ATTACHMENTS, and finding #2's fix
+  // (lib/attachments.ts's pickImages) clamps a picker result to `remaining`
+  // even where the underlying platform picker does not honour the limit
+  // itself.
   return idRpc('post_message', {
     target_thread: threadId,
     p_body: trimmed,
     p_announce: announce,
     p_reply_to: replyToId,
     p_root: rootId,
+    p_attachments: attachments.length > 0 ? attachments : null,
   });
 }
 

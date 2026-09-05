@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(11);
+select plan(13);
 
 insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-000000000001', 'alice@example.com'),
@@ -53,6 +53,18 @@ insert into public.messages (id, thread_id, author_id, body, root_id, created_at
    '11111111-0000-0000-0000-000000000001',
    'aaaaaaaa-0000-0000-0000-000000000001', 'reply to newer',
    'cc000000-0000-0000-0000-00000000000c', now() - interval '1 day');
+
+-- Two attachments on the older root, inserted in the REVERSE of their
+-- sort_order so the ordering assertion below cannot pass by accident of
+-- insertion order -- it only passes if the read truly orders by sort_order.
+insert into public.message_attachments
+  (message_id, thread_id, storage_path, width, height, sort_order) values
+  ('aa000000-0000-0000-0000-00000000000a',
+   '11111111-0000-0000-0000-000000000001',
+   '11111111-0000-0000-0000-000000000001/b.jpg', 400, 300, 1),
+  ('aa000000-0000-0000-0000-00000000000a',
+   '11111111-0000-0000-0000-000000000001',
+   '11111111-0000-0000-0000-000000000001/a.jpg', 800, 600, 0);
 
 -- A game thread and a group thread, both readable by Bob, neither a board
 -- (20260830021000). Shaped like thread_predicates.test.sql's game thread:
@@ -178,6 +190,24 @@ select throws_ok(
   '22023',
   'only a club has posts to list',
   'neither does a group thread'
+);
+
+select is(
+  jsonb_array_length(
+    (select attachments from public.fetch_post_messages(
+       'aa000000-0000-0000-0000-00000000000a')
+      where id = 'aa000000-0000-0000-0000-00000000000a')
+  ),
+  2,
+  'fetch_post_messages returns both attachments for the root'
+);
+
+select is(
+  (select attachments -> 0 ->> 'storage_path' from public.fetch_post_messages(
+     'aa000000-0000-0000-0000-00000000000a')
+    where id = 'aa000000-0000-0000-0000-00000000000a'),
+  '11111111-0000-0000-0000-000000000001/a.jpg',
+  'attachments come back ordered by sort_order'
 );
 
 -- A stranger to the club cannot read the board.
