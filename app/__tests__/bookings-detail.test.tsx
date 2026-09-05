@@ -174,6 +174,12 @@ const EVENT = {
   occurrence_date: null as string | null,
   overrides: [] as string[],
   table_count: 2,
+  // `open_play`, not the schema default -- this whole file exercises a
+  // plain member's own booking/seat-management/bring-someone actions, none
+  // of which an invite-only game should hide from them (Task 14 only gates
+  // the renamed "Invite" button on organizer status for `invite_only`
+  // games; `open_play` keeps every member's entry point exactly as before).
+  game_mode: 'open_play' as const,
 };
 
 const TABLE_1 = {
@@ -450,22 +456,26 @@ describe('the event screen, for a member', () => {
   // table by table as seats filled with no explanation. With only the
   // screen-level button left, there is exactly one entry point and exactly
   // one place the sheet can mount; the tests below cover that directly.
-  it('offers exactly one "Bring someone" entry point, not one per table', async () => {
+  //
+  // Task 14 renamed this button's label from "Bring someone" to "Invite" --
+  // the sheet/behaviour underneath (BringSomeoneSheet) is unchanged, only
+  // the call-site copy is.
+  it('offers exactly one "Invite" entry point, not one per table', async () => {
     render(<EventScreen />);
     await screen.findByText('Table 1');
-    expect(screen.queryAllByLabelText(/^Bring someone/).length).toBe(1);
+    expect(screen.queryAllByLabelText(/^Invite$/).length).toBe(1);
   });
 
   it('opens the sheet with no table pre-selected', async () => {
     render(<EventScreen />);
-    fireEvent.click(await screen.findByLabelText('Bring someone'));
+    fireEvent.click(await screen.findByLabelText('Invite'));
     await screen.findByText("Who's coming?");
     expect(screen.getByLabelText('Any table').getAttribute('aria-selected')).toBe(
       'true',
     );
   });
 
-  it('still offers "Bring someone" to a member who already holds a seat', async () => {
+  it('still offers "Invite" to a member who already holds a seat', async () => {
     fetchEventSeating.mockResolvedValue([
       {
         booking_id: 'b1',
@@ -483,7 +493,7 @@ describe('the event screen, for a member', () => {
       },
     ]);
     render(<EventScreen />);
-    expect(await screen.findByLabelText('Bring someone')).toBeTruthy();
+    expect(await screen.findByLabelText('Invite')).toBeTruthy();
   });
 });
 

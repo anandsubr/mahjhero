@@ -1,6 +1,13 @@
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import BringSomeoneSheet from '../../../../../components/BringSomeoneSheet';
 import Button from '../../../../../components/Button';
 import Card from '../../../../../components/Card';
@@ -20,7 +27,7 @@ import {
   recordAttendance,
   type AttendanceState,
 } from '../../../../../lib/attendance';
-import { canInvite, fetchClub, fetchRoster } from '../../../../../lib/clubs';
+import { canInvite, createInvite, fetchClub, fetchRoster } from '../../../../../lib/clubs';
 import type { Club, ClubMember } from '../../../../../lib/clubs';
 import { GENERIC_ERROR } from '../../../../../lib/constants';
 import {
@@ -188,6 +195,13 @@ export default function EventScreen() {
   // with no explanation. A plain boolean is what is left once there is only
   // one place this can be opened from.
   const [isBringingSomeone, setIsBringingSomeone] = useState(false);
+
+  // The freshly-created guest-invite link, shown in a Card immediately below
+  // the "Invite a guest" button that creates it — mirrors `inviteUrl` on
+  // app/clubs/[id]/index.tsx exactly, just scoped to this one event rather
+  // than the whole club (see `onInviteGuest` below, which passes `eventId` as
+  // `createInvite`'s third argument).
+  const [guestInviteUrl, setGuestInviteUrl] = useState<string | null>(null);
 
   // A promotion offer currently held open for this member's group, read via
   // `fetchOpenOffer`. RLS (`promotion_offers_select_group`) already scopes
@@ -502,7 +516,16 @@ export default function EventScreen() {
   // BringSomeoneSheet's player list. The sheet now omits "You" and seeds no
   // seat for an opener already in `booked`, so this gate no longer needs
   // `myHoldsSeat` at all.
-  const canBringSomeone = canBook && !rosterFailed;
+  //
+  // Task 14 adds one more condition on top of the above: for an
+  // `invite_only` game, only the organizer may bring/invite anyone at all --
+  // a plain member on a private game gets no "Invite" entry point, matching
+  // the whole point of invite-only (the host controls who's in). `open_play`
+  // is unchanged: any attendee can still bring someone.
+  const canBringSomeone =
+    canBook &&
+    !rosterFailed &&
+    (event.game_mode === 'open_play' || isOrganizer);
 
   async function bookSeat(tableId: string | null) {
     setPendingTier(null);
@@ -701,6 +724,26 @@ export default function EventScreen() {
 
   function openBringSomeone() {
     setIsBringingSomeone(true);
+  }
+
+  // Organizer-only guest invite: mirrors app/clubs/[id]/index.tsx's own
+  // `onInvite` exactly (same web-only guard and error copy, same
+  // `createInvite` call shape), except this one passes `eventId` as
+  // `createInvite`'s third argument -- the invite is scoped to THIS game, not
+  // the whole club, so accepting it seats the new guest at this event
+  // specifically rather than just joining the club roster.
+  async function onInviteGuest() {
+    setError(null);
+    if (Platform.OS !== 'web') {
+      setError('Invite links can only be created from the web app for now.');
+      return;
+    }
+    const { token, error: inviteError } = await createInvite(clubId, undefined, eventId);
+    if (inviteError || !token) {
+      setError(inviteError ?? GENERIC_ERROR);
+      return;
+    }
+    setGuestInviteUrl(`${window.location.origin}/join/${token}`);
   }
 
   // Reloads even when the sheet is dismissed via "Never mind" rather than a
@@ -1043,10 +1086,40 @@ export default function EventScreen() {
           variant="secondary"
           disabled={busy}
           onPress={openBringSomeone}
-          accessibilityLabel="Bring someone"
+          accessibilityLabel="Invite"
         >
-          Bring someone
+          Invite
         </Button>
+      ) : null}
+
+      {/*
+        The organizer's own guest-invite action -- always visible to them
+        regardless of game mode (unlike "Invite" above, which an invite-only
+        game hides from everyone else). Mirrors the club page's "Create an
+        invite link" + `inviteUrl` Card pattern exactly, just scoped to this
+        event via `onInviteGuest`'s `createInvite(clubId, undefined,
+        eventId)` call.
+      */}
+      {isOrganizer ? (
+        <Button
+          variant="secondary"
+          disabled={busy}
+          onPress={onInviteGuest}
+          accessibilityLabel="Invite a guest"
+        >
+          Invite a guest
+        </Button>
+      ) : null}
+
+      {guestInviteUrl ? (
+        <Card>
+          <Text style={styles.help}>
+            Share this link. It works for 30 days and seats them at this game.
+          </Text>
+          <Text style={styles.inviteUrl} selectable>
+            {guestInviteUrl}
+          </Text>
+        </Card>
       ) : null}
 
       {isBringingSomeone ? (
@@ -1274,5 +1347,10 @@ const styles = StyleSheet.create({
     fontSize: type.size.helper,
     color: colors.textMuted,
     lineHeight: 24,
+  },
+  inviteUrl: {
+    fontFamily: type.bodyRegular,
+    fontSize: type.size.helper,
+    color: colors.accentColor,
   },
 });
