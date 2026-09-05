@@ -136,9 +136,10 @@ export default defineConfig({
       // masks exactly that is worse than useless. A whole-theme accent
       // mutation was empirically shown to pass at 0.01 on notifications-mobile.
       //
-      // 160px covers antialiasing jitter and font rendering variability across
-      // different system conditions while staying far below any single control.
-      maxDiffPixels: 160,
+      // 120px covers antialiasing jitter between machines while staying far
+      // below any single control. Do not raise it to silence a diff — mask a
+      // genuinely non-deterministic region instead.
+      maxDiffPixels: 120,
     },
   },
 });
