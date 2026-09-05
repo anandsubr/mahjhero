@@ -51,7 +51,6 @@ export default function ClubDetailScreen() {
   const [loadFailed, setLoadFailed] = useState(false);
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [gameModeBusy, setGameModeBusy] = useState(false);
   // Which pending invite's link was just copied -- shown as inline "Copied"
   // feedback on that one row for a couple seconds, not a page-wide notice,
   // since a host reviewing several invites needs to tell which link it was.
@@ -66,6 +65,7 @@ export default function ClubDetailScreen() {
   // is blind to a second tap landing before React has re-rendered with the
   // disabled button -- this repo has shipped that exact bug five times.
   const messageBusyRef = useRef(false);
+  const gameModeBusyRef = useRef(false);
 
   useEffect(() => {
     if (!userId || !id) return;
@@ -200,17 +200,21 @@ export default function ClubDetailScreen() {
   }
 
   async function onToggleDefaultGameMode(nextInviteOnly: boolean) {
-    if (!club) return;
-    setError(null);
-    setGameModeBusy(true);
-    const nextMode = nextInviteOnly ? 'invite_only' : 'open_play';
-    const { error: toggleError } = await setDefaultGameMode(club.id, nextMode);
-    setGameModeBusy(false);
-    if (toggleError) {
-      setError(toggleError);
-      return;
+    if (gameModeBusyRef.current) return;
+    gameModeBusyRef.current = true;
+    try {
+      if (!club) return;
+      setError(null);
+      const nextMode = nextInviteOnly ? 'invite_only' : 'open_play';
+      const { error: toggleError } = await setDefaultGameMode(club.id, nextMode);
+      if (toggleError) {
+        setError(toggleError);
+        return;
+      }
+      setClub({ ...club, default_game_mode: nextMode });
+    } finally {
+      gameModeBusyRef.current = false;
     }
-    setClub({ ...club, default_game_mode: nextMode });
   }
 
   async function onMessageMembers() {
