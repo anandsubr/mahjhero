@@ -6,6 +6,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, layout } from '../lib/theme';
 
 type ScreenProps = {
@@ -53,6 +54,15 @@ export default function Screen({
   contentStyle,
   tabBar,
 }: ScreenProps) {
+  // The status bar/notch/Dynamic Island inset. Applied here, on the layer
+  // above `contentStyle`, rather than folded into `styles.content`: nearly
+  // every screen's own `contentStyle` sets `padding` as a shorthand for its
+  // side margins (see e.g. app/clubs/index.tsx's `container`), and a later
+  // shorthand `padding` in the same style array would silently win over an
+  // earlier `paddingTop`, discarding the inset on every one of those
+  // screens. Landing it on the scroll/view wrapper instead means no
+  // screen's own styling can ever cancel it out.
+  const insets = useSafeAreaInsets();
   const content = <View style={[styles.content, contentStyle]}>{children}</View>;
 
   const body = scroll ? (
@@ -66,7 +76,10 @@ export default function Screen({
       // docs/testing.md.
       testID="screen-scroll"
       style={[styles.fill, { backgroundColor: background }]}
-      contentContainerStyle={center ? styles.scrollCenter : null}
+      contentContainerStyle={[
+        { paddingTop: insets.top },
+        center ? styles.scrollCenter : null,
+      ]}
     >
       {content}
     </ScrollView>
@@ -74,7 +87,7 @@ export default function Screen({
     <View
       style={[
         styles.fill,
-        { backgroundColor: background },
+        { backgroundColor: background, paddingTop: insets.top },
         center ? styles.center : null,
       ]}
     >

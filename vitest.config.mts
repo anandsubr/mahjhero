@@ -57,6 +57,12 @@ export default defineConfig({
       'react-native-svg': new URL(
         './test/stubs/react-native-svg.tsx', import.meta.url,
       ).pathname,
+      // Same reasoning as react-native-svg above: its native component
+      // reaches into react-native/Libraries codegen internals Vitest
+      // cannot parse. See test/stubs/react-native-safe-area-context.tsx.
+      'react-native-safe-area-context': new URL(
+        './test/stubs/react-native-safe-area-context.tsx', import.meta.url,
+      ).pathname,
     },
   },
   test: {
