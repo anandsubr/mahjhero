@@ -29,9 +29,17 @@
         "expo-image-picker",
         {
           "photosPermission": "MahjHero uses your photos to attach images to messages.",
-          "cameraPermission": "MahjHero uses your camera to attach a photo to a message."
+          "cameraPermission": "MahjHero uses your camera to attach a photo to a message.",
+          "microphonePermission": false
         }
       ]
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "5eef1b49-fad5-45b5-9d3e-69591d1fbd83"
+      }
+    },
+    "owner": "anandsubramanian"
   }
 }
