@@ -37,4 +37,4 @@ create trigger club_invites_event_matches_club
   for each row execute function public.check_club_invite_event_matches_club();
 
 revoke execute on function public.check_club_invite_event_matches_club() from public;
-revoke execute on function public.check_club_invite_event_matches_club() from anon;
+revoke execute on function public.check_club_invite_event_matches_club() from anon, authenticated;
