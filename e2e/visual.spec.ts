@@ -36,7 +36,7 @@ async function settle(page: Page) {
   // fonts swap in. If a baseline ever starts flaking on a hairline of text
   // or an icon edge, suspect this number FIRST — it is the only
   // wall-clock-dependent step here. Raise it before touching maxDiffPixels.
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(500);
 }
 
 /**
@@ -746,9 +746,8 @@ test.describe('signed in', () => {
         // same club, same event, same seeded state — so there is no such
         // baseline; it could only ever be byte-identical to this one.
         // Task 14 renamed the screen-level button from "Bring someone" to
-        // "Invite" (its own accessibilityLabel is now the bare "Invite" —
-        // "Invite a guest" is a separate, organizer-only button this event
-        // isn't seeded to show). `.first()` on Priya's name — kept
+        // "Invite" (its own accessibilityLabel is now the bare "Invite").
+        // `.first()` on Priya's name — kept
         // even though the seat-tap redesign means her name now renders only
         // ONCE on a fresh load (the old HostSeating component used to
         // render it a second time, in its own always-visible "Move to …" /
