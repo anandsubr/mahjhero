@@ -11,7 +11,7 @@ import TextField from '../../../../components/TextField';
 import TimeField from '../../../../components/TimeField';
 import Toggle from '../../../../components/Toggle';
 import VenuePicker from '../../../../components/VenuePicker';
-import { fetchClub, type Club } from '../../../../lib/clubs';
+import { fetchClub, type Club, type GameMode } from '../../../../lib/clubs';
 import {
   createEvent,
   createEventSeries,
@@ -192,6 +192,7 @@ export default function NewEventScreen() {
   // door list, and defaulting this on would teach hosts to ignore it. See
   // the help text below the toggle for the host-facing version of this.
   const [checkInRequired, setCheckInRequired] = useState(false);
+  const [gameMode, setGameMode] = useState<GameMode>('open_play');
   const [feeText, setFeeText] = useState('');
   const [minSpendText, setMinSpendText] = useState('');
   const [notes, setNotes] = useState('');
@@ -204,6 +205,7 @@ export default function NewEventScreen() {
     fetchClub(clubId).then((result) => {
       if (cancelled) return;
       setClub(result);
+      if (result) setGameMode(result.default_game_mode);
       setReady(true);
     });
     return () => {
@@ -289,6 +291,7 @@ export default function NewEventScreen() {
         durationMinutes: duration,
         tableCount,
         checkInRequired,
+        gameMode,
         feeCents: parseDollarsToCents(feeText),
         minSpendCents: parseDollarsToCents(minSpendText),
       });
@@ -320,6 +323,7 @@ export default function NewEventScreen() {
       startsOn: date,
       endsOn: endsOn.length > 0 ? endsOn : null,
       checkInRequired,
+      gameMode,
       feeCents: parseDollarsToCents(feeText),
       minSpendCents: parseDollarsToCents(minSpendText),
     });
@@ -415,6 +419,17 @@ export default function NewEventScreen() {
       <Text style={styles.help}>
         Turn this on and this game gets a door list, so you can check people
         in as they arrive. Small games usually don't need it.
+      </Text>
+
+      <Text style={styles.label}>Invite-only</Text>
+      <Toggle
+        value={gameMode === 'invite_only'}
+        onValueChange={(next) => setGameMode(next ? 'invite_only' : 'open_play')}
+        accessibilityLabel="Invite-only"
+      />
+      <Text style={styles.help}>
+        Turn this on and only people you invite can see or join this game.
+        Off means any club member can join.
       </Text>
 
       <TextField
