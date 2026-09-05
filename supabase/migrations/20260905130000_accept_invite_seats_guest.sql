@@ -111,4 +111,5 @@ begin
 end;
 $$;
 
+revoke execute on function public.accept_club_invite(text) from anon;
 grant execute on function public.accept_club_invite(text) to authenticated;
