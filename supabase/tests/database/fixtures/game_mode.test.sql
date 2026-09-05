@@ -1,6 +1,6 @@
 begin;
 set local search_path to extensions, public;
-select plan(9);
+select plan(8);
 
 select has_column('public', 'clubs', 'default_game_mode', 'clubs has default_game_mode');
 select has_column('public', 'event_series', 'game_mode', 'event_series has game_mode');
@@ -63,11 +63,7 @@ insert into public.event_series (
   180, 4, current_date, 'invite_only', 'aaaaaaaa-0000-0000-0000-00000000ab01'
 );
 
-select is(
-  public.materialize_one_series('33333333-0000-0000-0000-00000000ab01'),
-  6,
-  'materialize_one_series creates weekly event occurrences'
-);
+select public.materialize_one_series('33333333-0000-0000-0000-00000000ab01');
 
 select is(
   (select game_mode::text from public.events

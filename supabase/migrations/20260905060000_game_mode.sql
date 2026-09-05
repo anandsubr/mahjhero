@@ -114,14 +114,13 @@ begin
       select new_event, s.club_id, 'Table ' || g, g
       from generate_series(1, s.table_count) g;
 
-      update public.event_series
-        set materialized_through = greatest(
-          coalesce(materialized_through, d), d)
-        where id = target_series;
-
       created := created + 1;
     end if;
   end loop;
+
+  update public.event_series
+    set materialized_through = window_end
+    where id = s.id;
 
   return created;
 end;
