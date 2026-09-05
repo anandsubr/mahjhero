@@ -107,12 +107,12 @@ export default function Composer({
         </View>
       ) : null}
 
-      <AttachmentPicker
-        key={attachmentsResetKey}
-        threadId={threadId}
-        onAttachmentsChange={onAttachmentsChange}
-      />
       <View style={styles.composer}>
+        <AttachmentPicker
+          key={attachmentsResetKey}
+          threadId={threadId}
+          onAttachmentsChange={onAttachmentsChange}
+        />
         <TextInput
           style={[styles.input, { height: inputHeight }]}
           value={draft}
