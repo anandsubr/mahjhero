@@ -338,6 +338,11 @@ const BOOKING_REFUSALS: { contains: string; message: string; codes: string[] }[]
     message: 'You can only undo your own check-in.',
     codes: ['42501'],
   },
+  {
+    contains: 'invite event does not belong to this club',
+    message: 'This invite link has expired or has already been used.',
+    codes: ['23514'],
+  },
 ];
 
 export function bookingErrorMessage(error: RpcError): string {
@@ -473,6 +478,32 @@ export async function fetchEventSeating(
     return (data ?? []) as SeatOccupant[];
   } catch (cause) {
     console.error('fetchEventSeating failed', cause);
+    return null;
+  }
+}
+
+/**
+ * Headcount only, no identities — what a not-yet-placed invitee's own view
+ * of an invite-only game shows instead of the full roster (see
+ * event_seating's own privacy rule). Null covers both "not determined yet"
+ * and "the caller cannot see this event at all" — event_accepted_count
+ * returns null rather than raising for the latter, so there is no error to
+ * distinguish here.
+ */
+export async function fetchEventAcceptedCount(
+  eventId: string,
+): Promise<number | null> {
+  try {
+    const { data, error } = await supabase.rpc('event_accepted_count', {
+      target_event: eventId,
+    });
+    if (error) {
+      console.error('fetchEventAcceptedCount failed', error);
+      return null;
+    }
+    return (data as number | null) ?? null;
+  } catch (cause) {
+    console.error('fetchEventAcceptedCount failed', cause);
     return null;
   }
 }

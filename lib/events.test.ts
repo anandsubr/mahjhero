@@ -514,6 +514,7 @@ describe('updateEvent', () => {
       new_check_in_required: null,
       new_fee_cents: null,
       new_min_spend_cents: null,
+      new_game_mode: null,
     });
   });
 
@@ -532,6 +533,7 @@ describe('updateEvent', () => {
       new_check_in_required: null,
       new_fee_cents: null,
       new_min_spend_cents: null,
+      new_game_mode: null,
     });
   });
 
@@ -582,6 +584,7 @@ describe('updateEventSeries', () => {
       new_check_in_required: null,
       new_fee_cents: null,
       new_min_spend_cents: null,
+      new_game_mode: null,
     });
   });
 
@@ -610,6 +613,7 @@ describe('updateEventSeries', () => {
       new_check_in_required: null,
       new_fee_cents: null,
       new_min_spend_cents: null,
+      new_game_mode: null,
     });
   });
 

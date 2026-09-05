@@ -4,6 +4,7 @@ import { supabase } from './supabase';
 
 export type ClubRole = 'host' | 'co_organizer' | 'member';
 export type ClubVisibility = 'public' | 'private';
+export type GameMode = 'open_play' | 'invite_only';
 
 export type Club = {
   id: string;
@@ -12,6 +13,7 @@ export type Club = {
   rhythm: string;
   visibility: ClubVisibility;
   timezone: string;
+  default_game_mode: GameMode;
 };
 
 export type ClubMember = {
@@ -45,7 +47,7 @@ export type RosterRow = {
 
 export type RosterError = { row: number; message: string };
 
-const CLUB_COLUMNS = 'id, name, slug, rhythm, visibility, timezone';
+const CLUB_COLUMNS = 'id, name, slug, rhythm, visibility, timezone, default_game_mode';
 const INVITE_COLUMNS = 'id, email, display_name, skill_level, token';
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const SKILL_LEVELS: SkillLevel[] = ['beginner', 'intermediate', 'advanced'];
@@ -100,6 +102,32 @@ export function canInvite(role: ClubRole): boolean {
  */
 export function canAnnounce(role: ClubRole): boolean {
   return role === 'host' || role === 'co_organizer';
+}
+
+/**
+ * The club-level default new games are created with. Goes through the
+ * set_default_game_mode RPC (host-or-co-organizer, same test canInvite
+ * mirrors) rather than a direct table UPDATE — see that migration's own
+ * comment for why clubs_update_host (host-only) is not reused here.
+ */
+export async function setDefaultGameMode(
+  clubId: string,
+  mode: GameMode,
+): Promise<{ error: string | null }> {
+  try {
+    const { error } = await supabase.rpc('set_default_game_mode', {
+      target_club: clubId,
+      new_mode: mode,
+    });
+    if (error) {
+      console.error('setDefaultGameMode failed', error);
+      return { error: GENERIC_ERROR };
+    }
+    return { error: null };
+  } catch (cause) {
+    console.error('setDefaultGameMode failed', cause);
+    return { error: GENERIC_ERROR };
+  }
 }
 
 /**
@@ -429,6 +457,7 @@ export async function createClub(
 export async function createInvite(
   clubId: string,
   target?: { email: string; display_name: string; skill_level: SkillLevel | null },
+  eventId?: string,
 ): Promise<{ token: string | null; error: string | null }> {
   try {
     const { data, error } = await supabase
@@ -438,6 +467,7 @@ export async function createInvite(
         email: target?.email ?? null,
         display_name: target?.display_name ?? null,
         skill_level: target?.skill_level ?? null,
+        event_id: eventId ?? null,
       })
       .select('token')
       .single();
@@ -511,7 +541,7 @@ export const PENDING_INVITE_KEY = 'mahjhero.pending-invite';
  */
 export async function acceptInvite(
   token: string,
-): Promise<{ clubId: string | null; error: string | null }> {
+): Promise<{ clubId: string | null; eventId: string | null; error: string | null }> {
   try {
     const { data, error } = await supabase.rpc('accept_club_invite', {
       invite_token: token,
@@ -519,18 +549,20 @@ export async function acceptInvite(
 
     if (error) {
       console.error('acceptInvite failed', error);
-      return { clubId: null, error: GENERIC_ERROR };
+      return { clubId: null, eventId: null, error: GENERIC_ERROR };
     }
     if (!data) {
       return {
         clubId: null,
+        eventId: null,
         error: 'That invite link has expired or has already been used.',
       };
     }
-    return { clubId: data as string, error: null };
+    const result = data as { club_id: string; event_id: string | null };
+    return { clubId: result.club_id, eventId: result.event_id, error: null };
   } catch (cause) {
     console.error('acceptInvite failed', cause);
-    return { clubId: null, error: GENERIC_ERROR };
+    return { clubId: null, eventId: null, error: GENERIC_ERROR };
   }
 }
 
