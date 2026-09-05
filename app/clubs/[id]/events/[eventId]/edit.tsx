@@ -12,7 +12,7 @@ import TierPicker from '../../../../../components/TierPicker';
 import TimeField from '../../../../../components/TimeField';
 import Toggle from '../../../../../components/Toggle';
 import VenuePicker from '../../../../../components/VenuePicker';
-import { fetchClub, type Club } from '../../../../../lib/clubs';
+import { fetchClub, type Club, type GameMode } from '../../../../../lib/clubs';
 import {
   endEventSeries,
   eventStartTimeInZone,
@@ -55,6 +55,7 @@ type OriginalOccurrence = {
   notes: string;
   startTime: string;
   checkInRequired: boolean;
+  gameMode: GameMode;
   feeCents: number;
   minSpendCents: number;
 };
@@ -247,6 +248,7 @@ export default function EditEventScreen() {
   const [eventStartTime, setEventStartTime] = useState('19:00');
   const [eventNotes, setEventNotes] = useState('');
   const [eventCheckInRequired, setEventCheckInRequired] = useState(false);
+  const [eventGameMode, setEventGameMode] = useState<GameMode>('open_play');
   const [eventFeeText, setEventFeeText] = useState('');
   const [eventMinSpendText, setEventMinSpendText] = useState('');
   const [original, setOriginal] = useState<OriginalOccurrence | null>(null);
@@ -257,6 +259,7 @@ export default function EditEventScreen() {
   const [seriesStartTime, setSeriesStartTime] = useState('19:00');
   const [seriesNotes, setSeriesNotes] = useState('');
   const [seriesCheckInRequired, setSeriesCheckInRequired] = useState(false);
+  const [seriesGameMode, setSeriesGameMode] = useState<GameMode>('open_play');
   const [seriesFeeText, setSeriesFeeText] = useState('');
   const [seriesMinSpendText, setSeriesMinSpendText] = useState('');
   // The series' own "stop repeating on". Kept apart from `runsIndefinitely`
@@ -310,6 +313,7 @@ export default function EditEventScreen() {
         setEventNotes(loadedEvent.notes);
         setEventStartTime(initialStartTime);
         setEventCheckInRequired(loadedEvent.check_in_required);
+        setEventGameMode(loadedEvent.game_mode);
         setEventFeeText(centsToDollarsText(loadedEvent.fee_cents));
         setEventMinSpendText(centsToDollarsText(loadedEvent.min_spend_cents));
         setOriginal({
@@ -318,6 +322,7 @@ export default function EditEventScreen() {
           notes: loadedEvent.notes,
           startTime: initialStartTime,
           checkInRequired: loadedEvent.check_in_required,
+          gameMode: loadedEvent.game_mode,
           feeCents: loadedEvent.fee_cents,
           minSpendCents: loadedEvent.min_spend_cents,
         });
@@ -350,6 +355,7 @@ export default function EditEventScreen() {
           // back into a form field.
           setSeriesStartTime(loadedSeries.start_time.slice(0, 5));
           setSeriesCheckInRequired(loadedSeries.check_in_required);
+          setSeriesGameMode(loadedSeries.game_mode);
           setSeriesFeeText(centsToDollarsText(loadedSeries.fee_cents));
           setSeriesMinSpendText(centsToDollarsText(loadedSeries.min_spend_cents));
           setEndsOn(loadedSeries.ends_on ?? '');
@@ -452,6 +458,8 @@ export default function EditEventScreen() {
   const setCheckInRequired = isSeriesScope
     ? setSeriesCheckInRequired
     : setEventCheckInRequired;
+  const gameMode = isSeriesScope ? seriesGameMode : eventGameMode;
+  const setGameMode = isSeriesScope ? setSeriesGameMode : setEventGameMode;
   const feeText = isSeriesScope ? seriesFeeText : eventFeeText;
   const setFeeText = isSeriesScope ? setSeriesFeeText : setEventFeeText;
   const minSpendText = isSeriesScope ? seriesMinSpendText : eventMinSpendText;
@@ -485,6 +493,7 @@ export default function EditEventScreen() {
         notes,
         startTime,
         checkInRequired,
+        gameMode,
         feeCents: parseDollarsToCents(feeText),
         minSpendCents: parseDollarsToCents(minSpendText),
         endsOn: endsOnInput,
@@ -507,6 +516,7 @@ export default function EditEventScreen() {
       const checkInChanged = original
         ? checkInRequired !== original.checkInRequired
         : false;
+      const gameModeChanged = original ? gameMode !== original.gameMode : false;
       const feeCentsValue = parseDollarsToCents(feeText);
       const minSpendCentsValue = parseDollarsToCents(minSpendText);
       const feeChanged = original ? feeCentsValue !== original.feeCents : false;
@@ -520,6 +530,7 @@ export default function EditEventScreen() {
         notes: notesChanged ? notes : null,
         startTime: startTimeChanged ? startTime : null,
         checkInRequired: checkInChanged ? checkInRequired : null,
+        gameMode: gameModeChanged ? gameMode : null,
         feeCents: feeChanged ? feeCentsValue : null,
         minSpendCents: minSpendChanged ? minSpendCentsValue : null,
       });
@@ -623,6 +634,13 @@ export default function EditEventScreen() {
         Turn this on and this game gets a door list, so you can check people
         in as they arrive. Small games usually don't need it.
       </Text>
+
+      <Text style={styles.label}>Invite-only</Text>
+      <Toggle
+        value={gameMode === 'invite_only'}
+        onValueChange={(next) => setGameMode(next ? 'invite_only' : 'open_play')}
+        accessibilityLabel="Invite-only"
+      />
 
       <TextField
         label="Cost to play"
