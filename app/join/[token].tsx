@@ -79,7 +79,7 @@ export default function JoinScreen() {
     // stranding them on the spinner: the redemption itself already
     // succeeded, so the only right move is to carry on to the club.
     acceptInvite(token)
-      .then(async ({ clubId, error: acceptError }) => {
+      .then(async ({ clubId, eventId, error: acceptError }) => {
         if (cancelled) return;
         await AsyncStorage.removeItem(PENDING_INVITE_KEY).catch((cause) => {
           console.error('Failed to clear pending invite', cause);
@@ -89,7 +89,11 @@ export default function JoinScreen() {
           setError(acceptError ?? 'That invite link is no longer valid.');
           return;
         }
-        router.replace(`/clubs/${clubId}`);
+        if (eventId) {
+          router.replace(`/clubs/${clubId}/events/${eventId}`);
+        } else {
+          router.replace(`/clubs/${clubId}`);
+        }
       });
 
     return () => {
