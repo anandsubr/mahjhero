@@ -556,7 +556,7 @@ select ok(
 -- and "everybody has it" look identical until you assert.
 select ok(
   not has_function_privilege('anon',
-    'public.create_event(uuid, text, uuid, text, date, time, int, int, boolean)',
+    'public.create_event(uuid, text, uuid, text, date, time, int, int, boolean, int, int, public.game_mode)',
     'EXECUTE'),
   'anon cannot execute create_event'
 );
@@ -749,7 +749,10 @@ select is(
        'public.thread_roster(uuid)',
        'public.fetch_club_posts(uuid, integer, timestamp with time zone)',
        'public.fetch_post_messages(uuid)',
-       'public.mark_post_read(uuid)'
+       'public.mark_post_read(uuid)',
+       'public.fetch_my_notifications()',
+       'public.mark_notifications_read()',
+       'public.my_notification_unread_count()'
      ]) as f
    ) expected
    where not exists (
@@ -840,7 +843,10 @@ select is(
          'public.thread_roster(uuid)',
          'public.fetch_club_posts(uuid, integer, timestamp with time zone)',
          'public.fetch_post_messages(uuid)',
-         'public.mark_post_read(uuid)'
+         'public.mark_post_read(uuid)',
+         'public.fetch_my_notifications()',
+         'public.mark_notifications_read()',
+         'public.my_notification_unread_count()'
        ]) as f
        where to_regprocedure(f) = p.oid::regprocedure
      )),
