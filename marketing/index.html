@@ -143,6 +143,21 @@
   .hero-actions { display: flex; gap: 13.2px; flex-wrap: wrap; }
 
   /* PROBLEM_STYLES */
+  .problem-inner { display: flex; flex-direction: column; gap: 35.2px; }
+  .problem-heading { font-size: 34px; }
+  .problem-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 22px;
+  }
+  .problem-card-text {
+    font-size: 19px;
+    line-height: 1.6;
+    color: var(--text);
+  }
+  @media (max-width: 680px) {
+    .problem-grid { grid-template-columns: 1fr; }
+  }
 
   /* ROLE_PICKER_STYLES */
 
@@ -193,7 +208,27 @@
       </div>
     </div>
   </header>
-  <!-- PROBLEM -->
+  <section class="problem">
+    <div class="wrap problem-inner">
+      <h2 class="problem-heading">The four-player problem</h2>
+      <div class="problem-grid">
+        <div class="card problem-card">
+          <p class="problem-card-text">
+            One cancellation doesn&rsquo;t cost you a player &mdash; it
+            collapses a whole table, and three other people are told the
+            math doesn&rsquo;t work anymore.
+          </p>
+        </div>
+        <div class="card problem-card">
+          <p class="problem-card-text">
+            Somewhere around 12&ndash;16 members, a group text and a shared
+            spreadsheet stop working. Organizing starts to feel like a
+            part-time job.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
   <!-- ROLE_PICKER -->
   <!-- FEATURES -->
   <!-- FOUNDER -->
