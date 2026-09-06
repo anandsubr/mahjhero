@@ -7,6 +7,12 @@
       "runtimeArgs": ["expo", "start", "--web", "--port", "8090"],
       "port": 8090,
       "autoPort": true
+    },
+    {
+      "name": "marketing-site",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["http-server", "marketing", "-p", "8099", "-g"],
+      "port": 8099
     }
   ]
 }
