@@ -70,7 +70,7 @@ select is(
 );
 
 select is(
-  (select count(distinct capacity)::int || ':' || max(capacity)::text
+  (select count(distinct t.capacity)::int || ':' || max(t.capacity)::text
    from public.event_tables t
    join public.events e on e.id = t.event_id
    where e.title = 'Tuesday game'),
