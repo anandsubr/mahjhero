@@ -8,6 +8,37 @@
 
 **Tech Stack:** Postgres/Supabase migrations + pgTAP, TypeScript data layer (`lib/`), Expo Router + React Native screens, Playwright visual regression.
 
+## Execution record
+
+**This plan was executed to completion on 2026-09-06** on branch
+`feat/open-seating-and-payments`. The step checkboxes below were **not** ticked
+during execution — each task was dispatched from an extracted brief rather than
+by editing this file — so treat git history and `.superpowers/sdd/progress.md`
+as the authoritative record of what happened, not the boxes.
+
+Three things in this plan turned out to be **wrong** and were corrected during
+execution. They are left uncorrected below so the diff between plan and result
+stays visible, but do not copy from them:
+
+1. **Task 6's `set_payment_status` snippet** puts the roster-membership check
+   outside the `if is_paid` branch. The shipped migration deliberately moves it
+   inside: unmarking must be a correction an organizer can always make, and
+   gating it meant a payment for a since-removed member was frozen as paid
+   forever. `clear_attendance`, the function this was modelled on, omits the
+   check on its delete path for the same reason.
+2. **Task 4's override snippet** used `new_capacity is distinct from ev.capacity`,
+   which would falsely tag `'capacity'` as overridden on any unrelated edit of an
+   occurrence that has a capacity — because an unsupplied `new_capacity` is null
+   and `null is distinct from 60` is true. The shipped code compares
+   `eff_capacity` instead.
+3. **Task 3 said two stale signature strings** needed updating in
+   `grants.test.sql`. There were seven.
+
+A **Task 4A** was also added mid-execution, after Task 2's mandated audit found
+that `promote_waitlist` and `accept_promotion_offer` would strand already-
+waitlisted players once an event became uncapped — a bug Task 4's capacity
+editing is what makes reachable.
+
 ## Global Constraints
 
 From `docs/superpowers/specs/2026-09-06-open-seating-and-payment-tracking-design.md`. Every task's requirements implicitly include these.

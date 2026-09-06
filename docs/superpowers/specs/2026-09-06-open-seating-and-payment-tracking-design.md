@@ -167,8 +167,17 @@ with a count, above a sticky search field. At 68 people the list the organizer i
 actively working through visibly shrinks as the evening goes on, and search still
 gives the fast path when a specific person walks up.
 
-Each row carries: name, group badge (when the booking is part of a group), skill
-level, a paid toggle, and a "Here" action.
+Each row carries: name, group badge (when the booking is part of a group), the
+amount owed (when the event charges a fee and the person is unpaid), a paid
+toggle, and a "Here" action.
+
+**Skill level is deliberately not on this row**, though the design originally
+listed it. At 68 rows the door list is a scanning surface — the organizer is
+looking for one name while somebody stands in front of them — and skill level
+plays no part in either check-in or payment. It was implemented, then removed
+during review as unrequested; this line records that the removal was the right
+call rather than an omission, so nobody adds it back on the strength of an
+older draft.
 
 **Row-move behavior (the detail that decides whether this feels smooth).** Marking
 someone here and marking them paid are one interaction in practice, so the row must
