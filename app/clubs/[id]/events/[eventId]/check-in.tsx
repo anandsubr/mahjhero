@@ -26,7 +26,7 @@ import { fetchEvent, formatFeeCents, type SeatingMode } from '../../../../../lib
 import { fetchEventPayments, setPaymentStatus } from '../../../../../lib/payments';
 import { useSession } from '../../../../../lib/session';
 import { addHours } from '../../../../../lib/time';
-import { colors, radius, space, type } from '../../../../../lib/theme';
+import { colors, layout, radius, space, type } from '../../../../../lib/theme';
 
 /**
  * How long a row stays put after it is touched, before it re-buckets into
@@ -1013,8 +1013,11 @@ export default function CheckInScreen() {
     );
   }
 
-  return (
-    <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="club" />}>
+  // Everything above the search field, and everything below the list --
+  // identical in both seating modes, so each is built once and reused by
+  // both `return`s below rather than kept as two copies that could drift.
+  const before = (
+    <>
       <Button
         variant="ghost"
         big={false}
@@ -1114,14 +1117,78 @@ export default function CheckInScreen() {
         // rendered this as -- and a false statement about people's money.
         <Text style={styles.help}>Could not load who has paid.</Text>
       ) : null}
+    </>
+  );
 
-      {openSeating ? (
-        // An open-seating night has no tables to group by, so the list is
-        // organised by where each person stands instead. The per-table
-        // grouping below is NOT dead code -- it is what an assigned-tables
-        // event's door list still shows, and the two paths are chosen by
-        // the event's own `seating_mode`, never by one replacing the other.
-        <>
+  const trailing = (
+    <>
+      <Button
+        variant="secondary"
+        disabled={!windowOpen}
+        onPress={() => setPickerOpen(true)}
+        accessibilityLabel="Add a walk-in"
+      >
+        Add a walk-in
+      </Button>
+
+      {pickerOpen ? (
+        <View testID="walkin-picker">
+          <Card style={styles.card}>
+            {walkInCandidates.length === 0 ? (
+              <Text style={styles.help}>
+                Everyone on the roster is already on this list.
+              </Text>
+            ) : (
+              walkInCandidates.map((m) => {
+                const name = safeDisplayName(m.display_name);
+                return (
+                  <Pressable
+                    key={m.profile_id}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Add ${name}`}
+                    onPress={() => void addWalkIn(m)}
+                    style={styles.candidateRow}
+                  >
+                    <Text style={styles.name}>{name}</Text>
+                  </Pressable>
+                );
+              })
+            )}
+            <Button
+              variant="ghost"
+              onPress={() => setPickerOpen(false)}
+              accessibilityLabel="Never mind"
+            >
+              Never mind
+            </Button>
+          </Card>
+        </View>
+      ) : null}
+    </>
+  );
+
+  if (openSeating) {
+    // An open-seating night has no tables to group by, so the list is
+    // organised by where each person stands instead, with a search field to
+    // find one name in a 60-70 person crowd. That field needs to STAY put
+    // while the sections below it scroll -- once a host has scrolled down to
+    // find someone, the search box being off-screen would mean scrolling
+    // back up before looking up the next arrival, exactly the failure mode
+    // that matters at a door with a queue. `Screen`'s `stickyHeaderIndices`
+    // (see components/Screen.tsx) pins ScrollView's direct children by
+    // index, so `before`/the search field/the rest are passed as three
+    // separate top-level children here -- each carrying its own width and
+    // padding styling below, since Screen does not wrap them for us in this
+    // mode (see that prop's docstring for why).
+    return (
+      <Screen
+        scroll
+        stickyHeaderIndices={[1]}
+        tabBar={<TabBar active="club" />}
+      >
+        <View style={[styles.scrollGroup, styles.scrollGroupTop]}>{before}</View>
+
+        <View style={styles.stickySearch}>
           <TextField
             accessibilityLabel="Search by name"
             placeholder="Search by name"
@@ -1130,7 +1197,9 @@ export default function CheckInScreen() {
             autoCorrect={false}
             autoCapitalize="none"
           />
+        </View>
 
+        <View style={[styles.scrollGroup, styles.scrollGroupBottom]}>
           {undoFor ? (
             <Pressable
               accessibilityRole="button"
@@ -1176,80 +1245,82 @@ export default function CheckInScreen() {
               </Card>
             </View>
           ) : null}
-        </>
-      ) : (
-        <>
-          {grouped.tables.map((g) => (
-            <View key={g.id} testID={`door-table-${g.id}`} style={styles.group}>
-              <Text style={styles.groupHeading}>{g.label}</Text>
-              <Card style={styles.card}>{g.rows.map(renderPerson)}</Card>
-            </View>
-          ))}
 
-          {grouped.anyTable.length > 0 ? (
-            <View testID="door-any-table" style={styles.group}>
-              <Text style={styles.groupHeading}>Any table</Text>
-              <Card style={styles.card}>{grouped.anyTable.map(renderPerson)}</Card>
-            </View>
-          ) : null}
+          {trailing}
+        </View>
+      </Screen>
+    );
+  }
 
-          {grouped.walkIns.length > 0 ? (
-            <View testID="door-walkins" style={styles.group}>
-              <Text style={styles.groupHeading}>Walk-ins</Text>
-              <Card style={styles.card}>{grouped.walkIns.map(renderPerson)}</Card>
-            </View>
-          ) : null}
-        </>
-      )}
+  return (
+    <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="club" />}>
+      {before}
+      {/* The per-table grouping below is what an assigned-tables event's
+          door list still shows -- untouched by search or the status
+          sections above, which are open-seating only. No search field here,
+          so this path never needs `stickyHeaderIndices`; it renders through
+          `Screen`'s default (unwrapped-prop) behaviour exactly as before. */}
+      {grouped.tables.map((g) => (
+        <View key={g.id} testID={`door-table-${g.id}`} style={styles.group}>
+          <Text style={styles.groupHeading}>{g.label}</Text>
+          <Card style={styles.card}>{g.rows.map(renderPerson)}</Card>
+        </View>
+      ))}
 
-      <Button
-        variant="secondary"
-        disabled={!windowOpen}
-        onPress={() => setPickerOpen(true)}
-        accessibilityLabel="Add a walk-in"
-      >
-        Add a walk-in
-      </Button>
-
-      {pickerOpen ? (
-        <View testID="walkin-picker">
-          <Card style={styles.card}>
-            {walkInCandidates.length === 0 ? (
-              <Text style={styles.help}>
-                Everyone on the roster is already on this list.
-              </Text>
-            ) : (
-              walkInCandidates.map((m) => {
-                const name = safeDisplayName(m.display_name);
-                return (
-                  <Pressable
-                    key={m.profile_id}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Add ${name}`}
-                    onPress={() => void addWalkIn(m)}
-                    style={styles.candidateRow}
-                  >
-                    <Text style={styles.name}>{name}</Text>
-                  </Pressable>
-                );
-              })
-            )}
-            <Button
-              variant="ghost"
-              onPress={() => setPickerOpen(false)}
-              accessibilityLabel="Never mind"
-            >
-              Never mind
-            </Button>
-          </Card>
+      {grouped.anyTable.length > 0 ? (
+        <View testID="door-any-table" style={styles.group}>
+          <Text style={styles.groupHeading}>Any table</Text>
+          <Card style={styles.card}>{grouped.anyTable.map(renderPerson)}</Card>
         </View>
       ) : null}
+
+      {grouped.walkIns.length > 0 ? (
+        <View testID="door-walkins" style={styles.group}>
+          <Text style={styles.groupHeading}>Walk-ins</Text>
+          <Card style={styles.card}>{grouped.walkIns.map(renderPerson)}</Card>
+        </View>
+      ) : null}
+
+      {trailing}
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
   container: { padding: space[6], gap: space[4] },
+  // Screen's `stickyHeaderIndices` mode passes `children` straight through
+  // to the ScrollView unwrapped (see components/Screen.tsx), so each
+  // top-level piece here has to carry the width/centering constraint
+  // `styles.content` normally provides for us -- and the horizontal padding
+  // `container` normally provides, split so it applies once per edge rather
+  // than doubling up where two of these Views sit back to back.
+  scrollGroup: {
+    width: '100%',
+    maxWidth: layout.contentMaxWidth,
+    alignSelf: 'center',
+    paddingHorizontal: space[6],
+    gap: space[4],
+  },
+  scrollGroupTop: { paddingTop: space[6] },
+  scrollGroupBottom: { paddingBottom: space[6], marginTop: space[4] },
+  // The pinned search field. Opaque `colors.bg` (not transparent) is load-
+  // bearing: once this sticks to the top of the ScrollView, the sections
+  // scrolling underneath would otherwise show through its text. The
+  // hairline bottom border (the same `colors.divider` token every other
+  // hairline in this app uses) is what tells a host it is a fixed panel and
+  // not just another row -- without a visible edge, a pinned bar with the
+  // same background as the page can be hard to notice as "stuck" at all.
+  stickySearch: {
+    width: '100%',
+    maxWidth: layout.contentMaxWidth,
+    alignSelf: 'center',
+    paddingHorizontal: space[6],
+    paddingVertical: space[3],
+    marginTop: space[4],
+    backgroundColor: colors.bg,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.divider,
+  },
   centered: { alignItems: 'center' },
   backButton: { alignSelf: 'flex-start' },
   heading: {

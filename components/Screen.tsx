@@ -30,6 +30,26 @@ type ScreenProps = {
    * dashboard, which is exactly where it is most needed.
    */
   tabBar?: ReactNode;
+  /**
+   * Forwarded verbatim to the underlying `ScrollView`'s own
+   * `stickyHeaderIndices` (only meaningful together with `scroll`). Optional
+   * and `undefined` by default, so every existing caller keeps rendering
+   * through the single wrapped `content` View exactly as before — this prop
+   * changes nothing unless a caller opts in.
+   *
+   * React Native pins ScrollView's DIRECT children by index, but this
+   * component normally bundles all of `children` into one `content` View
+   * (see below) so there is only ever one such child — index 0 would just
+   * pin the whole screen. So when this prop is given, `children` is instead
+   * passed straight through to the ScrollView UNWRAPPED, and it becomes the
+   * caller's job to supply the top-level elements the indices should refer
+   * to (each with its own width/centering styling, since `contentStyle` is
+   * not applied to them here). See the door list
+   * (app/clubs/[id]/events/[eventId]/check-in.tsx) for a worked example: a
+   * scrolling header block, the sticky search field, then the scrolling
+   * list.
+   */
+  stickyHeaderIndices?: number[];
 };
 
 /**
@@ -53,6 +73,7 @@ export default function Screen({
   background = colors.bg,
   contentStyle,
   tabBar,
+  stickyHeaderIndices,
 }: ScreenProps) {
   // The status bar/notch/Dynamic Island inset. Applied here, on the layer
   // above `contentStyle`, rather than folded into `styles.content`: nearly
@@ -80,8 +101,9 @@ export default function Screen({
         { paddingTop: insets.top },
         center ? styles.scrollCenter : null,
       ]}
+      stickyHeaderIndices={stickyHeaderIndices}
     >
-      {content}
+      {stickyHeaderIndices ? children : content}
     </ScrollView>
   ) : (
     <View

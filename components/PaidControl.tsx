@@ -1,5 +1,5 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { colors, space, type } from '../lib/theme';
+import { colors, control, radius, space, type } from '../lib/theme';
 
 type Props = {
   /** Whether this person has been marked paid for this event. */
@@ -31,14 +31,28 @@ type Props = {
  * rather than storing a false, and skips the roster check on the way out
  * precisely so a correction can never be refused.
  *
- * The paid fill uses the sage `accent2` scale, per Task 8's brief. Note that
- * this is the SAME family CheckInControl's "Here" chip uses (its `choiceOn`
- * is `accent2[300]`; the terracotta `accent[300]` is its "Not coming"), so
- * this reads as "another affirmative mark", not as a colour that
- * distinguishes it from Here. The two are told apart by their words, which
- * is what a host reads at a badly-lit door anyway. `colors.text` on
- * `accent2[300]` measures 11.34:1, and the 4px saturated border repeats the
- * selection signal so it is never carried by fill alone.
+ * Task 8's original brief called for the sage `accent2` fill "so it reads as
+ * distinct from the terracotta Here action" — but in `CheckInControl`, "Here"
+ * IS the sage chip (`choiceOn` = `accent2[300]`; terracotta `accent[300]` is
+ * "Not coming"). Sage-on-sage put this control's paid state inches from
+ * Here in the same row, in the same hue and the same pill shape — exactly
+ * the collision the brief thought it was avoiding, and a host scanning a
+ * 60-70 name door list at a glance would misread one for the other.
+ *
+ * Fixed by changing both the HUE and the FORM, not just the colour: a
+ * circular `$` badge — a hairline `colors.neutral[900]` ring around the
+ * page background when unpaid, filled solid `colors.neutral[900]` with a
+ * `colors.bg` glyph when paid. `neutral[900]` is a desaturated near-black,
+ * nowhere near terracotta or sage on the wheel, and a circle badge is not a
+ * pill, so the two visual signals (colour AND shape) both separate it from
+ * `CheckInControl`'s two chips even at a glance or in peripheral vision.
+ * Contrast: `colors.bg` (#f5ead8) on `colors.neutral[900]` (#2e2b25) is
+ * 11.85:1 (WCAG relative-luminance formula, same method CheckInControl's
+ * docstring uses) — miles past the 4.5:1 AA floor — and the identical pair
+ * reversed (the unpaid glyph on the page background) measures the same
+ * 11.85:1. The badge is `control.circleSize` (50px) square, the same fixed
+ * circular touch target `PlusButton` uses elsewhere in this app, comfortably
+ * over the 44px minimum this screen's door-list controls all target.
  *
  * NOT gated on the check-in window. `set_payment_status` has no window at
  * all (unlike `record_attendance`), on purpose: money is settled whenever
@@ -73,9 +87,9 @@ export default function PaidControl({
           if (isDisabled) return;
           onChange(!paid);
         }}
-        style={[styles.choice, paid && styles.choiceOn, isDisabled && styles.dim]}
+        style={[styles.badge, paid && styles.badgeOn, isDisabled && styles.dim]}
       >
-        <Text style={styles.text}>Paid</Text>
+        <Text style={[styles.glyph, paid && styles.glyphOn]}>$</Text>
       </Pressable>
     </View>
   );
@@ -83,18 +97,32 @@ export default function PaidControl({
 
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', gap: space[2] },
-  choice: {
-    paddingVertical: space[2],
-    paddingHorizontal: space[3],
-    borderRadius: 999,
-    borderWidth: 2,
-    borderColor: colors.divider,
+  // A circle, not a pill — see the docstring above for why the shape change
+  // (not just the colour) is what actually separates this from
+  // CheckInControl's two pill chips at a glance. `control.circleSize` is the
+  // same fixed 50px touch target `PlusButton` uses for its own circular
+  // control elsewhere in this app.
+  badge: {
+    width: control.circleSize,
+    height: control.circleSize,
+    flexShrink: 0,
+    borderRadius: radius.pill,
+    borderWidth: control.hairline,
+    borderColor: colors.neutral[900],
+    backgroundColor: 'transparent',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  choiceOn: {
-    backgroundColor: colors.accent2[300],
-    borderWidth: 4,
-    borderColor: colors.accent2Color,
+  badgeOn: {
+    backgroundColor: colors.neutral[900],
   },
   dim: { opacity: 0.4 },
-  text: { fontFamily: type.bodyRegular, fontSize: type.size.body, color: colors.text },
+  glyph: {
+    fontFamily: type.bodyBold,
+    fontSize: type.size.body,
+    color: colors.neutral[900],
+  },
+  // `colors.bg`, not `colors.text` -- the docstring's contrast measurement
+  // (11.85:1) is for this exact pair against the filled `neutral[900]`.
+  glyphOn: { color: colors.bg },
 });
