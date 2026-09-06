@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(114);
+select plan(119);
 
 /*
  * Guards the privileges themselves, not the policies.
@@ -455,6 +455,43 @@ select ok(
   'authenticated cannot execute attendance_window_open'
 );
 
+-- ---------------------------------------------------------------------------
+-- Payment mutation ACLs (Task 6).
+--
+-- set_payment_status and event_payment_status are the event_payments
+-- table's only writer and only reader, and both must be reachable by
+-- authenticated and closed to anon. TRUNCATE is not subject to row-level
+-- security, so it gets a named negative here even though the table already
+-- carries an organizer-only select policy.
+-- ---------------------------------------------------------------------------
+
+select ok(
+  not has_table_privilege(
+    'authenticated', 'public.event_payments', 'TRUNCATE'),
+  'authenticated cannot TRUNCATE event_payments'
+);
+select ok(
+  has_function_privilege(
+    'authenticated',
+    'public.set_payment_status(uuid, uuid, boolean)', 'EXECUTE'),
+  'authenticated can execute set_payment_status'
+);
+select ok(
+  has_function_privilege(
+    'authenticated', 'public.event_payment_status(uuid)', 'EXECUTE'),
+  'authenticated can execute event_payment_status'
+);
+select ok(
+  not has_function_privilege(
+    'anon', 'public.set_payment_status(uuid, uuid, boolean)', 'EXECUTE'),
+  'anon cannot execute set_payment_status'
+);
+select ok(
+  not has_function_privilege(
+    'anon', 'public.event_payment_status(uuid)', 'EXECUTE'),
+  'anon cannot execute event_payment_status'
+);
+
 -- The outbox is plan 6's queue and nobody else's. RLS is on with no policy,
 -- so even a mistaken grant would return nothing — but a grant that exists
 -- is a grant somebody will eventually write a policy for.
@@ -752,7 +789,9 @@ select is(
        'public.mark_post_read(uuid)',
        'public.fetch_my_notifications()',
        'public.mark_notifications_read()',
-       'public.my_notification_unread_count()'
+       'public.my_notification_unread_count()',
+       'public.set_payment_status(uuid, uuid, boolean)',
+       'public.event_payment_status(uuid)'
      ]) as f
    ) expected
    where not exists (
@@ -846,7 +885,9 @@ select is(
          'public.mark_post_read(uuid)',
          'public.fetch_my_notifications()',
          'public.mark_notifications_read()',
-         'public.my_notification_unread_count()'
+         'public.my_notification_unread_count()',
+         'public.set_payment_status(uuid, uuid, boolean)',
+         'public.event_payment_status(uuid)'
        ]) as f
        where to_regprocedure(f) = p.oid::regprocedure
      )),
