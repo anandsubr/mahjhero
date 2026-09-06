@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(14);
+select plan(18);
 
 -- Fixture: one host, one club, one venue.
 insert into auth.users (id, email) values
@@ -259,6 +259,90 @@ select is(
     where id = '60000000-0000-0000-0000-000000000060'),
   '{}'::text[],
   'reset clears the overrides array');
+
+-- ---------------------------------------------------------------------------
+-- 5. capacity override recording uses the effective value (eff_capacity),
+-- not the raw new_capacity argument. new_capacity defaults to null meaning
+-- "not supplied", so comparing it directly against ev.capacity cannot tell
+-- "not touched" from "explicitly cleared" -- editing an unrelated field on an
+-- occurrence that already has a capacity would wrongly tag 'capacity' as a
+-- per-occurrence override, making it immune to future series-wide capacity
+-- edits. See supabase/migrations/20260906130000_seating_mode_propagation.sql,
+-- around line 334.
+-- ---------------------------------------------------------------------------
+
+reset role;
+
+insert into public.event_series (id, club_id, title, venue_id, frequency,
+                                 weekday, start_time, table_count, starts_on,
+                                 seating_mode, capacity, game_mode, created_by)
+values ('50000000-0000-0000-0000-000000000070',
+        'b0000000-0000-0000-0000-000000000051', 'Weekly 70',
+        'c0000000-0000-0000-0000-000000000051', 'weekly', 4, '19:00', 1,
+        current_date, 'assigned_tables', 60, 'open_play',
+        'a0000000-0000-0000-0000-000000000051');
+
+insert into public.events (id, club_id, series_id, title, venue_id, starts_at,
+                           ends_at, occurrence_date, seating_mode, capacity,
+                           game_mode, created_by)
+values
+  ('60000000-0000-0000-0000-000000000070',
+   'b0000000-0000-0000-0000-000000000051', '50000000-0000-0000-0000-000000000070',
+   'Weekly 70', 'c0000000-0000-0000-0000-000000000051',
+   now() + interval '28 days', now() + interval '28 days 3 hours',
+   current_date + 28, 'assigned_tables', 60, 'open_play',
+   'a0000000-0000-0000-0000-000000000051'),
+  ('60000000-0000-0000-0000-000000000071',
+   'b0000000-0000-0000-0000-000000000051', '50000000-0000-0000-0000-000000000070',
+   'Weekly 70', 'c0000000-0000-0000-0000-000000000051',
+   now() + interval '35 days', now() + interval '35 days 3 hours',
+   current_date + 35, 'assigned_tables', 60, 'open_play',
+   'a0000000-0000-0000-0000-000000000051');
+
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "a0000000-0000-0000-0000-000000000051", "role": "authenticated"}';
+
+-- 5a. The bug itself: editing an unrelated field (title) on an occurrence
+-- that already has a non-null capacity, with no capacity argument supplied,
+-- must NOT tag 'capacity' as an override. Under the plan's original
+-- "new_capacity is distinct from ev.capacity" snippet this assertion fails,
+-- because the omitted new_capacity (null) reads as distinct from 60.
+select public.update_event(
+  target_event => '60000000-0000-0000-0000-000000000070',
+  new_title => 'Weekly 70 Renamed');
+
+select ok(
+  not (select 'capacity' = any(overrides) from public.events
+    where id = '60000000-0000-0000-0000-000000000070'),
+  'update_event does not record a capacity override when capacity was not touched');
+
+-- 5b. A genuine capacity change on the same occurrence is still recorded.
+select public.update_event(
+  target_event => '60000000-0000-0000-0000-000000000070',
+  new_capacity => 90);
+
+select ok(
+  (select 'capacity' = any(overrides) from public.events
+    where id = '60000000-0000-0000-0000-000000000070'),
+  'update_event records the capacity override when new_capacity genuinely changes it');
+
+-- 5c. An explicit clear (clear_capacity => true) on a fresh occurrence sets
+-- capacity to null and records the override, even though the raw
+-- new_capacity argument is null just like the "not touched" case in 5a.
+select public.update_event(
+  target_event => '60000000-0000-0000-0000-000000000071',
+  clear_capacity => true);
+
+select is(
+  (select capacity from public.events
+    where id = '60000000-0000-0000-0000-000000000071'),
+  null::int,
+  'update_event clears capacity when clear_capacity is true');
+select ok(
+  (select 'capacity' = any(overrides) from public.events
+    where id = '60000000-0000-0000-0000-000000000071'),
+  'update_event records the capacity override when clear_capacity is true');
 
 reset role;
 
