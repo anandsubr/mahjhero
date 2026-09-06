@@ -1,7 +1,9 @@
 import { needsAFourth, seatsFreeLabel } from './bookings';
 import { GENERIC_ERROR } from './constants';
+import type { GameMode } from './clubs';
 import { supabase } from './supabase';
 
+export type { GameMode } from './clubs';
 export type EventStatus = 'draft' | 'published' | 'cancelled';
 export type SkillTier = 'beginner' | 'intermediate' | 'advanced' | 'mixed';
 export type SeriesFrequency = 'weekly' | 'biweekly' | 'monthly_nth_weekday';
@@ -53,6 +55,7 @@ export type ClubEvent = {
   fee_cents: number;
   /** Integer cents. `0` means "no minimum spend set". */
   min_spend_cents: number;
+  game_mode: GameMode;
 };
 
 export type EventTable = {
@@ -111,6 +114,7 @@ export type EventSeries = {
   fee_cents: number;
   /** Integer cents. `0` means "no minimum spend set". */
   min_spend_cents: number;
+  game_mode: GameMode;
 };
 
 export type RecurrenceRule = {
@@ -151,11 +155,11 @@ export type RecurrenceRule = {
 export const EVENT_COLUMNS =
   'id, club_id, series_id, title, venue_id, notes, starts_at, ends_at, ' +
   'status, occurrence_date, overrides, check_in_required, fee_cents, ' +
-  'min_spend_cents, venues(name), ' +
+  'min_spend_cents, game_mode, venues(name), ' +
   'event_tables(id, capacity, label), bookings(profile_id, status, event_table_id)';
 
 export const SERIES_COLUMNS =
-  'id, club_id, title, venue_id, notes, frequency, weekday, nth_week, start_time, duration_minutes, table_count, starts_on, ends_on, ended_at, check_in_required, fee_cents, min_spend_cents, venues(name)';
+  'id, club_id, title, venue_id, notes, frequency, weekday, nth_week, start_time, duration_minutes, table_count, starts_on, ends_on, ended_at, check_in_required, fee_cents, min_spend_cents, game_mode, venues(name)';
 
 export const EVENT_TABLE_COLUMNS = 'id, label, skill_tier, capacity, position';
 
@@ -865,6 +869,10 @@ export async function createEvent(input: {
   feeCents: number;
   /** Integer cents. `0` for "no minimum spend". */
   minSpendCents: number;
+  /** Which visibility this game uses. Seeded from the club's
+   *  default_game_mode by the caller; the RPC itself also falls back to
+   *  the club's default if this is somehow omitted. */
+  gameMode: GameMode;
 }): Promise<{ eventId: string | null; error: string | null }> {
   try {
     if (input.title.trim().length === 0) {
@@ -882,6 +890,7 @@ export async function createEvent(input: {
       check_in: input.checkInRequired,
       fee_cents: input.feeCents,
       min_spend_cents: input.minSpendCents,
+      event_game_mode: input.gameMode,
     });
 
     if (error || !data) {
@@ -931,6 +940,8 @@ export async function updateEvent(
     feeCents?: number | null;
     /** Null/omitted means "leave this alone". Integer cents. */
     minSpendCents?: number | null;
+    /** Null/omitted means "leave this alone". */
+    gameMode?: GameMode | null;
   },
 ): Promise<{ error: string | null }> {
   try {
@@ -945,6 +956,7 @@ export async function updateEvent(
       new_check_in_required: input.checkInRequired ?? null,
       new_fee_cents: input.feeCents ?? null,
       new_min_spend_cents: input.minSpendCents ?? null,
+      new_game_mode: input.gameMode ?? null,
     });
 
     if (error) {
@@ -1108,6 +1120,7 @@ export async function createEventSeries(input: {
   checkInRequired: boolean;
   feeCents: number;
   minSpendCents: number;
+  gameMode: GameMode;
 }): Promise<{ seriesId: string | null; error: string | null }> {
   try {
     if (input.title.trim().length === 0) {
@@ -1129,6 +1142,7 @@ export async function createEventSeries(input: {
       check_in: input.checkInRequired,
       fee_cents: input.feeCents,
       min_spend_cents: input.minSpendCents,
+      series_game_mode: input.gameMode,
     });
 
     if (error || !data) {
@@ -1176,6 +1190,7 @@ export async function updateEventSeries(
     checkInRequired?: boolean | null;
     feeCents?: number | null;
     minSpendCents?: number | null;
+    gameMode?: GameMode | null;
   },
 ): Promise<{ error: string | null }> {
   try {
@@ -1193,6 +1208,7 @@ export async function updateEventSeries(
       new_check_in_required: input.checkInRequired ?? null,
       new_fee_cents: input.feeCents ?? null,
       new_min_spend_cents: input.minSpendCents ?? null,
+      new_game_mode: input.gameMode ?? null,
     });
 
     if (error) {

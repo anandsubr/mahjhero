@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(30);
+select plan(33);
 
 /*
  * Nine members. The brief's fixture used six and reused `erin` both as a
@@ -677,6 +677,76 @@ select throws_ok(
   '23514',
   null,
   'and cannot call for a fourth at a table that needs two');
+
+/*
+ * Whole-branch review, Fix 2: invite_only tables must never be surfaced to
+ * the cron sweep, and announce_table_fourth must never fan out for one --
+ * even when every other condition (occupancy, window, tier) qualifies. E10
+ * is otherwise identical to E9 above (mixed table, three of four, inside
+ * the 48-hour window) except its game_mode is invite_only.
+ */
+set local role postgres;
+reset request.jwt.claims;
+
+insert into public.events
+  (id, club_id, title, venue_id, starts_at, ends_at, game_mode, created_by) values
+  ('e1010101-0000-0000-0000-000000000010',
+   'c1c1c1c1-0000-0000-0000-000000000001', 'Private game',
+   '11111111-0000-0000-0000-000000000001',
+   now() + interval '30 hours', now() + interval '33 hours', 'invite_only',
+   'aaaaaaaa-0000-0000-0000-000000000001');
+
+insert into public.event_tables
+  (id, event_id, club_id, label, skill_tier, capacity, position) values
+  ('7ab1e000-0000-0000-0000-000000000010',
+   'e1010101-0000-0000-0000-000000000010',
+   'c1c1c1c1-0000-0000-0000-000000000001', 'Table 1', 'mixed', 4, 1);
+
+insert into public.booking_groups (id, event_id, club_id, created_by,
+                                    preferred_table_id) values
+  ('99000001-0000-0000-0000-000000000010',
+   'e1010101-0000-0000-0000-000000000010',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   'aaaaaaaa-0000-0000-0000-000000000001',
+   '7ab1e000-0000-0000-0000-000000000010');
+
+insert into public.bookings
+  (group_id, event_id, club_id, event_table_id, profile_id, booked_by) values
+  ('99000001-0000-0000-0000-000000000010',
+   'e1010101-0000-0000-0000-000000000010',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   '7ab1e000-0000-0000-0000-000000000010',
+   'aaaaaaaa-0000-0000-0000-000000000001',
+   'aaaaaaaa-0000-0000-0000-000000000001'),
+  ('99000001-0000-0000-0000-000000000010',
+   'e1010101-0000-0000-0000-000000000010',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   '7ab1e000-0000-0000-0000-000000000010',
+   'dddddddd-0000-0000-0000-000000000004',
+   'aaaaaaaa-0000-0000-0000-000000000001'),
+  ('99000001-0000-0000-0000-000000000010',
+   'e1010101-0000-0000-0000-000000000010',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   '7ab1e000-0000-0000-0000-000000000010',
+   '99999999-0000-0000-0000-000000000007',
+   'aaaaaaaa-0000-0000-0000-000000000001');
+
+select is(
+  (select count(*)::int from public.tables_needing_a_fourth()
+    where event_table_id = '7ab1e000-0000-0000-0000-000000000010'),
+  0,
+  'an invite_only table at three of four, inside the window, never reaches the sweep');
+
+select is(
+  public.announce_table_fourth('7ab1e000-0000-0000-0000-000000000010', 'tier'),
+  0,
+  'announce_table_fourth refuses to fan out for an invite_only table even when called directly');
+
+select is(
+  (select count(*)::int from public.notification_outbox
+    where event_id = 'e1010101-0000-0000-0000-000000000010'),
+  0,
+  'and no outbox rows were written for it');
 
 select * from finish();
 rollback;

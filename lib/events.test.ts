@@ -402,6 +402,7 @@ describe('createEvent', () => {
     checkInRequired: false,
     feeCents: 0,
     minSpendCents: 0,
+    gameMode: 'open_play' as const,
   };
 
   /*
@@ -433,6 +434,7 @@ describe('createEvent', () => {
       check_in: false,
       fee_cents: 0,
       min_spend_cents: 0,
+      event_game_mode: 'open_play',
     });
   });
 
@@ -514,6 +516,7 @@ describe('updateEvent', () => {
       new_check_in_required: null,
       new_fee_cents: null,
       new_min_spend_cents: null,
+      new_game_mode: null,
     });
   });
 
@@ -532,6 +535,7 @@ describe('updateEvent', () => {
       new_check_in_required: null,
       new_fee_cents: null,
       new_min_spend_cents: null,
+      new_game_mode: null,
     });
   });
 
@@ -582,6 +586,7 @@ describe('updateEventSeries', () => {
       new_check_in_required: null,
       new_fee_cents: null,
       new_min_spend_cents: null,
+      new_game_mode: null,
     });
   });
 
@@ -610,6 +615,7 @@ describe('updateEventSeries', () => {
       new_check_in_required: null,
       new_fee_cents: null,
       new_min_spend_cents: null,
+      new_game_mode: null,
     });
   });
 
@@ -656,6 +662,7 @@ describe('createEventSeries', () => {
     checkInRequired: false,
     feeCents: 0,
     minSpendCents: 0,
+    gameMode: 'open_play' as const,
   };
 
   it('rejects a blank title with a friendly message, before ever calling the RPC', async () => {
@@ -690,7 +697,11 @@ describe('createEventSeries', () => {
     await createEventSeries({ ...validInput, feeCents: 1500, minSpendCents: 2000 });
     expect(rpcMock).toHaveBeenCalledWith(
       'create_event_series',
-      expect.objectContaining({ fee_cents: 1500, min_spend_cents: 2000 }),
+      expect.objectContaining({
+        fee_cents: 1500,
+        min_spend_cents: 2000,
+        series_game_mode: 'open_play',
+      }),
     );
   });
 });
@@ -823,6 +834,7 @@ describe('deliberate refusals are reported as refusals, not as network failures'
       checkInRequired: false,
       feeCents: 0,
       minSpendCents: 0,
+      gameMode: 'open_play',
     });
     expect(result.error).toBe('That start time has already passed. Pick a later one.');
     expect(result.error).not.toBe(GENERIC_ERROR);
@@ -883,6 +895,7 @@ describe('deliberate refusals are reported as refusals, not as network failures'
       checkInRequired: false,
       feeCents: 0,
       minSpendCents: 0,
+      gameMode: 'open_play',
     });
     // Word-for-word the create screen's own preview copy for the same
     // situation.
@@ -907,6 +920,7 @@ describe('deliberate refusals are reported as refusals, not as network failures'
       checkInRequired: false,
       feeCents: 0,
       minSpendCents: 0,
+      gameMode: 'open_play',
     });
     expect(result.error).toBe('That end date is before the series starts.');
   });
@@ -942,6 +956,7 @@ describe('deliberate refusals are reported as refusals, not as network failures'
       checkInRequired: false,
       feeCents: 0,
       minSpendCents: 0,
+      gameMode: 'open_play',
     });
     expect(result.error).toBe('Give the game a date and a start time.');
   });
@@ -963,6 +978,7 @@ describe('deliberate refusals are reported as refusals, not as network failures'
       checkInRequired: false,
       feeCents: 0,
       minSpendCents: 0,
+      gameMode: 'open_play',
     });
     expect(result.error).toBe('Choose between 1 and 20 tables.');
   });

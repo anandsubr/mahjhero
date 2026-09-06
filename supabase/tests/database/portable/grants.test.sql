@@ -246,14 +246,14 @@ select ok(
 select ok(
   has_function_privilege(
     'authenticated',
-    'public.create_event(uuid, text, uuid, text, date, time, int, int, boolean)',
+    'public.create_event(uuid, text, uuid, text, date, time, int, int, boolean, int, int, public.game_mode)',
     'EXECUTE'),
   'authenticated can still execute create_event'
 );
 select ok(
   has_function_privilege(
     'authenticated',
-    'public.update_event(uuid, text, uuid, text, date, time, int, boolean)',
+    'public.update_event(uuid, text, uuid, text, date, time, int, boolean, int, int, public.game_mode)',
     'EXECUTE'),
   'authenticated can still execute update_event'
 );
@@ -324,14 +324,14 @@ select ok(
 select ok(
   has_function_privilege(
     'authenticated',
-    'public.create_event_series(uuid, text, uuid, text, public.series_frequency, smallint, smallint, time, int, int, date, date, boolean)',
+    'public.create_event_series(uuid, text, uuid, text, public.series_frequency, smallint, smallint, time, int, int, date, date, boolean, int, int, public.game_mode)',
     'EXECUTE'),
   'authenticated can still execute create_event_series'
 );
 select ok(
   has_function_privilege(
     'authenticated',
-    'public.update_event_series(uuid, text, uuid, text, time, int, int, date, boolean, boolean, boolean)',
+    'public.update_event_series(uuid, text, uuid, text, time, int, int, date, boolean, boolean, boolean, int, int, public.game_mode)',
     'EXECUTE'),
   'authenticated can still execute update_event_series'
 );
@@ -688,24 +688,27 @@ select is(
      from unnest(array[
        'public.is_club_member(uuid)',
        'public.is_club_organizer(uuid)',
+       'public.event_has_my_active_booking(uuid)',
+       'public.event_has_my_placed_seat(uuid)',
        'public.create_club(text, text)',
        'public.accept_club_invite(text)',
        'public.club_roster(uuid)',
        'public.club_leaderboard(uuid)',
+       'public.set_default_game_mode(uuid, public.game_mode)',
        'public.record_round(uuid, uuid, int)',
        'public.delete_round(uuid)',
        'public.create_venue(text, text, text, text, text, uuid, boolean)',
        'public.update_venue(uuid, text, text, text, text, text)',
        'public.archive_venue(uuid)',
        'public.search_venues(uuid, text)',
-       'public.create_event(uuid, text, uuid, text, date, time, int, int, boolean)',
-       'public.update_event(uuid, text, uuid, text, date, time, int, boolean)',
+       'public.create_event(uuid, text, uuid, text, date, time, int, int, boolean, int, int, public.game_mode)',
+       'public.update_event(uuid, text, uuid, text, date, time, int, boolean, int, int, public.game_mode)',
        'public.cancel_event(uuid)',
        'public.add_event_table(uuid)',
        'public.update_event_table(uuid, text, public.skill_tier)',
        'public.remove_event_table(uuid)',
-       'public.create_event_series(uuid, text, uuid, text, public.series_frequency, smallint, smallint, time, int, int, date, date, boolean)',
-       'public.update_event_series(uuid, text, uuid, text, time, int, int, date, boolean, boolean, boolean)',
+       'public.create_event_series(uuid, text, uuid, text, public.series_frequency, smallint, smallint, time, int, int, date, date, boolean, int, int, public.game_mode)',
+       'public.update_event_series(uuid, text, uuid, text, time, int, int, date, boolean, boolean, boolean, int, int, public.game_mode)',
        'public.end_event_series(uuid, boolean)',
        'public.reset_event_to_series(uuid)',
        'public.is_booking_group_member(uuid)',
@@ -720,6 +723,7 @@ select is(
        'public.place_booking(uuid, uuid)',
        'public.call_for_a_fourth(uuid)',
        'public.event_seating(uuid)',
+       'public.event_accepted_count(uuid)',
        'public.my_upcoming_bookings()',
        'public.broadcast_recipient_count(uuid, uuid)',
        'public.send_broadcast(uuid, uuid, text, text)',
@@ -775,24 +779,27 @@ select is(
        from unnest(array[
          'public.is_club_member(uuid)',
          'public.is_club_organizer(uuid)',
+         'public.event_has_my_active_booking(uuid)',
+         'public.event_has_my_placed_seat(uuid)',
          'public.create_club(text, text)',
          'public.accept_club_invite(text)',
          'public.club_roster(uuid)',
          'public.club_leaderboard(uuid)',
+         'public.set_default_game_mode(uuid, public.game_mode)',
          'public.record_round(uuid, uuid, int)',
          'public.delete_round(uuid)',
          'public.create_venue(text, text, text, text, text, uuid, boolean)',
          'public.update_venue(uuid, text, text, text, text, text)',
          'public.archive_venue(uuid)',
          'public.search_venues(uuid, text)',
-         'public.create_event(uuid, text, uuid, text, date, time, int, int, boolean)',
-         'public.update_event(uuid, text, uuid, text, date, time, int, boolean)',
+         'public.create_event(uuid, text, uuid, text, date, time, int, int, boolean, int, int, public.game_mode)',
+         'public.update_event(uuid, text, uuid, text, date, time, int, boolean, int, int, public.game_mode)',
          'public.cancel_event(uuid)',
          'public.add_event_table(uuid)',
          'public.update_event_table(uuid, text, public.skill_tier)',
          'public.remove_event_table(uuid)',
-         'public.create_event_series(uuid, text, uuid, text, public.series_frequency, smallint, smallint, time, int, int, date, date, boolean)',
-         'public.update_event_series(uuid, text, uuid, text, time, int, int, date, boolean, boolean, boolean)',
+         'public.create_event_series(uuid, text, uuid, text, public.series_frequency, smallint, smallint, time, int, int, date, date, boolean, int, int, public.game_mode)',
+         'public.update_event_series(uuid, text, uuid, text, time, int, int, date, boolean, boolean, boolean, int, int, public.game_mode)',
          'public.end_event_series(uuid, boolean)',
          'public.reset_event_to_series(uuid)',
          'public.is_booking_group_member(uuid)',
@@ -807,6 +814,7 @@ select is(
          'public.place_booking(uuid, uuid)',
          'public.call_for_a_fourth(uuid)',
          'public.event_seating(uuid)',
+         'public.event_accepted_count(uuid)',
          'public.my_upcoming_bookings()',
          'public.broadcast_recipient_count(uuid, uuid)',
          'public.send_broadcast(uuid, uuid, text, text)',

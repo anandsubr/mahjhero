@@ -202,7 +202,7 @@ set local request.jwt.claims =
   '{"sub": "bbbbbbbb-0000-0000-0000-000000000002", "role": "authenticated"}';
 
 select is(
-  public.accept_club_invite('good-token'),
+  (public.accept_club_invite('good-token')->>'club_id')::uuid,
   'c1c1c1c1-0000-0000-0000-000000000001'::uuid,
   'a valid token returns the club id'
 );
@@ -252,19 +252,19 @@ select is(
 );
 
 select is(
-  public.accept_club_invite('good-token'),
+  (public.accept_club_invite('good-token')->>'club_id')::uuid,
   null,
   'a token cannot be redeemed twice'
 );
 
 select is(
-  public.accept_club_invite('stale-token'),
+  (public.accept_club_invite('stale-token')->>'club_id')::uuid,
   null,
   'an expired token is refused'
 );
 
 select is(
-  public.accept_club_invite('no-such-token'),
+  (public.accept_club_invite('no-such-token')->>'club_id')::uuid,
   null,
   'a token that was never issued is refused'
 );
@@ -326,7 +326,7 @@ set local request.jwt.claims =
   '{"sub": "dddddddd-0000-0000-0000-000000000004", "role": "authenticated"}';
 
 select is(
-  public.accept_club_invite('no-profile-token'),
+  (public.accept_club_invite('no-profile-token')->>'club_id')::uuid,
   'c1c1c1c1-0000-0000-0000-000000000001'::uuid,
   'redeeming an invite succeeds even when the caller has no profiles row yet'
 );

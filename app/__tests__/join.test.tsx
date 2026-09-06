@@ -82,14 +82,21 @@ beforeEach(() => {
 
 describe('join screen', () => {
   it('accepts the invite and replaces to the new club', async () => {
-    acceptInvite.mockResolvedValueOnce({ clubId: 'club-3', error: null });
+    acceptInvite.mockResolvedValueOnce({ clubId: 'club-3', eventId: null, error: null });
     render(<JoinScreen />);
     await waitFor(() => expect(replace).toHaveBeenCalledWith('/clubs/club-3'));
+  });
+
+  it('accepts an event-tied invite and replaces to the event screen', async () => {
+    acceptInvite.mockResolvedValueOnce({ clubId: 'club-3', eventId: 'evt-42', error: null });
+    render(<JoinScreen />);
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/clubs/club-3/events/evt-42'));
   });
 
   it('shows the refusal when the invite could not be accepted', async () => {
     acceptInvite.mockResolvedValueOnce({
       clubId: null,
+      eventId: null,
       error: 'That invite link is no longer valid.',
     });
     render(<JoinScreen />);
@@ -115,6 +122,7 @@ describe('join screen', () => {
   it('carries the tab bar when the invite could not be accepted', async () => {
     acceptInvite.mockResolvedValueOnce({
       clubId: null,
+      eventId: null,
       error: 'That invite link is no longer valid.',
     });
     render(<JoinScreen />);

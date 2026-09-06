@@ -165,6 +165,7 @@ const ONE_OFF_EVENT = {
   overrides: [] as string[],
   table_count: 1,
   check_in_required: false,
+  game_mode: 'open_play' as const,
   fee_cents: 0,
   min_spend_cents: 0,
 };
@@ -193,6 +194,7 @@ const SERIES = {
   ends_on: '2026-12-31' as string | null,
   ended_at: null as string | null,
   check_in_required: false,
+  game_mode: 'open_play' as const,
   fee_cents: 0,
   min_spend_cents: 0,
 };
@@ -359,6 +361,7 @@ describe('a one-off event', () => {
       notes: null,
       startTime: null,
       checkInRequired: null,
+      gameMode: null,
       feeCents: null,
       minSpendCents: null,
     });
@@ -377,6 +380,7 @@ describe('a one-off event', () => {
       notes: null,
       startTime: null,
       checkInRequired: null,
+      gameMode: null,
       feeCents: null,
       minSpendCents: null,
     });
@@ -399,6 +403,7 @@ describe('a one-off event', () => {
       notes: null,
       startTime: '20:30',
       checkInRequired: null,
+      gameMode: null,
       feeCents: null,
       minSpendCents: null,
     });
@@ -432,6 +437,7 @@ describe('a one-off event', () => {
       notes: null,
       startTime: null,
       checkInRequired: true,
+      gameMode: null,
       feeCents: null,
       minSpendCents: null,
     });
@@ -456,6 +462,7 @@ describe('a one-off event', () => {
       notes: null,
       startTime: null,
       checkInRequired: null,
+      gameMode: null,
       feeCents: 1500,
       minSpendCents: 2000,
     });
@@ -553,6 +560,7 @@ describe('a series occurrence', () => {
       notes: '',
       startTime: '19:00',
       checkInRequired: false,
+      gameMode: 'open_play',
       feeCents: 0,
       minSpendCents: 0,
       endsOn: undefined,
@@ -578,6 +586,7 @@ describe('a series occurrence', () => {
       notes: '',
       startTime: '19:00',
       checkInRequired: false,
+      gameMode: 'open_play',
       feeCents: 0,
       minSpendCents: 0,
       endsOn: undefined,

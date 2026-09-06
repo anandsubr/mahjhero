@@ -5,8 +5,18 @@ const orderAfterEq = vi.fn();
 // deleteInvite's write path: `.from('club_invites').delete().eq(...).select(...)`
 // — the same shape lib/greetings.test.ts already models for deleteGreeting.
 const deleteResult = vi.fn();
+// acceptInvite, setDefaultGameMode, createInvite: `.rpc()` calls
+const rpcMock = vi.fn();
+const insertAfterFrom = vi.fn();
+// createInvite's write path: `.from('club_invites').insert(...).select(...).single()`
+// Capture the insertMock to assert on its call arguments
+const insertMock = vi.fn();
+const selectAfterInsert = vi.fn();
+selectAfterInsert.mockReturnValue({ single: insertAfterFrom });
+insertMock.mockReturnValue({ select: selectAfterInsert });
 vi.mock('./supabase', () => ({
   supabase: {
+    rpc: (...args: unknown[]) => rpcMock(...args),
     from: vi.fn(() => ({
       select: vi.fn(() => ({
         eq: vi.fn(() => ({
@@ -14,6 +24,7 @@ vi.mock('./supabase', () => ({
         })),
       })),
       delete: vi.fn(() => ({ eq: vi.fn(() => ({ select: deleteResult })) })),
+      insert: insertMock,
     })),
   },
 }));
@@ -22,18 +33,27 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { GENERIC_ERROR } from './constants';
 import {
   MAX_ROSTER_ROWS,
+  acceptInvite,
   canAnnounce,
   canInvite,
+  createInvite,
   deleteInvite,
   fetchMyRoles,
   importRoster,
   parseRoster,
+  setDefaultGameMode,
   slugify,
 } from './clubs';
 
 beforeEach(() => {
   deleteResult.mockReset();
   deleteResult.mockRejectedValue(new Error('network down'));
+  rpcMock.mockReset();
+  insertAfterFrom.mockReset();
+  insertMock.mockReset();
+  insertMock.mockReturnValue({ select: selectAfterInsert });
+  selectAfterInsert.mockReset();
+  selectAfterInsert.mockReturnValue({ single: insertAfterFrom });
 });
 
 describe('slugify', () => {
@@ -260,5 +280,160 @@ describe('deleteInvite', () => {
   it('returns an error rather than throwing on a network failure', async () => {
     deleteResult.mockRejectedValue(new Error('network down'));
     expect(await deleteInvite('invite-1')).toEqual({ error: GENERIC_ERROR });
+  });
+});
+
+describe('acceptInvite', () => {
+  beforeEach(() => {
+    rpcMock.mockReset();
+  });
+
+  it('returns clubId and eventId on success with an event-tied invite', async () => {
+    rpcMock.mockResolvedValue({
+      data: { club_id: 'c1', event_id: 'e1' },
+      error: null,
+    });
+    const result = await acceptInvite('token-1');
+    expect(result).toEqual({
+      clubId: 'c1',
+      eventId: 'e1',
+      error: null,
+    });
+  });
+
+  it('returns clubId and null eventId on success with a plain invite', async () => {
+    rpcMock.mockResolvedValue({
+      data: { club_id: 'c1', event_id: null },
+      error: null,
+    });
+    const result = await acceptInvite('token-1');
+    expect(result).toEqual({
+      clubId: 'c1',
+      eventId: null,
+      error: null,
+    });
+  });
+
+  it('returns error when the RPC fails', async () => {
+    rpcMock.mockResolvedValue({
+      data: null,
+      error: { message: 'some error' },
+    });
+    const result = await acceptInvite('token-1');
+    expect(result).toEqual({
+      clubId: null,
+      eventId: null,
+      error: GENERIC_ERROR,
+    });
+  });
+
+  it('returns expired/invalid invite error when data is null', async () => {
+    rpcMock.mockResolvedValue({
+      data: null,
+      error: null,
+    });
+    const result = await acceptInvite('token-1');
+    expect(result).toEqual({
+      clubId: null,
+      eventId: null,
+      error: 'That invite link has expired or has already been used.',
+    });
+  });
+
+  it('never rejects on a network failure', async () => {
+    rpcMock.mockRejectedValue(new Error('network down'));
+    const result = await acceptInvite('token-1');
+    expect(result).toEqual({
+      clubId: null,
+      eventId: null,
+      error: GENERIC_ERROR,
+    });
+  });
+});
+
+describe('createInvite', () => {
+  beforeEach(() => {
+    insertAfterFrom.mockReset();
+  });
+
+  it('returns the token on success', async () => {
+    insertAfterFrom.mockResolvedValue({
+      data: { token: 'generated-token' },
+      error: null,
+    });
+    const result = await createInvite('club-1');
+    expect(result).toEqual({
+      token: 'generated-token',
+      error: null,
+    });
+  });
+
+  it('includes event_id in the insert payload when eventId is provided', async () => {
+    insertAfterFrom.mockResolvedValue({
+      data: { token: 'generated-token' },
+      error: null,
+    });
+    await createInvite('club-1', undefined, 'event-1');
+    // Verify that the insert mock was called with the correct payload including event_id
+    expect(insertMock).toHaveBeenCalledWith(
+      expect.objectContaining({ event_id: 'event-1' }),
+    );
+  });
+
+  it('sets event_id to null in the insert payload when eventId is not provided', async () => {
+    insertAfterFrom.mockResolvedValue({
+      data: { token: 'generated-token' },
+      error: null,
+    });
+    await createInvite('club-1');
+    // Verify that the insert mock was called with event_id set to null
+    expect(insertMock).toHaveBeenCalledWith(
+      expect.objectContaining({ event_id: null }),
+    );
+  });
+
+  it('returns an error when the insert fails', async () => {
+    insertAfterFrom.mockResolvedValue({
+      data: null,
+      error: { message: 'insert failed' },
+    });
+    const result = await createInvite('club-1');
+    expect(result).toEqual({
+      token: null,
+      error: GENERIC_ERROR,
+    });
+  });
+
+  it('never rejects on a network failure', async () => {
+    insertAfterFrom.mockRejectedValue(new Error('network down'));
+    const result = await createInvite('club-1');
+    expect(result).toEqual({
+      token: null,
+      error: GENERIC_ERROR,
+    });
+  });
+});
+
+describe('setDefaultGameMode', () => {
+  beforeEach(() => {
+    rpcMock.mockReset();
+  });
+
+  it('returns no error on success', async () => {
+    rpcMock.mockResolvedValue({ error: null });
+    const result = await setDefaultGameMode('club-1', 'invite_only');
+    expect(result).toEqual({ error: null });
+  });
+
+  it('returns GENERIC_ERROR when the RPC fails', async () => {
+    rpcMock.mockResolvedValue({ error: { message: 'some error' } });
+    const result = await setDefaultGameMode('club-1', 'invite_only');
+    expect(result).toEqual({ error: GENERIC_ERROR });
+  });
+
+  it('never rejects on a network failure', async () => {
+    rpcMock.mockRejectedValue(new Error('network down'));
+    const result = await setDefaultGameMode('club-1', 'invite_only');
+    expect(result).toEqual({ error: GENERIC_ERROR });
   });
 });

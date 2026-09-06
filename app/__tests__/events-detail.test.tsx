@@ -96,6 +96,13 @@ const fetchOpenOffer = vi.fn();
 const placeBooking = vi.fn();
 const cancelBooking = vi.fn();
 const callForAFourth = vi.fn();
+// Task 15: `fetchEventAcceptedCount` is the third `lib/bookings` RPC call
+// this screen's `load()` fires on every render, alongside the two above --
+// left unmocked, it would hit the real (network-blocked) `supabase.rpc`
+// call this sandbox has already been observed to take several seconds to
+// fail closed on (see `fetchOpenOffer`'s own comment above), which would
+// reintroduce exactly the flakiness that comment describes fixing.
+const fetchEventAcceptedCount = vi.fn();
 
 vi.mock('../../lib/bookings', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../lib/bookings')>();
@@ -106,6 +113,8 @@ vi.mock('../../lib/bookings', async (importOriginal) => {
     placeBooking: (...args: unknown[]) => placeBooking(...args),
     cancelBooking: (...args: unknown[]) => cancelBooking(...args),
     callForAFourth: (...args: unknown[]) => callForAFourth(...args),
+    fetchEventAcceptedCount: (...args: unknown[]) =>
+      fetchEventAcceptedCount(...args),
   };
 });
 
@@ -202,6 +211,17 @@ const EVENT = {
   overrides: [] as string[],
   table_count: 1,
   check_in_required: false,
+  // `open_play`, not the schema default -- Task 15 added a
+  // `canSeeFullRoster` gate (`event.game_mode === 'open_play' ||
+  // isOrganizer || myBooking?.event_table_id != null`) that hides the
+  // tables/roster entirely for a not-yet-placed member on an
+  // `invite_only` game. Every test in this file predates that gate and
+  // exercises the ordinary member/organizer table view, none of them an
+  // invite-only not-yet-placed scenario -- `open_play` keeps them all
+  // rendering exactly as before. Matches bookings-detail.test.tsx's
+  // identical fixture addition for the same reason, made when Task 14
+  // added the first `game_mode`-gated control on this screen.
+  game_mode: 'open_play' as const,
 };
 
 const TABLE_1 = {
@@ -300,6 +320,8 @@ beforeEach(() => {
   fetchEventSeating.mockResolvedValue([]);
   fetchOpenOffer.mockReset();
   fetchOpenOffer.mockResolvedValue(null);
+  fetchEventAcceptedCount.mockReset();
+  fetchEventAcceptedCount.mockResolvedValue(null);
   placeBooking.mockResolvedValue({ error: null });
   cancelBooking.mockResolvedValue({ error: null });
   callForAFourth.mockResolvedValue({ error: null });
@@ -618,6 +640,111 @@ describe('member view: what is shown, and what is not', () => {
     expect(text).not.toMatch(/\bclaim\b/i);
     expect(text).not.toMatch(/\bsign up\b/i);
     expect(text).not.toMatch(/coming soon/i);
+  });
+});
+
+// Task 15: the privacy piece on top of the invite-only gating Task 14 added
+// to this same screen. The database layer (Tasks 2/3) already restricts
+// what a not-yet-placed invitee's own `seating` fetch can return -- their
+// row and nobody else's -- so these tests aren't re-proving that access
+// control; they're proving `canSeeFullRoster` picks the right JSX branch
+// given that already-narrowed data.
+describe('not-yet-placed invitee headcount view', () => {
+  const INVITE_ONLY_EVENT = { ...EVENT, game_mode: 'invite_only' as const };
+
+  // Confirmed and accepted, but `event_table_id` is still null -- exactly
+  // the shape the not-yet-placed case rests on (see `canSeeFullRoster`'s own
+  // comment in index.tsx).
+  const UNPLACED_ME = {
+    booking_id: 'booking-unplaced',
+    group_id: 'group-unplaced',
+    profile_id: 'test-user',
+    display_name: 'Ada',
+    skill_level: null,
+    event_table_id: null as string | null,
+    status: 'confirmed' as const,
+    booked_by: 'test-user',
+    booked_by_name: 'Ada',
+    group_status: 'confirmed' as const,
+    waitlist_position: null,
+    created_at: '2026-08-20T10:00:00Z',
+  };
+
+  it('shows only the headcount note, not the tables, for a not-yet-placed member on an invite-only game', async () => {
+    fetchEvent.mockResolvedValue(INVITE_ONLY_EVENT);
+    fetchEventSeating.mockResolvedValue([UNPLACED_ME]);
+    fetchEventAcceptedCount.mockResolvedValue(8);
+    render(<EventScreen />);
+
+    expect(
+      await screen.findByText(
+        "8 people have accepted. You won't see who else is playing until you're placed on a table.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText('Table 1')).toBeNull();
+    expect(screen.queryByText('Nobody has booked yet.')).toBeNull();
+  });
+
+  it('says "1 person has accepted", not "1 people have accepted"', async () => {
+    fetchEvent.mockResolvedValue(INVITE_ONLY_EVENT);
+    fetchEventSeating.mockResolvedValue([UNPLACED_ME]);
+    fetchEventAcceptedCount.mockResolvedValue(1);
+    render(<EventScreen />);
+
+    expect(
+      await screen.findByText(
+        "1 person has accepted. You won't see who else is playing until you're placed on a table.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it('falls back to a plain mode statement while the headcount is still null', async () => {
+    fetchEvent.mockResolvedValue(INVITE_ONLY_EVENT);
+    fetchEventSeating.mockResolvedValue([UNPLACED_ME]);
+    fetchEventAcceptedCount.mockResolvedValue(null);
+    render(<EventScreen />);
+
+    expect(
+      await screen.findByText(
+        "This is an invite-only game. You won't see who else is playing until you're placed on a table.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it('reveals the full table view once that same member is placed at a table', async () => {
+    fetchEvent.mockResolvedValue(INVITE_ONLY_EVENT);
+    fetchEventTables.mockResolvedValue([TABLE_1]);
+    fetchEventSeating.mockResolvedValue([{ ...UNPLACED_ME, event_table_id: 'table-1' }]);
+    fetchEventAcceptedCount.mockResolvedValue(8);
+    render(<EventScreen />);
+
+    expect(await screen.findByText('Table 1')).toBeTruthy();
+    expect(screen.queryByText(/people have accepted/)).toBeNull();
+  });
+
+  it('still shows the full table view to the organizer of an invite-only game, even before anyone is placed', async () => {
+    fetchRoster.mockResolvedValue(HOST_ROLE);
+    fetchEvent.mockResolvedValue(INVITE_ONLY_EVENT);
+    fetchEventTables.mockResolvedValue([TABLE_1]);
+    fetchEventSeating.mockResolvedValue([UNPLACED_ME]);
+    fetchEventAcceptedCount.mockResolvedValue(8);
+    render(<EventScreen />);
+
+    expect(await screen.findByText('Table 1')).toBeTruthy();
+    expect(screen.queryByText(/people have accepted/)).toBeNull();
+  });
+
+  it('keeps the full table view on an open_play game regardless of placement', async () => {
+    // EVENT's own default is already `open_play` -- this is the explicit
+    // regression guard against `canSeeFullRoster` ever tightening past what
+    // Task 14's `canBringSomeone` gate already established for this mode.
+    fetchEventTables.mockResolvedValue([TABLE_1]);
+    fetchEventSeating.mockResolvedValue([UNPLACED_ME]);
+    fetchEventAcceptedCount.mockResolvedValue(8);
+    render(<EventScreen />);
+
+    expect(await screen.findByText('Table 1')).toBeTruthy();
+    expect(screen.queryByText(/people have accepted/)).toBeNull();
   });
 });
 

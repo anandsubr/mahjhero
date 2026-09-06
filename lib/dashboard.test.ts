@@ -21,6 +21,7 @@ const CLUBS: Club[] = [
     rhythm: 'Thursdays, 7pm',
     visibility: 'private',
     timezone: 'America/New_York',
+    default_game_mode: 'open_play',
   },
   {
     id: 'club-2',
@@ -29,6 +30,7 @@ const CLUBS: Club[] = [
     rhythm: 'First Sunday',
     visibility: 'private',
     timezone: 'America/New_York',
+    default_game_mode: 'open_play',
   },
 ];
 
@@ -54,6 +56,7 @@ function event(over: Partial<ClubEvent> = {}): ClubEvent {
     check_in_required: false,
     fee_cents: 0,
     min_spend_cents: 0,
+    game_mode: 'open_play',
     ...over,
   };
 }

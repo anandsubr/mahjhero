@@ -36,7 +36,7 @@ async function settle(page: Page) {
   // fonts swap in. If a baseline ever starts flaking on a hairline of text
   // or an icon edge, suspect this number FIRST — it is the only
   // wall-clock-dependent step here. Raise it before touching maxDiffPixels.
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(500);
 }
 
 /**
@@ -741,17 +741,13 @@ test.describe('signed in', () => {
         await expect(page.getByText('Moved from the usual venue')).toBeVisible();
         await expect(page.getByText('Every Tuesday')).toBeVisible();
         // Table 1's own booking state (Task 15): two of four seats taken
-        // (the signed-in member and one other), room left, and the
-        // per-table "Bring someone" both this table and the screen-level
-        // entry point offer. This is the same page a dedicated `event
-        // booking` baseline would have shot — same club, same event, same
-        // seeded state — so there is no such baseline; it could only ever
-        // be byte-identical to this one. `exact: true` on the role query
-        // is load-bearing — TableCard's own "Bring someone" button carries
-        // the accessible name "Bring someone to Table 1", not the bare
-        // "Bring someone" the screen-level button uses, so without `exact`
-        // this would still resolve to one match by luck rather than by the
-        // query actually being specific. `.first()` on Priya's name — kept
+        // (the signed-in member and one other), room left. This is the
+        // same page a dedicated `event booking` baseline would have shot —
+        // same club, same event, same seeded state — so there is no such
+        // baseline; it could only ever be byte-identical to this one.
+        // Task 14 renamed the screen-level button from "Bring someone" to
+        // "Invite" (its own accessibilityLabel is now the bare "Invite").
+        // `.first()` on Priya's name — kept
         // even though the seat-tap redesign means her name now renders only
         // ONCE on a fresh load (the old HostSeating component used to
         // render it a second time, in its own always-visible "Move to …" /
@@ -763,7 +759,7 @@ test.describe('signed in', () => {
         await expect(page.getByText('You', { exact: true })).toBeVisible();
         await expect(page.getByText('Priya Nair').first()).toBeVisible();
         await expect(
-          page.getByRole('button', { name: 'Bring someone', exact: true }),
+          page.getByRole('button', { name: 'Invite', exact: true }),
         ).toBeVisible();
         // TableCard no longer prints a "N seats free" sentence (Task 6) --
         // room left is now only visible as unoccupied seat tiles themselves.
