@@ -246,14 +246,14 @@ select ok(
 select ok(
   has_function_privilege(
     'authenticated',
-    'public.create_event(uuid, text, uuid, text, date, time, int, int, boolean)',
+    'public.create_event(uuid, text, uuid, text, date, time, int, int, boolean, int, int, public.game_mode)',
     'EXECUTE'),
   'authenticated can still execute create_event'
 );
 select ok(
   has_function_privilege(
     'authenticated',
-    'public.update_event(uuid, text, uuid, text, date, time, int, boolean)',
+    'public.update_event(uuid, text, uuid, text, date, time, int, boolean, int, int, public.game_mode)',
     'EXECUTE'),
   'authenticated can still execute update_event'
 );
@@ -324,14 +324,14 @@ select ok(
 select ok(
   has_function_privilege(
     'authenticated',
-    'public.create_event_series(uuid, text, uuid, text, public.series_frequency, smallint, smallint, time, int, int, date, date, boolean)',
+    'public.create_event_series(uuid, text, uuid, text, public.series_frequency, smallint, smallint, time, int, int, date, date, boolean, int, int, public.game_mode)',
     'EXECUTE'),
   'authenticated can still execute create_event_series'
 );
 select ok(
   has_function_privilege(
     'authenticated',
-    'public.update_event_series(uuid, text, uuid, text, time, int, int, date, boolean, boolean, boolean)',
+    'public.update_event_series(uuid, text, uuid, text, time, int, int, date, boolean, boolean, boolean, int, int, public.game_mode)',
     'EXECUTE'),
   'authenticated can still execute update_event_series'
 );
