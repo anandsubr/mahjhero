@@ -9,16 +9,10 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "app.mahjhero.client",
-      "usesAppleSignIn": true,
-      "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
-      }
+      "usesAppleSignIn": true
     },
     "android": {
-      "package": "app.mahjhero.client",
-      "permissions": [
-        "android.permission.RECORD_AUDIO"
-      ]
+      "package": "app.mahjhero.client"
     },
     "web": {
       "bundler": "metro",
@@ -35,7 +29,8 @@
         "expo-image-picker",
         {
           "photosPermission": "MahjHero uses your photos to attach images to messages.",
-          "cameraPermission": "MahjHero uses your camera to attach a photo to a message."
+          "cameraPermission": "MahjHero uses your camera to attach a photo to a message.",
+          "microphonePermission": false
         }
       ]
     ],
@@ -44,6 +39,7 @@
       "eas": {
         "projectId": "5eef1b49-fad5-45b5-9d3e-69591d1fbd83"
       }
-    }
+    },
+    "owner": "anandsubramanian"
   }
 }
