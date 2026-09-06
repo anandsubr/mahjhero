@@ -11,7 +11,7 @@
     {
       "name": "marketing-site",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["http-server", "marketing", "-p", "8099", "-g"],
+      "runtimeArgs": ["http-server", "marketing", "-p", "8099", "-c-1"],
       "port": 8099
     }
   ]
