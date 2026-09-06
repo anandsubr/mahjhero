@@ -5,6 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>MahjHero — Your club's table, always set.</title>
 <meta name="description" content="MahjHero is the seat-by-seat scheduler for American Mahjong clubs and private games — book with friends, an auto-promoting waitlist, on-arrival check-in, and a club leaderboard." />
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23c67139'/%3E%3Ctext x='32' y='44' font-size='34' text-anchor='middle' fill='%23f5ead8'%3E%E4%B8%AD%3C/text%3E%3C/svg%3E" />
+<!-- og:url assumes the registered mahjhero.com domain -- update if the page is hosted elsewhere -->
+<meta property="og:type" content="website" />
+<meta property="og:url" content="https://mahjhero.com/" />
+<meta property="og:title" content="MahjHero — Your club's table, always set." />
+<meta property="og:description" content="MahjHero is the seat-by-seat scheduler for American Mahjong clubs and private games — book with friends, an auto-promoting waitlist, on-arrival check-in, and a club leaderboard." />
+<meta name="twitter:card" content="summary" />
+<meta name="twitter:title" content="MahjHero — Your club's table, always set." />
+<meta name="twitter:description" content="MahjHero is the seat-by-seat scheduler for American Mahjong clubs and private games — book with friends, an auto-promoting waitlist, on-arrival check-in, and a club leaderboard." />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Caprasimo&family=Figtree:wght@400;600;700&display=swap" rel="stylesheet" />
@@ -100,6 +109,18 @@
     color: var(--text);
     border: 1px solid var(--divider);
   }
+
+  .btn-store {
+    background: var(--neutral-900);
+    color: var(--bg);
+    box-shadow: var(--shadow-md);
+    justify-content: flex-start;
+    gap: 8.8px;
+    padding: 12px 22px;
+  }
+  .store-icon { flex-shrink: 0; }
+  .store-btn-text { display: flex; flex-direction: column; line-height: 1.25; text-align: left; }
+  .store-btn-kicker { font-family: var(--font-body); font-weight: 400; font-size: 12px; opacity: 0.8; }
 
   .card {
     background: var(--surface);
@@ -363,9 +384,24 @@
       </p>
 
       <div class="hero-actions">
-        <!-- Replace with the deployed app's sign-in URL once known -->
-        <a class="btn btn-primary" href="#" aria-label="Get started">Get started</a>
-        <a class="btn btn-secondary" href="#" aria-label="I already have an account">I already have an account</a>
+        <!-- Replace with the real App Store listing URL once the app is published -->
+        <a class="btn btn-store" href="#" aria-label="Download on the App Store">
+          <svg class="store-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 3v12" />
+            <path d="M7 10l5 5 5-5" />
+            <path d="M5 19h14" />
+          </svg>
+          <span class="store-btn-text"><span class="store-btn-kicker">Download on the</span>App Store</span>
+        </a>
+        <!-- Replace with the real Google Play listing URL once the app is published -->
+        <a class="btn btn-store" href="#" aria-label="Get it on Google Play">
+          <svg class="store-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 3v12" />
+            <path d="M7 10l5 5 5-5" />
+            <path d="M5 19h14" />
+          </svg>
+          <span class="store-btn-text"><span class="store-btn-kicker">Get it on</span>Google Play</span>
+        </a>
       </div>
     </div>
   </header>
@@ -530,8 +566,26 @@
     <div class="wrap final-cta-inner">
       <h2 class="final-cta-heading">Free to use, today.</h2>
       <p class="final-cta-body">No pricing tiers, no card required &mdash; just a club that finally knows how many seats are actually open.</p>
-      <!-- Replace with the deployed app's sign-in URL once known -->
-      <a class="btn btn-primary" href="#" aria-label="Get started">Get started</a>
+      <div class="hero-actions">
+        <!-- Replace with the real App Store listing URL once the app is published -->
+        <a class="btn btn-store" href="#" aria-label="Download on the App Store">
+          <svg class="store-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 3v12" />
+            <path d="M7 10l5 5 5-5" />
+            <path d="M5 19h14" />
+          </svg>
+          <span class="store-btn-text"><span class="store-btn-kicker">Download on the</span>App Store</span>
+        </a>
+        <!-- Replace with the real Google Play listing URL once the app is published -->
+        <a class="btn btn-store" href="#" aria-label="Get it on Google Play">
+          <svg class="store-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 3v12" />
+            <path d="M7 10l5 5 5-5" />
+            <path d="M5 19h14" />
+          </svg>
+          <span class="store-btn-text"><span class="store-btn-kicker">Get it on</span>Google Play</span>
+        </a>
+      </div>
     </div>
   </section>
   <footer class="site-footer">
