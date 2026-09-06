@@ -1,6 +1,6 @@
 begin;
 set local search_path to extensions, public;
-select plan(8);
+select plan(9);
 
 insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-00000000fa01', 'ai-host@example.com'),
@@ -100,7 +100,13 @@ select is(
   'a plain club invite still creates membership'
 );
 
--- A guest invited to a since-cancelled game still becomes a member.
+-- A guest invited to a since-cancelled game still becomes a member, and the
+-- response's event_id is null -- seating was skipped, so a truthy event_id
+-- here would send app/join/[token].tsx to redirect the guest to a game they
+-- now have no booking on and cannot see ("that game could not be loaded").
+-- Captured into a temp table (rather than calling the function twice) since
+-- the token can only be redeemed once: a second call would just return null
+-- outright and tell us nothing about what the real, first response held.
 reset role;
 insert into auth.users (id, email) values
   ('dddddddd-0000-0000-0000-00000000fa04', 'ai-guest3@example.com');
@@ -108,8 +114,11 @@ set local role authenticated;
 set local request.jwt.claims =
   '{"sub": "dddddddd-0000-0000-0000-00000000fa04", "role": "authenticated"}';
 
-select lives_ok(
-  $$select public.accept_club_invite('cancelled-game-token')$$,
+create temporary table cancelled_invite_result as
+select public.accept_club_invite('cancelled-game-token') as response;
+
+select ok(
+  (select response from cancelled_invite_result) is not null,
   'accepting an invite to a since-cancelled game does not error'
 );
 
@@ -119,6 +128,12 @@ select is(
      and profile_id = 'dddddddd-0000-0000-0000-00000000fa04'),
   1,
   'membership is still created even though seating was skipped'
+);
+
+select is(
+  (select response->>'event_id' from cancelled_invite_result),
+  null,
+  'seating was skipped for a cancelled game, so event_id is null in the response'
 );
 
 select * from finish();
