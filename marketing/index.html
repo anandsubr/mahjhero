@@ -109,6 +109,38 @@
   }
 
   /* HERO_STYLES */
+  .hero { padding: 60px 0 70px; }
+  .hero-inner { display: flex; flex-direction: column; gap: 26px; }
+  .wordmark {
+    font-family: var(--font-heading);
+    font-size: 28px;
+    color: var(--text);
+  }
+  .wordmark-accent { color: var(--accent); }
+  .hero-tiles { display: flex; align-items: flex-end; gap: 8.8px; }
+  .tile {
+    width: 52px;
+    height: 70px;
+    border-radius: 15px;
+    background: var(--surface);
+    border-bottom: 5px solid var(--neutral-200);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: var(--shadow-sm);
+  }
+  .tile-left { transform: rotate(-6deg); }
+  .tile-right { transform: rotate(5deg); }
+  .tile-accent { background: var(--accent); border-bottom-color: var(--accent-700); }
+  .tile-glyph { font-size: 30px; line-height: 1; color: var(--bg); }
+  .hero-heading { font-size: 50px; line-height: 1.08; max-width: 680px; }
+  .hero-body {
+    font-size: 19px;
+    line-height: 1.55;
+    color: var(--text-muted);
+    max-width: 560px;
+  }
+  .hero-actions { display: flex; gap: 13.2px; flex-wrap: wrap; }
 
   /* PROBLEM_STYLES */
 
@@ -124,7 +156,43 @@
 </style>
 </head>
 <body>
-  <!-- HERO -->
+  <header class="hero">
+    <div class="wrap hero-inner">
+      <div class="wordmark">Mahj<span class="wordmark-accent">Hero</span></div>
+
+      <div class="hero-tiles" aria-hidden="true">
+        <div class="tile tile-left">
+          <svg width="26" height="40" viewBox="0 0 26 40" fill="none" stroke="#c67139" stroke-width="2.75">
+            <circle cx="13" cy="8" r="4.5" />
+            <circle cx="13" cy="20" r="4.5" />
+            <circle cx="13" cy="32" r="4.5" />
+          </svg>
+        </div>
+        <div class="tile">
+          <svg width="26" height="40" viewBox="0 0 26 40" fill="none" stroke="#728157" stroke-width="2.75" stroke-linecap="round">
+            <path d="M7 6v28M13 6v28M19 6v28" />
+            <path d="M4 14h6M10 14h6M16 14h6M4 26h6M10 26h6M16 26h6" />
+          </svg>
+        </div>
+        <div class="tile tile-accent tile-right">
+          <span class="tile-glyph">中</span>
+        </div>
+      </div>
+
+      <h1 class="hero-heading">One cancellation shouldn&rsquo;t cancel the whole table.</h1>
+      <p class="hero-body">
+        MahjHero is the seat-by-seat scheduler for American Mahjong clubs and
+        private games &mdash; book a seat next to a friend, get promoted off
+        the waitlist the moment one opens, and know who&rsquo;s actually coming.
+      </p>
+
+      <div class="hero-actions">
+        <!-- Replace with the deployed app's sign-in URL once known -->
+        <a class="btn btn-primary" href="#" aria-label="Get started">Get started</a>
+        <a class="btn btn-secondary" href="#" aria-label="I already have an account">I already have an account</a>
+      </div>
+    </div>
+  </header>
   <!-- PROBLEM -->
   <!-- ROLE_PICKER -->
   <!-- FEATURES -->
