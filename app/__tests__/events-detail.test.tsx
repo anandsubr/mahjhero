@@ -1689,12 +1689,84 @@ describe('open seating', () => {
     ).toBeNull();
   });
 
+  // Deliberately NOT the describe-level `fetchEventTables.mockResolvedValue([])`
+  // -- that would make this test pass even with the `isOpenSeating` gate at
+  // index.tsx deleted outright, since `tables.map(...)` over an empty array
+  // renders nothing regardless of the gate. This overrides it back to a real
+  // table (`TABLE_1`, capacity 4) with three CONFIRMED occupants seated at
+  // it -- `confirmedHere === table.capacity - 1`, the exact occupancy
+  // `needsAFourth` (lib/bookings.ts) and the organizer's own inlined
+  // `canCallForAFourth` expression (index.tsx, by the "Call for a 4th now"
+  // button below) both key off -- on a `canBook`-eligible (published,
+  // not-yet-started), `open_play` event, with the signed-in user as host
+  // (`fetchRoster` returns `HOST_ROLE`, so the organizer-only button branch
+  // is reachable too). If `isOpenSeating` around the tables-vs-roster
+  // ternary at index.tsx:924 were ever deleted, `tables.map` would run for
+  // this fixture and genuinely render both "Needs a 4th" (on the
+  // `TableCard`) and "Call for a 4th now" (the organizer button) --
+  // verified by temporarily deleting that gate locally and watching this
+  // test fail, then reverting. Only the *rendering* is being proven absent
+  // here, not the occupancy math itself, which SeatGrid.test.tsx and this
+  // file's own "offers/hides Call for a 4th now" tests already cover
+  // directly.
   it('hides "Call for a 4th now" and the "Needs a 4th" tag entirely -- there is no table to fill', async () => {
     fetchRoster.mockResolvedValue(HOST_ROLE);
     fetchEvent.mockResolvedValue(OPEN_SEATING_EVENT);
-    fetchEventSeating.mockResolvedValue([SIGNED_UP_PRIYA]);
+    fetchEventTables.mockResolvedValue([TABLE_1]);
+    fetchEventSeating.mockResolvedValue([
+      SIGNED_UP_PRIYA,
+      {
+        booking_id: 'b-t1-1',
+        group_id: 'g-t1-1',
+        profile_id: 'q1',
+        display_name: 'Quinn A.',
+        skill_level: null,
+        event_table_id: 'table-1',
+        status: 'confirmed' as const,
+        booked_by: 'q1',
+        booked_by_name: 'Quinn A.',
+        group_status: 'confirmed' as const,
+        waitlist_position: null,
+        created_at: '2026-08-20T10:00:00Z',
+      },
+      {
+        booking_id: 'b-t1-2',
+        group_id: 'g-t1-2',
+        profile_id: 'q2',
+        display_name: 'Robin B.',
+        skill_level: null,
+        event_table_id: 'table-1',
+        status: 'confirmed' as const,
+        booked_by: 'q2',
+        booked_by_name: 'Robin B.',
+        group_status: 'confirmed' as const,
+        waitlist_position: null,
+        created_at: '2026-08-20T10:00:00Z',
+      },
+      {
+        booking_id: 'b-t1-3',
+        group_id: 'g-t1-3',
+        profile_id: 'q3',
+        display_name: 'Jordan P.',
+        skill_level: null,
+        event_table_id: 'table-1',
+        status: 'confirmed' as const,
+        booked_by: 'q3',
+        booked_by_name: 'Jordan P.',
+        group_status: 'confirmed' as const,
+        waitlist_position: null,
+        created_at: '2026-08-20T10:00:00Z',
+      },
+    ]);
     render(<EventScreen />);
-    await screen.findByText('Priya Nair');
+    // Not `findByText('Priya Nair')` -- her booking's `event_table_id` is
+    // `null` (she is an open-seating signup, not seated at any table), so
+    // she renders only via the roster branch this test means to prove is
+    // NOT bypassed. Waiting on her name would make the negative control
+    // above fail for the wrong reason (nothing ever renders her) rather
+    // than for the reason this test actually cares about (the tag/button
+    // rendering). `Thursday Mahjong` loads either way.
+    await screen.findByText('Thursday Mahjong');
     expect(screen.queryByText('Call for a 4th now')).toBeNull();
     expect(screen.queryByText('Needs a 4th')).toBeNull();
   });
