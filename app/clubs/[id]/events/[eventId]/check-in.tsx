@@ -7,7 +7,6 @@ import CheckInControl from '../../../../../components/CheckInControl';
 import ErrorBanner from '../../../../../components/ErrorBanner';
 import PaidControl from '../../../../../components/PaidControl';
 import Screen from '../../../../../components/Screen';
-import SkillLevelPips from '../../../../../components/SkillLevelPips';
 import TabBar from '../../../../../components/TabBar';
 import Tag from '../../../../../components/Tag';
 import TextField from '../../../../../components/TextField';
@@ -43,6 +42,19 @@ import { colors, layout, radius, space, type } from '../../../../../lib/theme';
  * At module scope so the by-hand pass can tune this single number.
  */
 const SETTLE_MS = 4000;
+
+/**
+ * Review Fix 4: how long the undo banner (see `undoFor` below) stays
+ * offered before it expires on its own. Without a bound, `undoFor` was
+ * cleared only by tapping it or by a further settle -- so in a lull between
+ * arrivals, a banner from ten minutes ago still read as "the tap you just
+ * made", and it is a one-tap `clearAttendance`. Long enough that a host
+ * glancing away for a few seconds still finds it (this is not the 4s
+ * settle window itself, which is about the row's PLACEMENT, not the
+ * banner), short enough that it cannot plausibly be mistaken for a recent
+ * tap once it fires.
+ */
+const UNDO_MS = 10_000;
 
 type TableGroup = { id: string; label: string; rows: AttendanceRow[] };
 
@@ -295,6 +307,10 @@ export default function CheckInScreen() {
     name: string;
     state: AttendanceState;
   } | null>(null);
+  // Review Fix 4: the pending expiry for whatever `undoFor` is currently
+  // offered -- see UNDO_MS above and `offerUndo` below. A ref, not state,
+  // for the same reason `settlingRef` is: it is not itself rendered.
+  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Mirrors `rows` for the settle timer's callback, which fires up to four
   // seconds after the render that scheduled it and must report where the
   // row actually LANDED (a host can tap Here, then Not coming, inside one
@@ -304,6 +320,18 @@ export default function CheckInScreen() {
     rowsRef.current = rows;
   }, [rows]);
 
+  // The attendance `state` a row carried the moment its settle window
+  // OPENED (the first tap, attendance or payment, of this window) -- see
+  // `holdRow` below. Undo exists to reverse an attendance move made THIS
+  // gesture; a payment-only tap on someone already `arrived` opens a window
+  // too (so the paid chip's own tap gets the settle behaviour), but must not
+  // raise an undo that clears an attendance state it never touched. Kept in
+  // a ref, not `held`, because it needs to survive past the moment `held`'s
+  // entry for this profile is deleted (the settle timer fires) -- the
+  // comparison against the row's settled `state` happens in that same
+  // callback.
+  const preTapStateRef = useRef<Record<string, AttendanceState | null>>({});
+
   // Every pending settle timer is cleared on unmount: a host who backs out
   // of this screen mid-window must not have a timer wake up afterwards and
   // set state on a screen that is gone.
@@ -312,6 +340,16 @@ export default function CheckInScreen() {
     return () => {
       for (const timer of Object.values(timers)) clearTimeout(timer);
       settlingRef.current = {};
+    };
+  }, []);
+
+  // Review Fix 4's own timer gets its own cleanup effect, deliberately
+  // separate from the one above rather than folded into it: the settle
+  // timers' cleanup is preserved exactly as it already was, and this is new
+  // behaviour alongside it, not a restructuring of it.
+  useEffect(() => {
+    return () => {
+      if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
     };
   }, []);
 
@@ -512,6 +550,16 @@ export default function CheckInScreen() {
     // seconds earlier, over one flaky read. Same reasoning the merge above
     // applies to `rows`, applied here to the window: a transient failure
     // keeps the last known good value rather than blanking it.
+    // Fix 2: whether THIS load should ask for payments at all, alongside
+    // `organizer` below. Defaults to the last known `feeCents` state (the
+    // same "keep the last known good value on a failed read" rule the window
+    // above follows) rather than 0, so a transient event-read failure does
+    // not silently stop asking for payments on a fee-charging event mid-door
+    // -- only updated below on a SUCCESSFUL event read, using the value in
+    // hand from THIS response rather than the `feeCents` state (which would
+    // not have committed yet).
+    let feeForPayments = feeCents;
+
     if (event) {
       // Same "only on a successful read" rule as the window below, for the
       // same reason: a flaky refetch must not reshape the list (status
@@ -521,7 +569,8 @@ export default function CheckInScreen() {
       // client contract still lands on the behaviour this screen has always
       // had.
       setSeatingMode(event.seating_mode ?? 'assigned_tables');
-      setFeeCents(event.fee_cents ?? 0);
+      feeForPayments = event.fee_cents ?? 0;
+      setFeeCents(feeForPayments);
       // Live bookings only: a cancelled or declined seat is not somebody
       // who arrived with anyone. `bookings` is already embedded in the
       // event read (EVENT_COLUMNS), so the badge costs no extra round trip.
@@ -561,7 +610,15 @@ export default function CheckInScreen() {
     // the RLS gate would refuse it, but the request itself is the leak of
     // intent. `organizer` (the freshly-read answer), not the `isOrganizer`
     // state set above, because state updates are async.
-    if (!organizer) return;
+    //
+    // Fix 2: also gated on there being a fee at all. An assigned-tables
+    // door list with `fee_cents = 0` draws no payment UI whatsoever (see
+    // `renderPerson`'s `feeCents > 0` guard below) -- fetching payments for
+    // it was a pure-cost round trip on every load, and this screen's own
+    // refusal handlers call `load()` again on every refused write anywhere
+    // on the screen, so that extra round trip repeated on every one of
+    // those too.
+    if (!organizer || feeForPayments <= 0) return;
     const payments = await fetchEventPayments(eventId);
 
     // Re-checked after this second round trip for the same reason it is
@@ -772,6 +829,22 @@ export default function CheckInScreen() {
   }
 
   /**
+   * Review Fix 4: puts up the undo banner AND bounds its lifetime to
+   * UNDO_MS, so a tap from a lull ago cannot still read as the tap the host
+   * just made. Only ever one pending expiry at a time, matching `undoFor`
+   * itself being "only ever one" -- a fresh offer replaces whichever expiry
+   * was already ticking down for the row it is displacing.
+   */
+  function offerUndo(next: { profileId: string; name: string; state: AttendanceState }) {
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    setUndoFor(next);
+    undoTimerRef.current = setTimeout(() => {
+      undoTimerRef.current = null;
+      setUndoFor(null);
+    }, UNDO_MS);
+  }
+
+  /**
    * Starts (or restarts) a row's settle window -- see SETTLE_MS.
    *
    * Called at the TAP, not inside the write functions: the window is about
@@ -783,6 +856,12 @@ export default function CheckInScreen() {
    * The section is captured on the FIRST tap of a window and kept for the
    * whole of it, so a second tap that changes the state again (here, then
    * not coming) still cannot move the row mid-gesture.
+   *
+   * `preTapStateRef` is captured the same way, on the same first tap, for
+   * Fix 1's guard below: `PaidControl` is not window-gated (see its
+   * docstring) and opens this same settle window, so a payment-only tap on
+   * someone already `arrived` must not be mistaken, at settle time, for the
+   * tap that put them there.
    */
   function holdRow(person: AttendanceRow) {
     // Only the status sections move rows around. An assigned-tables door
@@ -799,6 +878,9 @@ export default function CheckInScreen() {
         ? current
         : { ...current, [profileId]: sectionOf(person) },
     );
+    if (!(profileId in preTapStateRef.current)) {
+      preTapStateRef.current[profileId] = person.state;
+    }
 
     settlingRef.current[profileId] = setTimeout(() => {
       delete settlingRef.current[profileId];
@@ -813,8 +895,26 @@ export default function CheckInScreen() {
       // determined" (the host corrected themselves) has moved nowhere and
       // needs no undo offered.
       const settled = rowsRef.current.find((r) => r.profile_id === profileId);
-      if (settled && settled.booking_status !== null && settled.state !== null) {
-        setUndoFor({
+      // The state this profile's window OPENED with -- see `preTapStateRef`
+      // above. Cleared here regardless of the outcome below: the window is
+      // over either way, and the next tap starts a fresh one.
+      const preTapState = preTapStateRef.current[profileId] ?? null;
+      delete preTapStateRef.current[profileId];
+      // Fix 1: undo is offered only when THIS window's activity actually
+      // moved attendance -- comparing the settled state against what it was
+      // when the window opened, not merely asking "is it non-null now".
+      // Without this, a payment-only tap on someone already `arrived` (a
+      // routine door pattern: work Here, then work the money) raised an
+      // undo reading "marked here" that the host never did this gesture,
+      // and whose one tap (`clearAttendance`) would destroy a correct
+      // check-in without touching the payment it claimed to be about.
+      if (
+        settled &&
+        settled.booking_status !== null &&
+        settled.state !== null &&
+        settled.state !== preTapState
+      ) {
+        offerUndo({
           profileId,
           name: safeDisplayName(settled.display_name),
           state: settled.state,
@@ -835,6 +935,10 @@ export default function CheckInScreen() {
    */
   function undoMove(target: { profileId: string; name: string }) {
     const person = rows.find((r) => r.profile_id === target.profileId);
+    if (undoTimerRef.current) {
+      clearTimeout(undoTimerRef.current);
+      undoTimerRef.current = null;
+    }
     setUndoFor(null);
     if (!person) return;
     const pending = settlingRef.current[target.profileId];
@@ -930,13 +1034,7 @@ export default function CheckInScreen() {
     return (
       <View key={r.profile_id} style={styles.personRow}>
         <View style={styles.person}>
-          <View style={styles.nameLine}>
-            <Text style={styles.name}>{displayName}</Text>
-            {/* `skill_level` is nullable and null means "not set", which is
-                not a fourth visual state -- SkillLevelPips' own docstring
-                requires the caller to check, so this does. */}
-            {r.skill_level ? <SkillLevelPips level={r.skill_level} /> : null}
-          </View>
+          <Text style={styles.name}>{displayName}</Text>
           {groupSize > 1 || (feeCents > 0 && !isPaid) ? (
             <View style={styles.badges}>
               {/* Who arrived together. The spec keeps booking groups
@@ -1112,9 +1210,13 @@ export default function CheckInScreen() {
         </Text>
       ) : null}
 
-      {paymentsFailed ? (
+      {paymentsFailed && feeCents > 0 ? (
         // Distinct from "nobody has paid", which is what `?? []` would have
         // rendered this as -- and a false statement about people's money.
+        // Gated on `feeCents > 0` (Fix 2): a fee-free event's `load()` never
+        // even issues the payments read (see above), and this screen draws
+        // no payment UI at all for one -- surfacing this line there would be
+        // an error banner for a request that was never made.
         <Text style={styles.help}>Could not load who has paid.</Text>
       ) : null}
     </>
@@ -1369,7 +1471,6 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   person: { gap: space[1], flexShrink: 1 },
-  nameLine: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
   badges: { flexDirection: 'row', alignItems: 'center', gap: space[2], flexWrap: 'wrap' },
   actions: { flexDirection: 'row', alignItems: 'center', gap: space[2], flexWrap: 'wrap' },
   // `colors.textLabel` (5.6:1 on bg), not `textMuted` -- what somebody owes

@@ -162,6 +162,8 @@ const OPEN_EVENT = {
 
 // Must match check-in.tsx's module-scope constant.
 const SETTLE_MS = 4000;
+// Review Fix 4: must match check-in.tsx's own UNDO_MS.
+const UNDO_MS = 10_000;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -994,6 +996,58 @@ it('does not let a walk-in vanish when its write starts after the refetch begins
   expect(screen.getByText(/1 walk-in\b/i)).toBeTruthy();
 });
 
+// Review Minor #5: nothing pinned the deliberate cross-path exceptions --
+// the paid chip and the payments fetch it depends on are gated on the
+// event's FEE, not its seating mode (`set_payment_status` is not
+// seating-scoped), so an assigned-tables door list still needs money
+// collected at the door when the event charges one. Fix 2 tightened the
+// fetch's gate from "organizer" alone to "organizer AND a fee is set" --
+// these two tests pin both sides of that gate on the assigned-tables path.
+describe('cross-path exceptions on the assigned-tables list', () => {
+  it('shows the paid chip on an assigned-tables event that charges a fee', async () => {
+    fetchEvent.mockResolvedValue({ ...EVENT, fee_cents: 1500 });
+    fetchEventAttendance.mockResolvedValue([
+      row({
+        profile_id: 'a',
+        display_name: 'Ann',
+        event_table_id: 'table-1',
+        table_label: 'Table 1',
+        table_position: 1,
+      }),
+    ]);
+    render(<CheckInScreen />);
+
+    expect(
+      await screen.findByRole('button', { name: /^paid: ann$/i }),
+    ).toBeTruthy();
+    expect(fetchEventPayments).toHaveBeenCalledWith('event-1');
+  });
+
+  it('draws no paid chip, and fetches no payments, for a fee-free assigned-tables event', async () => {
+    // `EVENT` itself carries `fee_cents: 0` -- the default every test above
+    // this line already runs on.
+    fetchEvent.mockResolvedValue(EVENT);
+    fetchEventAttendance.mockResolvedValue([
+      row({
+        profile_id: 'a',
+        display_name: 'Ann',
+        event_table_id: 'table-1',
+        table_label: 'Table 1',
+        table_position: 1,
+      }),
+    ]);
+    render(<CheckInScreen />);
+
+    await screen.findByText('Ann');
+    expect(screen.queryByRole('button', { name: /^paid: ann$/i })).toBeNull();
+    // Fix 2: the round trip itself must not happen, not just the UI it
+    // would have fed -- an extra fetch on every load (and every refused
+    // write, which calls `load()` again) of a door list with no payment UI
+    // to show for it.
+    expect(fetchEventPayments).not.toHaveBeenCalled();
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Task 8: the open-seating door list.
 //
@@ -1239,6 +1293,69 @@ describe('the open-seating door list', () => {
     expect(screen.getByText('Still to arrive (2)')).toBeTruthy();
     expect(screen.getByText('Here (0)')).toBeTruthy();
     expect(screen.queryByText(/Ann marked here/)).toBeNull();
+  });
+
+  // Review Fix 4 (Minor, related to Fix 1): `undoFor` used to be cleared
+  // only by tapping it or by a further settle -- so in a lull between
+  // arrivals, a banner from long ago still read as the tap the host just
+  // made, offering a one-tap `clearAttendance` on a check-in that may have
+  // stood, uncontested, for minutes. It now expires on its own.
+  it('expires the undo banner on its own after a while, rather than leaving it offered indefinitely', async () => {
+    fetchEvent.mockResolvedValue(OPEN_EVENT);
+    fetchEventAttendance.mockResolvedValue([
+      row({ profile_id: 'a', display_name: 'Ann' }),
+    ]);
+    render(<CheckInScreen />);
+    const hereAnn = await screen.findByRole('button', { name: /^here: ann$/i });
+
+    vi.useFakeTimers();
+    fireEvent.click(hereAnn);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SETTLE_MS);
+    });
+    expect(screen.getByText(/Ann marked here/)).toBeTruthy();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(UNDO_MS);
+    });
+    vi.useRealTimers();
+
+    expect(screen.queryByText(/Ann marked here/)).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: /^undo: ann$/i }),
+    ).toBeNull();
+    // The banner's expiry is cosmetic only -- it must not touch the
+    // attendance it was offering to undo.
+    expect(hereAnn.getAttribute('aria-pressed')).toBe('true');
+    expect(clearAttendance).not.toHaveBeenCalled();
+  });
+
+  // Review Fix 1 (Important, the dangerous one): a payment-only tap used to
+  // raise undo regardless of whether THIS settle window's tap actually moved
+  // attendance. Ann is already `arrived` (checked in earlier); the host later
+  // taps only the `$` badge. Nothing about her attendance changed in this
+  // window, so no undo should be offered -- an undo here is a mislabeled,
+  // one-tap `clearAttendance` that would destroy a correct check-in and does
+  // not even touch the payment it claims to be about.
+  it('offers no undo for a payment-only tap on someone already arrived', async () => {
+    fetchEvent.mockResolvedValue(OPEN_EVENT);
+    fetchEventAttendance.mockResolvedValue([
+      row({ profile_id: 'a', display_name: 'Ann', state: 'arrived' }),
+    ]);
+    render(<CheckInScreen />);
+    const paidAnn = await screen.findByRole('button', { name: /^paid: ann$/i });
+
+    vi.useFakeTimers();
+    fireEvent.click(paidAnn);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SETTLE_MS);
+    });
+    vi.useRealTimers();
+
+    expect(screen.queryByText(/Undo/)).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: /^undo: ann$/i }),
+    ).toBeNull();
   });
 
   it('rolls the paid toggle back and says why when the payment write is refused', async () => {
