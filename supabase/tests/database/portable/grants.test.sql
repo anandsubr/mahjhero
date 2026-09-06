@@ -253,7 +253,7 @@ select ok(
 select ok(
   has_function_privilege(
     'authenticated',
-    'public.update_event(uuid, text, uuid, text, date, time, int, boolean, int, int, public.game_mode)',
+    'public.update_event(uuid, text, uuid, text, date, time, int, boolean, int, int, public.game_mode, public.seating_mode, int, boolean)',
     'EXECUTE'),
   'authenticated can still execute update_event'
 );
@@ -331,7 +331,7 @@ select ok(
 select ok(
   has_function_privilege(
     'authenticated',
-    'public.update_event_series(uuid, text, uuid, text, time, int, int, date, boolean, boolean, boolean, int, int, public.game_mode)',
+    'public.update_event_series(uuid, text, uuid, text, time, int, int, date, boolean, boolean, boolean, int, int, public.game_mode, public.seating_mode, int, boolean)',
     'EXECUTE'),
   'authenticated can still execute update_event_series'
 );
@@ -702,13 +702,13 @@ select is(
        'public.archive_venue(uuid)',
        'public.search_venues(uuid, text)',
        'public.create_event(uuid, text, uuid, text, date, time, int, int, boolean, int, int, public.game_mode, public.seating_mode, int)',
-       'public.update_event(uuid, text, uuid, text, date, time, int, boolean, int, int, public.game_mode)',
+       'public.update_event(uuid, text, uuid, text, date, time, int, boolean, int, int, public.game_mode, public.seating_mode, int, boolean)',
        'public.cancel_event(uuid)',
        'public.add_event_table(uuid)',
        'public.update_event_table(uuid, text, public.skill_tier)',
        'public.remove_event_table(uuid)',
        'public.create_event_series(uuid, text, uuid, text, public.series_frequency, smallint, smallint, time, int, int, date, date, boolean, int, int, public.game_mode, public.seating_mode, int)',
-       'public.update_event_series(uuid, text, uuid, text, time, int, int, date, boolean, boolean, boolean, int, int, public.game_mode)',
+       'public.update_event_series(uuid, text, uuid, text, time, int, int, date, boolean, boolean, boolean, int, int, public.game_mode, public.seating_mode, int, boolean)',
        'public.end_event_series(uuid, boolean)',
        'public.reset_event_to_series(uuid)',
        'public.is_booking_group_member(uuid)',
@@ -796,13 +796,13 @@ select is(
          'public.archive_venue(uuid)',
          'public.search_venues(uuid, text)',
          'public.create_event(uuid, text, uuid, text, date, time, int, int, boolean, int, int, public.game_mode, public.seating_mode, int)',
-         'public.update_event(uuid, text, uuid, text, date, time, int, boolean, int, int, public.game_mode)',
+         'public.update_event(uuid, text, uuid, text, date, time, int, boolean, int, int, public.game_mode, public.seating_mode, int, boolean)',
          'public.cancel_event(uuid)',
          'public.add_event_table(uuid)',
          'public.update_event_table(uuid, text, public.skill_tier)',
          'public.remove_event_table(uuid)',
          'public.create_event_series(uuid, text, uuid, text, public.series_frequency, smallint, smallint, time, int, int, date, date, boolean, int, int, public.game_mode, public.seating_mode, int)',
-         'public.update_event_series(uuid, text, uuid, text, time, int, int, date, boolean, boolean, boolean, int, int, public.game_mode)',
+         'public.update_event_series(uuid, text, uuid, text, time, int, int, date, boolean, boolean, boolean, int, int, public.game_mode, public.seating_mode, int, boolean)',
          'public.end_event_series(uuid, boolean)',
          'public.reset_event_to_series(uuid)',
          'public.is_booking_group_member(uuid)',
