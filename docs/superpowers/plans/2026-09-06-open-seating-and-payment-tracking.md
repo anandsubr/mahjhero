@@ -641,6 +641,69 @@ the stale overridden value in place."
 
 ---
 
+### Task 4A: Make waitlist promotion uncapped-aware
+
+**Added during execution.** Task 2's mandated audit of `event_free_seats` callers found this, and Task 4 is what makes it reachable.
+
+**Files:**
+- Create: `supabase/migrations/20260906135000_waitlist_uncapped.sql`
+- Create: `supabase/tests/database/fixtures/uncapped_waitlist.test.sql`
+
+**Interfaces:**
+- Consumes: `event_is_capped` (Task 2), capacity editing (Task 4).
+- Produces: a `promote_waitlist` and `accept_promotion_offer` that treat an uncapped event as having unlimited room.
+
+**The bug this closes.** `event_free_seats` is `greatest(0, capacity − confirmed − held)`, and `event_capacity` now returns 0 for an uncapped open-seating event. So `event_free_seats` reports **0 free seats forever** on an event that actually has unlimited room. Two callers trust that number:
+
+- `promote_waitlist` (current definition: `supabase/migrations/20260825090000_promote_waitlist_stops_regenerating_lapsed_offers.sql:89`) exits its loop on `free <= 0`, so it would promote nobody.
+- `accept_promotion_offer` (`supabase/migrations/20260825100000_accept_promotion_offer_capacity_guard.sql:89`) computes `least(o.offered_seat_count, event_free_seats(o.event_id))`, which clamps every offer to zero seats.
+
+This was unreachable when Task 2 shipped, because an uncapped event can never *newly* waitlist anyone. Task 4 makes it reachable: an organizer caps an event at 20, five people waitlist, the organizer then clears the cap — and those five are stranded permanently. Switching a full `assigned_tables` event with a waitlist over to uncapped open seating does the same.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `supabase/tests/database/fixtures/uncapped_waitlist.test.sql`. Seed an `open_seating` event with `capacity = 2`, confirm two bookings, and waitlist a third person. Then clear the cap (`update public.events set capacity = null where id = ...` — direct SQL is fine here; this test is about the promotion functions, not the RPC) and assert:
+
+1. `public.promote_waitlist(<event>)` promotes the waitlisted person — after the call their booking `status` is `'confirmed'` (or an offer exists for them, matching whatever this codebase's promotion contract actually is; read `promote_waitlist` first and assert its real observable outcome, not an assumed one).
+2. The same event with `capacity = 2` restored and both seats taken still does **not** promote — the capped path is unchanged.
+
+- [ ] **Step 2: Run it to confirm it fails**
+
+Run: `npx supabase test db --local`
+Expected: the uncapped promotion assertion fails — nobody is promoted, because `event_free_seats` reports 0.
+
+- [ ] **Step 3: Read both functions before changing either**
+
+Read `20260825090000_promote_waitlist_stops_regenerating_lapsed_offers.sql:89` onward and `20260825100000_accept_promotion_offer_capacity_guard.sql:89` onward in full. Both are subtle and both have accumulated deliberate fixes (the filenames say so). **Copy each body verbatim into your new migration and change only what the semantics below require** — do not re-derive or tidy either function.
+
+- [ ] **Step 4: Write the migration**
+
+Create `supabase/migrations/20260906135000_waitlist_uncapped.sql` with a `create or replace` of both functions (signatures unchanged, so `create or replace`, not drop-and-recreate). Required semantics:
+
+- **`promote_waitlist`**: ask `public.event_is_capped(target_event)` once, up front. When the event is **capped**, behavior is byte-for-byte what it is today. When **uncapped**, the loop must not terminate on `free <= 0` — there is unlimited room, so every waitlisted group is promotable, and any place the current body uses `free` to size a promotion must use the group's own requested size instead.
+- **`accept_promotion_offer`**: the `least(o.offered_seat_count, event_free_seats(o.event_id))` clamp must yield `o.offered_seat_count` when the event is uncapped, and be exactly as it is today when capped.
+
+Both functions are internal; restate their ACLs exactly as their current definitions do (check whether each is granted to `authenticated` or to nobody, and preserve that — do not widen either).
+
+- [ ] **Step 5: Run the tests**
+
+Run: `npx supabase db reset --local && npx supabase test db --local`
+Expected: the new fixture passes, and **`waitlist_promotion.test.sql` (41 assertions) and `bookings_commit.test.sql` (44) still pass** — they are the regression surface for this edit. Report their counts.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add supabase/migrations/20260906135000_waitlist_uncapped.sql supabase/tests/database/fixtures/uncapped_waitlist.test.sql
+git commit -m "fix(db): promote waitlisted players on uncapped events
+
+event_free_seats reports 0 forever for an uncapped event, so
+promote_waitlist would strand anyone already waitlisted when an
+organizer clears a cap, and accept_promotion_offer would clamp their
+offer to zero seats. Both now ask event_is_capped first."
+```
+
+---
+
 ### Task 5: The `event_payments` table
 
 **Files:**
