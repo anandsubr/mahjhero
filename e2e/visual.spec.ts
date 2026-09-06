@@ -122,7 +122,20 @@ async function captureScreen(page: Page, vp: Viewport, name: string) {
 
   expect(overflow <= 0, `Screen "${name}" never stopped overflowing (overflow: ${overflow}px)`).toBe(true);
 
-  await expect(page).toHaveScreenshot(name);
+  await expect(page).toHaveScreenshot(name, {
+    // The club-tile glyph (components/ThreadAvatar.tsx's `asTile` branch,
+    // testID="thread-avatar-club-tile") renders with genuine run-to-run
+    // sub-pixel jitter, independent of any real content change — confirmed
+    // by regenerating a baseline fresh and immediately re-running against
+    // it, same session, no code change in between: still failed most of
+    // the time at this suite's maxDiffPixels budget, isolated entirely to
+    // that one glyph in every diff image (2026-09-05,
+    // feat/invite-only-games). Masking it here is the fix
+    // maxDiffPixels's own comment asks for, rather than a wider tolerance
+    // that would blunt this suite everywhere. A no-op on any screen that
+    // doesn't render the tile.
+    mask: [page.locator('[data-testid="thread-avatar-club-tile"]')],
+  });
 }
 
 test.describe('signed out', () => {
