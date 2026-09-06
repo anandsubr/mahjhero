@@ -180,10 +180,17 @@ begin
 
     select c.timezone into club_tz from public.clubs c where c.id = ev.club_id;
 
+    -- What the host currently sees on the club's wall clock. Whichever of
+    -- the three calendar values this edit did not name is taken from here,
+    -- so "move this week to Thursday" keeps 7pm rather than keeping an
+    -- instant that reads as 6pm on the other side of a DST transition.
     local_start := ev.starts_at at time zone club_tz;
 
     eff_date := coalesce(new_date, local_start::date);
     eff_time := coalesce(new_start_time, local_start::time);
+    -- Elapsed minutes, not wall-clock difference: a game that ran across a
+    -- transition is three hours long in both readings, and the interval
+    -- between the two stored instants is the one that is true.
     eff_duration := coalesce(
       new_duration_minutes,
       (extract(epoch from (ev.ends_at - ev.starts_at)) / 60)::int);
@@ -203,6 +210,20 @@ begin
     raise exception 'an event must end after it starts' using errcode = '23514';
   end if;
 
+  -- The new check, and note what it is conditioned on. It refuses to MOVE a
+  -- game into the past; it does not refuse to edit a game that is already
+  -- there. A host correcting the name or the notes on last Tuesday's game is
+  -- editing history, which this function has always allowed and which
+  -- rejecting `eff_starts < now()` outright would break -- an event's own
+  -- stored instant is the one thing it is guaranteed to have.
+  --
+  -- One acknowledged edge: for an already-past event inside a DST fall-back's
+  -- repeated local hour, a duration-only edit round-trips its wall clock to
+  -- the OTHER of the two instants, which is `distinct from` the stored one
+  -- and in the past, so it is refused. That is the same instant-moving edit
+  -- the check exists to stop, arriving by an unlucky door; the alternative
+  -- (dropping the `distinct from` half) would refuse every edit to every past
+  -- game, which is far worse.
   if eff_starts is distinct from ev.starts_at and eff_starts < now() then
     raise exception 'that start time has already passed' using errcode = '23514';
   end if;
@@ -210,6 +231,9 @@ begin
   next_overrides := ev.overrides;
 
   if ev.series_id is not null then
+    -- array_append, not `||` with a text literal on the right: that resolves
+    -- to the anyarray-concatenation overload and fails with "malformed array
+    -- literal" (22P02). See 20260823020000.
     if trim(eff_title) is distinct from trim(ev.title) then
       next_overrides := array_append(next_overrides, 'title');
     end if;
@@ -346,6 +370,13 @@ begin
     end if;
   end if;
 
+  -- Synchronously, in the same transaction, and for THIS series only. A host
+  -- who creates a series and sees no games has watched the feature fail,
+  -- whatever happens at 3am -- and materialize_one_series lets the error
+  -- propagate, so a failure rolls the creation back with it rather than
+  -- leaving an empty series behind a success message. The sweep is for cron:
+  -- calling it here would make one host's request materialize every club's
+  -- series, and would swallow the failure of the very series being created.
   perform public.materialize_one_series(new_id);
 
   return new_id;
