@@ -435,6 +435,8 @@ describe('createEvent', () => {
       fee_cents: 0,
       min_spend_cents: 0,
       event_game_mode: 'open_play',
+      event_seating_mode: 'assigned_tables',
+      capacity_limit: null,
     });
   });
 
@@ -481,6 +483,20 @@ describe('createEvent', () => {
       expect.objectContaining({ fee_cents: 1500, min_spend_cents: 2000 }),
     );
   });
+
+  // Task 7: `event_seating_mode` and `capacity_limit` are `create_event`'s
+  // real argument names (supabase/migrations/20260906120000). Omitting
+  // `seatingMode`/`capacity` sends the RPC's own defaults explicitly
+  // ('assigned_tables' / null) -- see the test above -- so this only needs
+  // to pin what a caller who DOES set them gets sent.
+  it('sends event_seating_mode and capacity_limit on create', async () => {
+    rpcMock.mockResolvedValueOnce({ data: 'event-1', error: null });
+    await createEvent({ ...validInput, seatingMode: 'open_seating', capacity: 40 });
+    expect(rpcMock).toHaveBeenCalledWith(
+      'create_event',
+      expect.objectContaining({ event_seating_mode: 'open_seating', capacity_limit: 40 }),
+    );
+  });
 });
 
 describe('updateEvent', () => {
@@ -517,6 +533,9 @@ describe('updateEvent', () => {
       new_fee_cents: null,
       new_min_spend_cents: null,
       new_game_mode: null,
+      new_seating_mode: null,
+      new_capacity: null,
+      clear_capacity: false,
     });
   });
 
@@ -536,6 +555,9 @@ describe('updateEvent', () => {
       new_fee_cents: null,
       new_min_spend_cents: null,
       new_game_mode: null,
+      new_seating_mode: null,
+      new_capacity: null,
+      clear_capacity: false,
     });
   });
 
@@ -557,6 +579,29 @@ describe('updateEvent', () => {
     expect(rpcMock).toHaveBeenCalledWith(
       'update_event',
       expect.objectContaining({ new_fee_cents: 1500, new_min_spend_cents: 2000 }),
+    );
+  });
+
+  // Task 7: `new_seating_mode` and `new_capacity` are `update_event`'s real
+  // argument names (supabase/migrations/20260906130000).
+  it('sends new_seating_mode and new_capacity on update', async () => {
+    rpcMock.mockResolvedValueOnce({ data: true, error: null });
+    await updateEvent('event-1', { seatingMode: 'open_seating', capacity: 30 });
+    expect(rpcMock).toHaveBeenCalledWith(
+      'update_event',
+      expect.objectContaining({ new_seating_mode: 'open_seating', new_capacity: 30 }),
+    );
+  });
+
+  // `clearCapacity` is the distinct "make it uncapped" signal -- `capacity:
+  // null` alone means "leave this alone", matching every other field here.
+  // Mirrors updateEventSeries's clearEndsOn tests below.
+  it('sends clear_capacity: true, independent of new_capacity', async () => {
+    rpcMock.mockResolvedValueOnce({ data: true, error: null });
+    await updateEvent('event-1', { clearCapacity: true });
+    expect(rpcMock).toHaveBeenCalledWith(
+      'update_event',
+      expect.objectContaining({ new_capacity: null, clear_capacity: true }),
     );
   });
 });
@@ -587,6 +632,9 @@ describe('updateEventSeries', () => {
       new_fee_cents: null,
       new_min_spend_cents: null,
       new_game_mode: null,
+      new_seating_mode: null,
+      new_capacity: null,
+      clear_capacity: false,
     });
   });
 
@@ -616,6 +664,9 @@ describe('updateEventSeries', () => {
       new_fee_cents: null,
       new_min_spend_cents: null,
       new_game_mode: null,
+      new_seating_mode: null,
+      new_capacity: null,
+      clear_capacity: false,
     });
   });
 
@@ -637,6 +688,28 @@ describe('updateEventSeries', () => {
     expect(rpcMock).toHaveBeenCalledWith(
       'update_event_series',
       expect.objectContaining({ new_fee_cents: 1500, new_min_spend_cents: 2000 }),
+    );
+  });
+
+  // Task 7: `new_seating_mode` and `new_capacity` are `update_event_series`'s
+  // real argument names (supabase/migrations/20260906130000).
+  it('sends new_seating_mode and new_capacity on update series', async () => {
+    rpcMock.mockResolvedValueOnce({ data: true, error: null });
+    await updateEventSeries('series-1', { seatingMode: 'open_seating', capacity: 50 });
+    expect(rpcMock).toHaveBeenCalledWith(
+      'update_event_series',
+      expect.objectContaining({ new_seating_mode: 'open_seating', new_capacity: 50 }),
+    );
+  });
+
+  // `clearCapacity` mirrors `clearEndsOn`/`endsOn` above: the distinct "make
+  // it uncapped" signal, since `capacity: null` alone means "leave alone".
+  it('sends clear_capacity: true on update series, independent of new_capacity', async () => {
+    rpcMock.mockResolvedValueOnce({ data: true, error: null });
+    await updateEventSeries('series-1', { clearCapacity: true });
+    expect(rpcMock).toHaveBeenCalledWith(
+      'update_event_series',
+      expect.objectContaining({ new_capacity: null, clear_capacity: true }),
     );
   });
 });
@@ -702,6 +775,28 @@ describe('createEventSeries', () => {
         min_spend_cents: 2000,
         series_game_mode: 'open_play',
       }),
+    );
+  });
+
+  // Task 7: `series_seating_mode` and `capacity_limit` are
+  // `create_event_series`'s real argument names (supabase/migrations/
+  // 20260906120000). Omitting `seatingMode`/`capacity` sends the RPC's own
+  // defaults explicitly ('assigned_tables' / null), mirroring `createEvent`.
+  it('sends series_seating_mode and capacity_limit on create series', async () => {
+    rpcMock.mockResolvedValueOnce({ data: 'series-1', error: null });
+    await createEventSeries({ ...validInput, seatingMode: 'open_seating', capacity: 40 });
+    expect(rpcMock).toHaveBeenCalledWith(
+      'create_event_series',
+      expect.objectContaining({ series_seating_mode: 'open_seating', capacity_limit: 40 }),
+    );
+  });
+
+  it('defaults series_seating_mode/capacity_limit when omitted', async () => {
+    rpcMock.mockResolvedValueOnce({ data: 'series-1', error: null });
+    await createEventSeries(validInput);
+    expect(rpcMock).toHaveBeenCalledWith(
+      'create_event_series',
+      expect.objectContaining({ series_seating_mode: 'assigned_tables', capacity_limit: null }),
     );
   });
 });
@@ -994,6 +1089,22 @@ describe('deliberate refusals are reported as refusals, not as network failures'
       updateEvent('event-1', { feeCents: -100 }),
     ).resolves.toEqual({
       error: 'The cost to play cannot be negative.',
+    });
+  });
+
+  it('updateEvent: a capacity below one says so, not that the connection failed', async () => {
+    // Task 7's addendum: create_event/update_event/create_event_series/
+    // update_event_series raise 'capacity must be at least one'
+    // (supabase/migrations/20260906120000, 20260906130000) — this only
+    // became reachable through the client once updateEvent started sending
+    // `capacity` at all.
+    rpcMock.mockResolvedValueOnce({
+      error: { code: '23514', message: 'capacity must be at least one' },
+    });
+    await expect(
+      updateEvent('event-1', { capacity: 0 }),
+    ).resolves.toEqual({
+      error: 'Capacity must be at least one player.',
     });
   });
 

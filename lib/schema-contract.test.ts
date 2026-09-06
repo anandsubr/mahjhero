@@ -80,6 +80,7 @@ import {
   updateEventSeries,
   updateEventTable,
 } from './events';
+import { fetchEventPayments, setPaymentStatus } from './payments';
 import { BROADCAST_COLUMNS } from './broadcasts';
 import type { Broadcast } from './broadcasts';
 import {
@@ -785,6 +786,30 @@ describe.runIf(reachable || required)(
             gameMode: 'open_play',
           }),
       },
+      // Same RPC, but exercising `event_seating_mode` and `capacity_limit` --
+      // Task 3's trailing arguments (supabase/migrations/20260906120000), not
+      // sent by the case above. A PGRST202 here means the client and the
+      // deployed create_event have drifted on one of these two names.
+      {
+        fnName: 'create_event',
+        invoke: () =>
+          createEvent({
+            clubId: DUMMY_UUID,
+            title: 'Tuesday Mahjong',
+            venueId: DUMMY_UUID,
+            notes: 'bring snacks',
+            date: '2027-09-07',
+            startTime: '19:00',
+            durationMinutes: 180,
+            tableCount: 2,
+            checkInRequired: false,
+            feeCents: 0,
+            minSpendCents: 0,
+            gameMode: 'open_play',
+            seatingMode: 'open_seating',
+            capacity: 40,
+          }),
+      },
       {
         fnName: 'update_event',
         invoke: () =>
@@ -795,6 +820,29 @@ describe.runIf(reachable || required)(
             date: '2027-09-07',
             startTime: '19:00',
             durationMinutes: 180,
+          }),
+      },
+      // Same RPC, but exercising `new_seating_mode` and `new_capacity` --
+      // Task 4's trailing arguments (supabase/migrations/20260906130000).
+      {
+        fnName: 'update_event',
+        invoke: () =>
+          updateEvent(DUMMY_UUID, {
+            seatingMode: 'open_seating',
+            capacity: 30,
+          }),
+      },
+      // Same RPC, but exercising `clear_capacity` -- distinct from
+      // `new_capacity` above because `capacity`'s own null already means
+      // uncapped, so "not supplied" and "make uncapped" need different
+      // signals. A PGRST202 here would mean the client and the deployed
+      // update_event have drifted on this specific parameter, which neither
+      // case above (which never sends it) can catch.
+      {
+        fnName: 'update_event',
+        invoke: () =>
+          updateEvent(DUMMY_UUID, {
+            clearCapacity: true,
           }),
       },
       { fnName: 'cancel_event', invoke: () => cancelEvent(DUMMY_UUID) },
@@ -827,6 +875,33 @@ describe.runIf(reachable || required)(
             gameMode: 'open_play',
           }),
       },
+      // Same RPC, but exercising `series_seating_mode` and `capacity_limit`
+      // -- Task 3's trailing arguments (supabase/migrations/20260906120000),
+      // not sent by the case above.
+      {
+        fnName: 'create_event_series',
+        invoke: () =>
+          createEventSeries({
+            clubId: DUMMY_UUID,
+            title: 'Weekly game',
+            venueId: DUMMY_UUID,
+            notes: '',
+            frequency: 'weekly',
+            weekday: 2,
+            nthWeek: null,
+            startTime: '19:00:00',
+            durationMinutes: 180,
+            tableCount: 1,
+            startsOn: '2027-01-01',
+            endsOn: null,
+            checkInRequired: false,
+            feeCents: 0,
+            minSpendCents: 0,
+            gameMode: 'open_play',
+            seatingMode: 'open_seating',
+            capacity: 40,
+          }),
+      },
       {
         fnName: 'update_event_series',
         invoke: () =>
@@ -853,9 +928,40 @@ describe.runIf(reachable || required)(
             clearEndsOn: true,
           }),
       },
+      // Same RPC, but exercising `new_seating_mode` and `new_capacity` --
+      // Task 4's trailing arguments (supabase/migrations/20260906130000).
+      {
+        fnName: 'update_event_series',
+        invoke: () =>
+          updateEventSeries(DUMMY_UUID, {
+            seatingMode: 'open_seating',
+            capacity: 30,
+          }),
+      },
+      // Same RPC, but exercising `clear_capacity` -- see update_event's
+      // identical case above for why this is a distinct signal from
+      // `new_capacity`.
+      {
+        fnName: 'update_event_series',
+        invoke: () =>
+          updateEventSeries(DUMMY_UUID, {
+            clearCapacity: true,
+          }),
+      },
       {
         fnName: 'end_event_series',
         invoke: () => endEventSeries(DUMMY_UUID, true),
+      },
+      // lib/payments.ts (Task 7) -- both organizer-only (supabase/migrations/
+      // 20260906150000_payment_mutations.sql).
+      {
+        fnName: 'set_payment_status',
+        invoke: () =>
+          setPaymentStatus({ eventId: DUMMY_UUID, profileId: DUMMY_UUID, isPaid: true }),
+      },
+      {
+        fnName: 'event_payment_status',
+        invoke: () => fetchEventPayments(DUMMY_UUID),
       },
     ];
 

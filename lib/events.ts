@@ -552,6 +552,15 @@ const RPC_ERROR_MESSAGES: { contains: string; message: string; codes: string[] }
     codes: ['23514'],
   },
   {
+    // create_event/create_event_series/update_event/update_event_series
+    // (supabase/migrations/20260906120000, 20260906130000) -- Task 3's
+    // capacity_limit/new_capacity argument. Only reachable once the client
+    // actually sends a capacity, which this task is the first to do.
+    contains: 'capacity must be at least one',
+    message: 'Capacity must be at least one player.',
+    codes: ['23514'],
+  },
+  {
     contains: 'an event must end after it starts',
     message: 'The game must end after it starts.',
     codes: ['23514'],
@@ -873,6 +882,21 @@ export async function createEvent(input: {
    *  default_game_mode by the caller; the RPC itself also falls back to
    *  the club's default if this is somehow omitted. */
   gameMode: GameMode;
+  /**
+   * Whether this game seats players at assigned tables or lets them roam --
+   * Task 3. Maps onto `create_event`'s `event_seating_mode` argument
+   * (supabase/migrations/20260906120000), which itself defaults to
+   * 'assigned_tables' server-side, so omitting this keeps today's behaviour.
+   */
+  seatingMode?: 'assigned_tables' | 'open_seating';
+  /**
+   * A cap on confirmed players, independent of table capacity. `null` or
+   * omitted means uncapped. Maps onto `create_event`'s `capacity_limit`
+   * argument -- named differently from the column it seeds
+   * (`events.capacity`) because a parameter named `capacity` would shadow
+   * the `event_tables.capacity` column the function also references.
+   */
+  capacity?: number | null;
 }): Promise<{ eventId: string | null; error: string | null }> {
   try {
     if (input.title.trim().length === 0) {
@@ -891,6 +915,8 @@ export async function createEvent(input: {
       fee_cents: input.feeCents,
       min_spend_cents: input.minSpendCents,
       event_game_mode: input.gameMode,
+      event_seating_mode: input.seatingMode ?? 'assigned_tables',
+      capacity_limit: input.capacity ?? null,
     });
 
     if (error || !data) {
@@ -942,6 +968,24 @@ export async function updateEvent(
     minSpendCents?: number | null;
     /** Null/omitted means "leave this alone". */
     gameMode?: GameMode | null;
+    /** Null/omitted means "leave this alone". */
+    seatingMode?: 'assigned_tables' | 'open_seating' | null;
+    /**
+     * Null/omitted means "leave this alone" -- matching every other field
+     * here. This cannot also express "make it uncapped": `capacity`'s own
+     * null already means uncapped, so a null here is ambiguous between "no
+     * change" and "clear it". `clearCapacity` below is the distinct signal
+     * for the latter, the same shape `clearEndsOn` already uses opposite
+     * `endsOn` on `updateEventSeries`.
+     */
+    capacity?: number | null;
+    /**
+     * Un-sets an already-set capacity, so the event goes uncapped again.
+     * `capacity: null` cannot express this -- see `capacity` above. Takes
+     * precedence over `capacity` if a caller somehow sends both (see
+     * supabase/migrations/20260906130000's `eff_capacity` resolution).
+     */
+    clearCapacity?: boolean;
   },
 ): Promise<{ error: string | null }> {
   try {
@@ -957,6 +1001,9 @@ export async function updateEvent(
       new_fee_cents: input.feeCents ?? null,
       new_min_spend_cents: input.minSpendCents ?? null,
       new_game_mode: input.gameMode ?? null,
+      new_seating_mode: input.seatingMode ?? null,
+      new_capacity: input.capacity ?? null,
+      clear_capacity: input.clearCapacity ?? false,
     });
 
     if (error) {
@@ -1121,6 +1168,21 @@ export async function createEventSeries(input: {
   feeCents: number;
   minSpendCents: number;
   gameMode: GameMode;
+  /**
+   * Whether every occurrence this series materializes seats players at
+   * assigned tables or lets them roam -- Task 3. Maps onto
+   * `create_event_series`'s `series_seating_mode` argument (supabase/
+   * migrations/20260906120000), which defaults to 'assigned_tables'
+   * server-side, same as `createEvent`'s `seatingMode`.
+   */
+  seatingMode?: 'assigned_tables' | 'open_seating';
+  /**
+   * A cap on confirmed players per occurrence, independent of table
+   * capacity. `null` or omitted means uncapped. Maps onto
+   * `create_event_series`'s `capacity_limit` argument -- see `createEvent`'s
+   * `capacity` for why it is not named `capacity` server-side.
+   */
+  capacity?: number | null;
 }): Promise<{ seriesId: string | null; error: string | null }> {
   try {
     if (input.title.trim().length === 0) {
@@ -1143,6 +1205,8 @@ export async function createEventSeries(input: {
       fee_cents: input.feeCents,
       min_spend_cents: input.minSpendCents,
       series_game_mode: input.gameMode,
+      series_seating_mode: input.seatingMode ?? 'assigned_tables',
+      capacity_limit: input.capacity ?? null,
     });
 
     if (error || !data) {
@@ -1191,6 +1255,22 @@ export async function updateEventSeries(
     feeCents?: number | null;
     minSpendCents?: number | null;
     gameMode?: GameMode | null;
+    /** Null/omitted means "leave this alone". */
+    seatingMode?: 'assigned_tables' | 'open_seating' | null;
+    /**
+     * Null/omitted means "leave this alone" -- cannot also mean "make it
+     * uncapped", the same reason `updateEvent`'s `capacity` cannot: the
+     * column's own null already means uncapped. `clearCapacity` below is the
+     * distinct signal, mirroring `clearEndsOn`/`endsOn` above.
+     */
+    capacity?: number | null;
+    /**
+     * Un-sets an already-set capacity, so the series (and its future,
+     * unoverridden occurrences) goes uncapped again. Takes precedence over
+     * `capacity` if a caller somehow sends both, the same as `clearEndsOn`
+     * over `endsOn`.
+     */
+    clearCapacity?: boolean;
   },
 ): Promise<{ error: string | null }> {
   try {
@@ -1209,6 +1289,9 @@ export async function updateEventSeries(
       new_fee_cents: input.feeCents ?? null,
       new_min_spend_cents: input.minSpendCents ?? null,
       new_game_mode: input.gameMode ?? null,
+      new_seating_mode: input.seatingMode ?? null,
+      new_capacity: input.capacity ?? null,
+      clear_capacity: input.clearCapacity ?? false,
     });
 
     if (error) {
