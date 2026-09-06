@@ -256,7 +256,7 @@
     gap: 22px;
   }
   .feature-card { display: flex; flex-direction: column; gap: 13.2px; }
-  .feature-icon { height: 40px; display: flex; align-items: center; }
+  .feature-icon { min-height: 40px; height: auto; display: flex; align-items: flex-start; }
   .feature-title { font-size: 22px; }
   .feature-body { font-size: 16px; line-height: 1.55; color: var(--text-muted); }
   .feature-badge {
@@ -357,8 +357,9 @@
       <h1 class="hero-heading">One cancellation shouldn&rsquo;t cancel the whole table.</h1>
       <p class="hero-body">
         MahjHero is the seat-by-seat scheduler for American Mahjong clubs and
-        private games &mdash; book a seat next to a friend, get promoted off
-        the waitlist the moment one opens, and know who&rsquo;s actually coming.
+        private games &mdash; book a seat next to a friend, get offered the
+        next open seat automatically, in queue order, and know who&rsquo;s
+        actually coming.
       </p>
 
       <div class="hero-actions">
@@ -447,17 +448,16 @@
             <h3 class="role-panel-heading">Find a seat, or hold one for a friend</h3>
             <ul class="role-panel-list">
               <li>Book a seat, or book yourself and a specific friend together &mdash; no other app does this.</li>
-              <li>Waitlisted? You&rsquo;re promoted automatically the moment a seat opens, in order.</li>
+              <li>Waitlisted? The next open seat is offered to you automatically, in order &mdash; you just have to say yes.</li>
               <li>Check in when you arrive &mdash; the host&rsquo;s door list updates itself.</li>
             </ul>
           </div>
           <div class="role-mock card">
-            <div class="mock-header">Table 2 &middot; 4 seats</div>
+            <div class="mock-header">Table 2 &middot; 4 seats &middot; full</div>
             <div class="seat-grid">
               <div class="seat seat-filled">Priya</div>
               <div class="seat seat-you">You + Jamie</div>
               <div class="seat seat-filled">Sam</div>
-              <div class="seat seat-open">Open</div>
             </div>
           </div>
         </div>
@@ -508,7 +508,7 @@
             </div>
           </div>
           <h3 class="feature-title">Scoring &amp; club leaderboard</h3>
-          <p class="feature-body">Record points per round and keep an all-time club ranking &mdash; every player confirms before it&rsquo;s official.</p>
+          <p class="feature-body">Record points per round and keep an all-time club ranking.</p>
         </div>
       </div>
     </div>
