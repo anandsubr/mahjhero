@@ -18,6 +18,7 @@ import {
   frequencyLabel,
   nextOccurrences,
   parseDollarsToCents,
+  type SeatingMode,
   type SeriesFrequency,
 } from '../../../../lib/events';
 import { useSession } from '../../../../lib/session';
@@ -34,6 +35,22 @@ const REPEATS: { value: Repeat; label: string }[] = [
 ];
 
 const DURATIONS = [120, 180, 240];
+
+/**
+ * The optional capacity field's parse boundary -- mirrors lib/events.ts's
+ * own `parseDollarsToCents` in shape (blank text in, a clean value or
+ * `null` out) but is not a currency value and is not exported from there,
+ * since only this screen and its edit-form twin need it. Blank means "no
+ * limit", matching `createEvent`'s own `capacity: null` convention; a
+ * non-numeric value degrades to the same "no limit" rather than silently
+ * sending `NaN` to the RPC.
+ */
+function parseCapacity(text: string): number | null {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return null;
+  const n = Number(trimmed);
+  return Number.isFinite(n) ? Math.trunc(n) : null;
+}
 
 /**
  * The duration/table-count/repeat rows below are chip-style selectors where
@@ -186,6 +203,13 @@ export default function NewEventScreen() {
   const [startTime, setStartTime] = useState('19:00');
   const [duration, setDuration] = useState(180);
   const [tableCount, setTableCount] = useState(1);
+  // Defaults to the app's existing behaviour -- every event before this
+  // task shipped assigned tables, and `create_event`/`create_event_series`
+  // themselves default here too, so an unmounted-then-remounted form (or a
+  // test that never touches this control) still sends exactly what it
+  // always did.
+  const [seatingMode, setSeatingMode] = useState<SeatingMode>('assigned_tables');
+  const [capacityText, setCapacityText] = useState('');
   const [repeat, setRepeat] = useState<Repeat>('never');
   const [endsOn, setEndsOn] = useState('');
   // Off by default -- a club running two tables of eight does not need a
@@ -289,11 +313,18 @@ export default function NewEventScreen() {
         date,
         startTime,
         durationMinutes: duration,
-        tableCount,
+        // Open seating materializes no tables at all -- who turns up is not
+        // known until the door, so there is nothing to pre-assign. The chip
+        // above is what decides this; `tableCount` itself still reflects
+        // whatever the (now hidden) tables picker last held, which this
+        // must NOT send when open seating is chosen.
+        tableCount: seatingMode === 'open_seating' ? 0 : tableCount,
         checkInRequired,
         gameMode,
         feeCents: parseDollarsToCents(feeText),
         minSpendCents: parseDollarsToCents(minSpendText),
+        seatingMode,
+        capacity: parseCapacity(capacityText),
       });
       setSaving(false);
       if (result.error) {
@@ -319,13 +350,17 @@ export default function NewEventScreen() {
       nthWeek: repeat === 'monthly_nth_weekday' ? nthWeek : null,
       startTime,
       durationMinutes: duration,
-      tableCount,
+      // Same reasoning as the one-off path above -- an open-seating series
+      // materializes zero tables for every occurrence it produces.
+      tableCount: seatingMode === 'open_seating' ? 0 : tableCount,
       startsOn: date,
       endsOn: endsOn.length > 0 ? endsOn : null,
       checkInRequired,
       gameMode,
       feeCents: parseDollarsToCents(feeText),
       minSpendCents: parseDollarsToCents(minSpendText),
+      seatingMode,
+      capacity: parseCapacity(capacityText),
     });
     setSaving(false);
     if (result.error) {
@@ -391,24 +426,67 @@ export default function NewEventScreen() {
         ))}
       </View>
 
-      <Text style={styles.label}>How many tables?</Text>
+      <Text style={styles.label}>How does this seat people?</Text>
       <View style={styles.chips}>
-        {[1, 2, 3, 4, 5, 6].map((n) => (
-          <Chip
-            key={n}
-            selected={tableCount === n}
-            onPress={() => setTableCount(n)}
-            accessibilityLabel={`${n} ${n === 1 ? 'table' : 'tables'}`}
-          >
-            {String(n)}
-          </Chip>
-        ))}
+        <Chip
+          selected={seatingMode === 'assigned_tables'}
+          onPress={() => setSeatingMode('assigned_tables')}
+          accessibilityLabel="Assigned tables"
+        >
+          Assigned tables
+        </Chip>
+        <Chip
+          selected={seatingMode === 'open_seating'}
+          onPress={() => setSeatingMode('open_seating')}
+          accessibilityLabel="Open seating"
+        >
+          Open seating
+        </Chip>
       </View>
-      <Text style={styles.help}>
-        Every table seats four, so {tableCount}{' '}
-        {tableCount === 1 ? 'table is' : 'tables are'} room for{' '}
-        {tableCount * 4} players.
-      </Text>
+
+      {seatingMode === 'assigned_tables' ? (
+        <>
+          <Text style={styles.label}>How many tables?</Text>
+          <View style={styles.chips}>
+            {[1, 2, 3, 4, 5, 6].map((n) => (
+              <Chip
+                key={n}
+                selected={tableCount === n}
+                onPress={() => setTableCount(n)}
+                accessibilityLabel={`${n} ${n === 1 ? 'table' : 'tables'}`}
+              >
+                {String(n)}
+              </Chip>
+            ))}
+          </View>
+          <Text style={styles.help}>
+            Every table seats four, so {tableCount}{' '}
+            {tableCount === 1 ? 'table is' : 'tables are'} room for{' '}
+            {tableCount * 4} players.
+          </Text>
+        </>
+      ) : (
+        <>
+          {/*
+            No table picker at all here -- who turns up to a 60-70 player
+            open-seating night is not known until the door, so there is
+            nothing to pre-assign. This cap is independent of table
+            capacity: it limits confirmed players directly, and is entirely
+            optional.
+          */}
+          <TextField
+            label="Capacity (optional)"
+            value={capacityText}
+            onChangeText={setCapacityText}
+            keyboardType="number-pad"
+            placeholder="70"
+          />
+          <Text style={styles.help}>
+            Caps how many players can confirm a spot. Leave blank for no
+            limit.
+          </Text>
+        </>
+      )}
 
       <Text style={styles.label}>Require check-in</Text>
       <Toggle

@@ -168,6 +168,7 @@ const ONE_OFF_EVENT = {
   game_mode: 'open_play' as const,
   fee_cents: 0,
   min_spend_cents: 0,
+  seating_mode: 'assigned_tables' as const,
 };
 
 const SERIES_EVENT = {
@@ -364,6 +365,9 @@ describe('a one-off event', () => {
       gameMode: null,
       feeCents: null,
       minSpendCents: null,
+      seatingMode: null,
+      capacity: null,
+      clearCapacity: false,
     });
     expect(replace).toHaveBeenCalledWith('/clubs/club-1/events/event-1');
   });
@@ -383,6 +387,9 @@ describe('a one-off event', () => {
       gameMode: null,
       feeCents: null,
       minSpendCents: null,
+      seatingMode: null,
+      capacity: null,
+      clearCapacity: false,
     });
   });
 
@@ -406,6 +413,9 @@ describe('a one-off event', () => {
       gameMode: null,
       feeCents: null,
       minSpendCents: null,
+      seatingMode: null,
+      capacity: null,
+      clearCapacity: false,
     });
   });
 
@@ -440,6 +450,9 @@ describe('a one-off event', () => {
       gameMode: null,
       feeCents: null,
       minSpendCents: null,
+      seatingMode: null,
+      capacity: null,
+      clearCapacity: false,
     });
   });
 
@@ -465,6 +478,125 @@ describe('a one-off event', () => {
       gameMode: null,
       feeCents: 1500,
       minSpendCents: 2000,
+      seatingMode: null,
+      capacity: null,
+      clearCapacity: false,
+    });
+  });
+
+  // Task 9: the "This game" scope's seating-mode chip is seeded from
+  // `event.seating_mode` (ClubEvent already carries it -- Task 8's door
+  // list needed it first) and diffed against `original` exactly like
+  // gameMode/checkInRequired above.
+  describe('seating mode and capacity ("This game")', () => {
+    it('shows assigned tables as selected by default and sends null (unchanged) when untouched', async () => {
+      render(<EditEventScreen />);
+      await screen.findByDisplayValue('Thursday Mahjong');
+
+      expect(
+        screen.getByRole('button', { name: 'Assigned tables' }).getAttribute('aria-selected'),
+      ).toBe('true');
+      expect(
+        screen.getByRole('button', { name: 'Open seating' }).getAttribute('aria-selected'),
+      ).toBe('false');
+      // Assigned tables is the current mode, so there is no capacity field
+      // to show at all.
+      expect(screen.queryByLabelText('Capacity (optional)')).toBeNull();
+
+      fireEvent.click(screen.getByText('Save'));
+      await vi.waitFor(() => expect(updateEvent).toHaveBeenCalled());
+      expect(updateEvent.mock.calls[0][1]).toMatchObject({
+        seatingMode: null,
+        capacity: null,
+        clearCapacity: false,
+      });
+    });
+
+    it('reflects an already-open-seating event, and sends null when the host saves without touching it', async () => {
+      fetchEvent.mockResolvedValue({
+        ...ONE_OFF_EVENT,
+        seating_mode: 'open_seating' as const,
+      });
+      render(<EditEventScreen />);
+      await screen.findByDisplayValue('Thursday Mahjong');
+
+      expect(
+        screen.getByRole('button', { name: 'Open seating' }).getAttribute('aria-selected'),
+      ).toBe('true');
+      // The capacity field is shown, but starts blank -- ClubEvent carries
+      // no fetched capacity value for it to seed from (EVENT_COLUMNS does
+      // not select `capacity`; see this screen's own `eventCapacityText`
+      // doc). Saving without touching it must leave the stored value alone,
+      // not blank it out.
+      expect(
+        (screen.getByLabelText('Capacity (optional)') as HTMLInputElement).value,
+      ).toBe('');
+
+      fireEvent.click(screen.getByText('Save'));
+      await vi.waitFor(() => expect(updateEvent).toHaveBeenCalled());
+      expect(updateEvent.mock.calls[0][1]).toMatchObject({
+        seatingMode: null,
+        capacity: null,
+        clearCapacity: false,
+      });
+    });
+
+    it('switching to open seating hides nothing to hide (no table picker on this screen) and reveals capacity, sending the new mode and typed capacity', async () => {
+      render(<EditEventScreen />);
+      await screen.findByDisplayValue('Thursday Mahjong');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Open seating' }));
+      expect(
+        screen.getByRole('button', { name: 'Open seating' }).getAttribute('aria-selected'),
+      ).toBe('true');
+
+      fireEvent.change(screen.getByLabelText('Capacity (optional)'), {
+        target: { value: '65' },
+      });
+      fireEvent.click(screen.getByText('Save'));
+
+      await vi.waitFor(() => expect(updateEvent).toHaveBeenCalled());
+      expect(updateEvent.mock.calls[0][1]).toMatchObject({
+        seatingMode: 'open_seating',
+        capacity: 65,
+        clearCapacity: false,
+      });
+    });
+
+    // The subtle case this task's brief calls out by name: a capacity that
+    // is typed in and then fully erased must clear the stored value, not
+    // silently do nothing (which is what `capacity: null` alone means).
+    it('sends clearCapacity: true, not a no-op null, when a typed capacity is erased back to blank', async () => {
+      fetchEvent.mockResolvedValue({
+        ...ONE_OFF_EVENT,
+        seating_mode: 'open_seating' as const,
+      });
+      render(<EditEventScreen />);
+      await screen.findByDisplayValue('Thursday Mahjong');
+
+      const capacityField = screen.getByLabelText(
+        'Capacity (optional)',
+      ) as HTMLInputElement;
+      fireEvent.change(capacityField, { target: { value: '40' } });
+      fireEvent.change(capacityField, { target: { value: '' } });
+      fireEvent.click(screen.getByText('Save'));
+
+      await vi.waitFor(() => expect(updateEvent).toHaveBeenCalled());
+      expect(updateEvent.mock.calls[0][1]).toMatchObject({
+        capacity: null,
+        clearCapacity: true,
+      });
+    });
+
+    it('switching back to assigned tables hides the capacity field again', async () => {
+      render(<EditEventScreen />);
+      await screen.findByDisplayValue('Thursday Mahjong');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Open seating' }));
+      expect(screen.getByLabelText('Capacity (optional)')).toBeTruthy();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Assigned tables' }));
+      expect(screen.queryByLabelText('Capacity (optional)')).toBeNull();
     });
   });
 });
@@ -566,6 +698,9 @@ describe('a series occurrence', () => {
       endsOn: undefined,
       clearEndsOn: false,
       includeOverridden: false,
+      seatingMode: null,
+      capacity: null,
+      clearCapacity: false,
     });
   });
 
@@ -592,6 +727,9 @@ describe('a series occurrence', () => {
       endsOn: undefined,
       clearEndsOn: true,
       includeOverridden: false,
+      seatingMode: null,
+      capacity: null,
+      clearCapacity: false,
     });
   });
 
@@ -611,6 +749,100 @@ describe('a series occurrence', () => {
     expect(
       (screen.getByLabelText('Cost to play') as HTMLInputElement).value,
     ).toBe('0');
+  });
+
+  // Task 9: unlike every series-scope field above, SERIES_COLUMNS fetches
+  // neither `seating_mode` nor `capacity` (see this screen's own
+  // `seriesSeatingMode` doc), so there is no series row to seed either
+  // control from. Both must default to "leave alone" (assigned tables
+  // shown, nothing sent) until the host actually touches them — sending
+  // this default unconditionally, the way checkInRequired does, would
+  // silently stamp 'assigned_tables' onto a series that is actually
+  // open-seating the moment the host saved "The whole series" without
+  // touching this control at all.
+  describe('seating mode and capacity ("The whole series")', () => {
+    it('shows assigned tables selected by default and sends null (leave alone) when untouched', async () => {
+      render(<EditEventScreen />);
+      await screen.findByText('The whole series');
+      fireEvent.click(screen.getByText('The whole series'));
+
+      expect(
+        screen.getByRole('button', { name: 'Assigned tables' }).getAttribute('aria-selected'),
+      ).toBe('true');
+      expect(screen.queryByLabelText('Capacity (optional)')).toBeNull();
+
+      fireEvent.click(screen.getByText('Save'));
+      await vi.waitFor(() => expect(updateEventSeries).toHaveBeenCalled());
+      expect(updateEventSeries.mock.calls[0][1]).toMatchObject({
+        seatingMode: null,
+        capacity: null,
+        clearCapacity: false,
+      });
+    });
+
+    it('sends the newly chosen mode and typed capacity once the host touches them', async () => {
+      render(<EditEventScreen />);
+      await screen.findByText('The whole series');
+      fireEvent.click(screen.getByText('The whole series'));
+
+      fireEvent.click(screen.getByRole('button', { name: 'Open seating' }));
+      fireEvent.change(screen.getByLabelText('Capacity (optional)'), {
+        target: { value: '60' },
+      });
+      fireEvent.click(screen.getByText('Save'));
+
+      await vi.waitFor(() => expect(updateEventSeries).toHaveBeenCalled());
+      expect(updateEventSeries.mock.calls[0][1]).toMatchObject({
+        seatingMode: 'open_seating',
+        capacity: 60,
+        clearCapacity: false,
+      });
+    });
+
+    it('sends clearCapacity: true when a typed capacity is erased back to blank', async () => {
+      render(<EditEventScreen />);
+      await screen.findByText('The whole series');
+      fireEvent.click(screen.getByText('The whole series'));
+      fireEvent.click(screen.getByRole('button', { name: 'Open seating' }));
+
+      const capacityField = screen.getByLabelText(
+        'Capacity (optional)',
+      ) as HTMLInputElement;
+      fireEvent.change(capacityField, { target: { value: '60' } });
+      fireEvent.change(capacityField, { target: { value: '' } });
+      fireEvent.click(screen.getByText('Save'));
+
+      await vi.waitFor(() => expect(updateEventSeries).toHaveBeenCalled());
+      expect(updateEventSeries.mock.calls[0][1]).toMatchObject({
+        capacity: null,
+        clearCapacity: true,
+      });
+    });
+
+    // Switching scope must not bleed the "This game" state (or vice versa)
+    // into the other scope's payload -- the same isolation the file's own
+    // separate `eventX`/`seriesX` state pairs already guarantee for every
+    // other field.
+    it('keeps the "This game" and "The whole series" seating controls independent', async () => {
+      render(<EditEventScreen />);
+      await screen.findByText('The whole series');
+
+      // Still on "This game" (the default scope) -- assigned tables here.
+      expect(
+        screen.getByRole('button', { name: 'Assigned tables' }).getAttribute('aria-selected'),
+      ).toBe('true');
+
+      fireEvent.click(screen.getByText('The whole series'));
+      fireEvent.click(screen.getByRole('button', { name: 'Open seating' }));
+      expect(
+        screen.getByRole('button', { name: 'Open seating' }).getAttribute('aria-selected'),
+      ).toBe('true');
+
+      fireEvent.click(screen.getByText('This game'));
+      expect(
+        screen.getByRole('button', { name: 'Assigned tables' }).getAttribute('aria-selected'),
+      ).toBe('true');
+    });
   });
 
   // Task 14: the series-scope field is seeded from `series.check_in_required`

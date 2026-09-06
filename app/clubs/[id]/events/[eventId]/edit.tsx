@@ -30,6 +30,7 @@ import {
   type ClubEvent,
   type EventSeries,
   type EventTable,
+  type SeatingMode,
 } from '../../../../../lib/events';
 import { useSession } from '../../../../../lib/session';
 import { dateToDateString } from '../../../../../lib/time';
@@ -45,6 +46,21 @@ function centsToDollarsText(cents: number): string {
   return cents % 100 === 0 ? String(cents / 100) : (cents / 100).toFixed(2);
 }
 
+/**
+ * The optional capacity field's parse boundary -- mirrors this file's own
+ * `centsToDollarsText`-adjacent sibling in app/clubs/[id]/events/new.tsx.
+ * Blank text means "no limit" (`null`); a non-numeric value degrades to the
+ * same "no limit" rather than sending `NaN` to the RPC. Not shared across
+ * the two files for the same reason `Chip`/`ScopeChip` are not -- see this
+ * file's and new.tsx's own docstrings on that convention.
+ */
+function parseCapacity(text: string): number | null {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return null;
+  const n = Number(trimmed);
+  return Number.isFinite(n) ? Math.trunc(n) : null;
+}
+
 /** The single occurrence's own values, snapshotted once on load, so the
  * "This game" save path can tell what actually changed and send only that —
  * see the file-level comment above `onSave` for why that matters here in a
@@ -58,6 +74,7 @@ type OriginalOccurrence = {
   gameMode: GameMode;
   feeCents: number;
   minSpendCents: number;
+  seatingMode: SeatingMode;
 };
 
 /**
@@ -251,6 +268,22 @@ export default function EditEventScreen() {
   const [eventGameMode, setEventGameMode] = useState<GameMode>('open_play');
   const [eventFeeText, setEventFeeText] = useState('');
   const [eventMinSpendText, setEventMinSpendText] = useState('');
+  // Seeded from `event.seating_mode` below, so this diffs against `original`
+  // exactly like every other "This game" field above. `capacity` gets no
+  // such seed -- EVENT_COLUMNS does not fetch it (nothing needed it before
+  // this task) -- so it cannot be diffed the same way; see
+  // `eventCapacityTouched` below for how that gap is handled instead.
+  const [eventSeatingMode, setEventSeatingMode] = useState<SeatingMode>(
+    'assigned_tables',
+  );
+  const [eventCapacityText, setEventCapacityText] = useState('');
+  // True once the host has typed anything into the capacity field this
+  // mount, including clearing it back out. Without this, an untouched blank
+  // field (the only state possible -- there is no fetched value to seed it
+  // with) would be indistinguishable from a host who deliberately emptied
+  // it, and `onSave` below needs to tell those apart: the former must leave
+  // the stored capacity alone, the latter must send `clearCapacity: true`.
+  const [eventCapacityTouched, setEventCapacityTouched] = useState(false);
   const [original, setOriginal] = useState<OriginalOccurrence | null>(null);
 
   const [seriesTitle, setSeriesTitle] = useState('');
@@ -262,6 +295,23 @@ export default function EditEventScreen() {
   const [seriesGameMode, setSeriesGameMode] = useState<GameMode>('open_play');
   const [seriesFeeText, setSeriesFeeText] = useState('');
   const [seriesMinSpendText, setSeriesMinSpendText] = useState('');
+  // Unlike every other series-scope field above, there is no series row to
+  // seed either of these from -- SERIES_COLUMNS fetches neither
+  // `seating_mode` nor `capacity` (nothing needed them there before this
+  // task). Sending them unconditionally the way title/venue/notes/
+  // checkInRequired do would risk silently overwriting a series' real mode
+  // with this default the moment the host saved "The whole series" without
+  // touching either control -- exactly the class of bug this file's own
+  // docstring recounts for Fix pass 1. So these follow `eventCapacityText`'s
+  // touched-flag pattern instead of the rest of the series-scope fields'
+  // "always seeded, always sent" one: untouched means "leave alone" for
+  // both, matching `updateEventSeries`'s own null/omitted semantics.
+  const [seriesSeatingMode, setSeriesSeatingMode] = useState<SeatingMode>(
+    'assigned_tables',
+  );
+  const [seriesSeatingModeTouched, setSeriesSeatingModeTouched] = useState(false);
+  const [seriesCapacityText, setSeriesCapacityText] = useState('');
+  const [seriesCapacityTouched, setSeriesCapacityTouched] = useState(false);
   // The series' own "stop repeating on". Kept apart from `runsIndefinitely`
   // (see that state's own note) rather than folded into a single nullable
   // string, because DateField has no way to produce an empty string through
@@ -316,6 +366,7 @@ export default function EditEventScreen() {
         setEventGameMode(loadedEvent.game_mode);
         setEventFeeText(centsToDollarsText(loadedEvent.fee_cents));
         setEventMinSpendText(centsToDollarsText(loadedEvent.min_spend_cents));
+        setEventSeatingMode(loadedEvent.seating_mode);
         setOriginal({
           title: loadedEvent.title,
           venueId: loadedEvent.venue_id,
@@ -325,6 +376,7 @@ export default function EditEventScreen() {
           gameMode: loadedEvent.game_mode,
           feeCents: loadedEvent.fee_cents,
           minSpendCents: loadedEvent.min_spend_cents,
+          seatingMode: loadedEvent.seating_mode,
         });
       }
 
@@ -464,6 +516,27 @@ export default function EditEventScreen() {
   const setFeeText = isSeriesScope ? setSeriesFeeText : setEventFeeText;
   const minSpendText = isSeriesScope ? seriesMinSpendText : eventMinSpendText;
   const setMinSpendText = isSeriesScope ? setSeriesMinSpendText : setEventMinSpendText;
+  const seatingMode = isSeriesScope ? seriesSeatingMode : eventSeatingMode;
+  // The series-scope setter also flips its own touched flag -- see
+  // `seriesSeatingModeTouched`'s doc above for why this scope cannot simply
+  // diff against a fetched original the way the event scope's plain
+  // `setEventSeatingMode` gets to.
+  const setSeatingMode = isSeriesScope
+    ? (next: SeatingMode) => {
+        setSeriesSeatingMode(next);
+        setSeriesSeatingModeTouched(true);
+      }
+    : setEventSeatingMode;
+  const capacityText = isSeriesScope ? seriesCapacityText : eventCapacityText;
+  const setCapacityText = isSeriesScope
+    ? (next: string) => {
+        setSeriesCapacityText(next);
+        setSeriesCapacityTouched(true);
+      }
+    : (next: string) => {
+        setEventCapacityText(next);
+        setEventCapacityTouched(true);
+      };
 
   // Arrow functions assigned to `const`, not `function` declarations --
   // TypeScript only carries the `!club || !event` narrowing above into a
@@ -487,6 +560,14 @@ export default function EditEventScreen() {
         endsOnInput = endsOn;
       }
 
+      // Unlike every field above, these two are "leave alone unless
+      // touched" -- there is no series row to seed them from (see
+      // `seriesSeatingMode`'s own doc), so an untouched control here must
+      // send nothing rather than this default. `parsedSeriesCapacity ===
+      // null` covers both "never touched" and "touched, then emptied
+      // again" -- `seriesCapacityTouched` is what tells those two apart.
+      const parsedSeriesCapacity = parseCapacity(seriesCapacityText);
+
       const result = await updateEventSeries(series.id, {
         title,
         venueId,
@@ -499,6 +580,12 @@ export default function EditEventScreen() {
         endsOn: endsOnInput,
         clearEndsOn,
         includeOverridden,
+        seatingMode: seriesSeatingModeTouched ? seriesSeatingMode : null,
+        capacity:
+          seriesCapacityTouched && parsedSeriesCapacity !== null
+            ? parsedSeriesCapacity
+            : null,
+        clearCapacity: seriesCapacityTouched && parsedSeriesCapacity === null,
       });
       setSaving(false);
       if (result.error) {
@@ -523,6 +610,16 @@ export default function EditEventScreen() {
       const minSpendChanged = original
         ? minSpendCentsValue !== original.minSpendCents
         : false;
+      const seatingModeChanged = original
+        ? eventSeatingMode !== original.seatingMode
+        : false;
+      // `capacity` has no fetched original to diff against at all (see
+      // `eventCapacityTouched`'s own doc) -- `eventCapacityTouched` is what
+      // stands in for "changed" here. `parsedEventCapacity === null` covers
+      // both "never touched" and "touched, then emptied again"; the touched
+      // flag is what tells those two apart, exactly as it does for the
+      // series-scope save above.
+      const parsedEventCapacity = parseCapacity(eventCapacityText);
 
       const result = await updateEvent(event.id, {
         title: titleChanged ? title.trim() : null,
@@ -533,6 +630,12 @@ export default function EditEventScreen() {
         gameMode: gameModeChanged ? gameMode : null,
         feeCents: feeChanged ? feeCentsValue : null,
         minSpendCents: minSpendChanged ? minSpendCentsValue : null,
+        seatingMode: seatingModeChanged ? eventSeatingMode : null,
+        capacity:
+          eventCapacityTouched && parsedEventCapacity !== null
+            ? parsedEventCapacity
+            : null,
+        clearCapacity: eventCapacityTouched && parsedEventCapacity === null,
       });
       setSaving(false);
       if (result.error) {
@@ -641,6 +744,47 @@ export default function EditEventScreen() {
         onValueChange={(next) => setGameMode(next ? 'invite_only' : 'open_play')}
         accessibilityLabel="Invite-only"
       />
+
+      <Text style={styles.label}>How does this seat people?</Text>
+      <View style={styles.chips}>
+        <ScopeChip
+          selected={seatingMode === 'assigned_tables'}
+          onPress={() => setSeatingMode('assigned_tables')}
+          accessibilityLabel="Assigned tables"
+        >
+          Assigned tables
+        </ScopeChip>
+        <ScopeChip
+          selected={seatingMode === 'open_seating'}
+          onPress={() => setSeatingMode('open_seating')}
+          accessibilityLabel="Open seating"
+        >
+          Open seating
+        </ScopeChip>
+      </View>
+
+      {/*
+        No table-count picker here at all -- unlike the create screen, this
+        one never offered a way to choose a table count in the first place
+        (tables are per-occurrence and managed below, in the Tables
+        section), so there is nothing for open seating to hide. This cap is
+        independent of table capacity, and entirely optional.
+      */}
+      {seatingMode === 'open_seating' ? (
+        <>
+          <TextField
+            label="Capacity (optional)"
+            value={capacityText}
+            onChangeText={setCapacityText}
+            keyboardType="number-pad"
+            placeholder="70"
+          />
+          <Text style={styles.help}>
+            Caps how many players can confirm a spot. Leave blank for no
+            limit.
+          </Text>
+        </>
+      ) : null}
 
       <TextField
         label="Cost to play"

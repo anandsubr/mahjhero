@@ -698,6 +698,139 @@ describe('carries the tab bar', () => {
   });
 });
 
+// Task 9: the seating-mode selector above "How many tables?". Assigned
+// tables is the default -- every event before this task shipped assigned
+// tables, and `create_event`/`create_event_series` themselves default to it
+// server-side, so a host who never touches this control must get exactly
+// what they always got.
+describe('seating mode and capacity', () => {
+  it('defaults to assigned tables, showing the tables picker and no capacity field', async () => {
+    render(<NewEventScreen />);
+    await screen.findByText('Add a game');
+
+    expect(
+      screen.getByRole('button', { name: 'Assigned tables' }).getAttribute('aria-selected'),
+    ).toBe('true');
+    expect(
+      screen.getByRole('button', { name: 'Open seating' }).getAttribute('aria-selected'),
+    ).toBe('false');
+    expect(screen.getByRole('button', { name: '1 table' })).toBeTruthy();
+    expect(screen.queryByLabelText('Capacity (optional)')).toBeNull();
+  });
+
+  it('selecting open seating hides the tables picker and reveals the capacity field', async () => {
+    render(<NewEventScreen />);
+    await screen.findByText('Add a game');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open seating' }));
+
+    expect(
+      screen.getByRole('button', { name: 'Open seating' }).getAttribute('aria-selected'),
+    ).toBe('true');
+    expect(screen.queryByRole('button', { name: '1 table' })).toBeNull();
+    expect(screen.queryByText(/Every table seats four/)).toBeNull();
+    expect(screen.getByLabelText('Capacity (optional)')).toBeTruthy();
+    expect(screen.getByText(/Leave blank for no limit/)).toBeTruthy();
+  });
+
+  it('switching back to assigned tables restores the picker and drops the capacity field', async () => {
+    render(<NewEventScreen />);
+    await screen.findByText('Add a game');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open seating' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Assigned tables' }));
+
+    expect(screen.getByRole('button', { name: '1 table' })).toBeTruthy();
+    expect(screen.queryByLabelText('Capacity (optional)')).toBeNull();
+  });
+
+  it('sends tableCount: 0 and the open_seating mode for a one-off game', async () => {
+    render(<NewEventScreen />);
+    await screen.findByText('Add a game');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open seating' }));
+    pickVenue();
+    fireEvent.change(screen.getByLabelText('Game name'), {
+      target: { value: 'Big open-seating night' },
+    });
+    fireEvent.click(screen.getByText('Save'));
+
+    await vi.waitFor(() => expect(createEvent).toHaveBeenCalled());
+    const call = createEvent.mock.calls[0][0];
+    expect(call.tableCount).toBe(0);
+    expect(call.seatingMode).toBe('open_seating');
+  });
+
+  it('sends tableCount: 0 and the open_seating mode for a series too', async () => {
+    render(<NewEventScreen />);
+    await screen.findByText('Add a game');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open seating' }));
+    fireEvent.click(screen.getByText('Every week'));
+    pickVenue();
+    fireEvent.change(screen.getByLabelText('Game name'), {
+      target: { value: 'Big weekly open-seating night' },
+    });
+    fireEvent.click(screen.getByText('Save'));
+
+    await vi.waitFor(() => expect(createEventSeries).toHaveBeenCalled());
+    const call = createEventSeries.mock.calls[0][0];
+    expect(call.tableCount).toBe(0);
+    expect(call.seatingMode).toBe('open_seating');
+  });
+
+  it('still sends the picked table count and assigned_tables mode when left on the default', async () => {
+    render(<NewEventScreen />);
+    await screen.findByText('Add a game');
+
+    fireEvent.click(screen.getByRole('button', { name: '3 tables' }));
+    pickVenue();
+    fireEvent.change(screen.getByLabelText('Game name'), {
+      target: { value: 'Regular night' },
+    });
+    fireEvent.click(screen.getByText('Save'));
+
+    await vi.waitFor(() => expect(createEvent).toHaveBeenCalled());
+    const call = createEvent.mock.calls[0][0];
+    expect(call.tableCount).toBe(3);
+    expect(call.seatingMode).toBe('assigned_tables');
+    expect(call.capacity).toBeNull();
+  });
+
+  it('parses the typed capacity as an integer and sends it uncapped when left blank', async () => {
+    render(<NewEventScreen />);
+    await screen.findByText('Add a game');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open seating' }));
+    fireEvent.change(screen.getByLabelText('Capacity (optional)'), {
+      target: { value: '70' },
+    });
+    pickVenue();
+    fireEvent.change(screen.getByLabelText('Game name'), {
+      target: { value: 'Capped open-seating night' },
+    });
+    fireEvent.click(screen.getByText('Save'));
+
+    await vi.waitFor(() => expect(createEvent).toHaveBeenCalled());
+    expect(createEvent.mock.calls[0][0].capacity).toBe(70);
+  });
+
+  it('sends a null (uncapped) capacity when the field is left blank', async () => {
+    render(<NewEventScreen />);
+    await screen.findByText('Add a game');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open seating' }));
+    pickVenue();
+    fireEvent.change(screen.getByLabelText('Game name'), {
+      target: { value: 'Uncapped open-seating night' },
+    });
+    fireEvent.click(screen.getByText('Save'));
+
+    await vi.waitFor(() => expect(createEvent).toHaveBeenCalled());
+    expect(createEvent.mock.calls[0][0].capacity).toBeNull();
+  });
+});
+
 describe('cost to play and minimum spend', () => {
   it('sends the typed dollar amounts as integer cents', async () => {
     render(<NewEventScreen />);
