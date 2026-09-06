@@ -1587,3 +1587,115 @@ describe('table rounds', () => {
     ).toBeNull();
   });
 });
+
+// Task 10: the open-seating half of `seating_mode` -- a 60-70 player night
+// with no tables to assign. `fetchEventTables` resolves `[]` throughout
+// (there is nothing for this mode to fetch tables for), which also proves
+// the header/roster below read entirely off `event.seating_mode` and
+// `seating`, not off `tables`.
+describe('open seating', () => {
+  const OPEN_SEATING_EVENT = {
+    ...EVENT,
+    seating_mode: 'open_seating' as const,
+    capacity: null as number | null,
+  };
+
+  const SIGNED_UP_PRIYA = {
+    booking_id: 'b-open-1',
+    group_id: 'group-open-1',
+    profile_id: 'p1',
+    display_name: 'Priya Nair',
+    skill_level: null,
+    event_table_id: null as string | null,
+    status: 'confirmed' as const,
+    booked_by: 'p1',
+    booked_by_name: 'Priya Nair',
+    group_status: 'confirmed' as const,
+    waitlist_position: null,
+    created_at: '2026-08-20T10:00:00Z',
+  };
+
+  // Same `group_id` as Priya -- the pair booked together, so the roster
+  // should badge both with "Group of 2".
+  const SIGNED_UP_SAM = {
+    ...SIGNED_UP_PRIYA,
+    booking_id: 'b-open-2',
+    profile_id: 'p2',
+    display_name: 'Sam T.',
+    booked_by: 'p1',
+    booked_by_name: 'Priya Nair',
+  };
+
+  beforeEach(() => {
+    fetchEventTables.mockResolvedValue([]);
+  });
+
+  it('shows an uncapped headcount, not a table/seat count', async () => {
+    fetchEvent.mockResolvedValue(OPEN_SEATING_EVENT);
+    fetchEventSeating.mockResolvedValue([SIGNED_UP_PRIYA]);
+    render(<EventScreen />);
+    expect(await screen.findByText('1 signed up')).toBeTruthy();
+    expect(screen.queryByText(/table/i)).toBeNull();
+  });
+
+  it('appends the cap once the event is capped', async () => {
+    fetchEvent.mockResolvedValue({ ...OPEN_SEATING_EVENT, capacity: 60 });
+    fetchEventSeating.mockResolvedValue([SIGNED_UP_PRIYA, SIGNED_UP_SAM]);
+    render(<EventScreen />);
+    expect(await screen.findByText('2 signed up · 60 spots')).toBeTruthy();
+  });
+
+  it('renders a plain roster with a group badge, and no seat grid', async () => {
+    fetchEvent.mockResolvedValue(OPEN_SEATING_EVENT);
+    fetchEventSeating.mockResolvedValue([SIGNED_UP_PRIYA, SIGNED_UP_SAM]);
+    render(<EventScreen />);
+
+    expect(await screen.findByText('Priya Nair')).toBeTruthy();
+    expect(screen.getByText('Sam T.')).toBeTruthy();
+    // One "Group of 2" badge per person in the party -- both Priya and Sam
+    // share `group_id`, so both rows get the badge.
+    expect(screen.getAllByText('Group of 2')).toHaveLength(2);
+
+    // No seat grid at all: no table card, no seat-tap affordances.
+    expect(screen.queryByText('Table 1')).toBeNull();
+    expect(screen.queryByLabelText(/Take a seat/)).toBeNull();
+    expect(screen.queryByLabelText(/Manage .*'s seat/)).toBeNull();
+  });
+
+  it('shows no group badge for someone who booked alone', async () => {
+    fetchEvent.mockResolvedValue(OPEN_SEATING_EVENT);
+    fetchEventSeating.mockResolvedValue([SIGNED_UP_PRIYA]);
+    render(<EventScreen />);
+    expect(await screen.findByText('Priya Nair')).toBeTruthy();
+    expect(screen.queryByText(/^Group of/)).toBeNull();
+  });
+
+  it('says nobody has signed up yet rather than showing an empty card', async () => {
+    fetchEvent.mockResolvedValue(OPEN_SEATING_EVENT);
+    fetchEventSeating.mockResolvedValue([]);
+    render(<EventScreen />);
+    expect(await screen.findByText('Nobody has signed up yet.')).toBeTruthy();
+  });
+
+  it('shows a load error for the roster rather than the table-load error copy', async () => {
+    fetchEvent.mockResolvedValue(OPEN_SEATING_EVENT);
+    fetchEventSeating.mockResolvedValue(null);
+    render(<EventScreen />);
+    expect(
+      await screen.findByText('Could not load who is coming to this game.'),
+    ).toBeTruthy();
+    expect(
+      screen.queryByText('Could not load the tables for this game.'),
+    ).toBeNull();
+  });
+
+  it('hides "Call for a 4th now" and the "Needs a 4th" tag entirely -- there is no table to fill', async () => {
+    fetchRoster.mockResolvedValue(HOST_ROLE);
+    fetchEvent.mockResolvedValue(OPEN_SEATING_EVENT);
+    fetchEventSeating.mockResolvedValue([SIGNED_UP_PRIYA]);
+    render(<EventScreen />);
+    await screen.findByText('Priya Nair');
+    expect(screen.queryByText('Call for a 4th now')).toBeNull();
+    expect(screen.queryByText('Needs a 4th')).toBeNull();
+  });
+});

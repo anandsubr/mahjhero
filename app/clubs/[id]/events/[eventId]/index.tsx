@@ -510,6 +510,21 @@ export default function EventScreen() {
   // enforces that window on its own controls.
   const memberCheckInOpen = checkInOpen(addHours(event.starts_at, -1), event.ends_at);
 
+  // Open-seating roster support (Task 10): an `open_seating` night has no
+  // tables to assign, so the per-table seat grid below never renders for
+  // one (see the `isOpenSeating` branch in the JSX) -- this derives the
+  // plain roster and per-group badge counts it shows instead. `??
+  // 'assigned_tables'` mirrors the column's own `not null default`, the
+  // same fallback check-in.tsx already uses for an event read by an older
+  // client contract (app/clubs/[id]/events/[eventId]/check-in.tsx).
+  const isOpenSeating = (event.seating_mode ?? 'assigned_tables') === 'open_seating';
+  const confirmedRoster = seating.filter((o) => o.status === 'confirmed');
+  const rosterGroupSizes: Record<string, number> = {};
+  for (const person of confirmedRoster) {
+    rosterGroupSizes[person.group_id] =
+      (rosterGroupSizes[person.group_id] ?? 0) + 1;
+  }
+
   // Confirmed but not placed at any table — "any table" bookings, and
   // whatever `placeBooking(id, null)` produces (the data-layer capability
   // behind the seating rule still stands; there is just no UI button left
@@ -522,9 +537,21 @@ export default function EventScreen() {
   // entirely now (folded into SeatGrid's own seat-tap panel, which can only
   // ever reach a booking that already has a seat) — this list is still the
   // one and only place an unplaced booking is ever offered a table.
-  const unseatedBookings = seating.filter(
-    (o) => o.status === 'confirmed' && o.event_table_id === null,
-  );
+  //
+  // Task 10: empty for `open_seating` on purpose. There, EVERY confirmed
+  // booking has a null `event_table_id` (there are no tables to place
+  // anyone at), so this list would otherwise contain the entire roster —
+  // duplicating the roster card above and, worse, showing WaitlistPanel's
+  // "The host will place them at a table" copy for a mode with no table to
+  // place anyone at. The roster block already covers "who is confirmed"
+  // for this mode; WaitlistPanel is left with only its "waiting for a
+  // seat" section, which still means something for a capped open-seating
+  // event's waitlist.
+  const unseatedBookings = isOpenSeating
+    ? []
+    : seating.filter(
+        (o) => o.status === 'confirmed' && o.event_table_id === null,
+      );
 
   // Gates both BringSomeoneSheet entry points (TableCard's per-table one and
   // the screen-level "any table" one below). `canBook` matches `onTakeSeat`'s
@@ -880,15 +907,53 @@ export default function EventScreen() {
       <Text style={styles.sectionTitle}>
         {tablesFailed
           ? 'Tables'
-          : `${tables.length} ${tables.length === 1 ? 'table' : 'tables'} · ${(() => {
-              const seats = tables.reduce((sum, t) => sum + t.capacity, 0);
-              return `${seats} ${seats === 1 ? 'seat' : 'seats'}`;
-            })()}`}
+          : isOpenSeating
+            ? `${confirmedRoster.length} signed up${
+                event.capacity !== null && event.capacity !== undefined
+                  ? ` · ${event.capacity} spots`
+                  : ''
+              }`
+            : `${tables.length} ${tables.length === 1 ? 'table' : 'tables'} · ${(() => {
+                const seats = tables.reduce((sum, t) => sum + t.capacity, 0);
+                return `${seats} ${seats === 1 ? 'seat' : 'seats'}`;
+              })()}`}
       </Text>
 
       {canSeeFullRoster ? (
         <>
-          {tablesFailed ? (
+          {isOpenSeating ? (
+            // No tables exist for an open_seating night, so there is
+            // nothing for a per-table seat grid to render -- a plain
+            // roster of who is confirmed instead, with a group badge for
+            // anyone who booked as part of a party of 2+ (mirrors
+            // check-in.tsx's own group-size badge, keyed off the
+            // already-fetched `seating` here rather than a separate
+            // `event.bookings` embed).
+            seatingFailed ? (
+              <Text style={styles.help}>
+                Could not load who is coming to this game.
+              </Text>
+            ) : (
+              <Card>
+                {confirmedRoster.length === 0 ? (
+                  <Text style={styles.help}>Nobody has signed up yet.</Text>
+                ) : (
+                  confirmedRoster.map((person) => (
+                    <View key={person.booking_id} style={styles.rosterRow}>
+                      <Text style={styles.person}>
+                        {person.profile_id === me ? 'You' : person.display_name}
+                      </Text>
+                      {rosterGroupSizes[person.group_id] > 1 ? (
+                        <Tag variant="accent2">
+                          {`Group of ${rosterGroupSizes[person.group_id]}`}
+                        </Tag>
+                      ) : null}
+                    </View>
+                  ))
+                )}
+              </Card>
+            )
+          ) : tablesFailed ? (
             <Text style={styles.help}>Could not load the tables for this game.</Text>
           ) : (
             tables.map((table) => {
@@ -1066,13 +1131,15 @@ export default function EventScreen() {
                 })
           )}
 
-          {seatingFailed ? (
-            <Text style={styles.help}>
-              Could not load who is coming to this game.
-            </Text>
-          ) : !tablesFailed &&
-            seating.filter((o) => o.status === 'confirmed').length === 0 ? (
-            <Text style={styles.help}>Nobody has booked yet.</Text>
+          {!isOpenSeating ? (
+            seatingFailed ? (
+              <Text style={styles.help}>
+                Could not load who is coming to this game.
+              </Text>
+            ) : !tablesFailed &&
+              seating.filter((o) => o.status === 'confirmed').length === 0 ? (
+              <Text style={styles.help}>Nobody has booked yet.</Text>
+            ) : null
           ) : null}
         </>
       ) : (
@@ -1406,6 +1473,17 @@ const styles = StyleSheet.create({
     fontSize: type.size.helper,
     color: colors.textMuted,
     lineHeight: 24,
+  },
+  rosterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: space[2],
+  },
+  person: {
+    fontFamily: type.bodyRegular,
+    fontSize: type.size.body,
+    color: colors.text,
   },
   inviteUrl: {
     fontFamily: type.bodyRegular,
