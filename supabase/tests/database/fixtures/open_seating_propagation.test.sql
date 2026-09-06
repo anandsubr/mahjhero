@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(18);
+select plan(22);
 
 -- Fixture: one host, one club, one venue.
 insert into auth.users (id, email) values
@@ -343,6 +343,116 @@ select ok(
   (select 'capacity' = any(overrides) from public.events
     where id = '60000000-0000-0000-0000-000000000071'),
   'update_event records the capacity override when clear_capacity is true');
+
+-- ---------------------------------------------------------------------------
+-- 6. update_event_series's capacity path (touched_capacity, the propagation
+-- block, and clear_capacity resolved against se.capacity) is otherwise
+-- entirely unexercised, and so is the scoping of the override-clearing
+-- unnest clauses under include_overridden => true. A fresh open_seating
+-- series, so the capacity values under test actually mean something
+-- (event_capacity only reads capacity for open_seating events, unlike the
+-- assigned_tables series above).
+-- ---------------------------------------------------------------------------
+
+reset role;
+
+insert into public.event_series (id, club_id, title, venue_id, frequency,
+                                 weekday, start_time, table_count, starts_on,
+                                 seating_mode, capacity, game_mode, created_by)
+values ('50000000-0000-0000-0000-000000000080',
+        'b0000000-0000-0000-0000-000000000051', 'Weekly 80',
+        'c0000000-0000-0000-0000-000000000051', 'weekly', 5, '19:00', 1,
+        current_date, 'open_seating', 60, 'open_play',
+        'a0000000-0000-0000-0000-000000000051');
+
+insert into public.events (id, club_id, series_id, title, venue_id, starts_at,
+                           ends_at, occurrence_date, seating_mode, capacity,
+                           game_mode, created_by)
+values
+  ('60000000-0000-0000-0000-000000000080',
+   'b0000000-0000-0000-0000-000000000051', '50000000-0000-0000-0000-000000000080',
+   'Weekly 80', 'c0000000-0000-0000-0000-000000000051',
+   now() + interval '42 days', now() + interval '42 days 3 hours',
+   current_date + 42, 'open_seating', 60, 'open_play',
+   'a0000000-0000-0000-0000-000000000051'),
+  ('60000000-0000-0000-0000-000000000081',
+   'b0000000-0000-0000-0000-000000000051', '50000000-0000-0000-0000-000000000080',
+   'Weekly 80', 'c0000000-0000-0000-0000-000000000051',
+   now() + interval '49 days', now() + interval '49 days 3 hours',
+   current_date + 49, 'open_seating', 60, 'open_play',
+   'a0000000-0000-0000-0000-000000000051'),
+  ('60000000-0000-0000-0000-000000000082',
+   'b0000000-0000-0000-0000-000000000051', '50000000-0000-0000-0000-000000000080',
+   'Weekly 80', 'c0000000-0000-0000-0000-000000000051',
+   now() + interval '56 days', now() + interval '56 days 3 hours',
+   current_date + 56, 'open_seating', 60, 'open_play',
+   'a0000000-0000-0000-0000-000000000051');
+
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "a0000000-0000-0000-0000-000000000051", "role": "authenticated"}';
+
+-- Occurrence 081 overrides its own capacity by hand; it must never be moved
+-- by a later series-wide capacity edit with include_overridden => false.
+select public.update_event(
+  target_event => '60000000-0000-0000-0000-000000000081',
+  new_capacity => 200);
+
+-- Occurrence 082 overrides BOTH seating_mode and capacity by hand -- the
+-- fixture for Gap 2's scoped-clearing assertion below.
+select public.update_event(
+  target_event => '60000000-0000-0000-0000-000000000082',
+  new_seating_mode => 'assigned_tables'::public.seating_mode,
+  new_capacity => 75);
+
+-- Gap 1a/1b: a series-wide capacity edit with include_overridden => false
+-- propagates onto the untouched occurrence (080) and leaves the overridden
+-- one (081) alone. 90 is chosen distinct from 081's overridden 200 so a leak
+-- would actually be visible rather than passing by coincidence.
+select public.update_event_series(
+  target_series => '50000000-0000-0000-0000-000000000080',
+  new_capacity => 90,
+  include_overridden => false);
+
+select is(
+  (select capacity from public.events
+    where id = '60000000-0000-0000-0000-000000000080'),
+  90,
+  'update_event_series propagates capacity onto the untouched occurrence');
+select is(
+  (select capacity from public.events
+    where id = '60000000-0000-0000-0000-000000000081'),
+  200,
+  'update_event_series does not touch capacity on an occurrence that overrode it');
+
+-- Gap 1c: clear_capacity => true resolves against se.capacity and propagates
+-- null down to the untouched occurrence too.
+select public.update_event_series(
+  target_series => '50000000-0000-0000-0000-000000000080',
+  clear_capacity => true,
+  include_overridden => false);
+
+select is(
+  (select capacity from public.events
+    where id = '60000000-0000-0000-0000-000000000080'),
+  null::int,
+  'update_event_series propagates clear_capacity onto the untouched occurrence');
+
+-- Gap 2: include_overridden => true, editing only seating_mode, clears
+-- 'seating_mode' from occurrence 082's overrides but leaves 'capacity' in
+-- place, because this edit never touched capacity (se.capacity is still null
+-- from the clear_capacity call above, so touched_capacity is false). This
+-- pins both the clearing and its scoping in one assertion.
+select public.update_event_series(
+  target_series => '50000000-0000-0000-0000-000000000080',
+  new_seating_mode => 'assigned_tables'::public.seating_mode,
+  include_overridden => true);
+
+select ok(
+  (select 'capacity' = any(overrides)
+      and not ('seating_mode' = any(overrides))
+   from public.events where id = '60000000-0000-0000-0000-000000000082'),
+  'update_event_series with include_overridden clears only the touched override, leaving capacity intact');
 
 reset role;
 
