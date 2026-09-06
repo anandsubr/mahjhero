@@ -1036,10 +1036,19 @@ export default function EventScreen() {
                             now that the per-person list it sat below is gone (moved
                             into SeatGrid's own seat-tap panel), a single button
                             doesn't need its own wrapper component.
+
+                            `event.game_mode === 'open_play'` is a UI nicety on top
+                            of the DB-level fix (announce_table_fourth now refuses
+                            to fan out for an invite_only event's table regardless);
+                            hiding the button here just means the organizer of a
+                            private game never sees an affordance whose whole point
+                            — broadcasting to the club at large — contradicts the
+                            reason they chose invite_only in the first place.
                           */}
                           {table.capacity >= 2 &&
                           confirmedHere === table.capacity - 1 &&
-                          canBook ? (
+                          canBook &&
+                          event.game_mode === 'open_play' ? (
                             <Button
                               variant="secondary"
                               big={false}
