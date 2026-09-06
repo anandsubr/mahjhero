@@ -41,17 +41,20 @@ begin
 
   perform public.assert_club_organizer(ev.club_id);
 
-  if not exists (
-    select 1 from public.club_members m
-     where m.club_id = ev.club_id
-       and m.profile_id = target_profile
-       and m.status = 'active')
-  then
-    raise exception 'that person is not a member of this club'
-      using errcode = '23514', detail = target_profile::text;
-  end if;
-
   if is_paid then
+    -- Roster-membership check gates this branch only. Marking someone paid
+    -- asserts a fact about a person, and that person must be on the roster
+    -- for the assertion to mean anything.
+    if not exists (
+      select 1 from public.club_members m
+       where m.club_id = ev.club_id
+         and m.profile_id = target_profile
+         and m.status = 'active')
+    then
+      raise exception 'that person is not a member of this club'
+        using errcode = '23514', detail = target_profile::text;
+    end if;
+
     insert into public.event_payments
       (event_id, club_id, profile_id, paid_at, marked_by)
     values
@@ -59,6 +62,10 @@ begin
     on conflict (event_id, profile_id) do update
       set paid_at = now(), marked_by = caller;
   else
+    -- Unmarking deliberately skips the roster check. It is a correction, not
+    -- an assertion, and the person may have since left the club — the same
+    -- reasoning clear_attendance already applies (20260827030000): an
+    -- organizer who cannot fix a stale row stops trusting the record.
     -- Absence of a row is the unpaid state; there is no false to store.
     delete from public.event_payments
      where event_id = target_event and profile_id = target_profile;

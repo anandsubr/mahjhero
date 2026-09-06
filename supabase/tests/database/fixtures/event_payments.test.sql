@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(14);
+select plan(17);
 
 -- ------------------------------------------------------------------
 -- Fixture.
@@ -11,7 +11,8 @@ insert into auth.users (id, email) values
   ('a0000000-0000-0000-0000-000000000072', 'member72@example.com'),
   ('a0000000-0000-0000-0000-000000000073', 'member73@example.com'),
   ('a0000000-0000-0000-0000-000000000074', 'outsider74@example.com'),
-  ('a0000000-0000-0000-0000-000000000075', 'nonmember75@example.com');
+  ('a0000000-0000-0000-0000-000000000075', 'nonmember75@example.com'),
+  ('a0000000-0000-0000-0000-000000000076', 'removed76@example.com');
 
 insert into public.clubs (id, name, slug, timezone, created_by)
   values ('b0000000-0000-0000-0000-000000000071', 'Payments RPC Club',
@@ -26,7 +27,9 @@ insert into public.club_members (club_id, profile_id, role, status) values
   ('b0000000-0000-0000-0000-000000000071',
    'a0000000-0000-0000-0000-000000000072', 'member', 'active'),
   ('b0000000-0000-0000-0000-000000000071',
-   'a0000000-0000-0000-0000-000000000073', 'member', 'active')
+   'a0000000-0000-0000-0000-000000000073', 'member', 'active'),
+  ('b0000000-0000-0000-0000-000000000071',
+   'a0000000-0000-0000-0000-000000000076', 'member', 'removed')
   on conflict do nothing;
 
 insert into public.venues (id, added_by_club_id, name, created_by)
@@ -217,6 +220,51 @@ select is(
       and profile_id = 'a0000000-0000-0000-0000-000000000073'),
   0,
   'unmarking deleted the row rather than storing a false');
+
+-- ------------------------------------------------------------------
+-- Unmark is a correction, not an assertion, and deliberately skips the
+-- roster-membership check: profile 76 was marked paid while active and has
+-- since been removed from the club (status = 'removed' above). Mark keeps
+-- the check as a regression guard.
+-- ------------------------------------------------------------------
+reset role;
+-- Direct insert stands in for a mark-paid call made back when profile 76
+-- was still active; only the resulting row matters here, not how it got
+-- there.
+insert into public.event_payments (event_id, club_id, profile_id, marked_by)
+  values ('d0000000-0000-0000-0000-000000000071',
+          'b0000000-0000-0000-0000-000000000071',
+          'a0000000-0000-0000-0000-000000000076',
+          'a0000000-0000-0000-0000-000000000071');
+
+set local role authenticated;
+set local request.jwt.claims to
+  '{"sub":"a0000000-0000-0000-0000-000000000071","role":"authenticated"}';
+
+select lives_ok(
+  $$select public.set_payment_status(
+      'd0000000-0000-0000-0000-000000000071'::uuid,
+      'a0000000-0000-0000-0000-000000000076'::uuid, false)$$,
+  'the host can unmark a payment for a member since removed from the club');
+
+reset role;
+select is(
+  (select count(*)::int from public.event_payments
+    where event_id = 'd0000000-0000-0000-0000-000000000071'
+      and profile_id = 'a0000000-0000-0000-0000-000000000076'),
+  0,
+  'unmarking a removed member''s payment deleted the row');
+
+set local role authenticated;
+set local request.jwt.claims to
+  '{"sub":"a0000000-0000-0000-0000-000000000071","role":"authenticated"}';
+
+select throws_ok(
+  $$select public.set_payment_status(
+      'd0000000-0000-0000-0000-000000000071'::uuid,
+      'a0000000-0000-0000-0000-000000000076'::uuid, true)$$,
+  '23514', null,
+  'marking a removed member paid still raises the roster-membership error');
 
 select * from finish();
 rollback;
