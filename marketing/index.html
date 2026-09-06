@@ -160,6 +160,92 @@
   }
 
   /* ROLE_PICKER_STYLES */
+  .roles-inner { display: flex; flex-direction: column; gap: 35.2px; }
+  .roles-heading { font-size: 34px; max-width: 640px; }
+  .role-tabs { display: flex; gap: 8.8px; flex-wrap: wrap; }
+  .role-tab {
+    font-family: var(--font-body);
+    font-weight: 700;
+    font-size: 16px;
+    padding: 13.2px 22px;
+    border-radius: var(--radius-pill);
+    border: 1px solid var(--divider);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+  .role-tab.is-active {
+    background: var(--accent);
+    color: var(--accent-100);
+    border-color: var(--accent);
+  }
+  .role-panel[hidden] { display: none; }
+  .role-panel-grid {
+    display: grid;
+    grid-template-columns: 1.1fr 1fr;
+    gap: 26.4px;
+    align-items: start;
+  }
+  .role-panel-heading { font-size: 28px; margin-bottom: 17.6px; }
+  .role-panel-list {
+    margin: 0;
+    padding-left: 20px;
+    color: var(--text);
+    font-size: 18px;
+    line-height: 1.6;
+    display: flex;
+    flex-direction: column;
+    gap: 13.2px;
+  }
+  .role-mock { display: flex; flex-direction: column; gap: 13.2px; }
+  .mock-header { font-family: var(--font-body); font-weight: 700; font-size: 18px; }
+  .mock-row { display: flex; justify-content: space-between; align-items: center; font-size: 16px; color: var(--text-muted); }
+  .mock-pill {
+    background: var(--accent2-100);
+    color: var(--accent2-800);
+    border-radius: var(--radius-pill);
+    padding: 4.4px 13.2px;
+    font-size: 14px;
+    font-weight: 700;
+  }
+  .mock-lock {
+    background: var(--accent-200);
+    color: var(--accent-800);
+    border-radius: var(--radius-pill);
+    padding: 4.4px 13.2px;
+    font-size: 14px;
+    font-weight: 700;
+  }
+  .mock-list { display: flex; flex-direction: column; gap: 8.8px; }
+  .mock-list-item {
+    background: var(--bg);
+    border-radius: var(--radius-md);
+    padding: 13.2px 17.6px;
+    font-size: 16px;
+    color: var(--text);
+  }
+  .seat-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8.8px;
+  }
+  .seat {
+    border-radius: var(--radius-md);
+    padding: 17.6px;
+    text-align: center;
+    font-size: 16px;
+    font-weight: 700;
+  }
+  .seat-filled { background: var(--neutral-200); color: var(--text); }
+  .seat-you { background: var(--accent); color: var(--accent-100); }
+  .seat-open {
+    background: transparent;
+    border: 1px dashed var(--divider);
+    color: var(--text-muted);
+  }
+  @media (max-width: 680px) {
+    .role-panel-grid { grid-template-columns: 1fr; }
+  }
 
   /* FEATURES_STYLES */
 
@@ -229,11 +315,107 @@
       </div>
     </div>
   </section>
-  <!-- ROLE_PICKER -->
+  <section class="roles">
+    <div class="wrap roles-inner">
+      <h2 class="roles-heading">Built for whoever&rsquo;s holding the table together</h2>
+
+      <div class="role-tabs" role="tablist" aria-label="Choose your role">
+        <button class="role-tab is-active" role="tab" aria-selected="true" aria-controls="role-panel-organizer" id="role-tab-organizer" data-role="organizer">Club organizer</button>
+        <button class="role-tab" role="tab" aria-selected="false" aria-controls="role-panel-host" id="role-tab-host" data-role="host">Private host</button>
+        <button class="role-tab" role="tab" aria-selected="false" aria-controls="role-panel-player" id="role-tab-player" data-role="player">Player</button>
+      </div>
+
+      <div class="role-panel is-active" id="role-panel-organizer" role="tabpanel" aria-labelledby="role-tab-organizer">
+        <div class="role-panel-grid">
+          <div class="role-panel-copy">
+            <h3 class="role-panel-heading">Run the club without running yourself ragged</h3>
+            <ul class="role-panel-list">
+              <li>Roster and invite link &mdash; new members join with a tap, no code to type into a group chat.</li>
+              <li>Recurring events &mdash; set the weekly game once and it keeps making itself.</li>
+              <li>Host broadcast &mdash; one message reaches everyone booked for a game, or the whole club.</li>
+            </ul>
+          </div>
+          <div class="role-mock card">
+            <div class="mock-header">Riverside Mahjong Club</div>
+            <div class="mock-row"><span>42 members</span><span class="mock-pill">Host</span></div>
+            <div class="mock-list">
+              <div class="mock-list-item">Tuesday Night &middot; 4 tables</div>
+              <div class="mock-list-item">Thursday Open Play &middot; 2 tables</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="role-panel" id="role-panel-host" role="tabpanel" aria-labelledby="role-tab-host" hidden>
+        <div class="role-panel-grid">
+          <div class="role-panel-copy">
+            <h3 class="role-panel-heading">Same table, smaller circle</h3>
+            <ul class="role-panel-list">
+              <li>Every organizer tool above, sized for six friends instead of sixty.</li>
+              <li>Invite-only games &mdash; visible and joinable only to the people you invite, even if they&rsquo;re not club members yet.</li>
+              <li>No open sign-up &mdash; nobody stumbles into your Tuesday night game by accident.</li>
+            </ul>
+          </div>
+          <div class="role-mock card">
+            <div class="mock-row"><span class="mock-lock">&#128274; Invite-only</span></div>
+            <div class="mock-header">Saturday at Jamie&rsquo;s</div>
+            <div class="mock-list">
+              <div class="mock-list-item">You, Priya, Sam &mdash; confirmed</div>
+              <div class="mock-list-item">Waiting on: Alex</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="role-panel" id="role-panel-player" role="tabpanel" aria-labelledby="role-tab-player" hidden>
+        <div class="role-panel-grid">
+          <div class="role-panel-copy">
+            <h3 class="role-panel-heading">Find a seat, or hold one for a friend</h3>
+            <ul class="role-panel-list">
+              <li>Book a seat, or book yourself and a specific friend together &mdash; no other app does this.</li>
+              <li>Waitlisted? You&rsquo;re promoted automatically the moment a seat opens, in order.</li>
+              <li>Check in when you arrive &mdash; the host&rsquo;s door list updates itself.</li>
+            </ul>
+          </div>
+          <div class="role-mock card">
+            <div class="mock-header">Table 2 &middot; 4 seats</div>
+            <div class="seat-grid">
+              <div class="seat seat-filled">Priya</div>
+              <div class="seat seat-you">You + Jamie</div>
+              <div class="seat seat-filled">Sam</div>
+              <div class="seat seat-open">Open</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
   <!-- FEATURES -->
   <!-- FOUNDER -->
   <!-- FINAL_CTA -->
   <!-- FOOTER -->
-  <!-- SCRIPTS -->
+  <script>
+    (function () {
+      var tabs = document.querySelectorAll('.role-tab');
+      var panels = document.querySelectorAll('.role-panel');
+      tabs.forEach(function (tab) {
+        tab.addEventListener('click', function () {
+          tabs.forEach(function (t) {
+            t.classList.remove('is-active');
+            t.setAttribute('aria-selected', 'false');
+          });
+          panels.forEach(function (p) {
+            p.classList.remove('is-active');
+            p.hidden = true;
+          });
+          tab.classList.add('is-active');
+          tab.setAttribute('aria-selected', 'true');
+          var panel = document.getElementById('role-panel-' + tab.dataset.role);
+          panel.classList.add('is-active');
+          panel.hidden = false;
+        });
+      });
+    })();
+  </script>
 </body>
 </html>
