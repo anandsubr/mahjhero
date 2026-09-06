@@ -534,6 +534,11 @@ describe.runIf(reachable || required)('events schema contract', () => {
         // for an open-seating night, per-table groups otherwise), so the
         // column has to survive in EVENT_COLUMNS the same way the rest do.
         'seating_mode',
+        // Task 9's fix pass: EVENT_COLUMNS carried `seating_mode` without
+        // this, so the edit screen could show an already-capped event's
+        // seating mode but never its actual cap — an organizer opening a
+        // game capped at 60 saw a blank field that read as uncapped.
+        'capacity',
         'event_tables', 'bookings',
       ].sort(),
     );
@@ -546,6 +551,8 @@ describe.runIf(reachable || required)('events schema contract', () => {
     // this pins the database's own default rather than a value this suite
     // chose.
     expect(row.seating_mode).toBe('assigned_tables');
+    // Not set on insert either — pins the column's own uncapped default.
+    expect(row.capacity).toBeNull();
     expect((row.venues as { name: string }).name).toBe('Contract Hall');
     expect((row.event_tables as unknown[]).length).toBe(1);
     // Task 14: `eventStatusLine` (lib/events.ts) needs capacity and label off
@@ -584,6 +591,11 @@ describe.runIf(reachable || required)('events schema contract', () => {
         'weekday', 'nth_week', 'start_time', 'duration_minutes',
         'table_count', 'starts_on', 'ends_on', 'ended_at',
         'check_in_required', 'fee_cents', 'min_spend_cents', 'game_mode', 'venues',
+        // Task 9's fix pass: unlike EVENT_COLUMNS, SERIES_COLUMNS never
+        // carried either of these, so the edit screen's "The whole series"
+        // scope had no series row to seed its seating-mode chip or capacity
+        // field from at all.
+        'seating_mode', 'capacity',
       ].sort(),
     );
     expect(row.ends_on).toBe('2027-12-31');
@@ -592,6 +604,10 @@ describe.runIf(reachable || required)('events schema contract', () => {
     // check_in_required to SERIES_COLUMNS; EVENT_COLUMNS already had it from
     // Task 12, asserted above).
     expect(row.check_in_required).toBe(false);
+    // Same shape of assertion for this task's two new columns — neither set
+    // on insert, so this pins the database's own defaults.
+    expect(row.seating_mode).toBe('assigned_tables');
+    expect(row.capacity).toBeNull();
     // `venues(name)`, added alongside Fix pass 1 on Task 15's review so the
     // edit screen's "The whole series" heading can show the series' own
     // venue rather than the occurrence's — the seed row reuses the same

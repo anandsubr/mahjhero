@@ -269,20 +269,28 @@ export default function EditEventScreen() {
   const [eventFeeText, setEventFeeText] = useState('');
   const [eventMinSpendText, setEventMinSpendText] = useState('');
   // Seeded from `event.seating_mode` below, so this diffs against `original`
-  // exactly like every other "This game" field above. `capacity` gets no
-  // such seed -- EVENT_COLUMNS does not fetch it (nothing needed it before
-  // this task) -- so it cannot be diffed the same way; see
-  // `eventCapacityTouched` below for how that gap is handled instead.
+  // exactly like every other "This game" field above.
   const [eventSeatingMode, setEventSeatingMode] = useState<SeatingMode>(
     'assigned_tables',
   );
+  // Pre-filled from `event.capacity` below (EVENT_COLUMNS now selects it —
+  // see this file's own bug report on this fix) so an organizer opening an
+  // already-capped game sees the real cap instead of a blank field that
+  // reads as uncapped. NOT diffed against a fetched original the way
+  // `eventSeatingMode` is, on purpose: `eventCapacityTouched` below is the
+  // sole signal onSave uses, and pre-filling this text state must never by
+  // itself flip that flag — see its own doc for why that distinction has to
+  // hold exactly, even now that a real fetched value exists to seed from.
   const [eventCapacityText, setEventCapacityText] = useState('');
   // True once the host has typed anything into the capacity field this
-  // mount, including clearing it back out. Without this, an untouched blank
-  // field (the only state possible -- there is no fetched value to seed it
-  // with) would be indistinguishable from a host who deliberately emptied
-  // it, and `onSave` below needs to tell those apart: the former must leave
-  // the stored capacity alone, the latter must send `clearCapacity: true`.
+  // mount, including clearing it back out -- NOT set by the load effect's
+  // pre-fill of `eventCapacityText` above, which uses the raw setter rather
+  // than this state's own touch-tracking setter (see `setCapacityText`
+  // below). Without this flag, a field pre-filled with the stored capacity
+  // (or left blank when genuinely uncapped) would be indistinguishable from
+  // a host who opened the form and did nothing, and `onSave` below needs to
+  // tell those apart: the former must leave the stored capacity alone, the
+  // latter must send `clearCapacity: true`.
   const [eventCapacityTouched, setEventCapacityTouched] = useState(false);
   const [original, setOriginal] = useState<OriginalOccurrence | null>(null);
 
@@ -295,17 +303,23 @@ export default function EditEventScreen() {
   const [seriesGameMode, setSeriesGameMode] = useState<GameMode>('open_play');
   const [seriesFeeText, setSeriesFeeText] = useState('');
   const [seriesMinSpendText, setSeriesMinSpendText] = useState('');
-  // Unlike every other series-scope field above, there is no series row to
-  // seed either of these from -- SERIES_COLUMNS fetches neither
-  // `seating_mode` nor `capacity` (nothing needed them there before this
-  // task). Sending them unconditionally the way title/venue/notes/
-  // checkInRequired do would risk silently overwriting a series' real mode
-  // with this default the moment the host saved "The whole series" without
-  // touching either control -- exactly the class of bug this file's own
-  // docstring recounts for Fix pass 1. So these follow `eventCapacityText`'s
+  // Unlike every other series-scope field above, these two are still NOT
+  // sent unconditionally even though SERIES_COLUMNS now selects both
+  // `seating_mode` and `capacity` (this fix) and the load effect below does
+  // pre-fill them for display. Sending them unconditionally the way
+  // title/venue/notes/checkInRequired do would risk silently overwriting a
+  // series' real mode with whatever this state happens to hold the moment
+  // the host saved "The whole series" without touching either control --
+  // exactly the class of bug this file's own docstring recounts for Fix
+  // pass 1, and pre-filling from a real fetched value does not remove that
+  // risk, since a stale or slow-to-load fetch could still leave the wrong
+  // value sitting here at save time. So these follow `eventCapacityText`'s
   // touched-flag pattern instead of the rest of the series-scope fields'
   // "always seeded, always sent" one: untouched means "leave alone" for
-  // both, matching `updateEventSeries`'s own null/omitted semantics.
+  // both, matching `updateEventSeries`'s own null/omitted semantics. The
+  // load effect's pre-fill below uses the raw setters, never the
+  // touch-tracking wrappers (`setSeatingMode`/`setCapacityText` further
+  // down), so hydrating the display can never itself mark either touched.
   const [seriesSeatingMode, setSeriesSeatingMode] = useState<SeatingMode>(
     'assigned_tables',
   );
@@ -367,6 +381,16 @@ export default function EditEventScreen() {
         setEventFeeText(centsToDollarsText(loadedEvent.fee_cents));
         setEventMinSpendText(centsToDollarsText(loadedEvent.min_spend_cents));
         setEventSeatingMode(loadedEvent.seating_mode);
+        // Raw setter, not `setCapacityText` (the touch-tracking wrapper the
+        // TextField's own onChangeText below uses) -- this is a hydration of
+        // what's already stored, not the host touching the field. `null`
+        // (uncapped) renders as an empty string, matching the placeholder's
+        // own "no limit" meaning; a real cap renders as its plain digits, so
+        // an organizer opening a game already capped at 60 sees "60", not a
+        // blank field that reads as uncapped.
+        setEventCapacityText(
+          loadedEvent.capacity === null ? '' : String(loadedEvent.capacity),
+        );
         setOriginal({
           title: loadedEvent.title,
           venueId: loadedEvent.venue_id,
@@ -410,6 +434,18 @@ export default function EditEventScreen() {
           setSeriesGameMode(loadedSeries.game_mode);
           setSeriesFeeText(centsToDollarsText(loadedSeries.fee_cents));
           setSeriesMinSpendText(centsToDollarsText(loadedSeries.min_spend_cents));
+          // Raw setters, exactly like the event-scope pre-fill above and for
+          // the same reason: this hydrates the series scope's seating-mode
+          // chip and capacity field from what the series actually has,
+          // without marking either `seriesSeatingModeTouched` or
+          // `seriesCapacityTouched` -- those flags are `setSeatingMode`'s and
+          // `setCapacityText`'s job (see their definitions below), fired only
+          // when the host actually interacts with the control, never by this
+          // load effect.
+          setSeriesSeatingMode(loadedSeries.seating_mode);
+          setSeriesCapacityText(
+            loadedSeries.capacity === null ? '' : String(loadedSeries.capacity),
+          );
           setEndsOn(loadedSeries.ends_on ?? '');
           setRunsIndefinitely(loadedSeries.ends_on === null);
         }
@@ -561,10 +597,11 @@ export default function EditEventScreen() {
       }
 
       // Unlike every field above, these two are "leave alone unless
-      // touched" -- there is no series row to seed them from (see
-      // `seriesSeatingMode`'s own doc), so an untouched control here must
-      // send nothing rather than this default. `parsedSeriesCapacity ===
-      // null` covers both "never touched" and "touched, then emptied
+      // touched" even though the series row now seeds their DISPLAY (see
+      // `seriesSeatingMode`'s own doc for why the send path still ignores
+      // that fetched value) -- an untouched control here must send nothing
+      // rather than whatever this state currently holds. `parsedSeriesCapacity
+      // === null` covers both "never touched" and "touched, then emptied
       // again" -- `seriesCapacityTouched` is what tells those two apart.
       const parsedSeriesCapacity = parseCapacity(seriesCapacityText);
 
@@ -613,12 +650,13 @@ export default function EditEventScreen() {
       const seatingModeChanged = original
         ? eventSeatingMode !== original.seatingMode
         : false;
-      // `capacity` has no fetched original to diff against at all (see
-      // `eventCapacityTouched`'s own doc) -- `eventCapacityTouched` is what
-      // stands in for "changed" here. `parsedEventCapacity === null` covers
-      // both "never touched" and "touched, then emptied again"; the touched
-      // flag is what tells those two apart, exactly as it does for the
-      // series-scope save above.
+      // `capacity` is deliberately NOT diffed against `original` the way
+      // title/venue/notes/etc above are, even though a real fetched value
+      // now exists to diff against (see `eventCapacityText`'s own doc for
+      // why) -- `eventCapacityTouched` is what stands in for "changed" here.
+      // `parsedEventCapacity === null` covers both "never touched" and
+      // "touched, then emptied again"; the touched flag is what tells those
+      // two apart, exactly as it does for the series-scope save above.
       const parsedEventCapacity = parseCapacity(eventCapacityText);
 
       const result = await updateEvent(event.id, {

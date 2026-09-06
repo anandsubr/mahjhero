@@ -169,6 +169,7 @@ const ONE_OFF_EVENT = {
   fee_cents: 0,
   min_spend_cents: 0,
   seating_mode: 'assigned_tables' as const,
+  capacity: null as number | null,
 };
 
 const SERIES_EVENT = {
@@ -198,6 +199,8 @@ const SERIES = {
   game_mode: 'open_play' as const,
   fee_cents: 0,
   min_spend_cents: 0,
+  seating_mode: 'assigned_tables' as const,
+  capacity: null as number | null,
 };
 
 const TABLE_1 = {
@@ -512,7 +515,7 @@ describe('a one-off event', () => {
       });
     });
 
-    it('reflects an already-open-seating event, and sends null when the host saves without touching it', async () => {
+    it('reflects an already-open-seating event with no capacity set, and sends null when the host saves without touching it', async () => {
       fetchEvent.mockResolvedValue({
         ...ONE_OFF_EVENT,
         seating_mode: 'open_seating' as const,
@@ -523,11 +526,8 @@ describe('a one-off event', () => {
       expect(
         screen.getByRole('button', { name: 'Open seating' }).getAttribute('aria-selected'),
       ).toBe('true');
-      // The capacity field is shown, but starts blank -- ClubEvent carries
-      // no fetched capacity value for it to seed from (EVENT_COLUMNS does
-      // not select `capacity`; see this screen's own `eventCapacityText`
-      // doc). Saving without touching it must leave the stored value alone,
-      // not blank it out.
+      // Genuinely uncapped (ONE_OFF_EVENT's own `capacity: null`) renders as
+      // an empty field, not the literal string "null" or "undefined".
       expect(
         (screen.getByLabelText('Capacity (optional)') as HTMLInputElement).value,
       ).toBe('');
@@ -535,6 +535,44 @@ describe('a one-off event', () => {
       fireEvent.click(screen.getByText('Save'));
       await vi.waitFor(() => expect(updateEvent).toHaveBeenCalled());
       expect(updateEvent.mock.calls[0][1]).toMatchObject({
+        seatingMode: null,
+        capacity: null,
+        clearCapacity: false,
+      });
+    });
+
+    // The bug this task fixes: EVENT_COLUMNS did not select `capacity` at
+    // all, so an organizer opening a game already capped at 60 saw a blank
+    // field that read as uncapped -- editing blind. This pins the fix:
+    // pre-filling the field must not, by itself, mark it touched, so a save
+    // that changes nothing else still leaves the stored cap of 60 alone
+    // rather than clearing it (which is what `eventCapacityTouched` being
+    // wrongly true here would send instead).
+    it('pre-fills the capacity field from an already-capped event, and saving without touching it does not clear the stored cap', async () => {
+      fetchEvent.mockResolvedValue({
+        ...ONE_OFF_EVENT,
+        seating_mode: 'open_seating' as const,
+        capacity: 60,
+      });
+      render(<EditEventScreen />);
+      await screen.findByDisplayValue('Thursday Mahjong');
+
+      expect(
+        screen.getByRole('button', { name: 'Open seating' }).getAttribute('aria-selected'),
+      ).toBe('true');
+      expect(
+        (screen.getByLabelText('Capacity (optional)') as HTMLInputElement).value,
+      ).toBe('60');
+
+      // The regression guard: touch an unrelated field, not capacity.
+      fireEvent.change(screen.getByLabelText('Game name'), {
+        target: { value: 'Friday Mahjong' },
+      });
+      fireEvent.click(screen.getByText('Save'));
+
+      await vi.waitFor(() => expect(updateEvent).toHaveBeenCalled());
+      expect(updateEvent.mock.calls[0][1]).toMatchObject({
+        title: 'Friday Mahjong',
         seatingMode: null,
         capacity: null,
         clearCapacity: false,
@@ -752,14 +790,16 @@ describe('a series occurrence', () => {
   });
 
   // Task 9: unlike every series-scope field above, SERIES_COLUMNS fetches
-  // neither `seating_mode` nor `capacity` (see this screen's own
-  // `seriesSeatingMode` doc), so there is no series row to seed either
-  // control from. Both must default to "leave alone" (assigned tables
-  // shown, nothing sent) until the host actually touches them — sending
-  // this default unconditionally, the way checkInRequired does, would
-  // silently stamp 'assigned_tables' onto a series that is actually
-  // open-seating the moment the host saved "The whole series" without
-  // touching this control at all.
+  // now select `seating_mode` and `capacity` (this task's own fix), so the
+  // series row does seed both for DISPLAY -- see the tests below that pin
+  // an already-open-seating series showing its real mode and cap. The SEND
+  // path still must default to "leave alone" (nothing sent) until the host
+  // actually touches either control, though: sending this default
+  // unconditionally, the way checkInRequired does, would silently stamp
+  // whatever this display state happens to hold onto the series the moment
+  // the host saved "The whole series" without touching the control at all
+  // -- see `seriesSeatingMode`'s own doc for why that risk survives even
+  // now that a real fetched value exists to seed the display from.
   describe('seating mode and capacity ("The whole series")', () => {
     it('shows assigned tables selected by default and sends null (leave alone) when untouched', async () => {
       render(<EditEventScreen />);
@@ -774,6 +814,46 @@ describe('a series occurrence', () => {
       fireEvent.click(screen.getByText('Save'));
       await vi.waitFor(() => expect(updateEventSeries).toHaveBeenCalled());
       expect(updateEventSeries.mock.calls[0][1]).toMatchObject({
+        seatingMode: null,
+        capacity: null,
+        clearCapacity: false,
+      });
+    });
+
+    // The series-scope half of this task's fix: SERIES_COLUMNS did not
+    // select `seating_mode` or `capacity` at all, so the "whole series"
+    // chip could never reflect an actually-open-seating series, and its
+    // capacity field could never show the series' real cap. Mirrors the
+    // "This game" pre-fill test above; the regression guard here is that
+    // touching an unrelated field and saving must not clear the series'
+    // stored cap of 60.
+    it('reflects an already-open-seating series, pre-filling its capacity, and saving without touching either leaves them alone', async () => {
+      fetchSeries.mockResolvedValue({
+        ...SERIES,
+        seating_mode: 'open_seating' as const,
+        capacity: 60,
+      });
+      render(<EditEventScreen />);
+      await screen.findByText('The whole series');
+      fireEvent.click(screen.getByText('The whole series'));
+
+      expect(
+        screen.getByRole('button', { name: 'Open seating' }).getAttribute('aria-selected'),
+      ).toBe('true');
+      expect(
+        (screen.getByLabelText('Capacity (optional)') as HTMLInputElement).value,
+      ).toBe('60');
+
+      // The regression guard: touch an unrelated field, not capacity or
+      // seating mode.
+      fireEvent.change(screen.getByLabelText('Game name'), {
+        target: { value: 'Friday Mahjong' },
+      });
+      fireEvent.click(screen.getByText('Save'));
+
+      await vi.waitFor(() => expect(updateEventSeries).toHaveBeenCalled());
+      expect(updateEventSeries.mock.calls[0][1]).toMatchObject({
+        title: 'Friday Mahjong',
         seatingMode: null,
         capacity: null,
         clearCapacity: false,

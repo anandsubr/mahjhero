@@ -61,6 +61,10 @@ function event(over: Partial<ClubEvent> = {}): ClubEvent {
     // suite branches on it; it is here because `ClubEvent` now carries the
     // field for Task 8's door list.
     seating_mode: 'assigned_tables',
+    // `null` (uncapped) is the column's own default. Nothing in this suite
+    // branches on it either; it is here because `ClubEvent` now carries the
+    // field, added for Task 9's edit-form fix.
+    capacity: null,
     ...over,
   };
 }
