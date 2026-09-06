@@ -5,8 +5,12 @@ import Button from '../../../../../components/Button';
 import Card from '../../../../../components/Card';
 import CheckInControl from '../../../../../components/CheckInControl';
 import ErrorBanner from '../../../../../components/ErrorBanner';
+import PaidControl from '../../../../../components/PaidControl';
 import Screen from '../../../../../components/Screen';
+import SkillLevelPips from '../../../../../components/SkillLevelPips';
 import TabBar from '../../../../../components/TabBar';
+import Tag from '../../../../../components/Tag';
+import TextField from '../../../../../components/TextField';
 import { ChevronLeftIcon } from '../../../../../components/icons';
 import {
   attendanceSummary,
@@ -18,12 +22,82 @@ import {
   type AttendanceState,
 } from '../../../../../lib/attendance';
 import { canInvite, fetchRoster, type ClubMember } from '../../../../../lib/clubs';
-import { fetchEvent } from '../../../../../lib/events';
+import { fetchEvent, formatFeeCents, type SeatingMode } from '../../../../../lib/events';
+import { fetchEventPayments, setPaymentStatus } from '../../../../../lib/payments';
 import { useSession } from '../../../../../lib/session';
 import { addHours } from '../../../../../lib/time';
-import { colors, space, type } from '../../../../../lib/theme';
+import { colors, radius, space, type } from '../../../../../lib/theme';
+
+/**
+ * How long a row stays put after it is touched, before it re-buckets into
+ * the section its state actually belongs to.
+ *
+ * Marking somebody here and marking them paid are ONE interaction at the
+ * door — the organizer taps "Here", then taps "Paid" on the same row, with
+ * the person still standing in front of them. A row that jumped to another
+ * section the instant "Here" landed would move out from under the second
+ * tap. So the write lands immediately (nothing here delays the RPC or the
+ * optimistic update) and only the row's PLACEMENT waits, restarting on
+ * every further tap.
+ *
+ * At module scope so the by-hand pass can tune this single number.
+ */
+const SETTLE_MS = 4000;
 
 type TableGroup = { id: string; label: string; rows: AttendanceRow[] };
+
+/**
+ * The four buckets an open-seating door list shows. `walkIns` is the same
+ * bucket the table grouping already had; the other three replace "which
+ * table" with "where does this person stand", which is the only question an
+ * event with no tables can answer.
+ */
+type StatusSection = 'toArrive' | 'here' | 'notComing' | 'walkIns';
+
+/**
+ * A row's TRUE section, from its own data alone. A walk-in is checked
+ * first, exactly as `groupRows` checks it first and for the same reason:
+ * an organizer-added walk-in is definitionally already at the door, so it
+ * belongs under "Walk-ins" whatever its attendance state says.
+ */
+function sectionOf(r: AttendanceRow): StatusSection {
+  if (r.booking_status === null) return 'walkIns';
+  if (r.state === 'arrived') return 'here';
+  if (r.state === 'no_show') return 'notComing';
+  return 'toArrive';
+}
+
+/**
+ * The open-seating counterpart to `groupRows` below — NOT its replacement.
+ * An assigned-tables event still groups by table (that is what its door list
+ * has always shown, and it is the only way to find the person you are
+ * looking at in a room of numbered tables); an open-seating event has no
+ * tables to group by at all.
+ *
+ * `held` pins a recently-touched row to the section it was in when the
+ * organizer first touched it — see SETTLE_MS above. It is a section, not a
+ * boolean: once a row's state has changed, its pre-tap section cannot be
+ * recovered from the row itself, and "hold it where it was" is precisely
+ * what the settle window promises.
+ *
+ * Like `groupRows`, this preserves the server's own ordering within each
+ * bucket rather than re-sorting.
+ */
+function groupByStatus(
+  rows: AttendanceRow[],
+  held: Record<string, StatusSection>,
+): Record<StatusSection, AttendanceRow[]> {
+  const groups: Record<StatusSection, AttendanceRow[]> = {
+    toArrive: [],
+    here: [],
+    notComing: [],
+    walkIns: [],
+  };
+  for (const r of rows) {
+    groups[held[r.profile_id] ?? sectionOf(r)].push(r);
+  }
+  return groups;
+}
 
 /**
  * Splits the server's own ordering into the screen's three groups —
@@ -181,6 +255,66 @@ export default function CheckInScreen() {
   const [attendanceFailed, setAttendanceFailed] = useState(false);
   const [eventFailed, setEventFailed] = useState(false);
 
+  // ---- Task 8: open seating, search, and the payment marker -------------
+  //
+  // Defaults to 'assigned_tables' and is only ever written from a
+  // SUCCESSFUL event read, the same rule the check-in window below follows:
+  // a transient refetch failure must not silently reshape a door list the
+  // host is working down.
+  const [seatingMode, setSeatingMode] = useState<SeatingMode>('assigned_tables');
+  const [feeCents, setFeeCents] = useState(0);
+  // profile_id -> how many LIVE bookings share that person's booking group.
+  // Only > 1 is interesting (a solo booking is a group of one), and the
+  // badge is what tells an organizer placing people on the day who arrived
+  // together.
+  const [groupSizes, setGroupSizes] = useState<Record<string, number>>({});
+  const [query, setQuery] = useState('');
+  // profile_id -> true iff marked paid. Deliberately its own map rather
+  // than a field folded into `rows`: `mergeAttendance` is tuned for the
+  // exact question "whose `state` is contested", and widening it to carry a
+  // second, separately-fetched fact is how that hard-won merge would start
+  // to drift. The merge's `contested` map is reused for payments verbatim
+  // in `load()` below, so an in-flight payment write survives a refetch the
+  // same way an in-flight attendance write does.
+  const [paid, setPaidMap] = useState<Record<string, boolean>>({});
+  // `fetchEventPayments` returns null on failure and [] on "nobody has
+  // paid" -- the same distinction `attendanceFailed` draws, and the same
+  // reason: rendering a failed read as "nobody has paid" is a false
+  // statement about people's money.
+  const [paymentsFailed, setPaymentsFailed] = useState(false);
+  // The rows being held in place by the settle window (see SETTLE_MS), and
+  // their pending timers. The timers live in a ref, not state: they are not
+  // rendered, and re-rendering on every timer swap would be pointless work
+  // at the exact moment a host is tapping fastest.
+  const [held, setHeld] = useState<Record<string, StatusSection>>({});
+  const settlingRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  // The one row that has just moved, offered back. Only ever one: at a door
+  // the undo that matters is the tap you regret THIS second.
+  const [undoFor, setUndoFor] = useState<{
+    profileId: string;
+    name: string;
+    state: AttendanceState;
+  } | null>(null);
+  // Mirrors `rows` for the settle timer's callback, which fires up to four
+  // seconds after the render that scheduled it and must report where the
+  // row actually LANDED (a host can tap Here, then Not coming, inside one
+  // window) rather than the stale row captured in that render's closure.
+  const rowsRef = useRef<AttendanceRow[]>([]);
+  useEffect(() => {
+    rowsRef.current = rows;
+  }, [rows]);
+
+  // Every pending settle timer is cleared on unmount: a host who backs out
+  // of this screen mid-window must not have a timer wake up afterwards and
+  // set state on a screen that is gone.
+  useEffect(() => {
+    const timers = settlingRef.current;
+    return () => {
+      for (const timer of Object.values(timers)) clearTimeout(timer);
+      settlingRef.current = {};
+    };
+  }, []);
+
   // A monotonically increasing tag on every `load()` call. Guards against
   // two refetches racing out of order: two refusals in a row each fire
   // their own `load()`, and without this the one that happens to RESOLVE
@@ -245,6 +379,26 @@ export default function CheckInScreen() {
     return seq;
   }
 
+  // The payment writes' own rollback sequence, alongside (never instead of)
+  // `writeSeqRef`. Every payment write still bumps `writeSeqRef` -- `load()`'s
+  // merge asks "was ANY write for this profile in flight", and a payment write
+  // is one -- but its ROLLBACK has to ask a narrower question: "is this still
+  // the latest write of THE SAME FACT". Guarding a failed payment write on
+  // the shared counter instead would suppress its rollback whenever an
+  // ATTENDANCE write for that person had started in the meantime, leaving
+  // somebody marked paid on a write the server refused, with nothing left to
+  // correct it (the refetch that failure fires treats the profile as
+  // contested, so the stale local `true` would win that merge too). Attendance
+  // and payment are two different facts about one person; only same-fact
+  // writes can be said to supersede each other.
+  const paidSeqRef = useRef<Record<string, number>>({});
+
+  function nextPaidSeq(profileId: string) {
+    const seq = (paidSeqRef.current[profileId] ?? 0) + 1;
+    paidSeqRef.current[profileId] = seq;
+    return seq;
+  }
+
   async function load() {
     const seq = ++loadSeqRef.current;
     // Snapshotted BEFORE the network round trip starts -- see the doc
@@ -254,6 +408,32 @@ export default function CheckInScreen() {
     // flight at ANY POINT since this read was issued").
     const writeSeqAtLoadEntry = { ...writeSeqRef.current };
     const busyAtLoadEntry = busyRef.current;
+
+    /**
+     * The "whose local value wins this merge" map, against the two entry
+     * snapshots above and `writeSeqRef` read LIVE at the moment of the call.
+     *
+     * A function rather than one inline computation only because this
+     * function now has two responses to fold in, arriving from two separate
+     * awaits (attendance, then payments) -- and each must ask this question
+     * at ITS OWN arrival, never once up front for both. Calling it twice is
+     * the whole point; the rule it encodes is unchanged, and the comment at
+     * each call site says which response it is answering for.
+     */
+    function contestedNow(): Record<string, boolean> {
+      const contested: Record<string, boolean> = {};
+      for (const profileId of new Set([
+        ...Object.keys(writeSeqAtLoadEntry),
+        ...Object.keys(busyAtLoadEntry),
+        ...Object.keys(writeSeqRef.current),
+      ])) {
+        contested[profileId] =
+          !!busyAtLoadEntry[profileId] ||
+          writeSeqRef.current[profileId] !== writeSeqAtLoadEntry[profileId];
+      }
+      return contested;
+    }
+
     const [rosterRows, attendanceRows, event] = await Promise.all([
       fetchRoster(clubId),
       fetchEventAttendance(eventId),
@@ -272,7 +452,8 @@ export default function CheckInScreen() {
     const myRole = (rosterRows ?? []).find(
       (m) => m.profile_id === session?.user.id,
     );
-    setIsOrganizer(myRole ? canInvite(myRole.role) : false);
+    const organizer = myRole ? canInvite(myRole.role) : false;
+    setIsOrganizer(organizer);
     setRoster(rosterRows ?? []);
 
     setAttendanceFailed(attendanceRows === null);
@@ -300,16 +481,7 @@ export default function CheckInScreen() {
       // point ever runs, so the first half alone would miss it and let
       // this merge apply the stale server row after all -- the original
       // clobber, arriving from the other direction.
-      const contested: Record<string, boolean> = {};
-      for (const profileId of new Set([
-        ...Object.keys(writeSeqAtLoadEntry),
-        ...Object.keys(busyAtLoadEntry),
-        ...Object.keys(writeSeqRef.current),
-      ])) {
-        contested[profileId] =
-          !!busyAtLoadEntry[profileId] ||
-          writeSeqRef.current[profileId] !== writeSeqAtLoadEntry[profileId];
-      }
+      const contested = contestedNow();
       setRows((current) =>
         mergeAttendance(attendanceRows, current, contested),
       );
@@ -341,6 +513,29 @@ export default function CheckInScreen() {
     // applies to `rows`, applied here to the window: a transient failure
     // keeps the last known good value rather than blanking it.
     if (event) {
+      // Same "only on a successful read" rule as the window below, for the
+      // same reason: a flaky refetch must not reshape the list (status
+      // sections back to table groups) or blank out what people owe, under
+      // a host who is mid-queue. `?? 'assigned_tables'` mirrors the
+      // column's own `not null default`, so an event read by an older
+      // client contract still lands on the behaviour this screen has always
+      // had.
+      setSeatingMode(event.seating_mode ?? 'assigned_tables');
+      setFeeCents(event.fee_cents ?? 0);
+      // Live bookings only: a cancelled or declined seat is not somebody
+      // who arrived with anyone. `bookings` is already embedded in the
+      // event read (EVENT_COLUMNS), so the badge costs no extra round trip.
+      const sizes: Record<string, number> = {};
+      const live = (event.bookings ?? []).filter(
+        (b) => b.status === 'confirmed' || b.status === 'waitlisted',
+      );
+      const perGroup: Record<string, number> = {};
+      for (const b of live) {
+        perGroup[b.group_id] = (perGroup[b.group_id] ?? 0) + 1;
+      }
+      for (const b of live) sizes[b.profile_id] = perGroup[b.group_id];
+      setGroupSizes(sizes);
+
       setCheckInRequired(event.check_in_required);
       if (event.check_in_required) {
         setOpensAt(addHours(event.starts_at, -1));
@@ -352,6 +547,50 @@ export default function CheckInScreen() {
     }
 
     setReady(true);
+
+    // Payments come LAST, on their own round trip, and nothing above waits
+    // on them: the door list -- the thing a host is standing there needing
+    // -- paints as soon as attendance lands, exactly as it did before this
+    // read existed, and who has paid fills in a beat later.
+    //
+    // Only for an organizer, and that is the point of doing it here rather
+    // than in the Promise.all above: `event_payment_status` is
+    // organizer-only (20260906150000) and the answer to "am I an organizer"
+    // is the roster read that just landed. Asking alongside it would have a
+    // plain member's client issue a question it has no business asking --
+    // the RLS gate would refuse it, but the request itself is the leak of
+    // intent. `organizer` (the freshly-read answer), not the `isOrganizer`
+    // state set above, because state updates are async.
+    if (!organizer) return;
+    const payments = await fetchEventPayments(eventId);
+
+    // Re-checked after this second round trip for the same reason it is
+    // checked after the first: a newer load() may have started in between,
+    // and only the most-recently-started call may write its result back.
+    if (seq !== loadSeqRef.current) return;
+
+    // `null` is a FAILED read, not "nobody has paid" -- the same
+    // distinction `attendanceFailed` draws above, and the same reason:
+    // rendering a dropped read as "nobody has paid" is a false statement
+    // about people's money. On failure the map is left exactly as it is.
+    setPaymentsFailed(payments === null);
+    if (payments !== null) {
+      // Absence of a row IS the unpaid state (`set_payment_status` deletes
+      // rather than storing a false), so the server's answer is rebuilt
+      // from scratch -- except for a profile whose own write was in flight
+      // at any point since this load began, whose local value wins for
+      // exactly as long as that write is unresolved. Same rule as the
+      // attendance merge above, asked afresh for THIS response.
+      const contested = contestedNow();
+      setPaidMap((current) => {
+        const next: Record<string, boolean> = {};
+        for (const p of payments) next[p.profile_id] = true;
+        for (const profileId of Object.keys(current)) {
+          if (contested[profileId]) next[profileId] = current[profileId];
+        }
+        return next;
+      });
+    }
   }
 
   useEffect(() => {
@@ -414,6 +653,20 @@ export default function CheckInScreen() {
     (r) => r.booking_status !== null && r.state === 'arrived',
   ).length;
   const grouped = groupRows(rows);
+  const openSeating = seatingMode === 'open_seating';
+  // Case-insensitive substring on the name, over the SAME `rows` array the
+  // groups are built from, so search narrows the list without disturbing
+  // the server's ordering or any of the state above. Matched against
+  // `safeDisplayName`, so an unnamed member is findable by the words the
+  // screen actually shows for them. Only the open-seating path draws the
+  // field, so an assigned-tables door list is untouched by it.
+  const needle = query.trim().toLowerCase();
+  const visibleRows = needle
+    ? rows.filter((r) =>
+        safeDisplayName(r.display_name).toLowerCase().includes(needle),
+      )
+    : rows;
+  const statusGroups = groupByStatus(visibleRows, held);
   // Anyone already on the door list -- a confirmed booking or an existing
   // check-in row -- is excluded from the walk-in picker. `record_attendance`
   // would not refuse a double-add (`on conflict (event_id, profile_id) do
@@ -467,6 +720,132 @@ export default function CheckInScreen() {
       setError(writeError);
       void load();
     }
+  }
+
+  /**
+   * The payment marker's write. Modelled line for line on `setState` above
+   * -- optimistic update, `incrBusy`/`decrBusy`, a sequence-guarded
+   * rollback, `setError` plus an authoritative refetch on refusal -- and
+   * deliberately NOT a second, simpler write path: everything the comments
+   * on `busy`, `writeSeqRef` and `mergeAttendance` say about two writes for
+   * one profile racing at a door is just as true of a "here, and paid"
+   * double tap as it is of "here, no wait, not coming".
+   *
+   * It shares `busy` and `writeSeqRef` with the attendance writes: those
+   * are per-PROFILE guards ("is anything in flight for this person"), and a
+   * payment write and an attendance write for the same person are exactly
+   * the pair that must not interleave badly. Only the ROLLBACK guard is its
+   * own (`paidSeqRef`), because that one asks a per-FACT question -- see
+   * the comment on `paidSeqRef` above.
+   */
+  async function setPaid(person: AttendanceRow, next: boolean) {
+    const profileId = person.profile_id;
+    const previous = !!paid[profileId];
+    // Both counters: the shared one so `load()`'s merge can see this write
+    // at all, the payment-specific one to guard this call's own rollback.
+    // See `paidSeqRef` above for why those are two different questions.
+    nextWriteSeq(profileId);
+    const seq = nextPaidSeq(profileId);
+
+    setPaidMap((current) => ({ ...current, [profileId]: next }));
+    incrBusy(profileId);
+
+    const { error: writeError } = await setPaymentStatus({
+      eventId,
+      profileId,
+      isPaid: next,
+    });
+
+    decrBusy(profileId);
+
+    if (writeError) {
+      // Same guard `setState`'s rollback uses, for the same reason: a newer
+      // PAYMENT write for this profile has started since this one did, and
+      // its optimistic value -- not this call's stale `previous` -- is what
+      // belongs on screen.
+      if (paidSeqRef.current[profileId] === seq) {
+        setPaidMap((current) => ({ ...current, [profileId]: previous }));
+      }
+      setError(writeError);
+      void load();
+    }
+  }
+
+  /**
+   * Starts (or restarts) a row's settle window -- see SETTLE_MS.
+   *
+   * Called at the TAP, not inside the write functions: the window is about
+   * where a row sits under the organizer's finger, not about the write, and
+   * routing it through `setState`/`setPaid` would also hold a row still on
+   * the one write that means the opposite (undo, below, which exists to
+   * move the row back immediately).
+   *
+   * The section is captured on the FIRST tap of a window and kept for the
+   * whole of it, so a second tap that changes the state again (here, then
+   * not coming) still cannot move the row mid-gesture.
+   */
+  function holdRow(person: AttendanceRow) {
+    // Only the status sections move rows around. An assigned-tables door
+    // list groups by table, and a check-in never changes anybody's table --
+    // there is nothing to hold still, so that path keeps behaving exactly
+    // as it did before this window existed.
+    if (!openSeating) return;
+    const profileId = person.profile_id;
+    const pending = settlingRef.current[profileId];
+    if (pending) clearTimeout(pending);
+
+    setHeld((current) =>
+      profileId in current
+        ? current
+        : { ...current, [profileId]: sectionOf(person) },
+    );
+
+    settlingRef.current[profileId] = setTimeout(() => {
+      delete settlingRef.current[profileId];
+      setHeld((current) => {
+        const next = { ...current };
+        delete next[profileId];
+        return next;
+      });
+      // Read from the ref, not from the `person` this closure captured: up
+      // to four seconds have passed and the row may have been tapped again,
+      // or refetched, since. A row that ended the window back at "not
+      // determined" (the host corrected themselves) has moved nowhere and
+      // needs no undo offered.
+      const settled = rowsRef.current.find((r) => r.profile_id === profileId);
+      if (settled && settled.booking_status !== null && settled.state !== null) {
+        setUndoFor({
+          profileId,
+          name: safeDisplayName(settled.display_name),
+          state: settled.state,
+        });
+      }
+    }, SETTLE_MS);
+  }
+
+  /**
+   * Undo, on the move a row just made. Calls the SAME `clearAttendance`
+   * path (through `setState(person, null)`) the two-state control has
+   * always used to get back to "not determined" -- no new RPC, and every
+   * guarantee `setState` carries (optimistic update, busy count,
+   * sequence-guarded rollback, refetch on refusal) applies unchanged.
+   *
+   * Deliberately does NOT open a settle window of its own: the point of
+   * undo is that the row goes back where it was, now.
+   */
+  function undoMove(target: { profileId: string; name: string }) {
+    const person = rows.find((r) => r.profile_id === target.profileId);
+    setUndoFor(null);
+    if (!person) return;
+    const pending = settlingRef.current[target.profileId];
+    if (pending) clearTimeout(pending);
+    delete settlingRef.current[target.profileId];
+    setHeld((current) => {
+      const next = { ...current };
+      delete next[target.profileId];
+      return next;
+    });
+    void setState(person, null);
   }
 
   /**
@@ -546,16 +925,90 @@ export default function CheckInScreen() {
 
   function renderPerson(r: AttendanceRow) {
     const displayName = safeDisplayName(r.display_name);
+    const groupSize = groupSizes[r.profile_id] ?? 1;
+    const isPaid = !!paid[r.profile_id];
     return (
       <View key={r.profile_id} style={styles.personRow}>
-        <Text style={styles.name}>{displayName}</Text>
-        <CheckInControl
-          label={displayName}
-          state={r.state}
-          busy={!!busy[r.profile_id]}
-          disabled={!windowOpen}
-          onChange={(next) => void setState(r, next)}
-        />
+        <View style={styles.person}>
+          <View style={styles.nameLine}>
+            <Text style={styles.name}>{displayName}</Text>
+            {/* `skill_level` is nullable and null means "not set", which is
+                not a fourth visual state -- SkillLevelPips' own docstring
+                requires the caller to check, so this does. */}
+            {r.skill_level ? <SkillLevelPips level={r.skill_level} /> : null}
+          </View>
+          {groupSize > 1 || (feeCents > 0 && !isPaid) ? (
+            <View style={styles.badges}>
+              {/* Who arrived together. The spec keeps booking groups
+                  visible on an open-seating night precisely because an
+                  organizer placing people on the day has to seat a pair or
+                  a foursome at the same table -- the group is the only
+                  record of that, since nothing was pre-assigned. */}
+              {groupSize > 1 ? <Tag variant="accent2">{`Group of ${groupSize}`}</Tag> : null}
+              {/* What this person still owes, from the event's own
+                  `fee_cents` through `formatFeeCents` -- the one place in
+                  this app that turns integer cents into a dollar string.
+                  No new price plumbing, and no float arithmetic anywhere
+                  near money. */}
+              {feeCents > 0 && !isPaid ? (
+                <Text style={styles.owed}>{formatFeeCents(feeCents)} owed</Text>
+              ) : null}
+            </View>
+          ) : null}
+        </View>
+        <View style={styles.actions}>
+          {/* Only when there is money to collect: an event with no fee has
+              nothing to mark, and a dead toggle at the door is one more
+              thing to tap past. Not gated on the check-in window -- see
+              PaidControl's docstring: `set_payment_status` has no window,
+              deliberately. */}
+          {feeCents > 0 ? (
+            <PaidControl
+              label={displayName}
+              paid={isPaid}
+              busy={!!busy[r.profile_id]}
+              onChange={(next) => {
+                holdRow(r);
+                void setPaid(r, next);
+              }}
+            />
+          ) : null}
+          <CheckInControl
+            label={displayName}
+            state={r.state}
+            busy={!!busy[r.profile_id]}
+            disabled={!windowOpen}
+            onChange={(next) => {
+              holdRow(r);
+              void setState(r, next);
+            }}
+          />
+        </View>
+      </View>
+    );
+  }
+
+  /**
+   * One status section, with the count of what is actually under it -- so a
+   * heading never claims a number the list below it does not show, which is
+   * what a search would otherwise make it do.
+   */
+  function renderStatusSection(
+    label: string,
+    testID: string,
+    group: AttendanceRow[],
+    empty: string,
+  ) {
+    return (
+      <View testID={testID} style={styles.group}>
+        <Text style={styles.groupHeading}>
+          {label} ({group.length})
+        </Text>
+        {group.length > 0 ? (
+          <Card style={styles.card}>{group.map(renderPerson)}</Card>
+        ) : (
+          <Text style={styles.help}>{needle ? 'Nobody here matches.' : empty}</Text>
+        )}
       </View>
     );
   }
@@ -656,26 +1109,98 @@ export default function CheckInScreen() {
         </Text>
       ) : null}
 
-      {grouped.tables.map((g) => (
-        <View key={g.id} testID={`door-table-${g.id}`} style={styles.group}>
-          <Text style={styles.groupHeading}>{g.label}</Text>
-          <Card style={styles.card}>{g.rows.map(renderPerson)}</Card>
-        </View>
-      ))}
-
-      {grouped.anyTable.length > 0 ? (
-        <View testID="door-any-table" style={styles.group}>
-          <Text style={styles.groupHeading}>Any table</Text>
-          <Card style={styles.card}>{grouped.anyTable.map(renderPerson)}</Card>
-        </View>
+      {paymentsFailed ? (
+        // Distinct from "nobody has paid", which is what `?? []` would have
+        // rendered this as -- and a false statement about people's money.
+        <Text style={styles.help}>Could not load who has paid.</Text>
       ) : null}
 
-      {grouped.walkIns.length > 0 ? (
-        <View testID="door-walkins" style={styles.group}>
-          <Text style={styles.groupHeading}>Walk-ins</Text>
-          <Card style={styles.card}>{grouped.walkIns.map(renderPerson)}</Card>
-        </View>
-      ) : null}
+      {openSeating ? (
+        // An open-seating night has no tables to group by, so the list is
+        // organised by where each person stands instead. The per-table
+        // grouping below is NOT dead code -- it is what an assigned-tables
+        // event's door list still shows, and the two paths are chosen by
+        // the event's own `seating_mode`, never by one replacing the other.
+        <>
+          <TextField
+            accessibilityLabel="Search by name"
+            placeholder="Search by name"
+            value={query}
+            onChangeText={setQuery}
+            autoCorrect={false}
+            autoCapitalize="none"
+          />
+
+          {undoFor ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Undo: ${undoFor.name}`}
+              onPress={() => undoMove(undoFor)}
+              style={styles.undoRow}
+            >
+              <Text style={styles.undoText}>
+                {undoFor.name} marked{' '}
+                {undoFor.state === 'arrived' ? 'here' : 'not coming'} · Undo
+              </Text>
+            </Pressable>
+          ) : null}
+
+          {renderStatusSection(
+            'Still to arrive',
+            'door-status-to-arrive',
+            statusGroups.toArrive,
+            'Everyone booked is accounted for.',
+          )}
+          {renderStatusSection(
+            'Here',
+            'door-status-here',
+            statusGroups.here,
+            'Nobody has arrived yet.',
+          )}
+          {renderStatusSection(
+            'Not coming',
+            'door-status-not-coming',
+            statusGroups.notComing,
+            'Nobody has been marked as not coming.',
+          )}
+          {/* Walk-ins keep the same "only when there are any" rule the
+              table grouping gives them: an empty section here would be
+              noise on the majority of nights. */}
+          {statusGroups.walkIns.length > 0 ? (
+            <View testID="door-walkins" style={styles.group}>
+              <Text style={styles.groupHeading}>
+                Walk-ins ({statusGroups.walkIns.length})
+              </Text>
+              <Card style={styles.card}>
+                {statusGroups.walkIns.map(renderPerson)}
+              </Card>
+            </View>
+          ) : null}
+        </>
+      ) : (
+        <>
+          {grouped.tables.map((g) => (
+            <View key={g.id} testID={`door-table-${g.id}`} style={styles.group}>
+              <Text style={styles.groupHeading}>{g.label}</Text>
+              <Card style={styles.card}>{g.rows.map(renderPerson)}</Card>
+            </View>
+          ))}
+
+          {grouped.anyTable.length > 0 ? (
+            <View testID="door-any-table" style={styles.group}>
+              <Text style={styles.groupHeading}>Any table</Text>
+              <Card style={styles.card}>{grouped.anyTable.map(renderPerson)}</Card>
+            </View>
+          ) : null}
+
+          {grouped.walkIns.length > 0 ? (
+            <View testID="door-walkins" style={styles.group}>
+              <Text style={styles.groupHeading}>Walk-ins</Text>
+              <Card style={styles.card}>{grouped.walkIns.map(renderPerson)}</Card>
+            </View>
+          ) : null}
+        </>
+      )}
 
       <Button
         variant="secondary"
@@ -766,6 +1291,35 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: space[3],
+    // A paid chip alongside the two attendance chips is more than a phone
+    // width can hold next to a long name; wrapping keeps every control at
+    // full size rather than squeezing the touch targets this app sizes up
+    // for its older players.
+    flexWrap: 'wrap',
+  },
+  person: { gap: space[1], flexShrink: 1 },
+  nameLine: { flexDirection: 'row', alignItems: 'center', gap: space[2] },
+  badges: { flexDirection: 'row', alignItems: 'center', gap: space[2], flexWrap: 'wrap' },
+  actions: { flexDirection: 'row', alignItems: 'center', gap: space[2], flexWrap: 'wrap' },
+  // `colors.textLabel` (5.6:1 on bg), not `textMuted` -- what somebody owes
+  // is a number the host acts on, in the same class as the two counts under
+  // the summary line, not dispensable help text.
+  owed: {
+    fontFamily: type.bodyBold,
+    fontSize: type.size.helper,
+    color: colors.textLabel,
+  },
+  undoRow: {
+    paddingVertical: space[2],
+    paddingHorizontal: space[3],
+    borderRadius: radius.pill,
+    backgroundColor: colors.accent2[200],
+    alignSelf: 'flex-start',
+  },
+  undoText: {
+    fontFamily: type.bodyBold,
+    fontSize: type.size.body,
+    color: colors.accent2[800],
   },
   name: {
     fontFamily: type.bodyRegular,

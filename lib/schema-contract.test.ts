@@ -530,6 +530,10 @@ describe.runIf(reachable || required)('events schema contract', () => {
         'id', 'club_id', 'series_id', 'title', 'venue_id', 'notes',
         'starts_at', 'ends_at', 'status', 'occurrence_date', 'overrides',
         'check_in_required', 'fee_cents', 'min_spend_cents', 'game_mode', 'venues',
+        // Task 8's door list branches on the seating mode (status sections
+        // for an open-seating night, per-table groups otherwise), so the
+        // column has to survive in EVENT_COLUMNS the same way the rest do.
+        'seating_mode',
         'event_tables', 'bookings',
       ].sort(),
     );
@@ -538,6 +542,10 @@ describe.runIf(reachable || required)('events schema contract', () => {
     // Not set on insert above, so this pins the column's own default —
     // Task 12 added check_in_required to EVENT_COLUMNS.
     expect(row.check_in_required).toBe(false);
+    // Same shape of assertion for Task 8's column: not set on insert, so
+    // this pins the database's own default rather than a value this suite
+    // chose.
+    expect(row.seating_mode).toBe('assigned_tables');
     expect((row.venues as { name: string }).name).toBe('Contract Hall');
     expect((row.event_tables as unknown[]).length).toBe(1);
     // Task 14: `eventStatusLine` (lib/events.ts) needs capacity and label off

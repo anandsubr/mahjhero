@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 
 const searchParams: Record<string, string> = { id: 'club-1', eventId: 'event-1' };
@@ -77,6 +77,21 @@ vi.mock('../../lib/attendance', async (importOriginal) => {
   };
 });
 
+// Task 8: the door list's payment marker. Both are organizer-only,
+// server-side; the privacy test at the bottom of this file pins that a
+// member's client never even issues the read.
+const fetchEventPayments = vi.fn();
+const setPaymentStatus = vi.fn();
+
+vi.mock('../../lib/payments', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/payments')>();
+  return {
+    ...actual,
+    fetchEventPayments: (...args: unknown[]) => fetchEventPayments(...args),
+    setPaymentStatus: (...args: unknown[]) => setPaymentStatus(...args),
+  };
+});
+
 // TabBar (now carried by this screen) calls `useUnreadCounts`, which reaches
 // `fetchUnreadCounts`.
 const fetchUnreadCounts = vi.fn(async () => []);
@@ -129,7 +144,24 @@ const EVENT = {
   starts_at: new Date(NOW - 30 * 60_000).toISOString(),
   ends_at: new Date(NOW + 2 * 60 * 60_000).toISOString(),
   check_in_required: true,
+  // The default mode, and the one every test above this line exercises: the
+  // door list keeps its per-table grouping. Task 8 added the status-section
+  // path for `open_seating` alongside it, never in place of it.
+  seating_mode: 'assigned_tables' as const,
+  fee_cents: 0,
+  bookings: [] as { profile_id: string; status: string; group_id: string }[],
 };
+
+// The 60-70 player night: no tables to group by, a fee to collect at the
+// door. Task 8's status sections, search and paid marker hang off this mode.
+const OPEN_EVENT = {
+  ...EVENT,
+  seating_mode: 'open_seating' as const,
+  fee_cents: 1500,
+};
+
+// Must match check-in.tsx's module-scope constant.
+const SETTLE_MS = 4000;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -145,6 +177,15 @@ beforeEach(() => {
   fetchEventAttendance.mockResolvedValue([]);
   recordAttendance.mockResolvedValue({ error: null });
   clearAttendance.mockResolvedValue({ error: null });
+  fetchEventPayments.mockResolvedValue([]);
+  setPaymentStatus.mockResolvedValue({ error: null });
+});
+
+afterEach(() => {
+  // Every fake-timer test below restores real timers itself; this is the
+  // backstop, so a test that throws mid-window cannot leak fake timers into
+  // the next one (which renders and awaits real promises).
+  vi.useRealTimers();
 });
 
 // TabBar navigates with router.replace off an entry route that is itself a
@@ -951,4 +992,407 @@ it('does not let a walk-in vanish when its write starts after the refetch begins
       .getAttribute('aria-pressed'),
   ).toBe('true');
   expect(screen.getByText(/1 walk-in\b/i)).toBeTruthy();
+});
+
+// ---------------------------------------------------------------------------
+// Task 8: the open-seating door list.
+//
+// Everything above this line runs on an `assigned_tables` event and must keep
+// passing untouched -- the per-table grouping is not dead code, it is what an
+// assigned-tables event's door list still shows. These tests cover the OTHER
+// path: an event with `seating_mode = 'open_seating'`, where there are no
+// tables to group by and the organizer works a status list instead.
+// ---------------------------------------------------------------------------
+describe('the open-seating door list', () => {
+  it('buckets people into status sections with their counts', async () => {
+    fetchEvent.mockResolvedValue(OPEN_EVENT);
+    fetchEventAttendance.mockResolvedValue([
+      row({ profile_id: 'a', display_name: 'Ann', state: 'arrived' }),
+      row({ profile_id: 'b', display_name: 'Bob', state: null }),
+      row({ profile_id: 'd', display_name: 'Dee', state: null }),
+      row({ profile_id: 'c', display_name: 'Cal', state: 'no_show' }),
+      row({
+        profile_id: 'w',
+        display_name: 'Walker',
+        booking_status: null,
+        state: 'arrived',
+      }),
+    ]);
+    render(<CheckInScreen />);
+
+    const toArrive = await screen.findByTestId('door-status-to-arrive');
+    const here = screen.getByTestId('door-status-here');
+    const notComing = screen.getByTestId('door-status-not-coming');
+    const walkIns = screen.getByTestId('door-walkins');
+
+    expect(within(toArrive).getByText('Still to arrive (2)')).toBeTruthy();
+    expect(within(toArrive).getByText('Bob')).toBeTruthy();
+    expect(within(toArrive).getByText('Dee')).toBeTruthy();
+    expect(within(here).getByText('Here (1)')).toBeTruthy();
+    expect(within(here).getByText('Ann')).toBeTruthy();
+    expect(within(notComing).getByText('Not coming (1)')).toBeTruthy();
+    expect(within(notComing).getByText('Cal')).toBeTruthy();
+    // A walk-in stays a walk-in whatever their state -- the same bucket the
+    // table grouping already gives them.
+    expect(within(walkIns).getByText('Walk-ins (1)')).toBeTruthy();
+    expect(within(walkIns).getByText('Walker')).toBeTruthy();
+    expect(within(here).queryByText('Walker')).toBeNull();
+
+    // No table grouping on this path: there are no tables.
+    expect(screen.queryByTestId('door-any-table')).toBeNull();
+  });
+
+  it('leaves an assigned-tables event on its per-table grouping, with no search field', async () => {
+    fetchEvent.mockResolvedValue(EVENT);
+    fetchEventAttendance.mockResolvedValue([
+      row({
+        profile_id: 'a',
+        display_name: 'Ann',
+        event_table_id: 'table-1',
+        table_label: 'Table 1',
+        table_position: 1,
+        state: 'arrived',
+      }),
+    ]);
+    render(<CheckInScreen />);
+
+    expect(await screen.findByTestId('door-table-table-1')).toBeTruthy();
+    expect(screen.queryByTestId('door-status-here')).toBeNull();
+    expect(screen.queryByTestId('door-status-to-arrive')).toBeNull();
+    expect(screen.queryByLabelText('Search by name')).toBeNull();
+  });
+
+  it('narrows the list to the name the organizer types, whatever the case', async () => {
+    fetchEvent.mockResolvedValue(OPEN_EVENT);
+    fetchEventAttendance.mockResolvedValue([
+      row({ profile_id: 'a', display_name: 'Ann Chen' }),
+      row({ profile_id: 'b', display_name: 'Bob Diaz' }),
+    ]);
+    render(<CheckInScreen />);
+    await screen.findByText('Ann Chen');
+
+    fireEvent.change(screen.getByLabelText('Search by name'), {
+      target: { value: 'aNN' },
+    });
+
+    expect(screen.getByText('Ann Chen')).toBeTruthy();
+    expect(screen.queryByText('Bob Diaz')).toBeNull();
+    // The heading counts describe what is under them, so they follow the
+    // filter rather than claiming a number the list does not show.
+    expect(screen.getByText('Still to arrive (1)')).toBeTruthy();
+  });
+
+  it('badges the people who booked as a group, counting only live bookings', async () => {
+    fetchEvent.mockResolvedValue({
+      ...OPEN_EVENT,
+      bookings: [
+        { profile_id: 'a', status: 'confirmed', group_id: 'g1' },
+        { profile_id: 'b', status: 'confirmed', group_id: 'g1' },
+        { profile_id: 'c', status: 'confirmed', group_id: 'g2' },
+        // Cancelled, so Cal is NOT part of a live pair -- an organizer
+        // assigning tables on the day needs who actually arrived together.
+        { profile_id: 'x', status: 'cancelled', group_id: 'g2' },
+      ],
+    });
+    fetchEventAttendance.mockResolvedValue([
+      row({ profile_id: 'a', display_name: 'Ann' }),
+      row({ profile_id: 'b', display_name: 'Bob' }),
+      row({ profile_id: 'c', display_name: 'Cal' }),
+    ]);
+    render(<CheckInScreen />);
+
+    await screen.findByText('Ann');
+    expect(screen.getAllByText('Group of 2')).toHaveLength(2);
+    expect(screen.queryByText('Group of 1')).toBeNull();
+  });
+
+  it('shows what an unpaid person owes, and marks them paid', async () => {
+    fetchEvent.mockResolvedValue(OPEN_EVENT);
+    fetchEventAttendance.mockResolvedValue([
+      row({ profile_id: 'a', display_name: 'Ann' }),
+      row({ profile_id: 'b', display_name: 'Bob' }),
+    ]);
+    fetchEventPayments.mockResolvedValue([
+      { profile_id: 'b', paid_at: new Date().toISOString(), marked_by: 'test-user' },
+    ]);
+    render(<CheckInScreen />);
+
+    const annPaid = await screen.findByRole('button', { name: /^paid: ann$/i });
+    const bobPaid = screen.getByRole('button', { name: /^paid: bob$/i });
+    expect(fetchEventPayments).toHaveBeenCalledWith('event-1');
+    expect(annPaid.getAttribute('aria-pressed')).toBe('false');
+    expect(bobPaid.getAttribute('aria-pressed')).toBe('true');
+    // Only the unpaid person is asked for money.
+    expect(screen.getAllByText('$15 owed')).toHaveLength(1);
+
+    fireEvent.click(annPaid);
+    expect(annPaid.getAttribute('aria-pressed')).toBe('true');
+    expect(setPaymentStatus).toHaveBeenCalledWith({
+      eventId: 'event-1',
+      profileId: 'a',
+      isPaid: true,
+    });
+    await vi.waitFor(() => expect(screen.queryByText('$15 owed')).toBeNull());
+  });
+
+  it('holds a row in place when Here is tapped, and moves it only once the settle window closes', async () => {
+    fetchEvent.mockResolvedValue(OPEN_EVENT);
+    fetchEventAttendance.mockResolvedValue([
+      row({ profile_id: 'a', display_name: 'Ann' }),
+      row({ profile_id: 'b', display_name: 'Bob' }),
+    ]);
+    render(<CheckInScreen />);
+    const hereAnn = await screen.findByRole('button', { name: /^here: ann$/i });
+
+    vi.useFakeTimers();
+    fireEvent.click(hereAnn);
+    await act(async () => {});
+
+    // Marked, but NOT moved: the organizer's next tap (paid) has to land on a
+    // row that is still where their finger already is.
+    expect(hereAnn.getAttribute('aria-pressed')).toBe('true');
+    expect(
+      within(screen.getByTestId('door-status-to-arrive')).getByText('Ann'),
+    ).toBeTruthy();
+    expect(
+      within(screen.getByTestId('door-status-here')).queryByText('Ann'),
+    ).toBeNull();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SETTLE_MS);
+    });
+
+    expect(
+      within(screen.getByTestId('door-status-here')).getByText('Ann'),
+    ).toBeTruthy();
+    expect(
+      within(screen.getByTestId('door-status-to-arrive')).queryByText('Ann'),
+    ).toBeNull();
+    expect(screen.getByText('Here (1)')).toBeTruthy();
+    expect(screen.getByText('Still to arrive (1)')).toBeTruthy();
+    vi.useRealTimers();
+  });
+
+  it('restarts the settle window on a further tap, so Here then paid is one gesture', async () => {
+    fetchEvent.mockResolvedValue(OPEN_EVENT);
+    fetchEventAttendance.mockResolvedValue([
+      row({ profile_id: 'a', display_name: 'Ann' }),
+    ]);
+    render(<CheckInScreen />);
+    const hereAnn = await screen.findByRole('button', { name: /^here: ann$/i });
+    const paidAnn = screen.getByRole('button', { name: /^paid: ann$/i });
+
+    vi.useFakeTimers();
+    fireEvent.click(hereAnn);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SETTLE_MS - 1000);
+    });
+    fireEvent.click(paidAnn);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SETTLE_MS - 1000);
+    });
+
+    // 6s of wall clock, well past a 4s window -- but the paid tap restarted
+    // it, so Ann has not moved out from under the organizer's finger.
+    expect(
+      within(screen.getByTestId('door-status-to-arrive')).getByText('Ann'),
+    ).toBeTruthy();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(
+      within(screen.getByTestId('door-status-here')).getByText('Ann'),
+    ).toBeTruthy();
+    vi.useRealTimers();
+  });
+
+  it('offers an undo that names the person and puts them back', async () => {
+    fetchEvent.mockResolvedValue(OPEN_EVENT);
+    fetchEventAttendance.mockResolvedValue([
+      row({ profile_id: 'a', display_name: 'Ann' }),
+      row({ profile_id: 'b', display_name: 'Bob' }),
+    ]);
+    render(<CheckInScreen />);
+    const hereAnn = await screen.findByRole('button', { name: /^here: ann$/i });
+
+    vi.useFakeTimers();
+    fireEvent.click(hereAnn);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SETTLE_MS);
+    });
+    vi.useRealTimers();
+
+    expect(screen.getByText(/Ann marked here/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /^undo: ann$/i }));
+
+    // The existing clear path, not a new RPC.
+    await vi.waitFor(() =>
+      expect(clearAttendance).toHaveBeenCalledWith({
+        eventId: 'event-1',
+        profileId: 'a',
+      }),
+    );
+    expect(
+      within(screen.getByTestId('door-status-to-arrive')).getByText('Ann'),
+    ).toBeTruthy();
+    expect(screen.getByText('Still to arrive (2)')).toBeTruthy();
+    expect(screen.getByText('Here (0)')).toBeTruthy();
+    expect(screen.queryByText(/Ann marked here/)).toBeNull();
+  });
+
+  it('rolls the paid toggle back and says why when the payment write is refused', async () => {
+    fetchEvent.mockResolvedValue(OPEN_EVENT);
+    fetchEventAttendance.mockResolvedValue([
+      row({ profile_id: 'a', display_name: 'Ann' }),
+    ]);
+    setPaymentStatus.mockResolvedValue({ error: 'Only an organizer can do that.' });
+    render(<CheckInScreen />);
+
+    const paidAnn = await screen.findByRole('button', { name: /^paid: ann$/i });
+    fireEvent.click(paidAnn);
+    expect(paidAnn.getAttribute('aria-pressed')).toBe('true');
+
+    await vi.waitFor(() =>
+      expect(paidAnn.getAttribute('aria-pressed')).toBe('false'),
+    );
+    expect(await screen.findByText('Only an organizer can do that.')).toBeTruthy();
+    // A refusal is authoritative here too: the screen refetches rather than
+    // trusting local state, exactly as an attendance refusal does.
+    await vi.waitFor(() => expect(fetchEventAttendance).toHaveBeenCalledTimes(2));
+    expect(screen.getByText('$15 owed')).toBeTruthy();
+  });
+
+  it('clears a pending settle timer when the screen unmounts mid-window', async () => {
+    // A host who backs out of the door list four seconds after a tap must
+    // not leave a timer behind that wakes up and sets state on a screen that
+    // is gone. Asserted on the timer count itself rather than on the absence
+    // of a warning: React 19 no longer warns about setState after unmount, so
+    // a leaked timer would otherwise be invisible here.
+    fetchEvent.mockResolvedValue(OPEN_EVENT);
+    fetchEventAttendance.mockResolvedValue([
+      row({ profile_id: 'a', display_name: 'Ann' }),
+    ]);
+    const view = render(<CheckInScreen />);
+    const hereAnn = await screen.findByRole('button', { name: /^here: ann$/i });
+
+    vi.useFakeTimers();
+    fireEvent.click(hereAnn);
+    await act(async () => {});
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+
+    view.unmount();
+    expect(vi.getTimerCount()).toBe(0);
+    vi.useRealTimers();
+  });
+
+  it('keeps a newer payment write when an older one is refused', async () => {
+    // Same defence-in-depth as the attendance double-tap test above, and
+    // reachable the same (only) way: `PaidControl` sets `isDisabled =
+    // disabled || busy`, so once write #1's `incrBusy` has committed a real
+    // second tap is swallowed. Wrapping both clicks in one `act()` forces
+    // them to share a pre-update render, which no real click stream can do.
+    // The guard still earns its keep: without it, write #1's failure would
+    // roll the toggle back off a `previous` captured before write #2 existed,
+    // while write #2 was still on the wire and about to succeed.
+    fetchEvent.mockResolvedValue(OPEN_EVENT);
+    fetchEventAttendance.mockResolvedValue([
+      row({ profile_id: 'a', display_name: 'Ann' }),
+    ]);
+    let resolveWrite1!: (v: { error: string | null }) => void;
+    let resolveWrite2!: (v: { error: string | null }) => void;
+    const write1 = new Promise<{ error: string | null }>((resolve) => {
+      resolveWrite1 = resolve;
+    });
+    const write2 = new Promise<{ error: string | null }>((resolve) => {
+      resolveWrite2 = resolve;
+    });
+    let calls = 0;
+    setPaymentStatus.mockImplementation(() => {
+      calls += 1;
+      return calls === 1 ? write1 : write2;
+    });
+    render(<CheckInScreen />);
+    const paidAnn = await screen.findByRole('button', { name: /^paid: ann$/i });
+
+    act(() => {
+      fireEvent.click(paidAnn);
+      fireEvent.click(paidAnn);
+    });
+    expect(setPaymentStatus).toHaveBeenCalledTimes(2);
+
+    resolveWrite1({ error: 'nope' });
+    await vi.waitFor(() => expect(fetchEventAttendance).toHaveBeenCalledTimes(2));
+
+    // Write #2 is still outstanding, so its optimistic value stands.
+    expect(paidAnn.getAttribute('aria-pressed')).toBe('true');
+    resolveWrite2({ error: null });
+    await vi.waitFor(() =>
+      expect(paidAnn.getAttribute('aria-busy')).toBe('false'),
+    );
+    expect(paidAnn.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('still rolls a refused payment back when the newer write is an attendance write', async () => {
+    // Attendance and payment are two different facts about one person, and
+    // the rollback guard has to ask "is this still the latest write of the
+    // SAME fact". Guarding the payment rollback on the shared write sequence
+    // (which an attendance write also bumps, for `load()`'s merge) would
+    // leave Ann marked paid on a write the server refused -- and the refetch
+    // that failure fires treats her as contested, so the stale local `true`
+    // would win that merge too, with nothing left to correct it.
+    fetchEvent.mockResolvedValue(OPEN_EVENT);
+    fetchEventAttendance.mockResolvedValue([
+      row({ profile_id: 'a', display_name: 'Ann' }),
+    ]);
+    let resolvePaid!: (v: { error: string | null }) => void;
+    setPaymentStatus.mockImplementation(
+      () =>
+        new Promise<{ error: string | null }>((resolve) => {
+          resolvePaid = resolve;
+        }),
+    );
+    recordAttendance.mockImplementation(() => new Promise(() => {}));
+    render(<CheckInScreen />);
+    const paidAnn = await screen.findByRole('button', { name: /^paid: ann$/i });
+    const hereAnn = screen.getByRole('button', { name: /^here: ann$/i });
+
+    act(() => {
+      fireEvent.click(paidAnn);
+      fireEvent.click(hereAnn);
+    });
+    expect(paidAnn.getAttribute('aria-pressed')).toBe('true');
+    expect(hereAnn.getAttribute('aria-pressed')).toBe('true');
+
+    resolvePaid({ error: 'nope' });
+
+    await vi.waitFor(() =>
+      expect(paidAnn.getAttribute('aria-pressed')).toBe('false'),
+    );
+    // The attendance write is untouched by the payment rollback -- it is
+    // still in flight and still says Ann is here.
+    expect(hereAnn.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('never asks for payments, nor draws a paid control, for a member', async () => {
+    fetchRoster.mockResolvedValue([
+      {
+        profile_id: 'test-user',
+        role: 'member' as const,
+        display_name: 'Ada',
+        skill_level: null,
+      },
+    ]);
+    fetchEvent.mockResolvedValue(OPEN_EVENT);
+    fetchEventAttendance.mockResolvedValue([
+      row({ profile_id: 'a', display_name: 'Ann' }),
+    ]);
+    render(<CheckInScreen />);
+
+    await screen.findByText('You are not an organizer of this club.');
+    // The RLS gate in Task 5 is the real one; a member's client should not
+    // even ask the question.
+    expect(fetchEventPayments).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: /paid/i })).toBeNull();
+  });
 });

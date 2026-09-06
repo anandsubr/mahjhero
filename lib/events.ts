@@ -5,6 +5,15 @@ import { supabase } from './supabase';
 
 export type { GameMode } from './clubs';
 export type EventStatus = 'draft' | 'published' | 'cancelled';
+/**
+ * How a night seats people — `public.seating_mode`
+ * (supabase/migrations/20260906100000_seating_mode_and_capacity.sql).
+ * `open_seating` is the 60-70 player event an organizer cannot pre-assign;
+ * `assigned_tables` is everything the app did before it existed, and stays
+ * the default for any event (or any client value) that does not say
+ * otherwise.
+ */
+export type SeatingMode = 'assigned_tables' | 'open_seating';
 export type SkillTier = 'beginner' | 'intermediate' | 'advanced' | 'mixed';
 export type SeriesFrequency = 'weekly' | 'biweekly' | 'monthly_nth_weekday';
 
@@ -56,6 +65,13 @@ export type ClubEvent = {
   /** Integer cents. `0` means "no minimum spend set". */
   min_spend_cents: number;
   game_mode: GameMode;
+  /**
+   * Added for Task 8's door list, which renders status sections instead of
+   * per-table groups for an `open_seating` night. The column has existed
+   * since 20260906100000 with a `not null default 'assigned_tables'`; nothing
+   * on the client read it until this screen needed to branch on it.
+   */
+  seating_mode: SeatingMode;
 };
 
 export type EventTable = {
@@ -155,8 +171,9 @@ export type RecurrenceRule = {
 export const EVENT_COLUMNS =
   'id, club_id, series_id, title, venue_id, notes, starts_at, ends_at, ' +
   'status, occurrence_date, overrides, check_in_required, fee_cents, ' +
-  'min_spend_cents, game_mode, venues(name), ' +
-  'event_tables(id, capacity, label), bookings(profile_id, status, event_table_id)';
+  'min_spend_cents, game_mode, seating_mode, venues(name), ' +
+  'event_tables(id, capacity, label), ' +
+  'bookings(profile_id, status, event_table_id, group_id)';
 
 export const SERIES_COLUMNS =
   'id, club_id, title, venue_id, notes, frequency, weekday, nth_week, start_time, duration_minutes, table_count, starts_on, ends_on, ended_at, check_in_required, fee_cents, min_spend_cents, game_mode, venues(name)';
@@ -394,6 +411,14 @@ export type EventBookingRow = {
   profile_id: string;
   status: 'confirmed' | 'waitlisted' | 'cancelled' | 'declined';
   event_table_id: string | null;
+  /**
+   * The booking group this seat was booked as part of (`bookings.group_id`,
+   * `not null` — a solo booking is a group of one). Added for Task 8's door
+   * list: an organizer assigning tables on the day of an open-seating night
+   * needs to see who arrived together, and this embed is already fetched
+   * with the event, so the badge costs no extra round trip.
+   */
+  group_id: string;
 };
 
 /**
@@ -425,7 +450,17 @@ export function eventStatusLine(
   event: {
     starts_at: string;
     event_tables: { id: string; capacity: number }[];
-    bookings: EventBookingRow[];
+    /**
+     * Only the three fields this line actually reads, not a whole
+     * `EventBookingRow` — a caller (or a test) that has who/what-status/
+     * which-table has everything this computation needs, and demanding the
+     * embed's other columns would be asking for facts to be carried past
+     * the point they are used.
+     */
+    bookings: Pick<
+      EventBookingRow,
+      'profile_id' | 'status' | 'event_table_id'
+    >[];
     /** Table id -> label, for a placed seat's "· Table 2". */
     tables_labels?: Record<string, string>;
   },

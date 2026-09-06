@@ -57,6 +57,10 @@ function event(over: Partial<ClubEvent> = {}): ClubEvent {
     fee_cents: 0,
     min_spend_cents: 0,
     game_mode: 'open_play',
+    // The column's own `not null default` (20260906100000). Nothing in this
+    // suite branches on it; it is here because `ClubEvent` now carries the
+    // field for Task 8's door list.
+    seating_mode: 'assigned_tables',
     ...over,
   };
 }
@@ -230,10 +234,10 @@ describe('buildDashboardRows', () => {
         event({
           id: 'full',
           bookings: [
-            { profile_id: 'a', status: 'confirmed', event_table_id: 'table-1' },
-            { profile_id: 'b', status: 'confirmed', event_table_id: 'table-1' },
-            { profile_id: 'c', status: 'confirmed', event_table_id: 'table-1' },
-            { profile_id: 'd', status: 'confirmed', event_table_id: 'table-1' },
+            { profile_id: 'a', status: 'confirmed', event_table_id: 'table-1', group_id: 'g-a' },
+            { profile_id: 'b', status: 'confirmed', event_table_id: 'table-1', group_id: 'g-b' },
+            { profile_id: 'c', status: 'confirmed', event_table_id: 'table-1', group_id: 'g-c' },
+            { profile_id: 'd', status: 'confirmed', event_table_id: 'table-1', group_id: 'g-d' },
           ],
         }),
       ],
@@ -354,10 +358,10 @@ describe('buildDashboardRows', () => {
           starts_at: '2026-09-01T10:00:00Z',
           ends_at: '2026-09-01T14:00:00Z',
           bookings: [
-            { profile_id: 'a', status: 'confirmed', event_table_id: 'table-1' },
-            { profile_id: 'b', status: 'confirmed', event_table_id: 'table-1' },
-            { profile_id: 'c', status: 'confirmed', event_table_id: 'table-1' },
-            { profile_id: 'd', status: 'confirmed', event_table_id: 'table-1' },
+            { profile_id: 'a', status: 'confirmed', event_table_id: 'table-1', group_id: 'g-a' },
+            { profile_id: 'b', status: 'confirmed', event_table_id: 'table-1', group_id: 'g-b' },
+            { profile_id: 'c', status: 'confirmed', event_table_id: 'table-1', group_id: 'g-c' },
+            { profile_id: 'd', status: 'confirmed', event_table_id: 'table-1', group_id: 'g-d' },
           ],
         }),
       ],
@@ -376,7 +380,7 @@ describe('buildDashboardRows', () => {
       events: [
         event({
           bookings: [
-            { profile_id: 'me', status: 'waitlisted', event_table_id: null },
+            { profile_id: 'me', status: 'waitlisted', event_table_id: null, group_id: 'g-me' },
           ],
         }),
       ],
@@ -429,9 +433,9 @@ describe('buildDashboardRows', () => {
 
 describe('needAFourthAlerts', () => {
   const threeSeated = [
-    { profile_id: 'a', status: 'confirmed' as const, event_table_id: 'table-1' },
-    { profile_id: 'b', status: 'confirmed' as const, event_table_id: 'table-1' },
-    { profile_id: 'c', status: 'confirmed' as const, event_table_id: 'table-1' },
+    { profile_id: 'a', status: 'confirmed' as const, event_table_id: 'table-1', group_id: 'g-a' },
+    { profile_id: 'b', status: 'confirmed' as const, event_table_id: 'table-1', group_id: 'g-b' },
+    { profile_id: 'c', status: 'confirmed' as const, event_table_id: 'table-1', group_id: 'g-c' },
   ];
 
   it('raises one alert for a table one short and starting inside 48 hours', () => {
@@ -453,7 +457,7 @@ describe('needAFourthAlerts', () => {
         event({
           bookings: [
             ...threeSeated.slice(0, 2),
-            { profile_id: 'me', status: 'confirmed', event_table_id: 'table-1' },
+            { profile_id: 'me', status: 'confirmed', event_table_id: 'table-1', group_id: 'g-me' },
           ],
         }),
       ],
@@ -521,7 +525,7 @@ describe('needAFourthAlerts', () => {
           table_count: 2,
           bookings: [
             ...threeSeated,
-            { profile_id: 'd', status: 'confirmed', event_table_id: 'table-2' },
+            { profile_id: 'd', status: 'confirmed', event_table_id: 'table-2', group_id: 'g-d' },
           ],
         }),
       ],
@@ -541,9 +545,9 @@ describe('needAFourthAlerts', () => {
           table_count: 2,
           bookings: [
             ...threeSeated,
-            { profile_id: 'd', status: 'confirmed', event_table_id: 'table-2' },
-            { profile_id: 'e', status: 'confirmed', event_table_id: 'table-2' },
-            { profile_id: 'f', status: 'confirmed', event_table_id: 'table-2' },
+            { profile_id: 'd', status: 'confirmed', event_table_id: 'table-2', group_id: 'g-d' },
+            { profile_id: 'e', status: 'confirmed', event_table_id: 'table-2', group_id: 'g-e' },
+            { profile_id: 'f', status: 'confirmed', event_table_id: 'table-2', group_id: 'g-f' },
           ],
         }),
       ],
@@ -571,10 +575,10 @@ describe('needAFourthAlerts', () => {
           event_tables: twoTables,
           table_count: 2,
           bookings: [
-            { profile_id: 'a', status: 'confirmed', event_table_id: 'table-1' },
-            { profile_id: 'b', status: 'confirmed', event_table_id: 'table-1' },
-            { profile_id: 'c', status: 'confirmed', event_table_id: 'table-2' },
-            { profile_id: 'd', status: 'confirmed', event_table_id: 'table-2' },
+            { profile_id: 'a', status: 'confirmed', event_table_id: 'table-1', group_id: 'g-a' },
+            { profile_id: 'b', status: 'confirmed', event_table_id: 'table-1', group_id: 'g-b' },
+            { profile_id: 'c', status: 'confirmed', event_table_id: 'table-2', group_id: 'g-c' },
+            { profile_id: 'd', status: 'confirmed', event_table_id: 'table-2', group_id: 'g-d' },
           ],
         }),
       ],
