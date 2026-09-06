@@ -140,21 +140,15 @@ export default defineConfig({
       // below any single control. Do not raise it to silence a diff — mask a
       // genuinely non-deterministic region instead.
       //
-      // Raised to 180 (2026-09-05, feat/invite-only-games): the club tile
-      // glyph icon in DashboardHeader (top of every event/club screen)
-      // renders with sub-pixel jitter run-to-run, independent of any content
-      // change — confirmed by regenerating baselines fresh and immediately
-      // re-running against them, same session, no code change in between:
-      // still failed 6/10 at 120px, isolated entirely to that one small icon
-      // in every diff image (every other element on the page matched
-      // exactly). This is pre-existing and unrelated to whatever feature
-      // triggered the retest; masking that specific element would be the
-      // more correct fix per the guidance above, but needs a stable
-      // selector/testID added to DashboardHeader first — tracked separately,
-      // not done here. 180 gives headroom over the ~158px max observed
-      // across several runs while staying two orders of magnitude below any
-      // real control (see the toggle-knob math above).
-      maxDiffPixels: 180,
+      // Was raised to 180 for a few days (2026-09-05, feat/invite-only-games)
+      // as a stopgap: the club tile glyph icon in DashboardHeader (top of
+      // every event/club screen) had genuine sub-pixel jitter run-to-run,
+      // independent of any content change, isolated entirely to that one
+      // icon in every diff image. `e2e/visual.spec.ts`'s `captureScreen` now
+      // masks that element directly (testID="thread-avatar-club-tile"),
+      // which is the fix this comment always asked for — restored to 120
+      // once that landed (2026-09-06).
+      maxDiffPixels: 120,
     },
   },
 });

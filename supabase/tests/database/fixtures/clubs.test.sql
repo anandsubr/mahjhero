@@ -312,11 +312,21 @@ select is(
 -- Observed live (20260905010000): a signed-up caller whose `profiles` row
 -- never got created by handle_new_user's trigger -- a one-off, not
 -- reproduced elsewhere, but accept_club_invite must not depend on that
--- trigger having already run. No `auth.users` row for this caller either,
--- deliberately: an insert there would fire the trigger and defeat the
--- point of the test, and accept_club_invite only ever reads auth.uid()
--- from the JWT anyway, never auth.users itself.
+-- trigger having already run.
+--
+-- `profiles.id` references `auth.users(id)`, so a caller with genuinely no
+-- `auth.users` row at all can never reach accept_club_invite's self-healing
+-- insert without tripping that FK -- that is not the incident this
+-- reproduces anyway (the real one had a signed-up user, just no profile
+-- yet). So: insert `auth.users` for real (satisfying the FK for good), let
+-- `handle_new_user`'s trigger create the profile as it normally would, then
+-- delete just that profile row to put the caller back in the exact state
+-- the incident was: a real account, no profile.
 set local role postgres;
+insert into auth.users (id, email) values
+  ('dddddddd-0000-0000-0000-000000000004', 'dana@example.com');
+delete from public.profiles where id = 'dddddddd-0000-0000-0000-000000000004';
+
 insert into public.club_invites (club_id, token, invited_by, expires_at) values
   ('c1c1c1c1-0000-0000-0000-000000000001', 'no-profile-token',
    'aaaaaaaa-0000-0000-0000-000000000001', now() + interval '7 days');
@@ -346,20 +356,34 @@ select is(
   'the membership itself is still created for a caller with no prior profile'
 );
 
+-- This id is reused below (the account-deletion succession scenario, as
+-- Dave) with its own fresh auth.users row -- clear this one first so that
+-- insert does not collide. Cascades to club_members/profiles too.
+set local role postgres;
+delete from auth.users where id = 'dddddddd-0000-0000-0000-000000000004';
+
 -- ---------------------------------------------------------------------------
 -- Column exposure through the widened profiles policy.
 --
 -- `20260822033527` widened `profiles` select to "own row OR any co-member's
 -- row" so a roster could show names and skill levels. A policy is per-row and
 -- cannot be per-column, so that handed every co-member the whole profile —
--- quiet hours, notification channel, timezone. Not a tenant-boundary breach,
--- but anyone in your club learned what hours you sleep, and no assertion
--- anywhere could see it: the existing profiles tests count rows, and the row
--- count was the intended part.
+-- quiet hours, notification channel, timezone. `20260822180000` narrowed
+-- `profiles` back to self-only (co-members now go through the definer
+-- function `club_roster`, which returns only name/skill_level), and the
+-- assertion below is what proves that: a plain SELECT from a co-member's
+-- session must see none of Alice's row at all, quiet_hours_start included.
 --
--- Alice and Bob now share Riverside (Bob redeemed an invite above), and this
--- still runs as Bob, so this is the exact shape that was verified live.
+-- Alice and Bob now share Riverside (Bob redeemed an invite above); this
+-- section explicitly re-selects Bob as caller (rather than inheriting
+-- whatever the no-profile-token block above left active) so it is not
+-- accidentally testing under `role=postgres`, which bypasses RLS entirely
+-- and would make this pass for the wrong reason.
 -- ---------------------------------------------------------------------------
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "bbbbbbbb-0000-0000-0000-000000000002", "role": "authenticated"}';
+
 select is(
   (select count(*)::int from public.profiles
    where id = 'aaaaaaaa-0000-0000-0000-000000000001'
