@@ -248,6 +248,49 @@
   }
 
   /* FEATURES_STYLES */
+  .features-inner { display: flex; flex-direction: column; gap: 35.2px; }
+  .features-heading { font-size: 34px; max-width: 640px; }
+  .features-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 22px;
+  }
+  .feature-card { display: flex; flex-direction: column; gap: 13.2px; }
+  .feature-icon { height: 40px; display: flex; align-items: center; }
+  .feature-title { font-size: 22px; }
+  .feature-body { font-size: 16px; line-height: 1.55; color: var(--text-muted); }
+  .feature-badge {
+    background: var(--accent2-100);
+    color: var(--accent2-800);
+    border-radius: var(--radius-pill);
+    padding: 4.4px 13.2px;
+    font-size: 14px;
+    font-weight: 700;
+  }
+  .feature-checkrow {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    background: var(--bg);
+    border-radius: var(--radius-sm);
+    padding: 8.8px 13.2px;
+    font-size: 14px;
+  }
+  .feature-checkrow span { color: var(--accent2-600); font-weight: 700; }
+  .leaderboard-mini {
+    display: flex;
+    flex-direction: column;
+    gap: 4.4px;
+    font-size: 14px;
+    color: var(--text);
+    width: 100%;
+  }
+  @media (max-width: 900px) {
+    .features-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 600px) {
+    .features-grid { grid-template-columns: 1fr; }
+  }
 
   /* FOUNDER_STYLES */
 
@@ -390,7 +433,55 @@
       </div>
     </div>
   </section>
-  <!-- FEATURES -->
+  <section class="features">
+    <div class="wrap features-inner">
+      <h2 class="features-heading">Everything below is live today, not a roadmap slide.</h2>
+      <div class="features-grid">
+        <div class="card feature-card">
+          <div class="feature-icon">
+            <svg width="40" height="28" viewBox="0 0 40 28" fill="none">
+              <rect x="1" y="1" width="16" height="26" rx="4" fill="#c67139" />
+              <rect x="23" y="1" width="16" height="26" rx="4" fill="#ffe1d0" />
+            </svg>
+          </div>
+          <h3 class="feature-title">Book with a friend</h3>
+          <p class="feature-body">Reserve your seat and a specific friend&rsquo;s in one booking &mdash; the one thing every other club app is missing.</p>
+        </div>
+        <div class="card feature-card">
+          <div class="feature-icon">
+            <span class="feature-badge">4:32 left</span>
+          </div>
+          <h3 class="feature-title">A waitlist that promotes itself</h3>
+          <p class="feature-body">The moment a seat frees up, it&rsquo;s offered to the next person in line automatically &mdash; no organizer has to referee it.</p>
+        </div>
+        <div class="card feature-card">
+          <div class="feature-icon">
+            <div class="feature-checkrow">Priya Patel <span>&#10003;</span></div>
+          </div>
+          <h3 class="feature-title">Check-in on arrival</h3>
+          <p class="feature-body">A host&rsquo;s door list and a member&rsquo;s own self check-in, so nobody&rsquo;s guessing who actually showed up.</p>
+        </div>
+        <div class="card feature-card">
+          <div class="feature-icon">
+            <span class="mock-lock">&#128274; Invite-only</span>
+          </div>
+          <h3 class="feature-title">Invite-only private games</h3>
+          <p class="feature-body">Run a game that&rsquo;s visible and joinable only to the people you invite &mdash; club members or not.</p>
+        </div>
+        <div class="card feature-card">
+          <div class="feature-icon">
+            <div class="leaderboard-mini">
+              <div>1. Priya &mdash; 428</div>
+              <div>2. Sam &mdash; 402</div>
+              <div>3. You &mdash; 380</div>
+            </div>
+          </div>
+          <h3 class="feature-title">Scoring &amp; club leaderboard</h3>
+          <p class="feature-body">Record points per round and keep an all-time club ranking &mdash; every player confirms before it&rsquo;s official.</p>
+        </div>
+      </div>
+    </div>
+  </section>
   <!-- FOUNDER -->
   <!-- FINAL_CTA -->
   <!-- FOOTER -->
