@@ -829,6 +829,33 @@ describe('seating mode and capacity', () => {
     await vi.waitFor(() => expect(createEvent).toHaveBeenCalled());
     expect(createEvent.mock.calls[0][0].capacity).toBeNull();
   });
+
+  // Finding #5 of the final review: an unparseable capacity (a typo, `6o`
+  // for `60`) used to be treated exactly like a blank field -- silently
+  // uncapping the event on save, with no error and no confirmation. This
+  // must instead refuse to save at all.
+  it('refuses to save an unparseable capacity, and never calls createEvent', async () => {
+    render(<NewEventScreen />);
+    await screen.findByText('Add a game');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open seating' }));
+    fireEvent.change(screen.getByLabelText('Capacity (optional)'), {
+      target: { value: '6o' },
+    });
+    pickVenue();
+    fireEvent.change(screen.getByLabelText('Game name'), {
+      target: { value: 'Typo capacity night' },
+    });
+    fireEvent.click(screen.getByText('Save'));
+
+    expect(
+      await screen.findByText(
+        'Enter a whole number of players, or leave it blank for no limit.',
+      ),
+    ).toBeTruthy();
+    expect(createEvent).not.toHaveBeenCalled();
+    expect(createEventSeries).not.toHaveBeenCalled();
+  });
 });
 
 describe('cost to play and minimum spend', () => {

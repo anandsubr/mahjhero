@@ -252,6 +252,74 @@ describe('buildDashboardRows', () => {
     expect(rows).toEqual([]);
   });
 
+  // Finding #1 of the final review: an open-seating event carries zero
+  // event_tables rows, so summing them (the old, single-branch hasFreeSeat)
+  // always read as zero capacity and dropped every open-seating event here,
+  // capped or uncapped, empty or full. Three cases, mirroring the SQL side's
+  // event_capacity/event_is_capped (20260906110000_capacity_resolution.sql).
+  it('adds an uncapped open-seating event as joinable, with no event_tables at all', () => {
+    const rows = buildDashboardRows({
+      bookings: [],
+      events: [
+        event({
+          id: 'open-uncapped',
+          seating_mode: 'open_seating',
+          capacity: null,
+          event_tables: [],
+        }),
+      ],
+      clubs: CLUBS,
+      userId: 'me',
+      now: NOW,
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].joinable).toBe(true);
+  });
+
+  it('adds a capped open-seating event as joinable while seats remain', () => {
+    const rows = buildDashboardRows({
+      bookings: [],
+      events: [
+        event({
+          id: 'open-capped-free',
+          seating_mode: 'open_seating',
+          capacity: 60,
+          event_tables: [],
+          bookings: [
+            { profile_id: 'a', status: 'confirmed', event_table_id: null, group_id: 'g-a' },
+          ],
+        }),
+      ],
+      clubs: CLUBS,
+      userId: 'me',
+      now: NOW,
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].joinable).toBe(true);
+  });
+
+  it('drops a capped open-seating event once its headcount is full', () => {
+    const rows = buildDashboardRows({
+      bookings: [],
+      events: [
+        event({
+          id: 'open-capped-full',
+          seating_mode: 'open_seating',
+          capacity: 2,
+          event_tables: [],
+          bookings: [
+            { profile_id: 'a', status: 'confirmed', event_table_id: null, group_id: 'g-a' },
+            { profile_id: 'b', status: 'confirmed', event_table_id: null, group_id: 'g-b' },
+          ],
+        }),
+      ],
+      clubs: CLUBS,
+      userId: 'me',
+      now: NOW,
+    });
+    expect(rows).toEqual([]);
+  });
+
   it('drops a cancelled event', () => {
     const rows = buildDashboardRows({
       bookings: [],

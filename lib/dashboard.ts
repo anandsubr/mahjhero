@@ -175,14 +175,31 @@ function confirmedOnTable(event: ClubEvent, tableId: string): number {
   ).length;
 }
 
+/**
+ * Branches on `seating_mode` for the same reason the SQL side's
+ * `event_capacity`/`event_is_capped` (20260906110000_capacity_resolution.sql)
+ * do: an `open_seating` event materializes zero `event_tables` rows, so
+ * summing them (the old, single-branch body of this function) always read
+ * as zero capacity -- every open-seating event, capped or uncapped, empty or
+ * full, looked full and was silently dropped from the joinable branch below.
+ */
 function hasFreeSeat(event: ClubEvent): boolean {
+  const confirmed = event.bookings.filter(
+    (row) => row.status === 'confirmed',
+  ).length;
+
+  if (event.seating_mode === 'open_seating') {
+    // `null` is a standing invitation, uncapped -- mirrors
+    // `event_is_capped`'s own reading of the same column.
+    if (event.capacity === null) return true;
+    return seatsRemaining(event.capacity, confirmed) > 0;
+  }
+
+  // assigned_tables -- unchanged from before this fix.
   const capacity = event.event_tables.reduce(
     (total, table) => total + table.capacity,
     0,
   );
-  const confirmed = event.bookings.filter(
-    (row) => row.status === 'confirmed',
-  ).length;
   return seatsRemaining(capacity, confirmed) > 0;
 }
 

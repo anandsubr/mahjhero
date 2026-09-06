@@ -996,15 +996,18 @@ it('does not let a walk-in vanish when its write starts after the refetch begins
   expect(screen.getByText(/1 walk-in\b/i)).toBeTruthy();
 });
 
-// Review Minor #5: nothing pinned the deliberate cross-path exceptions --
-// the paid chip and the payments fetch it depends on are gated on the
-// event's FEE, not its seating mode (`set_payment_status` is not
-// seating-scoped), so an assigned-tables door list still needs money
-// collected at the door when the event charges one. Fix 2 tightened the
-// fetch's gate from "organizer" alone to "organizer AND a fee is set" --
-// these two tests pin both sides of that gate on the assigned-tables path.
-describe('cross-path exceptions on the assigned-tables list', () => {
-  it('shows the paid chip on an assigned-tables event that charges a fee', async () => {
+// Review Minor #5 (superseded by the final review's finding #4): the paid
+// chip and the payments fetch it depends on used to be gated on the event's
+// FEE as well as organizer status ("Fix 2" below). The final review found
+// that gate contradicted the spec -- "Payment tracking applies to every
+// event, not only open-seating ones" -- and made marked-paid rows
+// unreachable once a host dropped a game's fee to $0 after collecting it.
+// The gate is gone: organizer status is the only thing that decides whether
+// this screen fetches and shows payment state, on every seating mode and
+// every fee. These two tests now pin the OPPOSITE of what they used to: the
+// fetch and the chip both show up regardless of fee.
+describe('payment tracking applies regardless of fee (finding #4)', () => {
+  it('shows the paid chip and owed amount on an assigned-tables event that charges a fee', async () => {
     fetchEvent.mockResolvedValue({ ...EVENT, fee_cents: 1500 });
     fetchEventAttendance.mockResolvedValue([
       row({
@@ -1020,10 +1023,11 @@ describe('cross-path exceptions on the assigned-tables list', () => {
     expect(
       await screen.findByRole('button', { name: /^paid: ann$/i }),
     ).toBeTruthy();
+    expect(screen.getByText('$15 owed')).toBeTruthy();
     expect(fetchEventPayments).toHaveBeenCalledWith('event-1');
   });
 
-  it('draws no paid chip, and fetches no payments, for a fee-free assigned-tables event', async () => {
+  it('still shows the paid chip and still fetches payments for a fee-free assigned-tables event', async () => {
     // `EVENT` itself carries `fee_cents: 0` -- the default every test above
     // this line already runs on.
     fetchEvent.mockResolvedValue(EVENT);
@@ -1038,13 +1042,37 @@ describe('cross-path exceptions on the assigned-tables list', () => {
     ]);
     render(<CheckInScreen />);
 
-    await screen.findByText('Ann');
-    expect(screen.queryByRole('button', { name: /^paid: ann$/i })).toBeNull();
-    // Fix 2: the round trip itself must not happen, not just the UI it
-    // would have fed -- an extra fetch on every load (and every refused
-    // write, which calls `load()` again) of a door list with no payment UI
-    // to show for it.
-    expect(fetchEventPayments).not.toHaveBeenCalled();
+    expect(
+      await screen.findByRole('button', { name: /^paid: ann$/i }),
+    ).toBeTruthy();
+    // The owed line stays fee-conditional on purpose -- "Owes $0" would be
+    // silly -- but the control that MARKS somebody paid must exist even
+    // when there is nothing owed, so a host who marked people paid on a
+    // fee before dropping it to $0 can still see and clear those rows.
+    expect(screen.queryByText(/owed/)).toBeNull();
+    expect(fetchEventPayments).toHaveBeenCalledWith('event-1');
+  });
+
+  it('shows the "Could not load who has paid" error on a fee-free event too, now that the read always happens', async () => {
+    // Unreachable before this fix: a fee-free event's load() never even
+    // issued the payments read, so this error line could never fire for
+    // one. `null` is fetchEventPayments' failed-read signal.
+    fetchEvent.mockResolvedValue(EVENT);
+    fetchEventPayments.mockResolvedValue(null);
+    fetchEventAttendance.mockResolvedValue([
+      row({
+        profile_id: 'a',
+        display_name: 'Ann',
+        event_table_id: 'table-1',
+        table_label: 'Table 1',
+        table_position: 1,
+      }),
+    ]);
+    render(<CheckInScreen />);
+
+    expect(
+      await screen.findByText('Could not load who has paid.'),
+    ).toBeTruthy();
   });
 });
 

@@ -525,6 +525,22 @@ export default function EventScreen() {
       (rosterGroupSizes[person.group_id] ?? 0) + 1;
   }
 
+  // The section title below must not read `confirmedRoster.length` when the
+  // full roster is hidden (`!canSeeFullRoster`): on an `invite_only` open-
+  // seating night nothing is EVER placed at a table (there are no tables),
+  // so a non-organizer's own booking's `event_table_id` is null forever and
+  // `event_seating` hands them back exactly one row -- their own. Rendering
+  // that count as the headcount used to show "1 signed up" directly above
+  // the privacy card's own, honest `acceptedCount` a few lines down -- two
+  // numbers, on the same screen, contradicting each other. `acceptedCount`
+  // (already fetched for exactly this privacy card) is the correct number
+  // for this viewer; `null` means it has not landed yet (or failed), and the
+  // title falls back to naming just the cap, the same way the privacy card
+  // below falls back to "This is an invite-only game." for the same value.
+  const openSeatingSignedUpCount = canSeeFullRoster
+    ? confirmedRoster.length
+    : acceptedCount;
+
   // Confirmed but not placed at any table — "any table" bookings, and
   // whatever `placeBooking(id, null)` produces (the data-layer capability
   // behind the seating rule still stands; there is just no UI button left
@@ -908,11 +924,17 @@ export default function EventScreen() {
         {tablesFailed
           ? 'Tables'
           : isOpenSeating
-            ? `${confirmedRoster.length} signed up${
-                event.capacity !== null && event.capacity !== undefined
-                  ? ` · ${event.capacity} spots`
-                  : ''
-              }`
+            ? (() => {
+                const capSuffix =
+                  event.capacity !== null && event.capacity !== undefined
+                    ? ` · ${event.capacity} spots`
+                    : '';
+                return openSeatingSignedUpCount !== null
+                  ? `${openSeatingSignedUpCount} signed up${capSuffix}`
+                  : capSuffix
+                    ? capSuffix.replace(' · ', '')
+                    : 'Open seating';
+              })()
             : `${tables.length} ${tables.length === 1 ? 'table' : 'tables'} · ${(() => {
                 const seats = tables.reduce((sum, t) => sum + t.capacity, 0);
                 return `${seats} ${seats === 1 ? 'seat' : 'seats'}`;

@@ -1770,4 +1770,64 @@ describe('open seating', () => {
     expect(screen.queryByText('Call for a 4th now')).toBeNull();
     expect(screen.queryByText('Needs a 4th')).toBeNull();
   });
+
+  // Finding #3 of the final review: `${confirmedRoster.length} signed up`
+  // rendered unconditionally, even when `canSeeFullRoster` is false. On an
+  // `invite_only` open-seating night nothing is EVER placed at a table
+  // (there are no tables), so a non-organizer's own booking's
+  // `event_table_id` is null forever and `event_seating` hands them back
+  // exactly their own row -- `confirmedRoster.length` was always 1,
+  // contradicting the honest `acceptedCount` shown a few lines below in the
+  // privacy card. This headcount must use `acceptedCount` instead whenever
+  // the full roster is hidden.
+  describe('invite-only open seating headcount (privacy)', () => {
+    const INVITE_ONLY_OPEN_EVENT = {
+      ...OPEN_SEATING_EVENT,
+      game_mode: 'invite_only' as const,
+    };
+
+    // Exactly what a non-organizer's own `event_seating` fetch returns on
+    // an invite-only, not-yet-placed night: their own row, and nobody
+    // else's.
+    const ONLY_MY_ROW = { ...SIGNED_UP_PRIYA, profile_id: 'test-user' };
+
+    it('uses acceptedCount, not the roster length, for a non-organizer', async () => {
+      fetchEvent.mockResolvedValue(INVITE_ONLY_OPEN_EVENT);
+      fetchEventSeating.mockResolvedValue([ONLY_MY_ROW]);
+      fetchEventAcceptedCount.mockResolvedValue(8);
+      render(<EventScreen />);
+
+      expect(await screen.findByText('8 signed up')).toBeTruthy();
+      expect(screen.queryByText('1 signed up')).toBeNull();
+    });
+
+    it('still appends the cap when the event is also capped', async () => {
+      fetchEvent.mockResolvedValue({ ...INVITE_ONLY_OPEN_EVENT, capacity: 60 });
+      fetchEventSeating.mockResolvedValue([ONLY_MY_ROW]);
+      fetchEventAcceptedCount.mockResolvedValue(8);
+      render(<EventScreen />);
+
+      expect(await screen.findByText('8 signed up · 60 spots')).toBeTruthy();
+    });
+
+    it('falls back to naming just the cap while acceptedCount is still null', async () => {
+      fetchEvent.mockResolvedValue({ ...INVITE_ONLY_OPEN_EVENT, capacity: 60 });
+      fetchEventSeating.mockResolvedValue([ONLY_MY_ROW]);
+      fetchEventAcceptedCount.mockResolvedValue(null);
+      render(<EventScreen />);
+
+      expect(await screen.findByText('60 spots')).toBeTruthy();
+      expect(screen.queryByText(/signed up/)).toBeNull();
+    });
+
+    it('keeps the real roster length for the organizer of the same event', async () => {
+      fetchRoster.mockResolvedValue(HOST_ROLE);
+      fetchEvent.mockResolvedValue(INVITE_ONLY_OPEN_EVENT);
+      fetchEventSeating.mockResolvedValue([SIGNED_UP_PRIYA, SIGNED_UP_SAM]);
+      fetchEventAcceptedCount.mockResolvedValue(8);
+      render(<EventScreen />);
+
+      expect(await screen.findByText('2 signed up')).toBeTruthy();
+    });
+  });
 });

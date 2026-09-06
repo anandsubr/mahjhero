@@ -1886,4 +1886,60 @@ describe('eventStatusLine', () => {
   it("says \"You're in\" without a table for an any-table seat", () => {
     expect(eventStatusLine(eventWithMyUnseatedBooking, 'me', NOW)).toBe("You're in");
   });
+
+  // Finding #2 of the final review: this function used to sum
+  // `event_tables` unconditionally, which is always zero for an
+  // `open_seating` night (it materializes none) — every open-seating event
+  // read "Full" here regardless of its real headcount. Latent: nothing
+  // renders this function today (see its own doc comment), but the rule
+  // must not be allowed to drift from `hasFreeSeat` (lib/dashboard.ts) a
+  // second time.
+  describe('open_seating', () => {
+    const eventOpenUncapped = {
+      starts_at: FAR,
+      event_tables: [],
+      bookings: [
+        { profile_id: 'p1', status: 'confirmed' as const, event_table_id: null },
+      ],
+      seating_mode: 'open_seating' as const,
+      capacity: null,
+    };
+
+    const eventOpenCappedWithRoom = {
+      starts_at: FAR,
+      event_tables: [],
+      bookings: [
+        { profile_id: 'p1', status: 'confirmed' as const, event_table_id: null },
+      ],
+      seating_mode: 'open_seating' as const,
+      capacity: 60,
+    };
+
+    const eventOpenCappedFull = {
+      starts_at: FAR,
+      event_tables: [],
+      bookings: [
+        { profile_id: 'p1', status: 'confirmed' as const, event_table_id: null },
+        { profile_id: 'p2', status: 'confirmed' as const, event_table_id: null },
+      ],
+      seating_mode: 'open_seating' as const,
+      capacity: 2,
+    };
+
+    it('does not read "Full" for an uncapped open-seating event with zero tables', () => {
+      expect(eventStatusLine(eventOpenUncapped, 'stranger', NOW)).toBe(
+        'Open seating',
+      );
+    });
+
+    it('counts free seats against the headcount cap, not table capacity', () => {
+      expect(eventStatusLine(eventOpenCappedWithRoom, 'stranger', NOW)).toBe(
+        '59 seats free',
+      );
+    });
+
+    it('says Full once a capped open-seating event reaches its headcount', () => {
+      expect(eventStatusLine(eventOpenCappedFull, 'stranger', NOW)).toBe('Full');
+    });
+  });
 });

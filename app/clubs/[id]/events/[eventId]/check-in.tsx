@@ -550,16 +550,6 @@ export default function CheckInScreen() {
     // seconds earlier, over one flaky read. Same reasoning the merge above
     // applies to `rows`, applied here to the window: a transient failure
     // keeps the last known good value rather than blanking it.
-    // Fix 2: whether THIS load should ask for payments at all, alongside
-    // `organizer` below. Defaults to the last known `feeCents` state (the
-    // same "keep the last known good value on a failed read" rule the window
-    // above follows) rather than 0, so a transient event-read failure does
-    // not silently stop asking for payments on a fee-charging event mid-door
-    // -- only updated below on a SUCCESSFUL event read, using the value in
-    // hand from THIS response rather than the `feeCents` state (which would
-    // not have committed yet).
-    let feeForPayments = feeCents;
-
     if (event) {
       // Same "only on a successful read" rule as the window below, for the
       // same reason: a flaky refetch must not reshape the list (status
@@ -569,8 +559,7 @@ export default function CheckInScreen() {
       // client contract still lands on the behaviour this screen has always
       // had.
       setSeatingMode(event.seating_mode ?? 'assigned_tables');
-      feeForPayments = event.fee_cents ?? 0;
-      setFeeCents(feeForPayments);
+      setFeeCents(event.fee_cents ?? 0);
       // Live bookings only: a cancelled or declined seat is not somebody
       // who arrived with anyone. `bookings` is already embedded in the
       // event read (EVENT_COLUMNS), so the badge costs no extra round trip.
@@ -611,14 +600,17 @@ export default function CheckInScreen() {
     // intent. `organizer` (the freshly-read answer), not the `isOrganizer`
     // state set above, because state updates are async.
     //
-    // Fix 2: also gated on there being a fee at all. An assigned-tables
-    // door list with `fee_cents = 0` draws no payment UI whatsoever (see
-    // `renderPerson`'s `feeCents > 0` guard below) -- fetching payments for
-    // it was a pure-cost round trip on every load, and this screen's own
-    // refusal handlers call `load()` again on every refused write anywhere
-    // on the screen, so that extra round trip repeated on every one of
-    // those too.
-    if (!organizer || feeForPayments <= 0) return;
+    // Fix 2 (reverted by the final review, finding #4): this used to also
+    // gate on the event carrying a fee, on the theory that a fee-free event
+    // draws no payment UI to feed. The spec says payment tracking applies
+    // to EVERY event, not only ones that charge, and the fee gate created
+    // unreachable rows: mark people paid on a $15 game, then drop the fee to
+    // $0, and `event_payments` rows persist with no UI able to see or clear
+    // them ever again -- `set_payment_status(..., false)` becomes
+    // unreachable. Only organizer status gates this fetch now. The extra
+    // round trip on a fee-free event's every load is an accepted cost, not
+    // a bug.
+    if (!organizer) return;
     const payments = await fetchEventPayments(eventId);
 
     // Re-checked after this second round trip for the same reason it is
@@ -1055,22 +1047,23 @@ export default function CheckInScreen() {
           ) : null}
         </View>
         <View style={styles.actions}>
-          {/* Only when there is money to collect: an event with no fee has
-              nothing to mark, and a dead toggle at the door is one more
-              thing to tap past. Not gated on the check-in window -- see
-              PaidControl's docstring: `set_payment_status` has no window,
-              deliberately. */}
-          {feeCents > 0 ? (
-            <PaidControl
-              label={displayName}
-              paid={isPaid}
-              busy={!!busy[r.profile_id]}
-              onChange={(next) => {
-                holdRow(r);
-                void setPaid(r, next);
-              }}
-            />
-          ) : null}
+          {/* Every organizer, every event -- finding #4 of the final review
+              dropped the `feeCents > 0` gate this control used to carry.
+              Payment tracking applies to every event, not only ones that
+              charge a fee (the spec's own words), and gating the control on
+              a fee made a $15 game's payment marks unreachable the moment
+              the host dropped its fee to $0. Not gated on the check-in
+              window either -- see PaidControl's docstring:
+              `set_payment_status` has no window, deliberately. */}
+          <PaidControl
+            label={displayName}
+            paid={isPaid}
+            busy={!!busy[r.profile_id]}
+            onChange={(next) => {
+              holdRow(r);
+              void setPaid(r, next);
+            }}
+          />
           <CheckInControl
             label={displayName}
             state={r.state}
@@ -1210,13 +1203,14 @@ export default function CheckInScreen() {
         </Text>
       ) : null}
 
-      {paymentsFailed && feeCents > 0 ? (
+      {paymentsFailed ? (
         // Distinct from "nobody has paid", which is what `?? []` would have
         // rendered this as -- and a false statement about people's money.
-        // Gated on `feeCents > 0` (Fix 2): a fee-free event's `load()` never
-        // even issues the payments read (see above), and this screen draws
-        // no payment UI at all for one -- surfacing this line there would be
-        // an error banner for a request that was never made.
+        // No longer gated on `feeCents > 0` (finding #4 of the final
+        // review): `load()` now fetches payments for every organizer on
+        // every event, and this screen now draws payment UI for one
+        // regardless of fee, so this error line is reachable, and coherent,
+        // whenever that read fails.
         <Text style={styles.help}>Could not load who has paid.</Text>
       ) : null}
     </>

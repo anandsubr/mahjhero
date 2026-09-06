@@ -636,6 +636,28 @@ describe('a one-off event', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Assigned tables' }));
       expect(screen.queryByLabelText('Capacity (optional)')).toBeNull();
     });
+
+    // Finding #5 of the final review: an unparseable capacity (a typo, `6o`
+    // for `60`) used to be treated exactly like a blank field -- silently
+    // uncapping the event on save, with no error and no confirmation. This
+    // must instead refuse to save at all.
+    it('refuses to save an unparseable capacity, and never calls updateEvent', async () => {
+      render(<EditEventScreen />);
+      await screen.findByDisplayValue('Thursday Mahjong');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Open seating' }));
+      fireEvent.change(screen.getByLabelText('Capacity (optional)'), {
+        target: { value: '6o' },
+      });
+      fireEvent.click(screen.getByText('Save'));
+
+      expect(
+        await screen.findByText(
+          'Enter a whole number of players, or leave it blank for no limit.',
+        ),
+      ).toBeTruthy();
+      expect(updateEvent).not.toHaveBeenCalled();
+    });
   });
 });
 
@@ -897,6 +919,28 @@ describe('a series occurrence', () => {
         capacity: null,
         clearCapacity: true,
       });
+    });
+
+    // Series-scope half of finding #5: the same typo-uncaps-silently bug,
+    // pinned for "The whole series" the way the test above pins it for
+    // "This game".
+    it('refuses to save an unparseable capacity, and never calls updateEventSeries', async () => {
+      render(<EditEventScreen />);
+      await screen.findByText('The whole series');
+      fireEvent.click(screen.getByText('The whole series'));
+      fireEvent.click(screen.getByRole('button', { name: 'Open seating' }));
+
+      fireEvent.change(screen.getByLabelText('Capacity (optional)'), {
+        target: { value: '6o' },
+      });
+      fireEvent.click(screen.getByText('Save'));
+
+      expect(
+        await screen.findByText(
+          'Enter a whole number of players, or leave it blank for no limit.',
+        ),
+      ).toBeTruthy();
+      expect(updateEventSeries).not.toHaveBeenCalled();
     });
 
     // Switching scope must not bleed the "This game" state (or vice versa)

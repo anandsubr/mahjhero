@@ -504,6 +504,18 @@ export function eventStatusLine(
     >[];
     /** Table id -> label, for a placed seat's "· Table 2". */
     tables_labels?: Record<string, string>;
+    /**
+     * Optional, and defaulted to `'assigned_tables'` below, so every caller
+     * (and every existing test fixture in app/__tests__/clubs.test.tsx) that
+     * predates this fix keeps compiling and keeps its old behaviour without
+     * having to name the column. Same fallback convention as `isOpenSeating`
+     * on the event detail screen and `check-in.tsx`'s own `seatingMode`
+     * read.
+     */
+    seating_mode?: SeatingMode;
+    /** Optional headcount cap for an `open_seating` night; `null` (or
+     *  omitted) means uncapped. Mirrors `ClubEvent.capacity`. */
+    capacity?: number | null;
   },
   youId: string,
   now: Date = new Date(),
@@ -532,6 +544,23 @@ export function eventStatusLine(
     ),
   );
   if (oneShortAndSoon) return 'Needs a 4th';
+
+  // The bug this fix closes: an open_seating night has zero event_tables
+  // rows, so the assigned_tables sum below is always zero and this used to
+  // read "Full" for every open-seating game, capped or uncapped, empty or
+  // full. Branches the same way `hasFreeSeat` (lib/dashboard.ts) and the SQL
+  // side's `event_capacity`/`event_is_capped`
+  // (20260906110000_capacity_resolution.sql) do.
+  const seatingMode = event.seating_mode ?? 'assigned_tables';
+  if (seatingMode === 'open_seating') {
+    // `null` is a standing invitation with no number to count down from —
+    // mirrors `event_is_capped`'s own reading of the column. There is no
+    // "N seats free"/"Full" to report for an uncapped night, so this does
+    // not run those through `seatsFreeLabel`, which has no uncapped case.
+    if (event.capacity == null) return 'Open seating';
+    const free = Math.max(0, event.capacity - confirmed.length);
+    return seatsFreeLabel(free);
+  }
 
   const capacity = event.event_tables.reduce((sum, t) => sum + t.capacity, 0);
   const free = Math.max(0, capacity - confirmed.length);

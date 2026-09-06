@@ -38,19 +38,32 @@ const DURATIONS = [120, 180, 240];
 
 /**
  * The optional capacity field's parse boundary -- mirrors lib/events.ts's
- * own `parseDollarsToCents` in shape (blank text in, a clean value or
- * `null` out) but is not a currency value and is not exported from there,
+ * own `parseDollarsToCents` in shape (blank text in, a clean value or a
+ * refusal out) but is not a currency value and is not exported from there,
  * since only this screen and its edit-form twin need it. Blank means "no
- * limit", matching `createEvent`'s own `capacity: null` convention; a
- * non-numeric value degrades to the same "no limit" rather than silently
- * sending `NaN` to the RPC.
+ * limit", matching `createEvent`'s own `capacity: null` convention.
+ *
+ * Finding #5 of the final review: this used to map ANY non-numeric text to
+ * `null` too, the same as blank -- degrading `NaN` rather than sending it
+ * to the RPC was the right instinct, but conflating "unparseable" (a typo,
+ * `6o` for `60`) with "deliberately left blank" was not. An organizer who
+ * meant to keep a 60-person cap and fat-fingered `6o` instead had it
+ * silently removed on save, with no error and no confirmation. This now
+ * returns a third state for that case, and `onSave` below refuses to save
+ * rather than guessing.
  */
-function parseCapacity(text: string): number | null {
+type CapacityParse = { valid: true; value: number | null } | { valid: false };
+
+function parseCapacity(text: string): CapacityParse {
   const trimmed = text.trim();
-  if (trimmed.length === 0) return null;
+  if (trimmed.length === 0) return { valid: true, value: null };
   const n = Number(trimmed);
-  return Number.isFinite(n) ? Math.trunc(n) : null;
+  if (!Number.isFinite(n)) return { valid: false };
+  return { valid: true, value: Math.trunc(n) };
 }
+
+const INVALID_CAPACITY_MESSAGE =
+  'Enter a whole number of players, or leave it blank for no limit.';
 
 /**
  * The duration/table-count/repeat rows below are chip-style selectors where
@@ -301,6 +314,15 @@ export default function NewEventScreen() {
       setError('Choose where you are playing.');
       return;
     }
+    // Refuse an unparseable capacity outright, before touching the network
+    // -- see parseCapacity's own doc for the typo (`6o` for `60`) this
+    // guards against. Checked ahead of `setSaving(true)` so a refusal never
+    // shows a spinner.
+    const capacityParsed = parseCapacity(capacityText);
+    if (!capacityParsed.valid) {
+      setError(INVALID_CAPACITY_MESSAGE);
+      return;
+    }
     setSaving(true);
     setError(null);
 
@@ -324,7 +346,7 @@ export default function NewEventScreen() {
         feeCents: parseDollarsToCents(feeText),
         minSpendCents: parseDollarsToCents(minSpendText),
         seatingMode,
-        capacity: parseCapacity(capacityText),
+        capacity: capacityParsed.value,
       });
       setSaving(false);
       if (result.error) {
@@ -360,7 +382,7 @@ export default function NewEventScreen() {
       feeCents: parseDollarsToCents(feeText),
       minSpendCents: parseDollarsToCents(minSpendText),
       seatingMode,
-      capacity: parseCapacity(capacityText),
+      capacity: capacityParsed.value,
     });
     setSaving(false);
     if (result.error) {

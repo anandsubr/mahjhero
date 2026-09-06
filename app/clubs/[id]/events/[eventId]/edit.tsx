@@ -49,17 +49,31 @@ function centsToDollarsText(cents: number): string {
 /**
  * The optional capacity field's parse boundary -- mirrors this file's own
  * `centsToDollarsText`-adjacent sibling in app/clubs/[id]/events/new.tsx.
- * Blank text means "no limit" (`null`); a non-numeric value degrades to the
- * same "no limit" rather than sending `NaN` to the RPC. Not shared across
- * the two files for the same reason `Chip`/`ScopeChip` are not -- see this
- * file's and new.tsx's own docstrings on that convention.
+ * Blank text means "no limit" (`null`). Not shared across the two files for
+ * the same reason `Chip`/`ScopeChip` are not -- see this file's and
+ * new.tsx's own docstrings on that convention.
+ *
+ * Finding #5 of the final review: this used to map ANY non-numeric text to
+ * `null` too, the same as blank -- degrading `NaN` rather than sending it to
+ * the RPC was the right instinct, but conflating "unparseable" (a typo, `6o`
+ * for `60`) with "deliberately left blank" was not. Combined with the
+ * touched flag below, an organizer with a real 60-person cap who fat-
+ * fingered `6o` had it silently removed on save, with no error and no
+ * confirmation. This now returns a third state for that case, and `onSave`
+ * below refuses to save rather than guessing.
  */
-function parseCapacity(text: string): number | null {
+type CapacityParse = { valid: true; value: number | null } | { valid: false };
+
+function parseCapacity(text: string): CapacityParse {
   const trimmed = text.trim();
-  if (trimmed.length === 0) return null;
+  if (trimmed.length === 0) return { valid: true, value: null };
   const n = Number(trimmed);
-  return Number.isFinite(n) ? Math.trunc(n) : null;
+  if (!Number.isFinite(n)) return { valid: false };
+  return { valid: true, value: Math.trunc(n) };
 }
+
+const INVALID_CAPACITY_MESSAGE =
+  'Enter a whole number of players, or leave it blank for no limit.';
 
 /** The single occurrence's own values, snapshotted once on load, so the
  * "This game" save path can tell what actually changed and send only that —
@@ -580,6 +594,24 @@ export default function EditEventScreen() {
   // reassigned, and a hoisted function declaration doesn't give it that
   // guarantee the way a const-bound closure defined after the guard does.
   const onSave = async () => {
+    // Refuse an unparseable capacity outright, before touching the network
+    // -- see parseCapacity's own doc for the typo (`6o` for `60`) this
+    // guards against. `capacityText`/`isSeriesScope` above already resolve
+    // to whichever scope's own field this save is about, so one parse here
+    // covers both the series and single-event branches below -- checked
+    // ahead of `setSaving(true)` so a refusal never shows a spinner, and
+    // skipped entirely when the field was never touched (an untouched
+    // field's stored value, or its own genuinely-blank pre-fill, was never
+    // typed by this host and cannot be a typo).
+    const capacityTouched = isSeriesScope
+      ? seriesCapacityTouched
+      : eventCapacityTouched;
+    const capacityParsed = parseCapacity(capacityText);
+    if (capacityTouched && !capacityParsed.valid) {
+      setError(INVALID_CAPACITY_MESSAGE);
+      return;
+    }
+
     setSaving(true);
     setError(null);
 
@@ -600,11 +632,11 @@ export default function EditEventScreen() {
       // touched" even though the series row now seeds their DISPLAY (see
       // `seriesSeatingMode`'s own doc for why the send path still ignores
       // that fetched value) -- an untouched control here must send nothing
-      // rather than whatever this state currently holds. `parsedSeriesCapacity
-      // === null` covers both "never touched" and "touched, then emptied
-      // again" -- `seriesCapacityTouched` is what tells those two apart.
-      const parsedSeriesCapacity = parseCapacity(seriesCapacityText);
-
+      // rather than whatever this state currently holds. `capacityParsed`
+      // (computed once above, and already guaranteed `valid` by the guard
+      // above whenever `seriesCapacityTouched`) `.value === null` covers
+      // both "never touched" and "touched, then emptied again" --
+      // `seriesCapacityTouched` is what tells those two apart.
       const result = await updateEventSeries(series.id, {
         title,
         venueId,
@@ -619,10 +651,15 @@ export default function EditEventScreen() {
         includeOverridden,
         seatingMode: seriesSeatingModeTouched ? seriesSeatingMode : null,
         capacity:
-          seriesCapacityTouched && parsedSeriesCapacity !== null
-            ? parsedSeriesCapacity
+          seriesCapacityTouched &&
+          capacityParsed.valid &&
+          capacityParsed.value !== null
+            ? capacityParsed.value
             : null,
-        clearCapacity: seriesCapacityTouched && parsedSeriesCapacity === null,
+        clearCapacity:
+          seriesCapacityTouched &&
+          capacityParsed.valid &&
+          capacityParsed.value === null,
       });
       setSaving(false);
       if (result.error) {
@@ -654,11 +691,9 @@ export default function EditEventScreen() {
       // title/venue/notes/etc above are, even though a real fetched value
       // now exists to diff against (see `eventCapacityText`'s own doc for
       // why) -- `eventCapacityTouched` is what stands in for "changed" here.
-      // `parsedEventCapacity === null` covers both "never touched" and
+      // `capacityParsed.value === null` covers both "never touched" and
       // "touched, then emptied again"; the touched flag is what tells those
       // two apart, exactly as it does for the series-scope save above.
-      const parsedEventCapacity = parseCapacity(eventCapacityText);
-
       const result = await updateEvent(event.id, {
         title: titleChanged ? title.trim() : null,
         venueId: venueChanged ? venueId : null,
@@ -670,10 +705,15 @@ export default function EditEventScreen() {
         minSpendCents: minSpendChanged ? minSpendCentsValue : null,
         seatingMode: seatingModeChanged ? eventSeatingMode : null,
         capacity:
-          eventCapacityTouched && parsedEventCapacity !== null
-            ? parsedEventCapacity
+          eventCapacityTouched &&
+          capacityParsed.valid &&
+          capacityParsed.value !== null
+            ? capacityParsed.value
             : null,
-        clearCapacity: eventCapacityTouched && parsedEventCapacity === null,
+        clearCapacity:
+          eventCapacityTouched &&
+          capacityParsed.valid &&
+          capacityParsed.value === null,
       });
       setSaving(false);
       if (result.error) {
