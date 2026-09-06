@@ -2083,6 +2083,272 @@ export async function seedTableWithRound(
   return { eventId, tableId, winnerName: 'Amara Whitfield', points };
 }
 
+// 15 minutes before FROZEN_NOW, ending 3h45m after — the identical offsets
+// CHECK_IN_GAME above uses, for the identical reason: this event's own
+// check-in window (`checkInOpen`, lib/attendance.ts) has to be OPEN at the
+// suite's frozen clock, not merely dated near it, or the door-list baseline
+// below would picture every control disabled. A separate event id from
+// CHECK_IN_GAME's, so the two fixtures cannot collide.
+const OPEN_SEATING_GAME = {
+  startsAt: '2026-08-22T15:45:00Z',
+  endsAt: '2026-08-22T19:45:00Z',
+};
+
+/**
+ * Seeds an OPEN-SEATING event (Task 8) with a headcount cap, a fee, and five
+ * confirmed players spread across all three of the door screen's status
+ * sections — for two visual baselines this task adds: the event detail
+ * screen's own "N signed up · M spots" roster (no tables to picture, unlike
+ * every other event this file seeds), and the check-in screen's
+ * open-seating branch (`groupByStatus`, app/clubs/[id]/events/[eventId]/
+ * check-in.tsx), which jsdom cannot exercise at all — it has no layout
+ * engine, and this screen's two verification gaps (sticky search via
+ * react-native-web's `stickyHeaderIndices`, and `flexWrap` on the per-person
+ * row) are exactly why this task exists.
+ *
+ * One event, not two: `fetchEventSeating`'s confirmed roster and
+ * `fetchEventAttendance`'s door list read the same underlying `bookings`
+ * rows, so a second fixture reaching the same state would only ever be
+ * byte-identical to this one — the same reasoning `seedClubWithEvent`'s own
+ * booking-state fixtures give for not doubling up a baseline.
+ *
+ * Takes an already-seeded club and its host's profile id, the same shape
+ * `seedTableWithRound` above takes and for the same reason: called from the
+ * `with a seeded club` describe block in e2e/visual.spec.ts, so the viewer
+ * is already that club's host and needs no roster fetch of its own to
+ * appear as `isOrganizer` here too.
+ *
+ * Five confirmed players, not sixty: this is a SPEC fixture, proving the
+ * layout renders correctly with real content in every section — a person in
+ * "Still to arrive", "Here" and "Not coming" each, a two-person booking
+ * group (so the group tag renders), a genuinely long display name paired
+ * with a real fee (so the owed line renders), and the paid marker showing
+ * both its states. The 60+ name version of this same screen is exactly the
+ * one thing this task's by-hand checklist asks a person to do on a real
+ * phone instead — seeding that many real accounts through the admin API on
+ * every CI run would be slow and is not what a REGRESSION baseline needs;
+ * it needs the shapes, not the scale.
+ *
+ *   - `longName` + `partnerName`: one booking GROUP of two — a single
+ *     `booking_groups` row underneath both bookings, the same shape
+ *     `event.bookings`' `group_id` embed keys check-in.tsx's own group-size
+ *     badge off (`groupSizes` there, `rosterGroupSizes` on the event
+ *     screen). `longName` is deliberately long enough to force a real wrap
+ *     at 375px next to a "Group of 2" tag, an "owed" line, the paid badge
+ *     and the Here control all in the same `personRow` — precisely the
+ *     `flexWrap` gap this task's brief calls out. Both stay in "Still to
+ *     arrive" (no `check_ins` row), which is also the state a fresh
+ *     open-seating booking is always seeded into by `commit_booking` itself.
+ *   - `hereName`: a solo confirmed booking with a `check_ins` row of
+ *     `state: 'arrived'` — the "Here" section, and (via the `event_payments`
+ *     row below) the paid badge's FILLED state, not just its outline.
+ *   - `secondHereName`: a second solo confirmed booking, also `arrived` —
+ *     "Here" needed a second name too, or a regression that rendered only
+ *     the first row per section could not be told apart from one that
+ *     rendered every row correctly.
+ *   - `notComingName`: a solo confirmed booking with `state: 'no_show'` —
+ *     the "Not coming" section.
+ *
+ * `capacity: 50` and `feeCents: 1500` are deliberately real, non-zero
+ * values: `capacity` is what turns the event screen's heading into "5
+ * signed up · 50 spots" rather than the uncapped "5 signed up" this app also
+ * has to render correctly elsewhere, and `feeCents` is what makes the door
+ * screen draw ANY payment UI at all (see `renderPerson`'s `feeCents > 0`
+ * guard, check-in.tsx) — an unpictured branch until this task, same as the
+ * open-seating layout itself.
+ *
+ * No `event_tables` rows at all — `event_attendance` and `event_seating`
+ * both LEFT JOIN that table, so an open-seating night with none is a normal
+ * read, not a degraded one; every event this file seeded before this task
+ * always had at least one.
+ */
+export async function seedOpenSeatingEvent(
+  clubId: string,
+  hostProfileId: string,
+  suffix: string,
+): Promise<{
+  eventId: string;
+  longName: string;
+  partnerName: string;
+  hereName: string;
+  secondHereName: string;
+  notComingName: string;
+  capacity: number;
+  feeCents: number;
+}> {
+  const admin = adminClient('seed open-seating event');
+
+  const need = <T>(what: string, result: { data: unknown; error: unknown }): T => {
+    if (result.error || result.data == null) {
+      throw new Error(`seedOpenSeatingEvent: ${what} failed: ${JSON.stringify(result.error)}`);
+    }
+    return result.data as T;
+  };
+
+  const venue = need<{ id: string }>(
+    'venue insert',
+    await admin
+      .from('venues')
+      .insert({
+        name: 'Grange Hall',
+        address_line: '7 Grange Road',
+        locality: 'Newton',
+        added_by_club_id: clubId,
+        created_by: hostProfileId,
+      })
+      .select('id')
+      .single(),
+  );
+
+  const capacity = 50;
+  const feeCents = 1500;
+
+  const event = need<{ id: string }>(
+    'open-seating event insert',
+    await admin
+      .from('events')
+      .insert({
+        club_id: clubId,
+        title: 'Open house mahjong night',
+        venue_id: venue.id,
+        notes: '',
+        starts_at: OPEN_SEATING_GAME.startsAt,
+        ends_at: OPEN_SEATING_GAME.endsAt,
+        check_in_required: true,
+        seating_mode: 'open_seating',
+        capacity,
+        fee_cents: feeCents,
+        created_by: hostProfileId,
+      })
+      .select('id')
+      .single(),
+  );
+  const eventId = event.id;
+
+  const longName = 'Bartholomew Featherstonehaugh-Whitmore';
+  const partnerName = 'Constance Okonkwo-Abernathy';
+  const hereName = 'Grace Halloway';
+  const secondHereName = 'Imogen Castellano';
+  const notComingName = 'Felix Bramwell';
+
+  const [longId, partnerId, hereId, secondHereId, notComingId] = await Promise.all([
+    seedFillerProfile(admin, longName, 'openseat-long', suffix),
+    seedFillerProfile(admin, partnerName, 'openseat-partner', suffix),
+    seedFillerProfile(admin, hereName, 'openseat-here-a', suffix),
+    seedFillerProfile(admin, secondHereName, 'openseat-here-b', suffix),
+    seedFillerProfile(admin, notComingName, 'openseat-not-coming', suffix),
+  ]);
+
+  // The one booking GROUP in this fixture: one `booking_groups` row with TWO
+  // `bookings` rows under it, rather than two calls to the single-booking
+  // `seatBooking` helper above (which always mints its own group) — a group
+  // tag needs an actual shared group_id, which `seatBooking` cannot produce
+  // on its own.
+  const group = need<{ id: string }>(
+    'open-seating group insert',
+    await admin
+      .from('booking_groups')
+      .insert({
+        event_id: eventId,
+        club_id: clubId,
+        created_by: longId,
+        preferred_table_id: null,
+        status: 'confirmed',
+        waitlisted_at: null,
+      })
+      .select('id')
+      .single(),
+  );
+  // `created_at` is set EXPLICITLY and distinctly on these two rows —
+  // `event_seating`'s own ordering (20260825070000_seating_reads.sql:
+  // `order by t.position nulls last, b.created_at, b.id`) ties both bookings
+  // on `t.position` (both null, no table) and would otherwise tie them on
+  // `created_at` too: a bulk `.insert([...])` in one statement stamps every
+  // row with the SAME `now()`, so the tiebreak falls through to `b.id` --
+  // a `gen_random_uuid()` with no relationship to insertion order. That
+  // left this pair's on-screen order a coin flip, seeded fresh every test
+  // run: found when a freshly-regenerated baseline for this fixture's own
+  // "open-seating event detail" screenshot failed against itself one run
+  // later with no code change in between, the diff isolated entirely to
+  // these two names having swapped places -- the exact failure mode
+  // `captureScreen`'s own `mask` comment (this file's sibling,
+  // e2e/visual.spec.ts) records for the club-tile glyph, but this one is a
+  // fixture bug, not a rendering one, and masking it would have hidden the
+  // wrong thing.
+  const { error: groupBookingsError } = await admin.from('bookings').insert([
+    {
+      group_id: group.id,
+      event_id: eventId,
+      club_id: clubId,
+      event_table_id: null,
+      profile_id: longId,
+      booked_by: longId,
+      status: 'confirmed',
+      created_at: '2026-08-22T15:00:00Z',
+    },
+    {
+      group_id: group.id,
+      event_id: eventId,
+      club_id: clubId,
+      event_table_id: null,
+      profile_id: partnerId,
+      booked_by: longId,
+      status: 'confirmed',
+      created_at: '2026-08-22T15:00:01Z',
+    },
+  ]);
+  if (groupBookingsError) {
+    throw new Error(
+      `seedOpenSeatingEvent: group bookings insert failed: ${JSON.stringify(groupBookingsError)}`,
+    );
+  }
+
+  // Three solo bookings — no table, the only shape an open-seating event's
+  // bookings ever take.
+  await seatBooking(admin, need, { eventId, clubId, profileId: hereId });
+  await seatBooking(admin, need, { eventId, clubId, profileId: secondHereId });
+  await seatBooking(admin, need, { eventId, clubId, profileId: notComingId });
+
+  const { error: checkInsError } = await admin.from('check_ins').insert([
+    { event_id: eventId, club_id: clubId, profile_id: hereId, state: 'arrived', recorded_by: hostProfileId },
+    { event_id: eventId, club_id: clubId, profile_id: secondHereId, state: 'arrived', recorded_by: hostProfileId },
+    { event_id: eventId, club_id: clubId, profile_id: notComingId, state: 'no_show', recorded_by: hostProfileId },
+  ]);
+  if (checkInsError) {
+    throw new Error(
+      `seedOpenSeatingEvent: check-ins insert failed: ${JSON.stringify(checkInsError)}`,
+    );
+  }
+
+  // `hereName` marked paid — so the door list's `PaidControl` shows its
+  // FILLED state at least once, next to every other row's outline-only
+  // unpaid state. Direct insert, the same service-role reasoning every other
+  // write in this function follows: `set_payment_status` derives
+  // `marked_by` from `auth.uid()`, which service_role has none of.
+  const { error: paymentError } = await admin.from('event_payments').insert({
+    event_id: eventId,
+    club_id: clubId,
+    profile_id: hereId,
+    marked_by: hostProfileId,
+  });
+  if (paymentError) {
+    throw new Error(
+      `seedOpenSeatingEvent: payment insert failed: ${JSON.stringify(paymentError)}`,
+    );
+  }
+
+  return {
+    eventId,
+    longName,
+    partnerName,
+    hereName,
+    secondHereName,
+    notComingName,
+    capacity,
+    feeCents,
+  };
+}
+
 /**
  * Two friends and two club-mates for `app/messages/new.tsx`'s picker, in a
  * club of its own rather than added to `seedClubWithEvent`'s Riverside —

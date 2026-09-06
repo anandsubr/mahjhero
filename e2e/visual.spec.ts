@@ -4,6 +4,7 @@ import {
   seedClubWithEvent,
   seedEmptyGroupThread,
   seedMessageCandidates,
+  seedOpenSeatingEvent,
   seedPopulatedBoard,
   seedPopulatedMessagesList,
   seedPopulatedThread,
@@ -1018,6 +1019,89 @@ test.describe('signed in', () => {
         await expect(page.getByText('Leo Fitzgerald')).toBeVisible();
         await expect(page.getByText(/booked here/)).toBeVisible();
         await captureScreen(page, vp, `check-in-${vp.name}.png`);
+      });
+
+      // Task 11: the open-seating event detail screen, pictured for the
+      // first time. Every other `event-detail*`/`event-*` baseline in this
+      // suite is an ASSIGNED-TABLES night — `seedOpenSeatingEvent`
+      // (e2e/session.ts) is the one fixture in this file with
+      // `seating_mode: 'open_seating'` and no `event_tables` rows at all, so
+      // this is the first baseline to exercise the screen's `isOpenSeating`
+      // branch (app/clubs/[id]/events/[eventId]/index.tsx): the "N signed
+      // up · M spots" heading in place of "N tables · M seats", and a plain
+      // roster card in place of per-table seat grids.
+      test(`open-seating event detail at ${vp.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        const seating = await seedOpenSeatingEvent(
+          seeded.clubId,
+          userId,
+          userId.slice(0, 8),
+        );
+        await page.goto(`/clubs/${seeded.clubId}/events/${seating.eventId}`);
+        // The headcount heading -- five confirmed players, the fixture's own
+        // fixed capacity. Distinct from every `N tables · M seats` heading
+        // elsewhere in this suite, and the only place that distinction is
+        // pictured.
+        await expect(
+          page.getByText(`5 signed up · ${seating.capacity} spots`),
+        ).toBeVisible();
+        // The fee line -- `$15 to play`, `formatFeeCents`'s own whole-dollar
+        // format for a cents value with no fractional part.
+        await expect(page.getByText('$15 to play')).toBeVisible();
+        // The two-person booking group's own tag, on the roster card --
+        // `.first()` because BOTH members of the pair render it.
+        await expect(page.getByText('Group of 2').first()).toBeVisible();
+        await expect(page.getByText(seating.longName)).toBeVisible();
+        await expect(page.getByText(seating.partnerName)).toBeVisible();
+        await captureScreen(page, vp, `event-detail-open-seating-${vp.name}.png`);
+      });
+
+      // Task 11: the check-in screen's OPEN-SEATING branch, pictured for the
+      // first time -- and the baseline this task's two verification gaps
+      // are about. Every other `check-in-*` baseline in this suite is an
+      // assigned-tables door list, grouped by table; this one has no tables
+      // at all, so it renders `groupByStatus`'s four status sections
+      // instead (check-in.tsx), with the search field the brief's sticky-
+      // search gap is about pinned above them.
+      //
+      // `seedOpenSeatingEvent` puts one confirmed booking GROUP of two in
+      // "Still to arrive" (one of the pair carrying a deliberately long
+      // name), two solo bookings in "Here" (one marked paid, so the paid
+      // badge's filled and outline states both render), and one solo
+      // booking in "Not coming" -- all three status sections the brief's
+      // Step 1 asks for, plus the exact row shape (a long name, a group
+      // tag, an "owed" line, the paid badge and the Here control all
+      // sharing one `personRow`) the `flexWrap` gap is about.
+      test(`check-in door, open seating, at ${vp.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        const seating = await seedOpenSeatingEvent(
+          seeded.clubId,
+          userId,
+          userId.slice(0, 8),
+        );
+        await page.goto(
+          `/clubs/${seeded.clubId}/events/${seating.eventId}/check-in`,
+        );
+        // The search field itself -- only the open-seating branch draws one.
+        await expect(page.getByLabel('Search by name')).toBeVisible();
+        // The three status-section headings, WITH their counts read off the
+        // row -- "pixels cannot catch a one-glyph regression"
+        // (docs/testing.md), the same reason every other test in this file
+        // asserts a count as text rather than trusting the screenshot alone
+        // to catch a miscount.
+        await expect(page.getByText('Still to arrive (2)')).toBeVisible();
+        await expect(page.getByText('Here (2)')).toBeVisible();
+        await expect(page.getByText('Not coming (1)')).toBeVisible();
+        await expect(page.getByText(seating.longName)).toBeVisible();
+        await expect(page.getByText(seating.partnerName)).toBeVisible();
+        await expect(page.getByText(seating.hereName)).toBeVisible();
+        await expect(page.getByText(seating.secondHereName)).toBeVisible();
+        await expect(page.getByText(seating.notComingName)).toBeVisible();
+        // The group tag, on both members of the pair.
+        await expect(page.getByText('Group of 2')).toHaveCount(2);
+        // What the unpaid half of the pair owes -- `formatFeeCents(1500)`.
+        await expect(page.getByText('$15 owed').first()).toBeVisible();
+        await captureScreen(page, vp, `check-in-open-seating-${vp.name}.png`);
       });
     }
   });
