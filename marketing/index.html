@@ -303,8 +303,31 @@
   }
 
   /* FINAL_CTA_STYLES */
+  .final-cta { background: var(--surface); }
+  .final-cta-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 17.6px;
+  }
+  .final-cta-heading { font-size: 40px; }
+  .final-cta-body { font-size: 18px; color: var(--text-muted); max-width: 480px; }
 
   /* FOOTER_STYLES */
+  .site-footer { padding: 35.2px 0; }
+  .site-footer-inner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 13.2px;
+  }
+  .wordmark-small { font-size: 20px; }
+  .footer-contact {
+    font-size: 16px;
+    color: var(--text-muted);
+    text-decoration: none;
+  }
 </style>
 </head>
 <body>
@@ -503,8 +526,20 @@
       </div>
     </div>
   </section>
-  <!-- FINAL_CTA -->
-  <!-- FOOTER -->
+  <section class="final-cta">
+    <div class="wrap final-cta-inner">
+      <h2 class="final-cta-heading">Free to use, today.</h2>
+      <p class="final-cta-body">No pricing tiers, no card required &mdash; just a club that finally knows how many seats are actually open.</p>
+      <!-- Replace with the deployed app's sign-in URL once known -->
+      <a class="btn btn-primary" href="#" aria-label="Get started">Get started</a>
+    </div>
+  </section>
+  <footer class="site-footer">
+    <div class="wrap site-footer-inner">
+      <div class="wordmark wordmark-small">Mahj<span class="wordmark-accent">Hero</span></div>
+      <a class="footer-contact" href="mailto:hello@mahjhero.com">hello@mahjhero.com</a>
+    </div>
+  </footer>
   <script>
     (function () {
       var tabs = document.querySelectorAll('.role-tab');
