@@ -1,6 +1,6 @@
 begin;
 set local search_path to extensions, public;
-select plan(4);
+select plan(12);
 
 insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-00000000eb01', 'bk-host@example.com'),
@@ -33,15 +33,32 @@ insert into public.events (
   'aaaaaaaa-0000-0000-0000-00000000eb01'
 );
 
+insert into public.event_tables (id, event_id, club_id, label, position) values
+  ('33333333-0000-0000-0000-00000000eb01', '22222222-0000-0000-0000-00000000eb01',
+   'c1c1c1c1-0000-0000-0000-00000000eb01', 'Table 1', 1);
+
 insert into public.booking_groups (id, event_id, club_id, created_by, status) values
   ('55555555-0000-0000-0000-00000000eb01', '22222222-0000-0000-0000-00000000eb01',
    'c1c1c1c1-0000-0000-0000-00000000eb01',
    'aaaaaaaa-0000-0000-0000-00000000eb01', 'confirmed');
-insert into public.bookings (group_id, event_id, club_id, profile_id, booked_by) values
-  ('55555555-0000-0000-0000-00000000eb01', '22222222-0000-0000-0000-00000000eb01',
-   'c1c1c1c1-0000-0000-0000-00000000eb01',
-   'bbbbbbbb-0000-0000-0000-00000000eb02',
-   'aaaaaaaa-0000-0000-0000-00000000eb01');
+-- bbbbbbbb is placed at Table 1, not just "confirmed for any table" -- this
+-- is what event_has_my_placed_seat requires (Task 3), and what
+-- booking_groups/table_rounds' new invite_only branch relies on below.
+insert into public.bookings (
+  group_id, event_id, club_id, event_table_id, profile_id, booked_by
+) values (
+  '55555555-0000-0000-0000-00000000eb01', '22222222-0000-0000-0000-00000000eb01',
+  'c1c1c1c1-0000-0000-0000-00000000eb01', '33333333-0000-0000-0000-00000000eb01',
+  'bbbbbbbb-0000-0000-0000-00000000eb02', 'aaaaaaaa-0000-0000-0000-00000000eb01'
+);
+
+insert into public.table_rounds (
+  event_table_id, event_id, club_id, winner_profile_id, points, recorded_by
+) values (
+  '33333333-0000-0000-0000-00000000eb01', '22222222-0000-0000-0000-00000000eb01',
+  'c1c1c1c1-0000-0000-0000-00000000eb01', 'bbbbbbbb-0000-0000-0000-00000000eb02',
+  30, 'aaaaaaaa-0000-0000-0000-00000000eb01'
+);
 
 set local role authenticated;
 set local request.jwt.claims =
@@ -54,6 +71,24 @@ select is(
   'an uninvited member reads zero booking rows for a private event'
 );
 
+-- Whole-branch review finding: booking_groups and table_rounds were never
+-- brought into the invite-only privacy model, so an uninvited member could
+-- read attendance and match results for a private event even though the
+-- event/bookings themselves were correctly hidden.
+select is(
+  (select count(*)::int from public.booking_groups
+   where event_id = '22222222-0000-0000-0000-00000000eb01'),
+  0,
+  'an uninvited member reads zero booking_groups rows for a private event'
+);
+
+select is(
+  (select count(*)::int from public.table_rounds
+   where event_id = '22222222-0000-0000-0000-00000000eb01'),
+  0,
+  'an uninvited member reads zero table_rounds rows for a private event'
+);
+
 set local request.jwt.claims =
   '{"sub": "bbbbbbbb-0000-0000-0000-00000000eb02", "role": "authenticated"}';
 
@@ -62,6 +97,20 @@ select is(
    where event_id = '22222222-0000-0000-0000-00000000eb01'),
   1,
   'a not-yet-placed invitee reads only their own booking row'
+);
+
+select is(
+  (select count(*)::int from public.booking_groups
+   where event_id = '22222222-0000-0000-0000-00000000eb01'),
+  1,
+  'a seated player reads their own booking_groups row'
+);
+
+select is(
+  (select count(*)::int from public.table_rounds
+   where event_id = '22222222-0000-0000-0000-00000000eb01'),
+  1,
+  'a seated player reads table_rounds rows for their event'
 );
 
 set local request.jwt.claims =
@@ -74,7 +123,22 @@ select is(
   'the organizer reads the booking row too'
 );
 
--- Open-play events are unaffected: a plain member sees every booking.
+select is(
+  (select count(*)::int from public.booking_groups
+   where event_id = '22222222-0000-0000-0000-00000000eb01'),
+  1,
+  'the organizer reads booking_groups rows too'
+);
+
+select is(
+  (select count(*)::int from public.table_rounds
+   where event_id = '22222222-0000-0000-0000-00000000eb01'),
+  1,
+  'the organizer reads table_rounds rows too'
+);
+
+-- Open-play events are unaffected: a plain member sees every booking,
+-- booking_groups, and table_rounds row.
 set local role postgres;
 reset request.jwt.claims;
 update public.events set game_mode = 'open_play'
@@ -89,6 +153,20 @@ select is(
    where event_id = '22222222-0000-0000-0000-00000000eb01'),
   1,
   'open_play bookings are unaffected -- any club member reads every row'
+);
+
+select is(
+  (select count(*)::int from public.booking_groups
+   where event_id = '22222222-0000-0000-0000-00000000eb01'),
+  1,
+  'open_play booking_groups are unaffected -- any club member reads every row'
+);
+
+select is(
+  (select count(*)::int from public.table_rounds
+   where event_id = '22222222-0000-0000-0000-00000000eb01'),
+  1,
+  'open_play table_rounds are unaffected -- any club member reads every row'
 );
 
 select * from finish();
