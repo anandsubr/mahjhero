@@ -103,6 +103,13 @@ const callForAFourth = vi.fn();
 // fail closed on (see `fetchOpenOffer`'s own comment above), which would
 // reintroduce exactly the flakiness that comment describes fixing.
 const fetchEventAcceptedCount = vi.fn();
+// The open-seating "Join" button's own RPC call -- previously left real
+// here (nothing in this file exercised it, since `bookSeat`/`commitBooking`
+// were only ever reached through BringSomeoneSheet, which no test in this
+// file opens). Mocked now for the same reason every other `lib/bookings`
+// call above is: a real call would hit the network-blocked `supabase.rpc`
+// this sandbox fails closed on, slowly.
+const commitBooking = vi.fn();
 
 vi.mock('../../lib/bookings', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../lib/bookings')>();
@@ -115,6 +122,7 @@ vi.mock('../../lib/bookings', async (importOriginal) => {
     callForAFourth: (...args: unknown[]) => callForAFourth(...args),
     fetchEventAcceptedCount: (...args: unknown[]) =>
       fetchEventAcceptedCount(...args),
+    commitBooking: (...args: unknown[]) => commitBooking(...args),
   };
 });
 
@@ -325,6 +333,18 @@ beforeEach(() => {
   placeBooking.mockResolvedValue({ error: null });
   cancelBooking.mockResolvedValue({ error: null });
   callForAFourth.mockResolvedValue({ error: null });
+  commitBooking.mockReset();
+  commitBooking.mockResolvedValue({
+    result: {
+      outcome: 'seated',
+      split: false,
+      group_id: 'group-new',
+      waitlist_position: null,
+      offer: null,
+      placements: [],
+    },
+    error: null,
+  });
   fetchMyCheckIn.mockReset();
   fetchMyCheckIn.mockResolvedValue(null);
   recordAttendance.mockResolvedValue({ error: null });
@@ -1828,6 +1848,77 @@ describe('open seating', () => {
       render(<EventScreen />);
 
       expect(await screen.findByText('2 signed up')).toBeTruthy();
+    });
+  });
+
+  // The gap this task closes: before this, an open-seating night's only
+  // booking-shaped control was "Invite", which books the OPENER as a side
+  // effect of bringing someone else -- there was no discoverable "I'm
+  // coming" for yourself. Routed entirely through this screen's existing
+  // `bookSeat(null)` -- the same tableless path "Join the waitlist" below
+  // already calls -- so these tests are really about the button's gating,
+  // not a new booking code path.
+  describe('the "Join" button (self-serve, open seating)', () => {
+    it('books just the viewer via the tableless commitBooking path when tapped', async () => {
+      fetchEvent.mockResolvedValue(OPEN_SEATING_EVENT);
+      fetchEventSeating.mockResolvedValue([]);
+      render(<EventScreen />);
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Join' }));
+      await vi.waitFor(() =>
+        expect(commitBooking).toHaveBeenCalledWith({
+          eventId: 'event-1',
+          players: ['test-user'],
+          preferredTableId: null,
+          allowSplit: true,
+        }),
+      );
+      // Reuses `bookSeat`'s own reload, same as every other booking action
+      // on this screen.
+      await vi.waitFor(() => expect(fetchEventSeating).toHaveBeenCalledTimes(2));
+    });
+
+    it('does not show Join for a member who already holds a booking', async () => {
+      fetchEvent.mockResolvedValue(OPEN_SEATING_EVENT);
+      fetchEventSeating.mockResolvedValue([
+        { ...SIGNED_UP_PRIYA, booking_id: 'b-me', profile_id: 'test-user' },
+      ]);
+      render(<EventScreen />);
+      await screen.findByText('Thursday Mahjong');
+      expect(screen.queryByRole('button', { name: 'Join' })).toBeNull();
+    });
+
+    // Regression guard: the assigned-tables path (every current club) must
+    // render exactly as before -- no "Join" button appears there, only the
+    // per-table seat grid's own tap-to-book affordance.
+    it('does not show Join on an assigned-tables event', async () => {
+      fetchEventTables.mockResolvedValue([TABLE_1]);
+      fetchEventSeating.mockResolvedValue([]);
+      render(<EventScreen />);
+      await screen.findByText('Thursday Mahjong');
+      expect(screen.queryByRole('button', { name: 'Join' })).toBeNull();
+    });
+
+    it('does not show Join once the game has already started', async () => {
+      fetchEvent.mockResolvedValue({
+        ...OPEN_SEATING_EVENT,
+        starts_at: new Date(Date.now() - 60_000).toISOString(),
+      });
+      fetchEventSeating.mockResolvedValue([]);
+      render(<EventScreen />);
+      await screen.findByText('Thursday Mahjong');
+      expect(screen.queryByRole('button', { name: 'Join' })).toBeNull();
+    });
+
+    it('does not show Join on a cancelled (not published) game', async () => {
+      fetchEvent.mockResolvedValue({
+        ...OPEN_SEATING_EVENT,
+        status: 'cancelled' as const,
+      });
+      fetchEventSeating.mockResolvedValue([]);
+      render(<EventScreen />);
+      await screen.findByText('Thursday Mahjong');
+      expect(screen.queryByRole('button', { name: 'Join' })).toBeNull();
     });
   });
 });

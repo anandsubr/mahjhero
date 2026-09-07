@@ -598,6 +598,26 @@ export default function EventScreen() {
     !rosterFailed &&
     (event.game_mode === 'open_play' || isOrganizer);
 
+  // The gap this fix closes: an `open_seating` night has no seat grid at
+  // all (there are no tables — see `isOpenSeating`'s own comment above), so
+  // before this the only booking-shaped control on the whole screen was
+  // "Invite", which reads as bringing OTHER people, not saying "I'm in"
+  // myself. The dashboard already has the right affordance for this exact
+  // case (app/clubs/index.tsx's per-row "Join" button, `joinGame`) — this is
+  // its event-detail equivalent, routed through this screen's own
+  // `bookSeat(null)` (below) rather than a new call. Gated the same way
+  // `canBringSomeone` is on `canBook` (published, not yet started) plus
+  // `!myHoldsSeat`: a member who already holds a confirmed OR waitlisted
+  // booking has nothing left to do here — their existing booking already
+  // covers "I'm in" (and, for a waitlisted one, "Leave the waitlist" below
+  // is their only other action). Deliberately NOT also gated on `gameFull`
+  // the way "Join the waitlist" below is: `gameFull` is computed from
+  // `tables`, which is always empty for `open_seating` (no tables exist to
+  // fill), so it would never be true here — a capped, full open-seating
+  // night still needs this button to book AND land on the waitlist, which
+  // `commitBooking`/`bookSeat` already handle without any special-casing.
+  const canJoinOpenSeating = isOpenSeating && canBook && !myHoldsSeat;
+
   async function bookSeat(tableId: string | null) {
     setPendingTier(null);
     setBusy(true);
@@ -680,6 +700,18 @@ export default function EventScreen() {
   }
 
   function joinWaitlist() {
+    void bookSeat(null);
+  }
+
+  // The `canJoinOpenSeating` button's own handler — same `bookSeat(null)`
+  // call as `joinWaitlist` above (there is no table to prefer either way),
+  // kept as its own named function rather than reusing `joinWaitlist`
+  // directly: that name describes what the DASHBOARD's "Join" button and
+  // this screen's own "Join the waitlist" button do (landing on a
+  // waitlist), which is only sometimes what this one does — most of the
+  // time it seats the member outright, exactly as `bookSeat`'s own outcome
+  // handling below already decides.
+  function joinOpenSeating() {
     void bookSeat(null);
   }
 
@@ -1229,6 +1261,23 @@ export default function EventScreen() {
         member could change in the next breath, and those buttons vanished
         one by one, unexplained, as tables filled.
       */}
+      {/*
+        The self-serve "I'm in" action `canJoinOpenSeating` gates above --
+        rendered ahead of "Invite" below (kept, unchanged, for bringing
+        OTHERS): this one is the primary way a member says they themselves
+        are coming to an open-seating night, so it gets the primary button
+        treatment (the default variant), where "Invite" stays secondary.
+      */}
+      {canJoinOpenSeating ? (
+        <Button
+          disabled={busy}
+          onPress={joinOpenSeating}
+          accessibilityLabel="Join"
+        >
+          Join
+        </Button>
+      ) : null}
+
       {canBringSomeone ? (
         <Button
           variant="secondary"
