@@ -46,7 +46,10 @@ roadmap for the reasoning.
 - **Client:** Expo / React Native — iOS, Android, and web from one codebase
 - **Backend:** Supabase — Postgres, Auth, Row-Level Security, Realtime, Edge Functions
 - **Delivery:** Expo push (APNs + FCM); Resend for email
-- **Domain:** `mahjhero.app` / `mahjhero.com`, registered via Cloudflare Registrar
+- **Domain:** `mahjhero.com`, via Cloudflare Registrar. `mahjhero.com` serves the
+  marketing page; the app is served from `app.mahjhero.com` (and `dev.mahjhero.com` for
+  the shared dev environment). An earlier draft assumed a `mahjhero.app` domain that is
+  not held.
 
 The organizing principle is that the database owns authorization and capacity, not the
 app: RLS for tenant isolation, and a transactional Postgres function for every seat
