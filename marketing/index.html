@@ -162,6 +162,16 @@
     max-width: 560px;
   }
   .hero-actions { display: flex; gap: 13.2px; flex-wrap: wrap; }
+  .web-link { margin-top: 17.6px; font-size: 16px; color: var(--text-muted); line-height: 1.55; max-width: 460px; }
+  /*
+    accent-700, not the plain accent: #c67139 on this cream ground measures
+    only 3.03:1, under AA's 4.5:1 for 16px body text. The accent is fine as a
+    button GROUND with light text on it (as the store buttons use it) and as
+    large display type, but not as body-size link text. This palette's own
+    notes in lib/theme.ts make the same argument about muted text, and this
+    audience skews older.
+  */
+  .web-link a { color: var(--accent-700); font-weight: 700; text-decoration: none; border-bottom: 1px solid var(--accent-300); }
 
   /* PROBLEM_STYLES */
   .problem-inner { display: flex; flex-direction: column; gap: 35.2px; }
@@ -403,6 +413,22 @@
           <span class="store-btn-text"><span class="store-btn-kicker">Get it on</span>Google Play</span>
         </a>
       </div>
+
+      <!--
+        Points at the planned production host for the app itself
+        (mahjhero.app, per the release-infra design); this marketing page
+        lives on mahjhero.com. The link starts working the moment that
+        deploy lands, so it needs no edit then. The note is deliberately
+        honest rather than apologetic: the web build is one phone-shaped
+        column at every width, so a laptop visitor gets a narrow app in the
+        middle of a wide screen. Better they know before they click.
+      -->
+      <p class="web-link">
+        Prefer not to install anything?
+        <a href="https://mahjhero.app/sign-in">Use MahjHero in your browser</a>
+        &mdash; it works anywhere, though it&rsquo;s built phone-first, so it
+        looks its best on a phone.
+      </p>
     </div>
   </header>
   <section class="problem">
@@ -546,6 +572,20 @@
           <h3 class="feature-title">Scoring &amp; club leaderboard</h3>
           <p class="feature-body">Record points per round and keep an all-time club ranking.</p>
         </div>
+        <div class="card feature-card">
+          <div class="feature-icon">
+            <span class="feature-badge">68 signed up</span>
+          </div>
+          <h3 class="feature-title">Big nights, no table plan</h3>
+          <p class="feature-body">Running sixty or seventy players? Skip the seating chart entirely. People sign up, you set a headcount cap or leave it open, and everyone checks in at the door.</p>
+        </div>
+        <div class="card feature-card">
+          <div class="feature-icon">
+            <div class="feature-checkrow">Priya Patel <span>&#36;</span></div>
+          </div>
+          <h3 class="feature-title">Tick off who&rsquo;s paid</h3>
+          <p class="feature-body">Mark people paid as they arrive, on any game. Cash, Venmo, whatever you already use &mdash; MahjHero just remembers who&rsquo;s settled up, and only you can see it.</p>
+        </div>
       </div>
     </div>
   </section>
@@ -586,6 +626,11 @@
           <span class="store-btn-text"><span class="store-btn-kicker">Get it on</span>Google Play</span>
         </a>
       </div>
+
+      <p class="web-link">
+        Or <a href="https://mahjhero.app/sign-in">open it in your browser</a>
+        &mdash; no install, and best on a phone.
+      </p>
     </div>
   </section>
   <footer class="site-footer">
