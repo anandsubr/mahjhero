@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { createClient } from '@supabase/supabase-js';
 import {
   mintSession,
   seedClubWithEvent,
@@ -137,6 +138,175 @@ async function captureScreen(page: Page, vp: Viewport, name: string) {
     // doesn't render the tile.
     mask: [page.locator('[data-testid="thread-avatar-club-tile"]')],
   });
+}
+
+/**
+ * A service-role client for the one fixture below that this file seeds
+ * directly rather than through e2e/session.ts (`seedJoinableOpenSeatingEvent`
+ * just below). Mirrors `adminClient` in e2e/session.ts exactly, including its
+ * local-only hostname guard — a substring check on the URL is foolable
+ * (`https://notlocalhost.evil.example.com` contains "localhost"), so the
+ * parsed hostname is compared exactly, same as there. Not imported from that
+ * file because `adminClient` isn't exported, and this task's brief scopes
+ * every change to this one file.
+ */
+function fixtureAdminClient() {
+  const url = process.env.SUPABASE_LOCAL_URL;
+  const serviceRole = process.env.SUPABASE_LOCAL_SERVICE_ROLE_KEY;
+  if (!url || !serviceRole) {
+    throw new Error(
+      'Set SUPABASE_LOCAL_URL and SUPABASE_LOCAL_SERVICE_ROLE_KEY. Both are ' +
+        'printed by `npx supabase start`. Never use hosted-project values here.',
+    );
+  }
+  const hostname = new URL(url).hostname;
+  if (hostname !== '127.0.0.1' && hostname !== 'localhost' && hostname !== '::1') {
+    throw new Error(`Refusing to seed fixtures against a non-local URL: ${url}`);
+  }
+  return createClient(url, serviceRole, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+}
+
+/**
+ * Seeds a SECOND open-seating event — published, starting well after the
+ * suite's frozen clock, with the host holding no booking of their own — so
+ * `canJoinOpenSeating` (app/clubs/[id]/events/[eventId]/index.tsx) can
+ * actually be true for a screenshot.
+ *
+ * `seedOpenSeatingEvent` (e2e/session.ts) cannot be reused for this. Its one
+ * event is deliberately windowed to be mid-check-in AT the frozen clock
+ * (`starts_at` 15:45, `ends_at` 19:45, against a 16:00 "now") — the
+ * `check-in door, open seating` baseline needs that window open. But that
+ * also means `canBook` (`event.status === 'published' && starts_at > now`)
+ * is already false there, for every viewer, host included — which is what
+ * actually keeps the "Join" button off the `open-seating event detail`
+ * baseline above, not a booking already held by the viewer, as it first
+ * looked. This fixture is a plain published event dated the day after that
+ * one, still well before it starts, with nobody but one other member booked
+ * — so `canBook` is true and the host (who never gets a booking of their own
+ * in either fixture) has `myHoldsSeat === false`.
+ *
+ * Written directly against the local stack with service_role, the same
+ * pattern and the same local-only guard (`fixtureAdminClient` above) every
+ * fixture in e2e/session.ts uses for the same reason: service_role carries
+ * no JWT, so the app's own RPCs have no `auth.uid()` to check against. This
+ * lives here rather than in that file only because this task's brief scopes
+ * changes to this one file.
+ */
+async function seedJoinableOpenSeatingEvent(
+  clubId: string,
+  hostProfileId: string,
+  suffix: string,
+): Promise<{ eventId: string; capacity: number; signupName: string }> {
+  const admin = fixtureAdminClient();
+
+  const need = <T>(what: string, result: { data: unknown; error: unknown }): T => {
+    if (result.error || result.data == null) {
+      throw new Error(
+        `seedJoinableOpenSeatingEvent: ${what} failed: ${JSON.stringify(result.error)}`,
+      );
+    }
+    return result.data as T;
+  };
+
+  const venue = need<{ id: string }>(
+    'venue insert',
+    await admin
+      .from('venues')
+      .insert({
+        name: 'Willow Park Hall',
+        address_line: '3 Willow Park Avenue',
+        locality: 'Newton',
+        added_by_club_id: clubId,
+        created_by: hostProfileId,
+      })
+      .select('id')
+      .single(),
+  );
+
+  const capacity = 30;
+
+  const event = need<{ id: string }>(
+    'event insert',
+    await admin
+      .from('events')
+      .insert({
+        club_id: clubId,
+        title: 'Saturday open house mahjong',
+        venue_id: venue.id,
+        notes: '',
+        // A day after the suite's frozen clock (2026-08-22T16:00:00Z) — well
+        // inside `canBook`'s "not yet started" window, unlike
+        // `seedOpenSeatingEvent`'s own event (see this function's own doc
+        // comment above).
+        starts_at: '2026-08-23T20:00:00Z',
+        ends_at: '2026-08-23T23:00:00Z',
+        seating_mode: 'open_seating',
+        capacity,
+        fee_cents: 1000,
+        created_by: hostProfileId,
+      })
+      .select('id')
+      .single(),
+  );
+  const eventId = event.id;
+
+  // One other confirmed signup — NOT the host — so the roster card shows a
+  // real name instead of the bare "Nobody has signed up yet." empty state,
+  // while the host (this screenshot's own viewer) still holds no booking at
+  // all, which is the whole point of this fixture.
+  const signupName = 'Priya Okafor';
+  const { data: signupUser, error: signupUserError } = await admin.auth.admin.createUser({
+    email: `joinable-signup-${suffix}@example.com`,
+    email_confirm: true,
+  });
+  if (signupUserError || !signupUser.user) {
+    throw new Error(
+      `seedJoinableOpenSeatingEvent: signup profile create failed: ${JSON.stringify(signupUserError)}`,
+    );
+  }
+  const { error: profileError } = await admin
+    .from('profiles')
+    .update({ display_name: signupName, skill_level: 'intermediate' })
+    .eq('id', signupUser.user.id);
+  if (profileError) {
+    throw new Error(
+      `seedJoinableOpenSeatingEvent: signup profile update failed: ${JSON.stringify(profileError)}`,
+    );
+  }
+
+  const group = need<{ id: string }>(
+    'booking group insert',
+    await admin
+      .from('booking_groups')
+      .insert({
+        event_id: eventId,
+        club_id: clubId,
+        created_by: signupUser.user.id,
+        preferred_table_id: null,
+        status: 'confirmed',
+        waitlisted_at: null,
+      })
+      .select('id')
+      .single(),
+  );
+  const { error: bookingError } = await admin.from('bookings').insert({
+    group_id: group.id,
+    event_id: eventId,
+    club_id: clubId,
+    event_table_id: null,
+    profile_id: signupUser.user.id,
+    booked_by: signupUser.user.id,
+    status: 'confirmed',
+  });
+  if (bookingError) {
+    throw new Error(
+      `seedJoinableOpenSeatingEvent: booking insert failed: ${JSON.stringify(bookingError)}`,
+    );
+  }
+
+  return { eventId, capacity, signupName };
 }
 
 test.describe('signed out', () => {
@@ -1054,6 +1224,51 @@ test.describe('signed in', () => {
         await expect(page.getByText(seating.longName)).toBeVisible();
         await expect(page.getByText(seating.partnerName)).toBeVisible();
         await captureScreen(page, vp, `event-detail-open-seating-${vp.name}.png`);
+      });
+
+      // The self-serve "Join" button (`canJoinOpenSeating`,
+      // app/clubs/[id]/events/[eventId]/index.tsx, commit 0d031a4), pictured
+      // for the first time. The `open-seating event detail` baseline above
+      // does NOT cover it — see `seedJoinableOpenSeatingEvent`'s own doc
+      // comment for why that fixture's event can never show this button,
+      // regardless of who's looking or what they've booked. This uses a
+      // second, plain open-seating event that is still bookable, with the
+      // signed-in host holding no booking of their own — the one shape that
+      // makes the button render.
+      test(`open-seating event detail, joinable, at ${vp.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        const joinable = await seedJoinableOpenSeatingEvent(
+          seeded.clubId,
+          userId,
+          userId.slice(0, 8),
+        );
+        await page.goto(`/clubs/${seeded.clubId}/events/${joinable.eventId}`);
+        // The headcount heading -- one confirmed signup (not the viewer)
+        // against the fixture's own fixed capacity.
+        await expect(
+          page.getByText(`1 signed up · ${joinable.capacity} spots`),
+        ).toBeVisible();
+        await expect(page.getByText(joinable.signupName)).toBeVisible();
+        // The fee line -- `formatFeeCents(1000)`'s whole-dollar format.
+        await expect(page.getByText('$10 to play')).toBeVisible();
+        // The assertion this baseline exists for: the "Join" button actually
+        // rendered, not merely a screen that would look identical whether it
+        // did or not. `exact: true` so this can never accidentally match
+        // "Join the waitlist" (unreachable here anyway -- this event has no
+        // tables, so `gameFull` is always false).
+        await expect(
+          page.getByRole('button', { name: 'Join', exact: true }),
+        ).toBeVisible();
+        // "Invite" (`canBringSomeone`) sits directly below "Join" in the
+        // JSX -- the two buttons this baseline exists to show side by side.
+        await expect(
+          page.getByRole('button', { name: 'Invite', exact: true }),
+        ).toBeVisible();
+        await captureScreen(
+          page,
+          vp,
+          `event-detail-open-seating-joinable-${vp.name}.png`,
+        );
       });
 
       // Task 11: the check-in screen's OPEN-SEATING branch, pictured for the
