@@ -237,5 +237,11 @@ not run away between them:
 
 ## Open items
 
-- The 4-second settle window is a starting value, to be confirmed or adjusted during
-  the by-hand pass.
+- ~~The 4-second settle window is a starting value, to be confirmed or adjusted during
+  the by-hand pass.~~ **Closed 2026-09-06: confirmed at 4000ms** by hand, checking people
+  in at speed on a phone. `SETTLE_MS` is no longer provisional; its comment in
+  `check-in.tsx` records why it should not be re-tuned casually.
+- Still open from the by-hand pass: the 60+ name scroll/search check at a real door, and
+  the second-device confirmation that a player sees no payment state. The organizer-only
+  property is proven at the RLS, RPC and client layers by tests (and against hosted dev),
+  so the second-device check is confirmation rather than discovery.

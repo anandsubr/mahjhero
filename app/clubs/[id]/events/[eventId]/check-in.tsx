@@ -39,7 +39,14 @@ import { colors, layout, radius, space, type } from '../../../../../lib/theme';
  * optimistic update) and only the row's PLACEMENT waits, restarting on
  * every further tap.
  *
- * At module scope so the by-hand pass can tune this single number.
+ * At module scope so the by-hand pass could tune this single number.
+ *
+ * It did, and 4000 is the answer: confirmed by hand on 2026-09-06, checking
+ * people in at speed on a phone. This is no longer the provisional guess the
+ * design shipped with, so do not "tune" it on the theory that it was picked
+ * arbitrarily — it was measured against a real thumb. Shortening it makes the
+ * row escape before a Here -> paid gesture finishes; lengthening it leaves the
+ * list reading as stale while a queue is moving.
  */
 const SETTLE_MS = 4000;
 
