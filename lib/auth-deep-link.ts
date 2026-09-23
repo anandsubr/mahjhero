@@ -4,7 +4,8 @@ import { Platform } from 'react-native';
 import { completeAuthRedirect } from './auth';
 
 /**
- * Catches the magic-link redirect on native and turns it into a session.
+ * Catches an OAuth redirect on native (and any already-sent magic-link
+ * email, if tapped) and turns it into a session.
  *
  * Two arrivals have to be covered and they are genuinely different events:
  *

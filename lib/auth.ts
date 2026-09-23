@@ -127,9 +127,11 @@ export function __resetConsumedRedirectUrls(): void {
  * The single place a Supabase auth redirect URL is turned into a session.
  *
  * Both routes home land here: the OAuth flow (where
- * `WebBrowser.openAuthSessionAsync` hands back the redirect in-process) and
- * the magic-link flow (where the OS delivers it as a deep link, cold or warm).
- * They must not drift apart, hence one function rather than two copies.
+ * `WebBrowser.openAuthSessionAsync` hands back the redirect in-process), and
+ * native's deep-link catch for any magic-link email sent before this file
+ * switched to typed codes -- new emails carry no link, but an old one already
+ * sent still works if tapped. They must not drift apart, hence one function
+ * rather than two copies.
  *
  * The client runs GoTrue's implicit flow (auth-js's default `flowType`), so a
  * successful redirect carries `access_token`/`refresh_token` in the URL
@@ -137,7 +139,7 @@ export function __resetConsumedRedirectUrls(): void {
  * A PKCE `?code=` redirect would need `exchangeCodeForSession` instead; it
  * cannot occur unless the client's `flowType` is changed.
  *
- * Never rejects, for the same reason as sendMagicLink.
+ * Never rejects, for the same reason as sendSignInCode.
  */
 export async function completeAuthRedirect(
   url: string,
@@ -212,7 +214,7 @@ export function availableProviders(platform: string): OAuthProvider[] {
 }
 
 /**
- * Never rejects, for the same reason as sendMagicLink: the sign-in screen
+ * Never rejects, for the same reason as sendSignInCode: the sign-in screen
  * awaits this directly and an escaping rejection would strand the user
  * mid-interaction with no message explaining why.
  *

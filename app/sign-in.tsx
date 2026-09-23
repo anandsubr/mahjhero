@@ -14,6 +14,7 @@ import {
   verifySignInCode,
 } from '../lib/auth';
 import type { OAuthProvider } from '../lib/auth';
+import { GENERIC_ERROR } from '../lib/constants';
 import { useSession } from '../lib/session';
 import { colors, space, type } from '../lib/theme';
 
@@ -37,6 +38,7 @@ export default function SignIn() {
   const [code, setCode] = useState('');
   const [status, setStatus] = useState<'idle' | 'sending' | 'code-entry'>('idle');
   const [verifying, setVerifying] = useState(false);
+  const [resending, setResending] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
   const [pendingProvider, setPendingProvider] = useState<OAuthProvider | null>(
     null,
@@ -46,7 +48,7 @@ export default function SignIn() {
   // One in-flight auth attempt at a time, whichever route started it. On
   // native `openAuthSessionAsync` takes seconds, and a second tap opens a
   // second auth session on top of the first.
-  const busy = status === 'sending' || verifying || pendingProvider !== null;
+  const busy = status === 'sending' || verifying || resending || pendingProvider !== null;
 
   // Ticks the resend cooldown down to zero once a second. Re-created every
   // tick (the dependency is the count itself) rather than once at 60 — a
@@ -83,7 +85,9 @@ export default function SignIn() {
   async function onResend() {
     if (busy || resendCooldown > 0) return;
     setError(null);
+    setResending(true);
     const { error: sendError } = await sendSignInCode(email);
+    setResending(false);
     if (sendError) {
       setError(sendError);
       return;
@@ -97,10 +101,14 @@ export default function SignIn() {
     setVerifying(true);
     const { error: verifyError } = await verifySignInCode(email, code.trim());
     setVerifying(false);
-    // Wrong and expired codes return the same generic message from GoTrue,
-    // so there is nothing more specific to tell them apart by — one fixed
-    // message covers both rather than surfacing that raw wording.
-    if (verifyError) {
+    // Wrong and expired codes return the same generic message from GoTrue, so
+    // there is nothing more specific to tell them apart by -- one fixed message
+    // covers both rather than surfacing that raw wording. A genuine connection
+    // failure is a different problem, not a bad code, so it keeps its own
+    // message instead of being folded into the same one.
+    if (verifyError === GENERIC_ERROR) {
+      setError(GENERIC_ERROR);
+    } else if (verifyError) {
       setError("That code didn't work — check it or request a new one.");
     }
     // On success there is nothing further to do here: verifySignInCode sets
@@ -154,18 +162,21 @@ export default function SignIn() {
           We sent a sign-in code to <Text style={styles.bodyStrong}>{email.trim()}</Text>. Enter
           it below.
         </Text>
-        <TextField
-          label="Sign-in code"
-          value={code}
-          onChangeText={setCode}
-          placeholder="123456"
-          keyboardType="number-pad"
-          textContentType="oneTimeCode"
-          autoComplete="one-time-code"
-          autoCorrect={false}
-          maxLength={8}
-          accessibilityLabel="Sign-in code"
-        />
+        <View style={styles.codeFieldWrap}>
+          <TextField
+            label="Sign-in code"
+            value={code}
+            onChangeText={(text) => setCode(text.replace(/\D/g, ''))}
+            placeholder="123456"
+            keyboardType="number-pad"
+            textContentType="oneTimeCode"
+            autoComplete="one-time-code"
+            autoCorrect={false}
+            maxLength={12}
+            onSubmitEditing={onVerify}
+            accessibilityLabel="Sign-in code"
+          />
+        </View>
         {error ? <ErrorBanner message={error} /> : null}
         <Button
           variant="primary"
@@ -182,6 +193,7 @@ export default function SignIn() {
           big={false}
           onPress={onResend}
           disabled={busy || resendCooldown > 0}
+          loading={resending}
           accessibilityLabel="Resend code"
         >
           {resendCooldown > 0 ? `Resend code (${resendCooldown}s)` : 'Resend code'}
@@ -285,6 +297,9 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     padding: space[6],
     gap: space[5],
+  },
+  codeFieldWrap: {
+    alignSelf: 'stretch',
   },
   mailWell: {
     width: 72,
