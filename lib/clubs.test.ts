@@ -2,6 +2,15 @@
 // — the same eq-then-eq-then-terminal shape other lib/*.test.ts files already
 // model for a plain filtered select with no .single()/.maybeSingle().
 const orderAfterEq = vi.fn();
+const eqAfterEq = vi.fn(() => ({ order: orderAfterEq }));
+// fetchPendingInvites' read path: `.from('club_invites').select(...)
+// .eq('club_id', ...).is('accepted_at', null).order('created_at')` — same
+// terminal `orderAfterEq`, but a one-eq-then-is shape instead of
+// eq-then-eq, since this filters on a nullable timestamp rather than a
+// second equality. Named separately from `eqAfterEq` so tests can assert
+// the exact arguments each filter step was called with.
+const isAfterEq = vi.fn(() => ({ order: orderAfterEq }));
+const eqAfterSelect = vi.fn(() => ({ eq: eqAfterEq, is: isAfterEq }));
 // deleteInvite's write path: `.from('club_invites').delete().eq(...).select(...)`
 // — the same shape lib/greetings.test.ts already models for deleteGreeting.
 const deleteResult = vi.fn();
@@ -13,9 +22,7 @@ vi.mock('./supabase', () => ({
     rpc: (...args: unknown[]) => rpcMock(...args),
     from: vi.fn(() => ({
       select: vi.fn(() => ({
-        eq: vi.fn(() => ({
-          eq: vi.fn(() => ({ order: orderAfterEq })),
-        })),
+        eq: eqAfterSelect,
       })),
       delete: vi.fn(() => ({ eq: vi.fn(() => ({ select: deleteResult })) })),
     })),
@@ -34,6 +41,7 @@ import {
   deleteInvite,
   fetchMyPendingInvites,
   fetchMyRoles,
+  fetchPendingInvites,
   importRoster,
   parseRoster,
   setDefaultGameMode,
@@ -270,6 +278,71 @@ describe('deleteInvite', () => {
   it('returns an error rather than throwing on a network failure', async () => {
     deleteResult.mockRejectedValue(new Error('network down'));
     expect(await deleteInvite('invite-1')).toEqual({ error: GENERIC_ERROR });
+  });
+});
+
+describe('fetchPendingInvites', () => {
+  beforeEach(() => {
+    orderAfterEq.mockReset();
+    eqAfterSelect.mockClear();
+    isAfterEq.mockClear();
+  });
+
+  it('filters by club_id and unaccepted status, with no expires_at filter', async () => {
+    orderAfterEq.mockResolvedValue({ data: [], error: null });
+    await fetchPendingInvites('club-1');
+    expect(eqAfterSelect).toHaveBeenCalledWith('club_id', 'club-1');
+    expect(isAfterEq).toHaveBeenCalledWith('accepted_at', null);
+    // `.is('accepted_at', null)`'s mocked return value only has `order` on
+    // it -- if the source still called `.gt('expires_at', ...)` (the
+    // filter Step 3 of this task removed), that call would hit a method
+    // the mock doesn't provide, throw, and fetchPendingInvites' own catch
+    // would turn the throw into a `null` result instead of the `[]` the
+    // next assertion checks for.
+    expect(isAfterEq.mock.results[0].value).toEqual({ order: orderAfterEq });
+  });
+
+  it('returns the rows, with declined_at intact, on success', async () => {
+    orderAfterEq.mockResolvedValue({
+      data: [
+        {
+          id: 'invite-1',
+          email: 'jane@example.com',
+          display_name: 'Jane Doe',
+          skill_level: 'beginner',
+          declined_at: '2026-09-01T00:00:00.000Z',
+        },
+      ],
+      error: null,
+    });
+    const result = await fetchPendingInvites('club-1');
+    expect(result).toEqual([
+      {
+        id: 'invite-1',
+        email: 'jane@example.com',
+        display_name: 'Jane Doe',
+        skill_level: 'beginner',
+        declined_at: '2026-09-01T00:00:00.000Z',
+      },
+    ]);
+  });
+
+  it('returns an empty array, not null, when there are no invites', async () => {
+    orderAfterEq.mockResolvedValue({ data: [], error: null });
+    const result = await fetchPendingInvites('club-1');
+    expect(result).toEqual([]);
+  });
+
+  it('returns null on a failed read', async () => {
+    orderAfterEq.mockResolvedValue({ data: null, error: { message: 'boom' } });
+    const result = await fetchPendingInvites('club-1');
+    expect(result).toBeNull();
+  });
+
+  it('never rejects on a network failure', async () => {
+    orderAfterEq.mockRejectedValue(new Error('network down'));
+    const result = await fetchPendingInvites('club-1');
+    expect(result).toBeNull();
   });
 });
 
