@@ -2,7 +2,6 @@ import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -18,7 +17,7 @@ import Tag from '../../../components/Tag';
 import TabBar from '../../../components/TabBar';
 import TextField from '../../../components/TextField';
 import Toggle from '../../../components/Toggle';
-import { CopyIcon, TrashIcon } from '../../../components/icons';
+import { SendIcon, TrashIcon } from '../../../components/icons';
 import {
   canInvite,
   createInvite,
@@ -26,6 +25,7 @@ import {
   fetchClub,
   fetchPendingInvites,
   fetchRoster,
+  sendClubInviteEmail,
   setDefaultGameMode,
 } from '../../../lib/clubs';
 import type { Club, ClubInvite, ClubMember } from '../../../lib/clubs';
@@ -49,13 +49,15 @@ export default function ClubDetailScreen() {
   const [invites, setInvites] = useState<ClubInvite[]>([]);
   const [ready, setReady] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
-  const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Which pending invite's link was just copied -- shown as inline "Copied"
-  // feedback on that one row for a couple seconds, not a page-wide notice,
-  // since a host reviewing several invites needs to tell which link it was.
-  const [copiedInviteId, setCopiedInviteId] = useState<string | null>(null);
-  const copiedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteDisplayName, setInviteDisplayName] = useState('');
+  const [inviting, setInviting] = useState(false);
+  // Which pending invite's email was just resent -- shown as inline
+  // "Sent" feedback on that one row for a couple seconds, matching the
+  // "Copied" feedback the old copy-link row used to show.
+  const [resentInviteId, setResentInviteId] = useState<string | null>(null);
+  const resentTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Disables just the one row's icons mid-delete, not the whole screen --
   // deleting one invite has no bearing on any other row.
   const [deletingInviteId, setDeletingInviteId] = useState<string | null>(null);
@@ -142,49 +144,66 @@ export default function ClubDetailScreen() {
   const importedCount =
     Number.isFinite(parsedImported) && parsedImported > 0 ? parsedImported : null;
 
+  const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
   async function onInvite() {
-    if (!session || !id) return;
-    setError(null);
-    if (Platform.OS !== 'web') {
-      // `window.location` does not exist off web: React Native's core only
-      // aliases the `window` global to `global`, it never adds a `location`
-      // property, so reading `.origin` throws. Building the URL unconditionally
-      // would turn a tap into an uncaught crash on iOS/Android — and only after
-      // createInvite had already written a token to the database that this
-      // screen could never show, wasting it. Guarding before that call avoids
-      // both: no crash, and no orphaned invite. Invite links are a web-only
-      // flow for now; a native-safe origin or deep link is Task 8's concern.
-      setError('Invite links can only be created from the web app for now.');
+    if (!id) return;
+    if (!EMAIL_PATTERN.test(inviteEmail.trim())) {
+      setError('Please check that email address.');
       return;
     }
-    const { token, error: inviteError } = await createInvite(id);
-    if (inviteError || !token) {
+    setError(null);
+    setInviting(true);
+    const { id: inviteId, error: inviteError } = await createInvite(
+      id,
+      inviteEmail.trim(),
+      inviteDisplayName.trim(),
+    );
+    if (inviteError || !inviteId) {
+      setInviting(false);
       setError(inviteError ?? GENERIC_ERROR);
       return;
     }
-    setInviteUrl(`${window.location.origin}/join/${token}`);
+    const { error: sendError } = await sendClubInviteEmail({
+      to: inviteEmail.trim(),
+      clubName: club?.name ?? 'your club',
+      inviteeDisplayName: inviteDisplayName.trim() || undefined,
+    });
+    setInviting(false);
+    if (sendError) {
+      // The invite exists even though the email didn't go out -- "Resend
+      // invite email" on the new row (below) is the recovery path, not a
+      // retry loop here.
+      setError('Invite created, but the email could not be sent. You can resend it below.');
+    }
+    setInvites((prev) => [
+      ...prev,
+      {
+        id: inviteId,
+        email: inviteEmail.trim(),
+        display_name: inviteDisplayName.trim() || null,
+        skill_level: null,
+        declined_at: null,
+      },
+    ]);
+    setInviteEmail('');
+    setInviteDisplayName('');
   }
 
-  // Same web-only reasoning as onInvite above: `navigator.clipboard` is a
-  // browser API with no React Native equivalent installed in this app, and
-  // `window.location.origin` still throws off web regardless.
-  async function onCopyInvite(invite: ClubInvite) {
+  async function onResendInvite(invite: ClubInvite) {
     setError(null);
-    if (Platform.OS !== 'web') {
-      setError('Invite links can only be copied from the web app for now.');
+    const { error: sendError } = await sendClubInviteEmail({
+      to: invite.email,
+      clubName: club?.name ?? 'your club',
+      inviteeDisplayName: invite.display_name ?? undefined,
+    });
+    if (sendError) {
+      setError(sendError);
       return;
     }
-    const url = `${window.location.origin}/join/${invite.token}`;
-    try {
-      await navigator.clipboard.writeText(url);
-    } catch (cause) {
-      console.error('copy invite link failed', cause);
-      setError(GENERIC_ERROR);
-      return;
-    }
-    if (copiedTimeoutRef.current) clearTimeout(copiedTimeoutRef.current);
-    setCopiedInviteId(invite.id);
-    copiedTimeoutRef.current = setTimeout(() => setCopiedInviteId(null), 2000);
+    if (resentTimeoutRef.current) clearTimeout(resentTimeoutRef.current);
+    setResentInviteId(invite.id);
+    resentTimeoutRef.current = setTimeout(() => setResentInviteId(null), 2000);
   }
 
   async function onDeleteInvite(invite: ClubInvite) {
@@ -373,44 +392,30 @@ export default function ClubDetailScreen() {
             const inviteLabel =
               invite.display_name && invite.display_name.trim().length > 0
                 ? invite.display_name
-                : (invite.email ?? 'Invite link');
+                : invite.email;
             const busy = deletingInviteId === invite.id;
             return (
               <Card key={invite.id}>
                 <View style={styles.row}>
                   <Text style={styles.memberName}>{inviteLabel}</Text>
-                  <Tag>Invited</Tag>
+                  <Tag>{invite.declined_at ? 'Declined' : 'Invited'}</Tag>
                 </View>
-                {/*
-                  Once created, the link itself had nowhere left to go: not
-                  shown again, no way to resend it, no way to revoke it
-                  short of the 30-day expiry. These two actions close that
-                  gap for every pending invite, not just the one just
-                  created (inviteUrl's own card below stays for the
-                  freshly-made link, which is copyable there too). Sharing
-                  this row with the status line, not a row of its own,
-                  keeps the card as tight as a roster member's.
-                */}
                 <View style={styles.inviteMetaRow}>
                   <Text style={styles.inviteMetaText} numberOfLines={1}>
-                    {copiedInviteId === invite.id
-                      ? 'Copied'
-                      : invite.display_name &&
-                          invite.display_name.trim().length > 0 &&
-                          invite.email
-                        ? invite.email
-                        : 'Has not joined yet'}
+                    {resentInviteId === invite.id ? 'Sent' : invite.email}
                   </Text>
                   <View style={styles.inviteActions}>
-                    <Pressable
-                      onPress={() => onCopyInvite(invite)}
-                      disabled={busy}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Copy the invite link for ${inviteLabel}`}
-                      hitSlop={8}
-                    >
-                      <CopyIcon size={18} color={colors.accentColor} />
-                    </Pressable>
+                    {!invite.declined_at ? (
+                      <Pressable
+                        onPress={() => onResendInvite(invite)}
+                        disabled={busy}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Resend the invite email to ${inviteLabel}`}
+                        hitSlop={8}
+                      >
+                        <SendIcon size={18} color={colors.accentColor} />
+                      </Pressable>
+                    ) : null}
                     <Pressable
                       onPress={() => onDeleteInvite(invite)}
                       disabled={busy}
@@ -430,12 +435,31 @@ export default function ClubDetailScreen() {
 
       {mayInvite ? (
         <>
+          <TextField
+            label="Invite by email"
+            value={inviteEmail}
+            onChangeText={setInviteEmail}
+            placeholder="them@example.com"
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="email-address"
+            accessibilityLabel="Email address to invite"
+          />
+          <TextField
+            label="Name (optional)"
+            value={inviteDisplayName}
+            onChangeText={setInviteDisplayName}
+            placeholder="Their name"
+            accessibilityLabel="Name of the person you're inviting"
+          />
           <Button
             variant="secondary"
             onPress={onInvite}
-            accessibilityLabel="Create an invite link"
+            disabled={inviting}
+            loading={inviting}
+            accessibilityLabel="Send invite"
           >
-            Create an invite link
+            Send invite
           </Button>
           <Button
             variant="secondary"
@@ -444,16 +468,6 @@ export default function ClubDetailScreen() {
           >
             Import a roster
           </Button>
-          {inviteUrl ? (
-            <Card>
-              <Text style={styles.help}>
-                Share this link. It works for 30 days.
-              </Text>
-              <Text style={styles.inviteUrl} selectable>
-                {inviteUrl}
-              </Text>
-            </Card>
-          ) : null}
           <Button
             variant="secondary"
             onPress={() => router.push(`/clubs/${id}/venues`)}
