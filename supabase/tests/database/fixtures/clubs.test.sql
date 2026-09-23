@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(44);
+select plan(41);
 
 -- Structure
 select has_table('public', 'clubs', 'clubs table exists');
@@ -107,9 +107,8 @@ select throws_ok(
 );
 
 select throws_ok(
-  $$insert into public.club_invites (club_id, token, invited_by)
-    values ('c2c2c2c2-0000-0000-0000-000000000002', 'sneaky-token',
-            'aaaaaaaa-0000-0000-0000-000000000001')$$,
+  $$select public.create_club_invite(
+      'c2c2c2c2-0000-0000-0000-000000000002', 'sneaky@example.com', '', null)$$,
   '42501',
   null,
   'a member cannot create an invite to another club'
@@ -155,54 +154,22 @@ select is(
   'the creator can read the club they just made'
 );
 
--- Server-generated invite tokens: the client never supplies one (see
--- lib/clubs.ts createInvite / importRoster and the
--- server_generated_invite_tokens migration). Still acting as Alice, host of
--- her own club, so the insert clears club_invites_insert_organizer.
-create temporary table invite_tokens on commit drop as
-  with i1 as (
-    insert into public.club_invites (club_id, invited_by)
-    values ('c1c1c1c1-0000-0000-0000-000000000001',
-            'aaaaaaaa-0000-0000-0000-000000000001')
-    returning token
-  ), i2 as (
-    insert into public.club_invites (club_id, invited_by)
-    values ('c1c1c1c1-0000-0000-0000-000000000001',
-            'aaaaaaaa-0000-0000-0000-000000000001')
-    returning token
-  )
-  select token from i1
-  union all
-  select token from i2;
-
-select is(
-  (select count(*)::int from invite_tokens where token is null),
-  0,
-  'an invite inserted without a token gets one from the column default'
-);
-
-select is(
-  (select count(distinct token)::int from invite_tokens),
-  2,
-  'two invites inserted without a token in the same transaction do not collide'
-);
-
 -- Invite acceptance. Bob redeems an invite to Alice's club.
 set local role postgres;
 reset request.jwt.claims;
 
-insert into public.club_invites (club_id, token, invited_by, expires_at) values
-  ('c1c1c1c1-0000-0000-0000-000000000001', 'good-token',
-   'aaaaaaaa-0000-0000-0000-000000000001', now() + interval '7 days'),
-  ('c1c1c1c1-0000-0000-0000-000000000001', 'stale-token',
-   'aaaaaaaa-0000-0000-0000-000000000001', now() - interval '1 day');
+insert into public.club_invites (id, club_id, email, invited_by, expires_at) values
+  ('e1e1e1e1-0000-0000-0000-00000000fa01', 'c1c1c1c1-0000-0000-0000-000000000001',
+   'bob@example.com', 'aaaaaaaa-0000-0000-0000-000000000001', now() + interval '7 days'),
+  ('e2e2e2e2-0000-0000-0000-00000000fa02', 'c1c1c1c1-0000-0000-0000-000000000001',
+   'bob@example.com', 'aaaaaaaa-0000-0000-0000-000000000001', now() - interval '1 day');
 
 set local role authenticated;
 set local request.jwt.claims =
   '{"sub": "bbbbbbbb-0000-0000-0000-000000000002", "role": "authenticated"}';
 
 select is(
-  (public.accept_club_invite('good-token')->>'club_id')::uuid,
+  (public.accept_club_invite('e1e1e1e1-0000-0000-0000-00000000fa01')->>'club_id')::uuid,
   'c1c1c1c1-0000-0000-0000-000000000001'::uuid,
   'a valid token returns the club id'
 );
@@ -252,19 +219,19 @@ select is(
 );
 
 select is(
-  (public.accept_club_invite('good-token')->>'club_id')::uuid,
+  (public.accept_club_invite('e1e1e1e1-0000-0000-0000-00000000fa01')->>'club_id')::uuid,
   null,
   'a token cannot be redeemed twice'
 );
 
 select is(
-  (public.accept_club_invite('stale-token')->>'club_id')::uuid,
+  (public.accept_club_invite('e2e2e2e2-0000-0000-0000-00000000fa02')->>'club_id')::uuid,
   null,
   'an expired token is refused'
 );
 
 select is(
-  (public.accept_club_invite('no-such-token')->>'club_id')::uuid,
+  (public.accept_club_invite('99999999-0000-0000-0000-000000000000')->>'club_id')::uuid,
   null,
   'a token that was never issued is refused'
 );
@@ -291,15 +258,15 @@ update public.club_members set status = 'removed'
 where club_id = 'c1c1c1c1-0000-0000-0000-000000000001'
   and profile_id = 'bbbbbbbb-0000-0000-0000-000000000002';
 
-insert into public.club_invites (club_id, token, invited_by, expires_at) values
-  ('c1c1c1c1-0000-0000-0000-000000000001', 'reactivation-token',
-   'aaaaaaaa-0000-0000-0000-000000000001', now() + interval '7 days');
+insert into public.club_invites (id, club_id, email, invited_by, expires_at) values
+  ('e3e3e3e3-0000-0000-0000-00000000fa03', 'c1c1c1c1-0000-0000-0000-000000000001',
+   'bob@example.com', 'aaaaaaaa-0000-0000-0000-000000000001', now() + interval '7 days');
 
 set local role authenticated;
 set local request.jwt.claims =
   '{"sub": "bbbbbbbb-0000-0000-0000-000000000002", "role": "authenticated"}';
 
-select public.accept_club_invite('reactivation-token');
+select public.accept_club_invite('e3e3e3e3-0000-0000-0000-00000000fa03');
 
 select is(
   (select status::text from public.club_members
@@ -327,16 +294,16 @@ insert into auth.users (id, email) values
   ('dddddddd-0000-0000-0000-000000000004', 'dana@example.com');
 delete from public.profiles where id = 'dddddddd-0000-0000-0000-000000000004';
 
-insert into public.club_invites (club_id, token, invited_by, expires_at) values
-  ('c1c1c1c1-0000-0000-0000-000000000001', 'no-profile-token',
-   'aaaaaaaa-0000-0000-0000-000000000001', now() + interval '7 days');
+insert into public.club_invites (id, club_id, email, invited_by, expires_at) values
+  ('e4e4e4e4-0000-0000-0000-00000000fa04', 'c1c1c1c1-0000-0000-0000-000000000001',
+   'dana@example.com', 'aaaaaaaa-0000-0000-0000-000000000001', now() + interval '7 days');
 
 set local role authenticated;
 set local request.jwt.claims =
   '{"sub": "dddddddd-0000-0000-0000-000000000004", "role": "authenticated"}';
 
 select is(
-  (public.accept_club_invite('no-profile-token')->>'club_id')::uuid,
+  (public.accept_club_invite('e4e4e4e4-0000-0000-0000-00000000fa04')->>'club_id')::uuid,
   'c1c1c1c1-0000-0000-0000-000000000001'::uuid,
   'redeeming an invite succeeds even when the caller has no profiles row yet'
 );
@@ -438,17 +405,11 @@ select is(
 -- Invite attribution and club identity.
 -- ---------------------------------------------------------------------------
 
--- invited_by was client-supplied and unchecked: the insert policy asked only
--- whether the caller was an organizer, so a host could sign an invite — or a
--- whole imported batch — with somebody else's profile id.
-select throws_ok(
-  $$insert into public.club_invites (club_id, invited_by)
-    values ('c1c1c1c1-0000-0000-0000-000000000001',
-            'bbbbbbbb-0000-0000-0000-000000000002')$$,
-  '42501',
-  null,
-  'a host cannot attribute an invite to another profile'
-);
+-- create_club_invite (Task 2) has no invited_by parameter at all — it is always
+-- auth.uid() internally — and direct INSERT is revoked from authenticated
+-- entirely, so there is no longer any client-reachable path that could even
+-- attempt to spoof invited_by. The vulnerability this test guarded against is
+-- now structurally impossible rather than merely policy-blocked.
 
 -- clubs UPDATE had `using` and no `with check`, and was unbounded by column.
 -- Slug is globally unique, so an ordinary host session could squat any slug a
@@ -573,8 +534,8 @@ select is(
 );
 
 select lives_ok(
-  $$insert into public.club_invites (club_id)
-    values ('c4c4c4c4-0000-0000-0000-000000000004')$$,
+  $$select public.create_club_invite(
+      'c4c4c4c4-0000-0000-0000-000000000004', 'newguest@example.com', '', null)$$,
   'the promoted host can create an invite'
 );
 

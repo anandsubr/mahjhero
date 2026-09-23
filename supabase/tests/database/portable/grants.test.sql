@@ -174,7 +174,7 @@ select ok(
   'anon cannot execute is_club_member'
 );
 select ok(
-  not has_function_privilege('anon', 'public.accept_club_invite(text)', 'EXECUTE'),
+  not has_function_privilege('anon', 'public.accept_club_invite(uuid)', 'EXECUTE'),
   'anon cannot execute accept_club_invite'
 );
 select ok(
@@ -213,7 +213,7 @@ select ok(
   'authenticated can still execute create_club'
 );
 select ok(
-  has_function_privilege('authenticated', 'public.accept_club_invite(text)', 'EXECUTE'),
+  has_function_privilege('authenticated', 'public.accept_club_invite(uuid)', 'EXECUTE'),
   'authenticated can still execute accept_club_invite'
 );
 
@@ -728,7 +728,10 @@ select is(
        'public.event_has_my_active_booking(uuid)',
        'public.event_has_my_placed_seat(uuid)',
        'public.create_club(text, text)',
-       'public.accept_club_invite(text)',
+       'public.create_club_invite(uuid, text, text, uuid)',
+       'public.accept_club_invite(uuid)',
+       'public.decline_club_invite(uuid)',
+       'public.fetch_my_pending_invites()',
        'public.club_roster(uuid)',
        'public.club_leaderboard(uuid)',
        'public.set_default_game_mode(uuid, public.game_mode)',
@@ -824,7 +827,10 @@ select is(
          'public.event_has_my_active_booking(uuid)',
          'public.event_has_my_placed_seat(uuid)',
          'public.create_club(text, text)',
-         'public.accept_club_invite(text)',
+         'public.create_club_invite(uuid, text, text, uuid)',
+         'public.accept_club_invite(uuid)',
+         'public.decline_club_invite(uuid)',
+         'public.fetch_my_pending_invites()',
          'public.club_roster(uuid)',
          'public.club_leaderboard(uuid)',
          'public.set_default_game_mode(uuid, public.game_mode)',
