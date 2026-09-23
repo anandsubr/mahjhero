@@ -429,6 +429,180 @@ EOF
 
 ---
 
+### Task 3B (added mid-execution — see progress ledger): Fix pre-existing tests broken by Tasks 1 and 3
+
+**Why this task exists:** Running the full local suite after Task 3 landed (`npx supabase db reset --local && npx supabase test db --local`) surfaced three pre-existing pgTAP files that assumed the old token-based model and are not accounted for anywhere else in this plan: `supabase/tests/database/fixtures/accept_invite_seats_guest.test.sql`, `supabase/tests/database/fixtures/club_invites_event_id.test.sql`, and `supabase/tests/database/fixtures/clubs.test.sql`. This was a genuine gap in the plan's own research, not a defect in Tasks 1-3's implementation.
+
+**Files:**
+- Delete: `supabase/tests/database/fixtures/accept_invite_seats_guest.test.sql`
+- Modify: `supabase/tests/database/fixtures/club_invites_event_id.test.sql`
+- Modify: `supabase/tests/database/fixtures/clubs.test.sql`
+
+- [ ] **Step 1: Delete the superseded event-seating fixture**
+
+```bash
+git rm supabase/tests/database/fixtures/accept_invite_seats_guest.test.sql
+```
+Its scenario (an event-tied invite, redeemed, seats the guest) is rebuilt in the new id-based model by Task 5's own test file, per that task's existing instruction to mirror this file's shape — nothing here needs to survive.
+
+- [ ] **Step 2: Rewrite `club_invites_event_id.test.sql`**
+
+Replace the file in full:
+
+```sql
+begin;
+set local search_path to extensions, public;
+select plan(4);
+
+select has_column('public', 'club_invites', 'event_id', 'club_invites has event_id');
+
+insert into auth.users (id, email) values
+  ('aaaaaaaa-0000-0000-0000-00000000ef01', 'ci-host@example.com');
+
+insert into public.clubs (id, name, slug, created_by) values
+  ('c1c1c1c1-0000-0000-0000-00000000ef01', 'Invite Event Club',
+   'invite-event-club', 'aaaaaaaa-0000-0000-0000-00000000ef01'),
+  ('c2c2c2c2-0000-0000-0000-00000000ef02', 'Other Club', 'other-club-ci',
+   'aaaaaaaa-0000-0000-0000-00000000ef01');
+
+insert into public.club_members (club_id, profile_id, role) values
+  ('c1c1c1c1-0000-0000-0000-00000000ef01',
+   'aaaaaaaa-0000-0000-0000-00000000ef01', 'host'),
+  ('c2c2c2c2-0000-0000-0000-00000000ef02',
+   'aaaaaaaa-0000-0000-0000-00000000ef01', 'host');
+
+insert into public.venues (id, name, added_by_club_id, created_by) values
+  ('11111111-0000-0000-0000-00000000ef01', 'Test Hall',
+   'c1c1c1c1-0000-0000-0000-00000000ef01',
+   'aaaaaaaa-0000-0000-0000-00000000ef01');
+
+insert into public.events (id, club_id, title, venue_id, starts_at, ends_at, created_by) values
+  ('22222222-0000-0000-0000-00000000ef01', 'c1c1c1c1-0000-0000-0000-00000000ef01',
+   'Test Game', '11111111-0000-0000-0000-00000000ef01',
+   now() + interval '1 day', now() + interval '1 day 3 hours',
+   'aaaaaaaa-0000-0000-0000-00000000ef01');
+
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "aaaaaaaa-0000-0000-0000-00000000ef01", "role": "authenticated"}';
+
+-- Invite creation now goes through create_club_invite (Task 2), not a raw
+-- INSERT -- club_invites no longer grants INSERT to authenticated at all.
+-- The caller organizes BOTH clubs in this fixture, so assert_club_organizer
+-- passes for either target_club_id; the event-matches-club TRIGGER is what
+-- these three cases are actually exercising.
+select lives_ok(
+  $$select public.create_club_invite(
+      'c1c1c1c1-0000-0000-0000-00000000ef01', 'guest1@example.com', '',
+      '22222222-0000-0000-0000-00000000ef01')$$,
+  'an invite tied to an event of the SAME club is accepted'
+);
+
+select throws_ok(
+  $$select public.create_club_invite(
+      'c2c2c2c2-0000-0000-0000-00000000ef02', 'guest2@example.com', '',
+      '22222222-0000-0000-0000-00000000ef01')$$,
+  '23514',
+  null,
+  'an invite cannot tie a DIFFERENT club to this event'
+);
+
+select lives_ok(
+  $$select public.create_club_invite(
+      'c1c1c1c1-0000-0000-0000-00000000ef01', 'guest3@example.com', '', null)$$,
+  'a plain club invite with no event_id is still accepted'
+);
+
+select * from finish();
+rollback;
+```
+
+- [ ] **Step 3: Edit `clubs.test.sql` — eight targeted changes, everything else byte-for-byte unchanged**
+
+This file tests far more than invites (RLS on clubs/club_members, profile column exposure, `club_roster`, account-deletion succession) — only the eight blocks below touch `club_invites`/`accept_club_invite`. Do not change anything outside them.
+
+**Change 1** — "a member cannot create an invite to another club" (currently the `insert into public.club_invites (club_id, token, invited_by)` block): replace with
+```sql
+select throws_ok(
+  $$select public.create_club_invite(
+      'c2c2c2c2-0000-0000-0000-000000000002', 'sneaky@example.com', '', null)$$,
+  '42501',
+  null,
+  'a member cannot create an invite to another club'
+);
+```
+
+**Change 2** — delete the "Server-generated invite tokens" comment block and both assertions that follow it (the `create temporary table invite_tokens...` block and its two `select is(...)` calls checking "gets one from the column default" / "do not collide"). The property they tested (an unguessable server-generated value) no longer needs testing — the new model's security comes from an email match, not from a token being unguessable. This removes 2 assertions from the file's total.
+
+**Change 3** — the fixture insert for the redemption tests (currently `insert into public.club_invites (club_id, token, invited_by, expires_at) values (..., 'good-token', ...), (..., 'stale-token', ...)`, run as `role postgres`): replace with
+```sql
+insert into public.club_invites (id, club_id, email, invited_by, expires_at) values
+  ('e1e1e1e1-0000-0000-0000-00000000fa01', 'c1c1c1c1-0000-0000-0000-000000000001',
+   'bob@example.com', 'aaaaaaaa-0000-0000-0000-000000000001', now() + interval '7 days'),
+  ('e2e2e2e2-0000-0000-0000-00000000fa02', 'c1c1c1c1-0000-0000-0000-000000000001',
+   'bob@example.com', 'aaaaaaaa-0000-0000-0000-000000000001', now() - interval '1 day');
+```
+This stays a raw INSERT (not `create_club_invite`) — this block runs as `role postgres` purely to seed fixture rows, which is unaffected by the authenticated-role INSERT revoke, and giving the rows literal ids here means the redemption calls below can reference them directly instead of capturing a `RETURNING` value the way the old `token` column let them.
+
+**Change 4** — every `accept_club_invite('...-token')` call becomes an id call: `accept_club_invite('good-token')` (appears twice) → `accept_club_invite('e1e1e1e1-0000-0000-0000-00000000fa01')`; `accept_club_invite('stale-token')` → `accept_club_invite('e2e2e2e2-0000-0000-0000-00000000fa02')`; `accept_club_invite('no-such-token')` → `accept_club_invite('99999999-0000-0000-0000-000000000000')` (a syntactically valid id that was never issued — the assertion's description can stay as-is, "a token that was never issued is refused" reads fine generalized to "an id").
+
+**Change 5** — the reactivation-scenario fixture insert (currently `..., 'reactivation-token', ...`): replace with
+```sql
+insert into public.club_invites (id, club_id, email, invited_by, expires_at) values
+  ('e3e3e3e3-0000-0000-0000-00000000fa03', 'c1c1c1c1-0000-0000-0000-000000000001',
+   'bob@example.com', 'aaaaaaaa-0000-0000-0000-000000000001', now() + interval '7 days');
+```
+and its `select public.accept_club_invite('reactivation-token');` call becomes `select public.accept_club_invite('e3e3e3e3-0000-0000-0000-00000000fa03');`.
+
+**Change 6** — the no-profile-scenario fixture insert (currently `..., 'no-profile-token', ...`): replace with
+```sql
+insert into public.club_invites (id, club_id, email, invited_by, expires_at) values
+  ('e4e4e4e4-0000-0000-0000-00000000fa04', 'c1c1c1c1-0000-0000-0000-000000000001',
+   'dana@example.com', 'aaaaaaaa-0000-0000-0000-000000000001', now() + interval '7 days');
+```
+and its `accept_club_invite('no-profile-token')` call becomes `accept_club_invite('e4e4e4e4-0000-0000-0000-00000000fa04')`.
+
+**Change 7** — delete the "a host cannot attribute an invite to another profile" `throws_ok` block entirely (the one inserting `club_invites (club_id, invited_by)` with a mismatched `invited_by`). Replace it with a short comment: `create_club_invite` (Task 2) has no `invited_by` parameter at all — it is always `auth.uid()` internally — and direct `INSERT` is revoked from `authenticated` entirely, so there is no longer any client-reachable path that could even attempt to spoof `invited_by`. The vulnerability this test guarded against is now structurally impossible rather than merely policy-blocked, so there is nothing left to assert. This removes 1 assertion from the file's total.
+
+**Change 8** — "the promoted host can create an invite" (currently `insert into public.club_invites (club_id) values (...)`): replace with
+```sql
+select lives_ok(
+  $$select public.create_club_invite(
+      'c4c4c4c4-0000-0000-0000-000000000004', 'newguest@example.com', '', null)$$,
+  'the promoted host can create an invite'
+);
+```
+
+**Update the plan count**: Changes 1, 3, 4, 5, 6, 8 each swap one assertion for one assertion (net zero). Change 2 removes 2 assertions. Change 7 removes 1 assertion. The file's `select plan(44);` at the top becomes `select plan(41);`.
+
+- [ ] **Step 4: Run the full local suite**
+
+Run: `npx supabase db reset --local && npx supabase test db --local`
+Expected: every file passes, including the two you edited and the one you deleted no longer appearing at all. Report the exact pass/fail summary line for the whole run.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -A supabase/tests/database/fixtures
+git commit -m "$(cat <<'EOF'
+test(db): fix pre-existing invite tests broken by the token removal
+
+accept_invite_seats_guest.test.sql is superseded by Task 5's new
+test file. club_invites_event_id.test.sql and clubs.test.sql move
+their invite-creation assertions from raw INSERTs (token column
+gone, direct INSERT revoked from authenticated) to
+create_club_invite, and their redemption assertions from tokens to
+ids. One assertion (invited_by spoofing) is removed outright -- the
+path it guarded against no longer exists in any form now that
+create_club_invite has no invited_by parameter at all.
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+EOF
+)"
+```
+
+---
+
 ### Task 4: pgTAP tests — `create_club_invite`
 
 **Files:**
