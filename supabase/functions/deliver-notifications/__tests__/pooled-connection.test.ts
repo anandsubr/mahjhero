@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { PooledConnection } from '../pooled-connection';
+import { PooledConnection } from '../../_shared/pooled-connection';
 
 /**
  * The reuse/discard state machine `SmtpSender` (smtp.ts) composes rather

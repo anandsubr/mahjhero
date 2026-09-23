@@ -1,5 +1,5 @@
-import { brand } from '../brand.ts';
-import type { Body } from '../types.ts';
+import { brand } from './brand.ts';
+import type { Body } from './email-types.ts';
 
 /**
  * Club names, event titles and broadcast bodies are all typed by people and

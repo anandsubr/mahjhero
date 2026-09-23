@@ -1,5 +1,5 @@
 import { renderMessage } from './render.ts';
-import type { Sender } from './sender.ts';
+import type { Sender } from '../_shared/sender.ts';
 import type { Message, RenderRow } from './types.ts';
 
 /**

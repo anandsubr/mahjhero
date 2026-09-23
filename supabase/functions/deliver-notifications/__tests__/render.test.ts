@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { FakeSender } from '../sender';
-import type { Sender } from '../sender';
+import { FakeSender } from '../../_shared/sender';
+import type { Sender } from '../../_shared/sender';
 import { renderMessage } from '../render';
 import { deliverBatch } from '../batch';
 import type { Report } from '../batch';
