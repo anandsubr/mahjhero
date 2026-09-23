@@ -242,18 +242,23 @@ describe('parseRoster', () => {
 });
 
 describe('importRoster', () => {
+  beforeEach(() => {
+    rpcMock.mockReset();
+  });
+
   // The plan's own constraint is "treat zero rows as failure", but the
   // function returned `{ created: 0, error: null }` — a success — so the
   // import screen redirected to `/clubs/<id>?imported=0` and told the host
   // their import had worked when it had invited nobody.
   it('treats an empty row list as a failure, not a silent success', async () => {
     const result = await importRoster('club-1', []);
-    expect(result.created).toBe(0);
+    expect(result.invites).toEqual([]);
     expect(result.error).not.toBeNull();
+    expect(rpcMock).not.toHaveBeenCalled();
   });
 
   // Belt to parseRoster's braces: nothing stops a future caller assembling
-  // rows some other way, and the cap protects a single unbounded INSERT.
+  // rows some other way, and the cap protects an unbounded loop of RPC calls.
   it('refuses more rows than the cap without reaching the network', async () => {
     const rows = Array.from({ length: MAX_ROSTER_ROWS + 1 }, (_, i) => ({
       display_name: `Person ${i}`,
@@ -261,8 +266,82 @@ describe('importRoster', () => {
       skill_level: null,
     }));
     const result = await importRoster('club-1', rows);
-    expect(result.created).toBe(0);
+    expect(result.invites).toEqual([]);
     expect(result.error).toMatch(new RegExp(`${MAX_ROSTER_ROWS}`));
+    expect(rpcMock).not.toHaveBeenCalled();
+  });
+
+  // Direct table INSERT on club_invites is revoked (Task 2); creation now
+  // goes through create_club_invite, one call per row.
+  it('calls create_club_invite once per row and returns every created invite', async () => {
+    const rows = [
+      { display_name: 'Jane Doe', email: 'jane@example.com', skill_level: 'beginner' as const },
+      { display_name: 'John Roe', email: 'john@example.com', skill_level: null },
+    ];
+    rpcMock.mockResolvedValueOnce({ data: 'invite-1', error: null });
+    rpcMock.mockResolvedValueOnce({ data: 'invite-2', error: null });
+
+    const result = await importRoster('club-1', rows);
+
+    expect(rpcMock).toHaveBeenCalledTimes(2);
+    expect(rpcMock).toHaveBeenNthCalledWith(1, 'create_club_invite', {
+      target_club_id: 'club-1',
+      target_email: 'jane@example.com',
+      target_display_name: 'Jane Doe',
+      target_event_id: null,
+    });
+    expect(rpcMock).toHaveBeenNthCalledWith(2, 'create_club_invite', {
+      target_club_id: 'club-1',
+      target_email: 'john@example.com',
+      target_display_name: 'John Roe',
+      target_event_id: null,
+    });
+    expect(result).toEqual({
+      invites: [
+        { id: 'invite-1', email: 'jane@example.com', display_name: 'Jane Doe' },
+        { id: 'invite-2', email: 'john@example.com', display_name: 'John Roe' },
+      ],
+      error: null,
+    });
+  });
+
+  // The old bulk INSERT was one statement, so it was genuinely all-or-nothing.
+  // A loop of per-row RPC calls can't offer that same atomicity, so one row
+  // failing (e.g. "already a member") must not sink the rows that already
+  // succeeded -- this is the deliberate non-atomic contract the new
+  // implementation adopts instead of a false all-or-nothing guarantee.
+  it('keeps the rows that succeeded when one row fails', async () => {
+    const rows = [
+      { display_name: 'Jane Doe', email: 'jane@example.com', skill_level: null },
+      { display_name: 'Already Member', email: 'existing@example.com', skill_level: null },
+      { display_name: 'John Roe', email: 'john@example.com', skill_level: null },
+    ];
+    rpcMock.mockResolvedValueOnce({ data: 'invite-1', error: null });
+    rpcMock.mockResolvedValueOnce({
+      data: null,
+      error: { message: 'That person is already in this club.' },
+    });
+    rpcMock.mockResolvedValueOnce({ data: 'invite-3', error: null });
+
+    const result = await importRoster('club-1', rows);
+
+    expect(rpcMock).toHaveBeenCalledTimes(3);
+    expect(result).toEqual({
+      invites: [
+        { id: 'invite-1', email: 'jane@example.com', display_name: 'Jane Doe' },
+        { id: 'invite-3', email: 'john@example.com', display_name: 'John Roe' },
+      ],
+      error: null,
+    });
+  });
+
+  it('returns a generic error when every row fails', async () => {
+    const rows = [{ display_name: 'Jane Doe', email: 'jane@example.com', skill_level: null }];
+    rpcMock.mockResolvedValueOnce({ data: null, error: { message: 'denied' } });
+
+    const result = await importRoster('club-1', rows);
+
+    expect(result).toEqual({ invites: [], error: GENERIC_ERROR });
   });
 });
 

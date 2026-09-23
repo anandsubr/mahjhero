@@ -597,66 +597,62 @@ export async function fetchMyPendingInvites(): Promise<PendingInvite[] | null> {
 }
 
 /**
- * Deliberately all-or-nothing, not partial-success-with-a-report.
- *
- * `rows` has already passed through `parseRoster`, so every email is
- * regex-valid and every skill level is one of the three enum values or null;
- * tokens are no longer client-supplied (see `createInvite`), so there is no
- * client-chosen value that could collide or fail a check. That leaves no
- * plausible cause for one row in the batch to fail while its siblings
- * succeed — the remaining failure modes (the caller is not host/co-organizer
- * and the `with check` on `club_invites` rejects the insert, or the
- * connection drops mid-request) both fail the whole statement identically
- * regardless of which row triggered them. So a single `{ created, error }`
- * is the honest shape here: unlike `parseRoster`, there is nothing per-row
- * left to report.
+ * No longer all-or-nothing. This used to be a single bulk INSERT, where the
+ * database guaranteed atomicity for free; direct table INSERT on
+ * `club_invites` is revoked as of Task 2, so creation has to go through
+ * `create_club_invite`, which is designed around one invite at a time. That
+ * forces a loop of individual RPC calls, and a loop can't offer the same
+ * atomicity a single statement could -- a connection drop mid-loop, or one
+ * row hitting "already a member," leaves a partial result no rollback can
+ * undo. So this reports what actually landed rather than claiming a false
+ * all-or-nothing guarantee: every row that succeeded is returned, and rows
+ * that failed are logged and skipped.
  */
 export async function importRoster(
   clubId: string,
   rows: RosterRow[],
-): Promise<{ created: number; error: string | null }> {
+): Promise<{
+  invites: { id: string; email: string; display_name: string }[];
+  error: string | null;
+}> {
   // Zero rows is a failure, not a no-op success. Returning
-  // `{ created: 0, error: null }` sent the host to `/clubs/<id>?imported=0`
+  // `{ invites: [], error: null }` sent the host to `/clubs/<id>?imported=0`
   // — a success redirect for an import that invited nobody.
   if (rows.length === 0) {
-    return { created: 0, error: 'There is nobody in that file to invite.' };
+    return { invites: [], error: 'There is nobody in that file to invite.' };
   }
   if (rows.length > MAX_ROSTER_ROWS) {
     return {
-      created: 0,
+      invites: [],
       error: `Import at most ${MAX_ROSTER_ROWS} people at a time.`,
     };
   }
 
-  try {
-    const invites = rows.map((row) => ({
-      club_id: clubId,
-      email: row.email,
-      display_name: row.display_name,
-      skill_level: row.skill_level,
-    }));
-
-    const { data, error } = await supabase
-      .from('club_invites')
-      .insert(invites)
-      .select('id');
-
+  const created: { id: string; email: string; display_name: string }[] = [];
+  for (const row of rows) {
+    const { data, error } = await supabase.rpc('create_club_invite', {
+      target_club_id: clubId,
+      target_email: row.email,
+      target_display_name: row.display_name,
+      target_event_id: null,
+    });
     if (error) {
-      console.error('importRoster failed', error);
-      return { created: 0, error: GENERIC_ERROR };
+      // All-or-nothing was the old contract when this was one INSERT
+      // statement; per-row RPC calls can't offer that same atomicity
+      // (a connection drop mid-loop leaves a partial result), so this
+      // reports what actually landed rather than claiming a false
+      // rollback. `rows` has already passed through parseRoster, so
+      // "already a member" is the only per-row failure expected here.
+      console.error('importRoster: one row failed', row.email, error);
+      continue;
     }
-    // Same reasoning as `.select('id')` in updateProfile: an insert that wrote
-    // nothing must not be reported as a success. `rows` is non-empty here, so
-    // an empty `data` means the write did not land.
-    if (!data || data.length === 0) {
-      console.error('importRoster failed', 'insert returned no rows');
-      return { created: 0, error: GENERIC_ERROR };
-    }
-    return { created: data.length, error: null };
-  } catch (cause) {
-    console.error('importRoster failed', cause);
-    return { created: 0, error: GENERIC_ERROR };
+    created.push({ id: data as string, email: row.email, display_name: row.display_name });
   }
+
+  if (created.length === 0) {
+    return { invites: [], error: GENERIC_ERROR };
+  }
+  return { invites: created, error: null };
 }
 
 /**

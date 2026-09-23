@@ -8,7 +8,13 @@ import Screen from '../../../components/Screen';
 import TabBar from '../../../components/TabBar';
 import TextField from '../../../components/TextField';
 import { ChevronLeftIcon } from '../../../components/icons';
-import { MAX_ROSTER_ROWS, importRoster, parseRoster } from '../../../lib/clubs';
+import {
+  MAX_ROSTER_ROWS,
+  fetchClub,
+  importRoster,
+  parseRoster,
+  sendClubInviteEmail,
+} from '../../../lib/clubs';
 import type { RosterError, RosterRow } from '../../../lib/clubs';
 import { useSession } from '../../../lib/session';
 import { colors, space, type } from '../../../lib/theme';
@@ -52,13 +58,24 @@ export default function ImportRosterScreen() {
     if (!session || !id || !rows || importing) return;
     setError(null);
     setImporting(true);
-    const { created, error: importError } = await importRoster(id, rows);
-    setImporting(false);
+    const club = await fetchClub(id);
+    const { invites, error: importError } = await importRoster(id, rows);
     if (importError) {
+      setImporting(false);
       setError(importError);
       return;
     }
-    router.replace(`/clubs/${id}?imported=${created}`);
+    await Promise.all(
+      invites.map((invite) =>
+        sendClubInviteEmail({
+          to: invite.email,
+          clubName: club?.name ?? 'your club',
+          inviteeDisplayName: invite.display_name || undefined,
+        }),
+      ),
+    );
+    setImporting(false);
+    router.replace(`/clubs/${id}?imported=${invites.length}`);
   }
 
   return (
