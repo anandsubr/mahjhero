@@ -32,8 +32,15 @@ import {
   waitlistLabel,
 } from '../../lib/bookings';
 import type { BookingOutcome, MyBooking } from '../../lib/bookings';
-import { canInvite, fetchMyClubs, fetchMyRoles } from '../../lib/clubs';
-import type { Club, ClubRole } from '../../lib/clubs';
+import {
+  acceptClubInvite,
+  canInvite,
+  declineClubInvite,
+  fetchMyClubs,
+  fetchMyPendingInvites,
+  fetchMyRoles,
+} from '../../lib/clubs';
+import type { Club, ClubRole, PendingInvite } from '../../lib/clubs';
 import { applyGreetingTemplate, fetchGreetings, pickDailyGreeting } from '../../lib/greetings';
 import type { Greeting } from '../../lib/greetings';
 import { fetchClubLeaderboard, type LeaderboardEntry } from '../../lib/leaderboard';
@@ -139,6 +146,7 @@ export default function ClubsScreen() {
   const [displayName, setDisplayName] = useState('');
   const [greetings, setGreetings] = useState<Greeting[]>([]);
   const [leader, setLeader] = useState<LeaderboardEntry | null>(null);
+  const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>([]);
 
   // Every write below awaits the network and then calls setState. Nothing
   // checked the screen was still mounted, so navigating away mid-write —
@@ -189,6 +197,10 @@ export default function ClubsScreen() {
     fetchGreetings().then((result) => {
       if (cancelled) return;
       setGreetings(result ?? []);
+    });
+    fetchMyPendingInvites().then((result) => {
+      if (cancelled) return;
+      setPendingInvites(result ?? []);
     });
     return () => {
       cancelled = true;
@@ -298,6 +310,51 @@ export default function ClubsScreen() {
 
   function handleLeaveWaitlist(booking: MyBooking) {
     void runBookingAction(() => cancelBooking(booking.booking_id));
+  }
+
+  function handleAcceptInvite(invite: PendingInvite) {
+    void runInviteAction(invite, async () => {
+      const { clubId, eventId, error } = await acceptClubInvite(invite.id);
+      if (error) return { error };
+      // Unlike declining a booking or an offer (same club context
+      // throughout), accepting a club invite changes which club/event the
+      // member has access to at all -- navigating there is simpler and
+      // more correct than trying to reconcile local dashboard state for a
+      // club that was not in `clubs` a moment ago.
+      router.push(eventId ? `/clubs/${clubId}/events/${eventId}` : `/clubs/${clubId}`);
+      return { error: null };
+    });
+  }
+
+  function handleDeclineInvite(invite: PendingInvite) {
+    void runInviteAction(invite, () => declineClubInvite(invite.id));
+  }
+
+  /**
+   * Separate from `runBookingAction` above: that helper's failure path
+   * calls `reloadAfterBooking()`, which has nothing to do with invites, and
+   * its success path is a no-op requiring only a local state removal (or,
+   * for accept, a navigation) rather than a dashboard-wide reload -- an
+   * invite response never changes what today's events/bookings list looks
+   * like.
+   */
+  async function runInviteAction(
+    invite: PendingInvite,
+    action: () => Promise<{ error: string | null }>,
+  ) {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    setActionError(null);
+    const { error } = await action();
+    if (!mounted.current) return;
+    busyRef.current = false;
+    setBusy(false);
+    if (error) {
+      setActionError(error);
+      return;
+    }
+    setPendingInvites((prev) => prev.filter((i) => i.id !== invite.id));
   }
 
   // Optimistic write with rollback on error, matching the event screen's
@@ -635,6 +692,32 @@ export default function ClubsScreen() {
       ) : null}
 
       {actionError ? <ErrorBanner message={actionError} /> : null}
+
+      {pendingInvites.map((invite) => (
+        <Card key={invite.id}>
+          <Text style={styles.inviteHeading}>
+            {invite.clubName} invited you to join
+            {invite.eventTitle ? ` — ${invite.eventTitle}` : ''}
+          </Text>
+          <Button
+            block
+            disabled={busy}
+            onPress={() => handleAcceptInvite(invite)}
+            accessibilityLabel={`Join ${invite.clubName}`}
+          >
+            Join
+          </Button>
+          <Button
+            variant="ghost"
+            big={false}
+            disabled={busy}
+            onPress={() => handleDeclineInvite(invite)}
+            accessibilityLabel={`Decline the invite to ${invite.clubName}`}
+          >
+            No thanks
+          </Button>
+        </Card>
+      ))}
 
       {alerts.map((alert) => (
         <NeedAFourthCard
@@ -1024,6 +1107,16 @@ const styles = StyleSheet.create({
   heading: {
     fontFamily: type.heading,
     fontSize: type.size.h2,
+    color: colors.text,
+  },
+  // Distinct from `heading` above (this file's own section-title style,
+  // `type.heading`/`h2`): the invite card wants the smaller, semibold
+  // treatment `WaitlistPanel`'s own `heading` style uses for its card
+  // titles, so this gets its own name rather than colliding with a
+  // differently-styled key of the same name.
+  inviteHeading: {
+    fontFamily: type.bodySemiBold,
+    fontSize: type.size.bodyLarge,
     color: colors.text,
   },
   greeting: {

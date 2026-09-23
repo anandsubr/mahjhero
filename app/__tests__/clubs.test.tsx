@@ -82,6 +82,9 @@ const commitBooking = vi.fn();
 const cancelBooking = vi.fn();
 const fetchProfile = vi.fn();
 const fetchGreetings = vi.fn();
+const fetchMyPendingInvites = vi.fn();
+const acceptClubInvite = vi.fn();
+const declineClubInvite = vi.fn();
 
 // One partial mock for the whole file, not one per describe block. Two
 // `vi.mock` calls for the same specifier are both hoisted and only one
@@ -103,6 +106,9 @@ vi.mock('../../lib/clubs', async (importOriginal) => {
     sendClubInviteEmail: (...args: unknown[]) => sendClubInviteEmail(...args),
     fetchMyRoles: (...args: unknown[]) => fetchMyRoles(...args),
     importRoster: (...args: unknown[]) => importRoster(...args),
+    fetchMyPendingInvites: (...args: unknown[]) => fetchMyPendingInvites(...args),
+    acceptClubInvite: (...args: unknown[]) => acceptClubInvite(...args),
+    declineClubInvite: (...args: unknown[]) => declineClubInvite(...args),
   };
 });
 
@@ -322,6 +328,9 @@ beforeEach(() => {
     { id: 'g1', text: 'Ready to shuffle, {name}?', created_at: '2026-09-01T00:00:00Z' },
   ]);
   fetchClubLeaderboard.mockResolvedValue([]);
+  fetchMyPendingInvites.mockResolvedValue([]);
+  acceptClubInvite.mockResolvedValue({ clubId: null, eventId: null, error: null });
+  declineClubInvite.mockResolvedValue({ error: null });
 });
 
 describe('clubs list', () => {
@@ -1331,6 +1340,114 @@ describe('dashboard artboard', () => {
     render(<ClubsScreen />);
     fireEvent.click(await screen.findByRole('button', { name: 'Start a club' }));
     expect(push).toHaveBeenCalledWith('/clubs/new');
+  });
+});
+
+describe('pending club invites', () => {
+  const INVITE = {
+    id: 'invite-1',
+    clubId: 'club-9',
+    clubName: 'Harbour Mah Jongg',
+    eventId: null as string | null,
+    eventTitle: null as string | null,
+  };
+
+  it('shows a card for an invite addressed to the signed-in member', async () => {
+    fetchMyClubs.mockResolvedValue([CLUB]);
+    fetchMyPendingInvites.mockResolvedValue([INVITE]);
+
+    render(<ClubsScreen />);
+
+    expect(await screen.findByText(/Harbour Mah Jongg invited you to join/)).toBeTruthy();
+  });
+
+  it("names the tied event's title alongside the club name", async () => {
+    fetchMyClubs.mockResolvedValue([CLUB]);
+    fetchMyPendingInvites.mockResolvedValue([
+      { ...INVITE, eventId: 'event-9', eventTitle: 'Sunday social' },
+    ]);
+
+    render(<ClubsScreen />);
+
+    expect(
+      await screen.findByText('Harbour Mah Jongg invited you to join — Sunday social'),
+    ).toBeTruthy();
+  });
+
+  it('accepts the invite and navigates to the club/event it names', async () => {
+    fetchMyClubs.mockResolvedValue([CLUB]);
+    fetchMyPendingInvites.mockResolvedValue([
+      { ...INVITE, eventId: 'event-9', eventTitle: 'Sunday social' },
+    ]);
+    acceptClubInvite.mockResolvedValue({
+      clubId: 'club-9',
+      eventId: 'event-9',
+      error: null,
+    });
+
+    render(<ClubsScreen />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Join Harbour Mah Jongg' }));
+
+    await waitFor(() => expect(acceptClubInvite).toHaveBeenCalledWith('invite-1'));
+    expect(push).toHaveBeenCalledWith('/clubs/club-9/events/event-9');
+  });
+
+  it('accepts an invite with no tied event straight into the club', async () => {
+    fetchMyClubs.mockResolvedValue([CLUB]);
+    fetchMyPendingInvites.mockResolvedValue([INVITE]);
+    acceptClubInvite.mockResolvedValue({ clubId: 'club-9', eventId: null, error: null });
+
+    render(<ClubsScreen />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Join Harbour Mah Jongg' }));
+
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/clubs/club-9'));
+  });
+
+  it('declines the invite and removes the card, with no navigation', async () => {
+    fetchMyClubs.mockResolvedValue([CLUB]);
+    fetchMyPendingInvites.mockResolvedValue([INVITE]);
+
+    render(<ClubsScreen />);
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Decline the invite to Harbour Mah Jongg' }),
+    );
+
+    await waitFor(() => expect(declineClubInvite).toHaveBeenCalledWith('invite-1'));
+    await waitFor(() =>
+      expect(screen.queryByText(/Harbour Mah Jongg invited you to join/)).toBeNull(),
+    );
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it('shows actionError and leaves the card in place when accepting fails', async () => {
+    fetchMyClubs.mockResolvedValue([CLUB]);
+    fetchMyPendingInvites.mockResolvedValue([INVITE]);
+    acceptClubInvite.mockResolvedValue({
+      clubId: null,
+      eventId: null,
+      error: 'That invite is no longer valid.',
+    });
+
+    render(<ClubsScreen />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Join Harbour Mah Jongg' }));
+
+    expect(await screen.findByText('That invite is no longer valid.')).toBeTruthy();
+    expect(screen.getByText(/Harbour Mah Jongg invited you to join/)).toBeTruthy();
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it('shows actionError and leaves the card in place when declining fails', async () => {
+    fetchMyClubs.mockResolvedValue([CLUB]);
+    fetchMyPendingInvites.mockResolvedValue([INVITE]);
+    declineClubInvite.mockResolvedValue({ error: 'That invite is no longer valid.' });
+
+    render(<ClubsScreen />);
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Decline the invite to Harbour Mah Jongg' }),
+    );
+
+    expect(await screen.findByText('That invite is no longer valid.')).toBeTruthy();
+    expect(screen.getByText(/Harbour Mah Jongg invited you to join/)).toBeTruthy();
   });
 });
 
