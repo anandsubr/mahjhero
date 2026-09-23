@@ -145,10 +145,8 @@ export default function SignIn() {
   // nothing else is watching for that one either.
   //
   // Redirects to "/" rather than a fixed destination: app/index.tsx is the
-  // one place that knows whether this member has a pending club invite
-  // parked (see PENDING_INVITE_KEY) and must be sent to `/join/<token>`
-  // instead of `/clubs`. Hard-coding a destination here would either strand
-  // that invite (as `/profile` did) or duplicate index's decision.
+  // one place that decides where a signed-in member lands. Hard-coding a
+  // destination here would duplicate index's decision.
   if (!loading && session) return <Redirect href="/" />;
 
   if (status === 'code-entry') {

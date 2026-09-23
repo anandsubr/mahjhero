@@ -81,10 +81,8 @@ export default function Welcome() {
   // so nothing else is watching for a session to appear.
   //
   // Redirects to "/" rather than a fixed destination: index is the one place
-  // that knows whether a club invite is parked in storage (PENDING_INVITE_KEY)
-  // and the member must be sent to `/join/<token>` instead of `/clubs`.
-  // Hard-coding a destination here would either strand that invite or
-  // duplicate index's decision.
+  // that decides where a signed-in member lands. Hard-coding a destination
+  // here would duplicate index's decision.
   if (!loading && session) return <Redirect href="/" />;
 
   return (
