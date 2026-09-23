@@ -180,7 +180,15 @@ begin
     return;
   end if;
 
-  select email into caller_email from auth.users where id = caller;
+  -- `auth.users` is aliased here, unlike the identical-looking lookup in
+  -- accept_club_invite/decline_club_invite: this function's `returns table
+  -- (id uuid, ...)` implicitly declares `id` as an OUT parameter in scope
+  -- for the whole function body, so a bare `where id = caller` is ambiguous
+  -- between that parameter and `auth.users.id` -- confirmed by reproducing
+  -- it directly (`ERROR: column reference "id" is ambiguous`). The other
+  -- two functions return a scalar (jsonb/boolean), so they have no such
+  -- parameter and no ambiguity.
+  select email into caller_email from auth.users u where u.id = caller;
   if caller_email is null then
     return;
   end if;
