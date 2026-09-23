@@ -11,9 +11,13 @@ export function sanitizeSubject(subject: string): string {
 
 /**
  * `to` becomes a raw RFC 5322 header value too, but stripping is the wrong
- * move here (see deliver-notifications/render.ts's original docstring for
- * the full reasoning) -- a mangled address is not cosmetic, so this
- * refuses rather than rewrites.
+ * move here the way it is for `subject` above. A mangled subject is at
+ * worst cosmetic; a mangled *address* is not -- silently rewriting
+ * `bob@x.com\r\nBcc:eve@evil.com` into something that no longer contains
+ * the injected header does not make the row safe to send, it just hides
+ * the tampering. So this refuses instead of rewrites: a control character
+ * in the recipient throws rather than building a message with a
+ * silently-altered `to`.
  */
 export function assertCleanAddress(address: string): string {
   if (/[\x00-\x1f\x7f]/.test(address)) {
