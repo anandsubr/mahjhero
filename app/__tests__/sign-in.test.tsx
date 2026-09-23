@@ -156,6 +156,23 @@ describe('sign-in screen', () => {
     );
   });
 
+  it('shows the generic connection message when verification fails to reach the network', async () => {
+    vi.mocked(verifySignInCode).mockResolvedValueOnce({
+      error: 'Could not reach MahjHero. Check your connection and try again.',
+    });
+    render(<SignIn />);
+    await sendCode('jane@example.com');
+
+    fireEvent.change(screen.getByLabelText('Sign-in code'), {
+      target: { value: '123456' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Verify code' }));
+
+    await screen.findByText(
+      'Could not reach MahjHero. Check your connection and try again.',
+    );
+  });
+
   it('disables resend for 60 seconds, then re-enables it', async () => {
     // Fake timers go on BEFORE render, not after sendCode -- the countdown's
     // setInterval is created as soon as the code-entry step mounts, and a
@@ -193,6 +210,25 @@ describe('sign-in screen', () => {
 
     expect(sendSignInCode).toHaveBeenCalledTimes(2);
     expect(sendSignInCode).toHaveBeenLastCalledWith('jane@example.com');
+  });
+
+  it('ignores a second resend tap while the first is still in flight', async () => {
+    vi.useFakeTimers();
+    render(<SignIn />);
+    await sendCode('jane@example.com');
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+
+    const resend = screen.getByRole('button', { name: 'Resend code' });
+    fireEvent.click(resend);
+    fireEvent.click(resend);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(sendSignInCode).toHaveBeenCalledTimes(2); // 1 from sendCode + 1 resend, not 2 resends
   });
 
   it('redirects once a session exists', () => {

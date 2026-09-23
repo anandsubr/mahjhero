@@ -98,6 +98,17 @@ describe('verifySignInCode', () => {
       error: 'Token has expired or is invalid',
     });
   });
+
+  it('reports a retryable fetch failure with the generic message, not the raw wording', async () => {
+    const { AuthRetryableFetchError } = await import('@supabase/supabase-js');
+    vi.mocked(supabase.auth.verifyOtp).mockResolvedValueOnce({
+      data: { session: null, user: null },
+      error: new AuthRetryableFetchError('Failed to fetch', 0),
+    } as never);
+    await expect(verifySignInCode('jane@example.com', '123456')).resolves.toEqual({
+      error: 'Could not reach MahjHero. Check your connection and try again.',
+    });
+  });
 });
 
 describe('availableProviders', () => {
