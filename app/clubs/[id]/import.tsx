@@ -10,7 +10,6 @@ import TextField from '../../../components/TextField';
 import { ChevronLeftIcon } from '../../../components/icons';
 import {
   MAX_ROSTER_ROWS,
-  fetchClub,
   importRoster,
   parseRoster,
   sendClubInviteEmail,
@@ -58,22 +57,26 @@ export default function ImportRosterScreen() {
     if (!session || !id || !rows || importing) return;
     setError(null);
     setImporting(true);
-    const club = await fetchClub(id);
     const { invites, error: importError } = await importRoster(id, rows);
     if (importError) {
       setImporting(false);
       setError(importError);
       return;
     }
-    await Promise.all(
-      invites.map((invite) =>
-        sendClubInviteEmail({
-          to: invite.email,
-          clubName: club?.name ?? 'your club',
-          inviteeDisplayName: invite.display_name || undefined,
-        }),
-      ),
-    );
+    // Capped at 5 concurrent sends rather than one unbounded Promise.all --
+    // a roster can be up to MAX_ROSTER_ROWS (500) rows, and 500 simultaneous
+    // SMTP connections would very likely get throttled or blocked by the
+    // relay (see _shared/smtp.ts's own docstring on connection-attempt
+    // throttling). Failures are intentionally not surfaced per-row here --
+    // the organizer's invite list (with its per-row "Resend invite email"
+    // action) is the recovery path, matching how a single failed send is
+    // already handled on the other two invite screens.
+    const CONCURRENCY = 5;
+    for (let i = 0; i < invites.length; i += CONCURRENCY) {
+      await Promise.all(
+        invites.slice(i, i + CONCURRENCY).map((invite) => sendClubInviteEmail(invite.id)),
+      );
+    }
     setImporting(false);
     router.replace(`/clubs/${id}?imported=${invites.length}`);
   }

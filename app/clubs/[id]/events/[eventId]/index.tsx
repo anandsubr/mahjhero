@@ -873,13 +873,13 @@ export default function EventScreen() {
     );
     if (inviteError || !inviteId) {
       setInvitingGuest(false);
+      // A stale "Invited..." confirmation from an earlier successful send
+      // must not sit next to this new error -- reset it before returning.
+      setGuestInviteSent(false);
       setError(inviteError ?? GENERIC_ERROR);
       return;
     }
-    const { error: sendError } = await sendClubInviteEmail({
-      to: guestEmail.trim(),
-      clubName: club?.name ?? 'your club',
-    });
+    const { error: sendError } = await sendClubInviteEmail(inviteId);
     setInvitingGuest(false);
     setGuestInviteSent(!sendError);
     if (sendError) {

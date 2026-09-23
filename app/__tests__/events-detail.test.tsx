@@ -1290,10 +1290,7 @@ describe('organizer view', () => {
         undefined,
         'event-1',
       );
-      expect(sendClubInviteEmail).toHaveBeenCalledWith({
-        to: 'guest@example.com',
-        clubName: 'Riverside Mah Jongg',
-      });
+      expect(sendClubInviteEmail).toHaveBeenCalledWith('new-invite');
       // The dashboard-banner flow, not the old direct-landing one: this
       // invite no longer drops the guest straight onto the event via a
       // clicked link, so the confirmation says where they will actually

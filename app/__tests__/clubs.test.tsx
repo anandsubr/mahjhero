@@ -1660,11 +1660,7 @@ describe('club detail screen', () => {
     const sendOrder = sendClubInviteEmail.mock.invocationCallOrder[0];
     expect(createOrder).toBeLessThan(sendOrder);
     expect(createInvite).toHaveBeenCalledWith('club-1', 'jane@example.com', 'Jane Doe');
-    expect(sendClubInviteEmail).toHaveBeenCalledWith({
-      to: 'jane@example.com',
-      clubName: 'Riverside Mah Jongg',
-      inviteeDisplayName: 'Jane Doe',
-    });
+    expect(sendClubInviteEmail).toHaveBeenCalledWith('i1');
     expect(await screen.findByText('Jane Doe')).toBeTruthy();
   });
 
@@ -1719,13 +1715,7 @@ describe('club detail screen', () => {
 
     fireEvent.click(await screen.findByLabelText('Resend the invite email to Jane Doe'));
 
-    await waitFor(() =>
-      expect(sendClubInviteEmail).toHaveBeenCalledWith({
-        to: 'jane@example.com',
-        clubName: 'Riverside Mah Jongg',
-        inviteeDisplayName: 'Jane Doe',
-      }),
-    );
+    await waitFor(() => expect(sendClubInviteEmail).toHaveBeenCalledWith('i1'));
     expect(await screen.findByText('Sent')).toBeTruthy();
   });
 

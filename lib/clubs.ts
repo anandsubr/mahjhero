@@ -662,14 +662,19 @@ export async function importRoster(
  * result is still surfaced so a call site can offer "Resend invite email"
  * on a failure rather than claim success it can't back up.
  */
-export async function sendClubInviteEmail(params: {
-  to: string;
-  clubName: string;
-  inviteeDisplayName?: string;
-}): Promise<{ error: string | null }> {
+/**
+ * Takes only the invite's id -- the edge function looks up the recipient,
+ * club name, and display name itself, server-side, using this caller's own
+ * session (see supabase/functions/send-club-invite/index.ts). This means
+ * every call site that already has an invite id from createInvite/
+ * importRoster needs nothing else to trigger the email.
+ */
+export async function sendClubInviteEmail(
+  inviteId: string,
+): Promise<{ error: string | null }> {
   try {
     const { error } = await supabase.functions.invoke('send-club-invite', {
-      body: params,
+      body: { inviteId },
     });
     if (error) {
       console.error('sendClubInviteEmail failed', error);

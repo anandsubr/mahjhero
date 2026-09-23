@@ -29,6 +29,7 @@ import {
   setDefaultGameMode,
 } from '../../../lib/clubs';
 import type { Club, ClubInvite, ClubMember } from '../../../lib/clubs';
+import { isValidEmail } from '../../../lib/auth';
 import { GENERIC_ERROR } from '../../../lib/constants';
 import { openThreadForClub } from '../../../lib/messages';
 import { useSession } from '../../../lib/session';
@@ -144,11 +145,9 @@ export default function ClubDetailScreen() {
   const importedCount =
     Number.isFinite(parsedImported) && parsedImported > 0 ? parsedImported : null;
 
-  const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
   async function onInvite() {
     if (!id) return;
-    if (!EMAIL_PATTERN.test(inviteEmail.trim())) {
+    if (!isValidEmail(inviteEmail.trim())) {
       setError('Please check that email address.');
       return;
     }
@@ -164,11 +163,7 @@ export default function ClubDetailScreen() {
       setError(inviteError ?? GENERIC_ERROR);
       return;
     }
-    const { error: sendError } = await sendClubInviteEmail({
-      to: inviteEmail.trim(),
-      clubName: club?.name ?? 'your club',
-      inviteeDisplayName: inviteDisplayName.trim() || undefined,
-    });
+    const { error: sendError } = await sendClubInviteEmail(inviteId);
     setInviting(false);
     if (sendError) {
       // The invite exists even though the email didn't go out -- "Resend
@@ -192,11 +187,7 @@ export default function ClubDetailScreen() {
 
   async function onResendInvite(invite: ClubInvite) {
     setError(null);
-    const { error: sendError } = await sendClubInviteEmail({
-      to: invite.email,
-      clubName: club?.name ?? 'your club',
-      inviteeDisplayName: invite.display_name ?? undefined,
-    });
+    const { error: sendError } = await sendClubInviteEmail(invite.id);
     if (sendError) {
       setError(sendError);
       return;

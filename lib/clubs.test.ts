@@ -709,32 +709,28 @@ describe('setDefaultGameMode', () => {
 describe('sendClubInviteEmail', () => {
   it('resolves with an error instead of rejecting when the underlying call throws', async () => {
     functionsInvokeMock.mockRejectedValueOnce(new Error('network down'));
-    await expect(
-      sendClubInviteEmail({ to: 'a@example.com', clubName: 'Tiles Club' }),
-    ).resolves.toEqual({ error: GENERIC_ERROR });
+    await expect(sendClubInviteEmail('invite-id-123')).resolves.toEqual({
+      error: GENERIC_ERROR,
+    });
   });
 
   it('returns GENERIC_ERROR when the edge function reports an error', async () => {
     functionsInvokeMock.mockResolvedValueOnce({ data: null, error: { message: 'boom' } });
-    const result = await sendClubInviteEmail({ to: 'a@example.com', clubName: 'Tiles Club' });
+    const result = await sendClubInviteEmail('invite-id-123');
     expect(result).toEqual({ error: GENERIC_ERROR });
   });
 
-  it('passes the payload through to the edge function unchanged', async () => {
+  it('passes only the invite id through to the edge function', async () => {
     functionsInvokeMock.mockResolvedValueOnce({ data: { ok: true }, error: null });
-    await sendClubInviteEmail({
-      to: 'a@example.com',
-      clubName: 'Tiles Club',
-      inviteeDisplayName: 'Ann',
-    });
+    await sendClubInviteEmail('invite-id-123');
     expect(functionsInvokeMock).toHaveBeenCalledWith('send-club-invite', {
-      body: { to: 'a@example.com', clubName: 'Tiles Club', inviteeDisplayName: 'Ann' },
+      body: { inviteId: 'invite-id-123' },
     });
   });
 
   it('resolves with no error on success', async () => {
     functionsInvokeMock.mockResolvedValueOnce({ data: { ok: true }, error: null });
-    const result = await sendClubInviteEmail({ to: 'a@example.com', clubName: 'Tiles Club' });
+    const result = await sendClubInviteEmail('invite-id-123');
     expect(result).toEqual({ error: null });
   });
 });
