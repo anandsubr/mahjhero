@@ -58,3 +58,5 @@ playwright-report/
 # committed by accident. An `e2e/.env` entry used to sit here and implied a
 # loader that never existed.
 .env
+.vercel
+.env*

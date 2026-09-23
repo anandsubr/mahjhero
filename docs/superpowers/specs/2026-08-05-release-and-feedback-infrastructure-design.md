@@ -43,8 +43,8 @@ projects (Phase 7).
 
 | Git branch  | Supabase project      | Web (Vercel)                          | Purpose             |
 | ----------- | --------------------- | ------------------------------------- | ------------------- |
-| `develop`   | **dev** project       | `dev.mahjhero.app` (pinned alias)     | shared dev env      |
-| `main`      | **prod** project (new)| `mahjhero.app` (production branch)    | live                |
+| `develop`   | **dev** project       | `dev.mahjhero.com` (pinned alias)     | shared dev env      |
+| `main`      | **prod** project (new)| `app.mahjhero.com` (production branch)    | live                |
 
 - Feature branches PR into `develop`.
 - Promotion to prod = a reviewable **`develop`→`main` PR** with test results
@@ -96,7 +96,7 @@ reviewed like code; an intentional design change updates them in the same PR.
 ## 4. Deploy pipelines
 
 - **Web (Vercel, already connected):** Production Branch = `main`; alias the
-  `develop` preview to `dev.mahjhero.app`. Build = `expo export -p web` →
+  `develop` preview to `dev.mahjhero.com`. Build = `expo export -p web` →
   `dist/`.
 - **Mobile (EAS):** build + submit — **Phase 6, gated on account procurement**
   (Apple Developer $99/yr + identity verification; Google Play $25 one-time;
@@ -139,8 +139,8 @@ repo** parameterized by project refs/domains. Not built up front.
 
 ## Build order
 
-0. **Provision** — create prod Supabase project; DNS for `mahjhero.app` /
-   `dev.mahjhero.app`; create `develop` branch; set Vercel production branch;
+0. **Provision** — create prod Supabase project; DNS for `app.mahjhero.com` /
+   `dev.mahjhero.com`; create `develop` branch; set Vercel production branch;
    load secrets + GitHub Environments (`dev`, `prod`).
 1. **CI test gate** (`ci.yml`), built in two steps:
    1a. **Component-test harness** — RNTL under Vitest (validate the risk above
@@ -158,7 +158,7 @@ repo** parameterized by project refs/domains. Not built up front.
 
 ## Open items / risks
 
-- **DNS/domain ownership** for `mahjhero.app` must be confirmed in Vercel.
+- **DNS/domain ownership** for `mahjhero.com` must be confirmed in Vercel.
 - **Prod migration safety:** the `prod` GitHub Environment reviewer gate is
   secondary to the promotion-PR review; confirm whether you want both.
 - **Feedback spam / abuse:** JWT auth + rate limiting on `/api/feedback`;

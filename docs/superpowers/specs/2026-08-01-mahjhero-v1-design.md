@@ -60,7 +60,7 @@ and it centres on the one feature no competitor offers.
 ## 4. Architecture
 
 **Client.** One Expo/React Native codebase targeting iOS, Android, and web. The web
-build serves `mahjhero.app`, so an invite link opens a working app in a browser —
+build serves `app.mahjhero.com`, so an invite link opens a working app in a browser —
 installing is an upgrade, never a prerequisite.
 
 **Backend.** Supabase:
