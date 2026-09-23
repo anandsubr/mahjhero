@@ -4,6 +4,7 @@ vi.mock('./supabase', () => ({
   supabase: {
     auth: {
       signInWithOtp: vi.fn().mockRejectedValue(new Error('network down')),
+      verifyOtp: vi.fn().mockRejectedValue(new Error('network down')),
       signInWithOAuth: vi.fn().mockRejectedValue(new Error('network down')),
       setSession: vi.fn(),
     },
@@ -27,7 +28,7 @@ vi.mock('expo-web-browser', () => ({
   openAuthSessionAsync: vi.fn(),
 }));
 
-import { availableProviders, isValidEmail, sendMagicLink, signInWithProvider } from './auth';
+import { availableProviders, isValidEmail, sendSignInCode, signInWithProvider, verifySignInCode } from './auth';
 import { supabase } from './supabase';
 import * as WebBrowser from 'expo-web-browser';
 
@@ -53,22 +54,59 @@ describe('isValidEmail', () => {
   });
 });
 
-describe('sendMagicLink', () => {
+describe('sendSignInCode', () => {
   it('resolves with an error instead of rejecting when the underlying call throws', async () => {
-    await expect(sendMagicLink('jane@example.com')).resolves.toEqual({
+    await expect(sendSignInCode('jane@example.com')).resolves.toEqual({
       error: 'Could not reach MahjHero. Check your connection and try again.',
     });
   });
 
-  it('asks GoTrue to redirect to the app deep link, not the project Site URL', async () => {
-    // Without emailRedirectTo the emailed link lands on the Site URL, a web
-    // address. On iOS/Android that opens a browser and the app never sees the
-    // session, so "Check your email" becomes a permanent dead end.
-    await sendMagicLink('  jane@example.com  ');
-
+  it('trims the email before sending', async () => {
+    await sendSignInCode('  jane@example.com  ');
     expect(supabase.auth.signInWithOtp).toHaveBeenLastCalledWith({
       email: 'jane@example.com',
-      options: { emailRedirectTo: 'https://mahjhero.test/auth/callback' },
+    });
+  });
+});
+
+describe('verifySignInCode', () => {
+  it('resolves with an error instead of rejecting when the underlying call throws', async () => {
+    await expect(verifySignInCode('jane@example.com', '123456')).resolves.toEqual({
+      error: 'Could not reach MahjHero. Check your connection and try again.',
+    });
+  });
+
+  it('trims the email and passes the code through to verifyOtp', async () => {
+    vi.mocked(supabase.auth.verifyOtp).mockResolvedValueOnce({
+      data: { session: null, user: null },
+      error: null,
+    } as never);
+    await verifySignInCode('  jane@example.com  ', '123456');
+    expect(supabase.auth.verifyOtp).toHaveBeenLastCalledWith({
+      email: 'jane@example.com',
+      token: '123456',
+      type: 'email',
+    });
+  });
+
+  it('surfaces a failed verification as an error', async () => {
+    vi.mocked(supabase.auth.verifyOtp).mockResolvedValueOnce({
+      data: { session: null, user: null },
+      error: { message: 'Token has expired or is invalid' },
+    } as never);
+    await expect(verifySignInCode('jane@example.com', '000000')).resolves.toEqual({
+      error: 'Token has expired or is invalid',
+    });
+  });
+
+  it('reports a retryable fetch failure with the generic message, not the raw wording', async () => {
+    const { AuthRetryableFetchError } = await import('@supabase/supabase-js');
+    vi.mocked(supabase.auth.verifyOtp).mockResolvedValueOnce({
+      data: { session: null, user: null },
+      error: new AuthRetryableFetchError('Failed to fetch', 0),
+    } as never);
+    await expect(verifySignInCode('jane@example.com', '123456')).resolves.toEqual({
+      error: 'Could not reach MahjHero. Check your connection and try again.',
     });
   });
 });

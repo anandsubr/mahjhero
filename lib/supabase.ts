@@ -19,7 +19,8 @@ export const supabase = createClient(url, publishableKey, {
     storage: Platform.OS === 'web' ? undefined : AsyncStorage,
     autoRefreshToken: true,
     persistSession: true,
-    // Native apps have no URL to parse; web needs this for magic-link callbacks.
+    // Native apps have no URL to parse; web needs this for OAuth redirect callbacks
+    // (email sign-in uses a typed code now, so it never redirects at all).
     detectSessionInUrl: Platform.OS === 'web',
   },
 });

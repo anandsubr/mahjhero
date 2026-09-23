@@ -6,14 +6,18 @@ import { useSession } from '../../lib/session';
 import { colors, space, type } from '../../lib/theme';
 
 /**
- * Where a magic link or OAuth redirect lands on the web.
+ * Where an OAuth (Google/Apple) redirect lands on the web.
  *
- * `sendMagicLink` and `signInWithProvider` both set their redirect to
- * `Linking.createURL('auth/callback')`. On native that URL is intercepted —
- * by `openAuthSessionAsync` for OAuth, or by the root deep-link handler for a
- * link tapped in Mail — so no screen ever renders. On the web the browser
- * genuinely navigates here, and expo-router routes by file, so this route has
- * to exist or the member sees a 404 instead of being signed in.
+ * `signInWithProvider` sets its redirect to
+ * `Linking.createURL('auth/callback')`. On native that URL is intercepted by
+ * `openAuthSessionAsync`, so no screen ever renders. On the web the browser
+ * genuinely navigates here, and expo-router routes by file, so this route
+ * has to exist or the member sees a 404 instead of being signed in.
+ *
+ * Email sign-in no longer redirects anywhere: verifying a one-time code
+ * (`verifySignInCode` in `lib/auth.ts`) completes in whichever screen is
+ * already showing the code-entry step, with no browser navigation involved.
+ * This route exists purely for OAuth now.
  *
  * The session itself arrives without our help: `lib/supabase.ts` sets
  * `detectSessionInUrl` on web, so supabase-js parses the tokens out of the URL

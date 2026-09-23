@@ -24,8 +24,9 @@ SplashScreen.preventAutoHideAsync().catch(() => {
 });
 
 export default function RootLayout() {
-  // Mounted at the root so a magic link can complete from any screen, and so
-  // a cold launch from the link is caught before the first screen renders.
+  // Mounted at the root so an OAuth redirect (or an already-sent magic-link
+  // email, if tapped) can complete from any screen, and so a cold launch
+  // from either is caught before the first screen renders.
   useAuthDeepLink();
 
   // useFonts's second element is `error` — set if loading a font failed

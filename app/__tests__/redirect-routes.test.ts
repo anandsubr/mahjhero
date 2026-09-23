@@ -5,11 +5,13 @@ import { describe, expect, it } from 'vitest';
 
 /**
  * Every path handed to `Linking.createURL` becomes a URL a browser will
- * actually navigate to after a magic link or an OAuth round trip. expo-router
+ * actually navigate to after an OAuth round trip (email sign-in no longer
+ * generates a link at all). expo-router
  * routes by file, so a redirect target with no matching route file is a 404 —
  * the member clicks the link in their email and lands on nothing.
  *
- * This is not hypothetical. `sendMagicLink` gained
+ * This is not hypothetical. The function now called `sendSignInCode`
+ * (then `sendMagicLink`) gained
  * `emailRedirectTo: Linking.createURL('auth/callback')` to fix native
  * deep-linking, and `app/auth/callback.tsx` did not exist. Web sign-in broke
  * and stayed broken: native masks it entirely, because `openAuthSessionAsync`

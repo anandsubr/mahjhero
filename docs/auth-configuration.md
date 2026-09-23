@@ -10,7 +10,7 @@ environment (Authentication → Providers / Sign In).
 
 | Setting | Value | Why |
 |---|---|---|
-| Email provider | Enabled, **magic link only** | The spec forbids passwords |
+| Email provider | Enabled, **one-time code** (the client no longer surfaces the emailed link — see `docs/superpowers/specs/2026-09-23-otp-sign-in-design.md`) | The spec forbids passwords |
 | Google provider | Enabled | Requested sign-in method |
 | Apple provider | Enabled | Mandatory on iOS once Google is offered — App Store Review Guideline 4.8 |
 | Confirm email | Enabled | Linking depends on the address being verified |
@@ -30,7 +30,7 @@ it against any environment whose auth settings change.
 
 ## Redirect URLs
 
-Magic-link and OAuth redirects must be on the allow-list or GoTrue silently falls
+OAuth redirects (and any already-sent magic-link email, if tapped) must be on the allow-list or GoTrue silently falls
 back to the Site URL — which on iOS and Android means the link opens a browser and
 the app never receives a session. Add `mahjhero://auth/callback` (what
 `Linking.createURL('auth/callback')` produces in a standalone or dev-client build)

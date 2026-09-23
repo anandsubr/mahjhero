@@ -4,6 +4,7 @@ import * as WebBrowser from 'expo-web-browser';
 // this deep import is the path documented in Supabase's own Expo guide.
 import * as QueryParams from 'expo-auth-session/build/QueryParams';
 import { Platform } from 'react-native';
+import { isAuthRetryableFetchError } from '@supabase/supabase-js';
 import { GENERIC_ERROR } from './constants';
 import { supabase } from './supabase';
 
@@ -19,27 +20,53 @@ export function isValidEmail(value: string): boolean {
  * its status to "sending" before calling this, and an escaping rejection
  * would strand the user in a spinner with the submit button disabled and
  * no message explaining why.
+ *
+ * No `emailRedirectTo` — there is no clickable link in this email anymore
+ * (see docs/superpowers/specs/2026-09-23-otp-sign-in-design.md), only a
+ * typed code, so there is nothing to redirect from.
  */
-export async function sendMagicLink(
+export async function sendSignInCode(
   email: string,
 ): Promise<{ error: string | null }> {
   try {
     const { error } = await supabase.auth.signInWithOtp({
       email: email.trim(),
-      options: {
-        // Without this, GoTrue redirects to the project Site URL, which is a
-        // web address. On iOS/Android that opens a browser and the app never
-        // sees the session, so the "Check your email" screen is a dead end.
-        // The deep link is caught by lib/auth-deep-link.ts at app root.
-        emailRedirectTo: Linking.createURL('auth/callback'),
-      },
     });
     return { error: error ? error.message : null };
   } catch (cause) {
     // The user-facing message is deliberately generic, but keep the original
     // for diagnosis — otherwise a DNS failure, a Supabase outage, and a CORS
     // misconfiguration are indistinguishable from the outside.
-    console.error('sendMagicLink failed', cause);
+    console.error('sendSignInCode failed', cause);
+    return { error: GENERIC_ERROR };
+  }
+}
+
+/**
+ * Never rejects, for the same reason as sendSignInCode above.
+ *
+ * A failure here can mean a wrong code or an expired one — GoTrue returns
+ * the same generic error either way, so this passes the message through
+ * unfiltered; it's the sign-in screen's job (not this function's) to
+ * collapse it to one fixed, user-facing string rather than show GoTrue's
+ * wording directly.
+ */
+export async function verifySignInCode(
+  email: string,
+  code: string,
+): Promise<{ error: string | null }> {
+  try {
+    const { error } = await supabase.auth.verifyOtp({
+      email: email.trim(),
+      token: code,
+      type: 'email',
+    });
+    if (!error) return { error: null };
+    return {
+      error: isAuthRetryableFetchError(error) ? GENERIC_ERROR : error.message,
+    };
+  } catch (cause) {
+    console.error('verifySignInCode failed', cause);
     return { error: GENERIC_ERROR };
   }
 }
@@ -104,9 +131,11 @@ export function __resetConsumedRedirectUrls(): void {
  * The single place a Supabase auth redirect URL is turned into a session.
  *
  * Both routes home land here: the OAuth flow (where
- * `WebBrowser.openAuthSessionAsync` hands back the redirect in-process) and
- * the magic-link flow (where the OS delivers it as a deep link, cold or warm).
- * They must not drift apart, hence one function rather than two copies.
+ * `WebBrowser.openAuthSessionAsync` hands back the redirect in-process), and
+ * native's deep-link catch for any magic-link email sent before this file
+ * switched to typed codes -- new emails carry no link, but an old one already
+ * sent still works if tapped. They must not drift apart, hence one function
+ * rather than two copies.
  *
  * The client runs GoTrue's implicit flow (auth-js's default `flowType`), so a
  * successful redirect carries `access_token`/`refresh_token` in the URL
@@ -114,7 +143,7 @@ export function __resetConsumedRedirectUrls(): void {
  * A PKCE `?code=` redirect would need `exchangeCodeForSession` instead; it
  * cannot occur unless the client's `flowType` is changed.
  *
- * Never rejects, for the same reason as sendMagicLink.
+ * Never rejects, for the same reason as sendSignInCode.
  */
 export async function completeAuthRedirect(
   url: string,
@@ -189,7 +218,7 @@ export function availableProviders(platform: string): OAuthProvider[] {
 }
 
 /**
- * Never rejects, for the same reason as sendMagicLink: the sign-in screen
+ * Never rejects, for the same reason as sendSignInCode: the sign-in screen
  * awaits this directly and an escaping rejection would strand the user
  * mid-interaction with no message explaining why.
  *
