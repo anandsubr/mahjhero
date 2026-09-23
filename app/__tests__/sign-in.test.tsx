@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 
 const push = vi.fn();
@@ -17,8 +17,12 @@ vi.mock('expo-router', () => ({
   useRouter: () => ({ push, replace, back, canGoBack }),
 }));
 
+let sessionResult: { session: unknown; loading: boolean } = {
+  session: null,
+  loading: false,
+};
 vi.mock('../../lib/session', () => ({
-  useSession: () => ({ session: null, loading: false }),
+  useSession: () => sessionResult,
 }));
 
 // Mocked whole rather than partially: lib/auth pulls in expo-auth-session,
@@ -46,10 +50,10 @@ import SignIn from '../sign-in';
  * created under real timers stays real even after `vi.useFakeTimers()`
  * switches the global on). `findByText`'s internal retry loop polls via a
  * *real* `setTimeout` regardless, so it hangs forever once fake timers are
- * active. `advanceTimersByTimeAsync(0)` only drains pending microtasks
- * (this file's mocked `sendSignInCode` resolves immediately) and is a
- * harmless no-op when fake timers aren't installed, so every other test
- * using this helper is unaffected.
+ * active. The advance only runs when fake timers are actually installed
+ * (checked via `vi.isFakeTimers()`) — calling it under real timers throws.
+ * When real timers are in effect, `act`'s own async handling is what waits
+ * for the mocked `sendSignInCode` promise to settle.
  */
 async function sendCode(email = 'jane@example.com') {
   fireEvent.change(screen.getByLabelText('Email address'), {
@@ -57,7 +61,9 @@ async function sendCode(email = 'jane@example.com') {
   });
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: 'Email me a sign-in code' }));
-    await vi.advanceTimersByTimeAsync(0).catch(() => {});
+    if (vi.isFakeTimers()) {
+      await vi.advanceTimersByTimeAsync(0);
+    }
   });
 }
 
@@ -65,6 +71,11 @@ describe('sign-in screen', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     canGoBackResult = true;
+    sessionResult = { session: null, loading: false };
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   // Sign-in is now a step inside the welcome screen rather than the app's
@@ -113,6 +124,7 @@ describe('sign-in screen', () => {
     render(<SignIn />);
     await sendCode('jane@example.com');
     expect(sendSignInCode).toHaveBeenCalledWith('jane@example.com');
+    expect(screen.getByText('Enter your code')).toBeTruthy();
   });
 
   it('verifies the entered code', async () => {
@@ -163,7 +175,30 @@ describe('sign-in screen', () => {
     // rather than rendering the literal string "false" once the control is
     // enabled again -- confirmed by inspecting the DOM directly, not assumed.
     expect(resend.getAttribute('aria-disabled')).toBeNull();
-    vi.useRealTimers();
+  });
+
+  it('resends the code once the cooldown expires', async () => {
+    vi.useFakeTimers();
+    render(<SignIn />);
+    await sendCode('jane@example.com');
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Resend code' }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(sendSignInCode).toHaveBeenCalledTimes(2);
+    expect(sendSignInCode).toHaveBeenLastCalledWith('jane@example.com');
+  });
+
+  it('redirects once a session exists', () => {
+    sessionResult = { session: { user: { id: 'u1' } }, loading: false };
+    render(<SignIn />);
+    expect(screen.getByTestId('redirect').getAttribute('data-href')).toBe('/');
   });
 
   it('returns to the email step from "Use a different email"', async () => {
