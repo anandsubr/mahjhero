@@ -42,6 +42,11 @@ vi.mock('../../lib/session', () => ({
 
 const fetchClub = vi.fn();
 const fetchRoster = vi.fn();
+// Task 11: the event-scoped guest invite's own two RPC calls -- create the
+// invite, then send the email -- same pair app/__tests__/clubs.test.tsx
+// mocks for the club-level form this one mirrors.
+const createInvite = vi.fn();
+const sendClubInviteEmail = vi.fn();
 
 // `canInvite` stays real -- it is pure, and it is the exact host-or-
 // co-organizer test this screen is supposed to reuse rather than
@@ -52,6 +57,8 @@ vi.mock('../../lib/clubs', async (importOriginal) => {
     ...actual,
     fetchClub: (...args: unknown[]) => fetchClub(...args),
     fetchRoster: (...args: unknown[]) => fetchRoster(...args),
+    createInvite: (...args: unknown[]) => createInvite(...args),
+    sendClubInviteEmail: (...args: unknown[]) => sendClubInviteEmail(...args),
   };
 });
 
@@ -317,6 +324,8 @@ beforeEach(() => {
   });
   fetchClub.mockResolvedValue(CLUB);
   fetchRoster.mockResolvedValue(MEMBER_ROLE);
+  createInvite.mockResolvedValue({ id: 'new-invite', error: null });
+  sendClubInviteEmail.mockResolvedValue({ error: null });
   fetchEvent.mockResolvedValue(EVENT);
   fetchEventTables.mockResolvedValue([TABLE_1]);
   fetchSeries.mockResolvedValue(null);
@@ -1248,6 +1257,100 @@ describe('organizer view', () => {
     expect(screen.queryByText('Cancel this game')).toBeNull();
     expect(screen.queryByText('Add a table')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Edit Thursday Mahjong' })).toBeNull();
+  });
+
+  // Task 11: the "Invite a guest" button used to create a `/join/<token>`
+  // link (copy-link flow, identical in shape to the old club-level invite
+  // link Task 10 replaced). It is now an email form: filling it in and
+  // pressing "Invite a guest" must create the invite via the RPC first,
+  // then fire the actual email, in that order -- mirrors
+  // app/__tests__/clubs.test.tsx's own tests for the club-level form this
+  // one is scoped down from.
+  describe('the guest-invite email form', () => {
+    it('creates the invite scoped to this event, then sends the email', async () => {
+      render(<EventScreen />);
+      await screen.findByText('Thursday Mahjong');
+
+      fireEvent.change(screen.getByLabelText("Guest's email address"), {
+        target: { value: 'guest@example.com' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Invite a guest' }));
+
+      await waitFor(() => expect(sendClubInviteEmail).toHaveBeenCalled());
+      const createOrder = createInvite.mock.invocationCallOrder[0];
+      const sendOrder = sendClubInviteEmail.mock.invocationCallOrder[0];
+      expect(createOrder).toBeLessThan(sendOrder);
+      // The fourth argument -- `eventId` -- is what scopes this invite to
+      // the game rather than the whole club; `undefined` in the third
+      // (display name) slot matches createInvite's own optional parameter,
+      // since this form collects no name.
+      expect(createInvite).toHaveBeenCalledWith(
+        'club-1',
+        'guest@example.com',
+        undefined,
+        'event-1',
+      );
+      expect(sendClubInviteEmail).toHaveBeenCalledWith({
+        to: 'guest@example.com',
+        clubName: 'Riverside Mah Jongg',
+      });
+      // The dashboard-banner flow, not the old direct-landing one: this
+      // invite no longer drops the guest straight onto the event via a
+      // clicked link, so the confirmation says where they will actually
+      // see it.
+      expect(
+        await screen.findByText(
+          "Invited. They'll see it on their dashboard once they sign in, and it'll seat them at this game.",
+        ),
+      ).toBeTruthy();
+    });
+
+    it('shows the error and never sends an email when createInvite fails', async () => {
+      createInvite.mockResolvedValue({
+        id: null,
+        error: 'That person is already in this club.',
+      });
+      render(<EventScreen />);
+      await screen.findByText('Thursday Mahjong');
+
+      fireEvent.change(screen.getByLabelText("Guest's email address"), {
+        target: { value: 'guest@example.com' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Invite a guest' }));
+
+      expect(
+        await screen.findByText('That person is already in this club.'),
+      ).toBeTruthy();
+      expect(sendClubInviteEmail).not.toHaveBeenCalled();
+    });
+
+    it('shows a partial-failure message when the invite is created but the email fails', async () => {
+      sendClubInviteEmail.mockResolvedValue({ error: 'Something went wrong.' });
+      render(<EventScreen />);
+      await screen.findByText('Thursday Mahjong');
+
+      fireEvent.change(screen.getByLabelText("Guest's email address"), {
+        target: { value: 'guest@example.com' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Invite a guest' }));
+
+      expect(
+        await screen.findByText('Invite created, but the email could not be sent.'),
+      ).toBeTruthy();
+    });
+
+    it('rejects a malformed email address without calling createInvite', async () => {
+      render(<EventScreen />);
+      await screen.findByText('Thursday Mahjong');
+
+      fireEvent.change(screen.getByLabelText("Guest's email address"), {
+        target: { value: 'not-an-email' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Invite a guest' }));
+
+      expect(await screen.findByText('Please check that email address.')).toBeTruthy();
+      expect(createInvite).not.toHaveBeenCalled();
+    });
   });
 });
 

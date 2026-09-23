@@ -2,7 +2,6 @@ import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -18,6 +17,7 @@ import Screen from '../../../../../components/Screen';
 import Tag from '../../../../../components/Tag';
 import TabBar from '../../../../../components/TabBar';
 import TableCard from '../../../../../components/TableCard';
+import TextField from '../../../../../components/TextField';
 import WaitlistPanel from '../../../../../components/WaitlistPanel';
 import { PencilIcon } from '../../../../../components/icons';
 import {
@@ -27,8 +27,15 @@ import {
   recordAttendance,
   type AttendanceState,
 } from '../../../../../lib/attendance';
-import { canInvite, createInvite, fetchClub, fetchRoster } from '../../../../../lib/clubs';
+import {
+  canInvite,
+  createInvite,
+  fetchClub,
+  fetchRoster,
+  sendClubInviteEmail,
+} from '../../../../../lib/clubs';
 import type { Club, ClubMember } from '../../../../../lib/clubs';
+import { isValidEmail } from '../../../../../lib/auth';
 import { GENERIC_ERROR } from '../../../../../lib/constants';
 import {
   acceptPromotionOffer,
@@ -206,12 +213,17 @@ export default function EventScreen() {
   // one place this can be opened from.
   const [isBringingSomeone, setIsBringingSomeone] = useState(false);
 
-  // The freshly-created guest-invite link, shown in a Card immediately below
-  // the "Invite a guest" button that creates it — mirrors `inviteUrl` on
-  // app/clubs/[id]/index.tsx exactly, just scoped to this one event rather
-  // than the whole club (see `onInviteGuest` below, which passes `eventId` as
-  // `createInvite`'s third argument).
-  const [guestInviteUrl, setGuestInviteUrl] = useState<string | null>(null);
+  // The organizer's guest-invite form: an email address, a busy flag for the
+  // create-then-send round trip, and whether the most recent submission went
+  // through -- mirrors `inviteEmail`/`inviting` on app/clubs/[id]/index.tsx
+  // exactly, just scoped to this one event rather than the whole club (see
+  // `onInviteGuest` below, which passes `eventId` as `createInvite`'s fourth
+  // argument). There is no more link to hold: the invite goes out by email,
+  // not as a clicked URL (see `onInviteGuest`'s own doc comment on the
+  // resulting UX change).
+  const [guestEmail, setGuestEmail] = useState('');
+  const [invitingGuest, setInvitingGuest] = useState(false);
+  const [guestInviteSent, setGuestInviteSent] = useState(false);
 
   // A promotion offer currently held open for this member's group, read via
   // `fetchOpenOffer`. RLS (`promotion_offers_select_group`) already scopes
@@ -830,23 +842,50 @@ export default function EventScreen() {
   }
 
   // Organizer-only guest invite: mirrors app/clubs/[id]/index.tsx's own
-  // `onInvite` exactly (same web-only guard and error copy, same
-  // `createInvite` call shape), except this one passes `eventId` as
-  // `createInvite`'s third argument -- the invite is scoped to THIS game, not
-  // the whole club, so accepting it seats the new guest at this event
-  // specifically rather than just joining the club roster.
+  // `onInvite` exactly (create the invite via the RPC, then send the actual
+  // email, in that order -- sending the email is pointless, and would
+  // reference a nonexistent invite, if the create fails), except this one
+  // passes `eventId` as `createInvite`'s fourth argument -- the invite is
+  // scoped to THIS game, not the whole club, so accepting it seats the new
+  // guest at this event specifically (the RPC's existing best-effort seating
+  // logic, unchanged) rather than just joining the club roster.
+  //
+  // There is no more clicked link: the guest gets an email, signs in
+  // normally, and sees the invite as a banner on their own dashboard (Task
+  // 13) rather than landing on this event directly the way the old
+  // `/join/<token>` link did. That is a deliberate, accepted consequence of
+  // every invite now being email-targeted (Decision 1 of the redesign), not
+  // something to design around here -- see `guestInviteSent`'s own copy
+  // below, which describes the dashboard-banner flow rather than implying a
+  // direct landing.
   async function onInviteGuest() {
-    setError(null);
-    if (Platform.OS !== 'web') {
-      setError('Invite links can only be created from the web app for now.');
+    if (!isValidEmail(guestEmail)) {
+      setError('Please check that email address.');
       return;
     }
-    const { token, error: inviteError } = await createInvite(clubId, undefined, eventId);
-    if (inviteError || !token) {
+    setError(null);
+    setInvitingGuest(true);
+    const { id: inviteId, error: inviteError } = await createInvite(
+      clubId,
+      guestEmail.trim(),
+      undefined,
+      eventId,
+    );
+    if (inviteError || !inviteId) {
+      setInvitingGuest(false);
       setError(inviteError ?? GENERIC_ERROR);
       return;
     }
-    setGuestInviteUrl(`${window.location.origin}/join/${token}`);
+    const { error: sendError } = await sendClubInviteEmail({
+      to: guestEmail.trim(),
+      clubName: club?.name ?? 'your club',
+    });
+    setInvitingGuest(false);
+    setGuestInviteSent(!sendError);
+    if (sendError) {
+      setError('Invite created, but the email could not be sent.');
+    }
+    setGuestEmail('');
   }
 
   // Reloads even when the sheet is dismissed via "Never mind" rather than a
@@ -1290,33 +1329,40 @@ export default function EventScreen() {
       ) : null}
 
       {/*
-        The organizer's own guest-invite action -- always visible to them
+        The organizer's own guest-invite form -- always visible to them
         regardless of game mode (unlike "Invite" above, which an invite-only
-        game hides from everyone else). Mirrors the club page's "Create an
-        invite link" + `inviteUrl` Card pattern exactly, just scoped to this
-        event via `onInviteGuest`'s `createInvite(clubId, undefined,
+        game hides from everyone else). Mirrors the club page's
+        "Invite by email" form exactly, just scoped to this event via
+        `onInviteGuest`'s `createInvite(clubId, guestEmail, undefined,
         eventId)` call.
       */}
       {isOrganizer ? (
-        <Button
-          variant="secondary"
-          disabled={busy}
-          onPress={onInviteGuest}
-          accessibilityLabel="Invite a guest"
-        >
-          Invite a guest
-        </Button>
-      ) : null}
-
-      {guestInviteUrl ? (
-        <Card>
-          <Text style={styles.help}>
-            Share this link. It works for 30 days and seats them at this game.
-          </Text>
-          <Text style={styles.inviteUrl} selectable>
-            {guestInviteUrl}
-          </Text>
-        </Card>
+        <>
+          <TextField
+            label="Invite a guest by email"
+            value={guestEmail}
+            onChangeText={setGuestEmail}
+            placeholder="guest@example.com"
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="email-address"
+            accessibilityLabel="Guest's email address"
+          />
+          <Button
+            variant="secondary"
+            disabled={busy || invitingGuest}
+            loading={invitingGuest}
+            onPress={onInviteGuest}
+            accessibilityLabel="Invite a guest"
+          >
+            Invite a guest
+          </Button>
+          {guestInviteSent ? (
+            <Text style={styles.help}>
+              Invited. They'll see it on their dashboard once they sign in, and it'll seat them at this game.
+            </Text>
+          ) : null}
+        </>
       ) : null}
 
       {isBringingSomeone ? (
