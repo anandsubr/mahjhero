@@ -1,4 +1,4 @@
-import type { Message } from './types.ts';
+import type { Message } from './email-types.ts';
 
 /**
  * One required method, so a test can substitute a recorder and so the

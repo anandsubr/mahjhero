@@ -1,7 +1,7 @@
 import { SMTPClient } from 'https://deno.land/x/denomailer@1.6.0/mod.ts';
 import { PooledConnection } from './pooled-connection.ts';
 import type { Sender } from './sender.ts';
-import type { Message } from './types.ts';
+import type { Message } from './email-types.ts';
 
 export type SmtpConfig = {
   host: string;

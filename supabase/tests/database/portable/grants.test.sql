@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(119);
+select plan(126);
 
 /*
  * Guards the privileges themselves, not the policies.
@@ -42,6 +42,17 @@ select ok(
 select ok(
   has_table_privilege('authenticated', 'public.club_invites', 'DELETE'),
   'authenticated can DELETE from club_invites'
+);
+
+-- Invites are created only through create_club_invite (20260923020000),
+-- which checks the caller organizes the club and stamps the target email
+-- itself. A direct INSERT privilege here would let any member forge an
+-- invite for an arbitrary email, bypassing that check entirely --
+-- create_club_invite's own migration revoked this grant from authenticated
+-- once the RPC existed.
+select ok(
+  not has_table_privilege('authenticated', 'public.club_invites', 'INSERT'),
+  'authenticated cannot INSERT into club_invites'
 );
 
 -- Memberships are created only by security definer functions. An insert
@@ -174,7 +185,7 @@ select ok(
   'anon cannot execute is_club_member'
 );
 select ok(
-  not has_function_privilege('anon', 'public.accept_club_invite(text)', 'EXECUTE'),
+  not has_function_privilege('anon', 'public.accept_club_invite(uuid)', 'EXECUTE'),
   'anon cannot execute accept_club_invite'
 );
 select ok(
@@ -213,8 +224,53 @@ select ok(
   'authenticated can still execute create_club'
 );
 select ok(
-  has_function_privilege('authenticated', 'public.accept_club_invite(text)', 'EXECUTE'),
+  has_function_privilege('authenticated', 'public.accept_club_invite(uuid)', 'EXECUTE'),
   'authenticated can still execute accept_club_invite'
+);
+
+-- ---------------------------------------------------------------------------
+-- Invite mutation ACLs (email-targeted invite redesign, 20260923020000 /
+-- 20260923030000).
+--
+-- create_club_invite, decline_club_invite and fetch_my_pending_invites are
+-- new alongside accept_club_invite's text->uuid signature change above, and
+-- get the same dedicated positive/negative pair set_payment_status and
+-- event_payment_status have below -- the bidirectional allowlist further
+-- down already lists all four, but that check only proves the grant is
+-- documented somewhere, not that each function specifically is reachable by
+-- authenticated and closed to anon.
+-- ---------------------------------------------------------------------------
+
+select ok(
+  has_function_privilege(
+    'authenticated',
+    'public.create_club_invite(uuid, text, text, uuid)', 'EXECUTE'),
+  'authenticated can still execute create_club_invite'
+);
+select ok(
+  not has_function_privilege(
+    'anon', 'public.create_club_invite(uuid, text, text, uuid)', 'EXECUTE'),
+  'anon cannot execute create_club_invite'
+);
+select ok(
+  has_function_privilege(
+    'authenticated', 'public.decline_club_invite(uuid)', 'EXECUTE'),
+  'authenticated can still execute decline_club_invite'
+);
+select ok(
+  not has_function_privilege(
+    'anon', 'public.decline_club_invite(uuid)', 'EXECUTE'),
+  'anon cannot execute decline_club_invite'
+);
+select ok(
+  has_function_privilege(
+    'authenticated', 'public.fetch_my_pending_invites()', 'EXECUTE'),
+  'authenticated can still execute fetch_my_pending_invites'
+);
+select ok(
+  not has_function_privilege(
+    'anon', 'public.fetch_my_pending_invites()', 'EXECUTE'),
+  'anon cannot execute fetch_my_pending_invites'
 );
 
 -- ---------------------------------------------------------------------------
@@ -728,7 +784,10 @@ select is(
        'public.event_has_my_active_booking(uuid)',
        'public.event_has_my_placed_seat(uuid)',
        'public.create_club(text, text)',
-       'public.accept_club_invite(text)',
+       'public.create_club_invite(uuid, text, text, uuid)',
+       'public.accept_club_invite(uuid)',
+       'public.decline_club_invite(uuid)',
+       'public.fetch_my_pending_invites()',
        'public.club_roster(uuid)',
        'public.club_leaderboard(uuid)',
        'public.set_default_game_mode(uuid, public.game_mode)',
@@ -824,7 +883,10 @@ select is(
          'public.event_has_my_active_booking(uuid)',
          'public.event_has_my_placed_seat(uuid)',
          'public.create_club(text, text)',
-         'public.accept_club_invite(text)',
+         'public.create_club_invite(uuid, text, text, uuid)',
+         'public.accept_club_invite(uuid)',
+         'public.decline_club_invite(uuid)',
+         'public.fetch_my_pending_invites()',
          'public.club_roster(uuid)',
          'public.club_leaderboard(uuid)',
          'public.set_default_game_mode(uuid, public.game_mode)',

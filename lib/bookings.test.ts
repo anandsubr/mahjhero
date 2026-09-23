@@ -658,6 +658,15 @@ describe('BOOKING_REFUSALS (self-audit against the migrations)', () => {
     // from any client path through this module.
     'invite event does not belong to this club':
       'raised by accept_club_invite — only reachable through a malformed insert, never called from this module',
+
+    // Raised by create_club_invite (20260923020000_create_club_invite_rpc.sql)
+    // when the invited email already belongs to an active member of the
+    // club. lib/clubs.ts's createInvite maps this itself with a direct
+    // substring check on error.message (not through bookingErrorMessage —
+    // this is an invite-creation refusal, not a booking one), so it never
+    // reaches this module's GENERIC_ERROR fallback either.
+    'That person is already in this club':
+      'raised by create_club_invite — mapped directly in lib/clubs.ts createInvite, not through this module',
   };
 
   function distinctRaisedMessages(): string[] {

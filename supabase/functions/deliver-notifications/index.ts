@@ -1,6 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.111.0';
 import { deliverBatch, type Report } from './batch.ts';
-import { SmtpSender } from './smtp.ts';
+import { SmtpSender } from '../_shared/smtp.ts';
 import type { RenderRow } from './types.ts';
 
 /**

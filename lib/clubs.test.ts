@@ -2,30 +2,38 @@
 // — the same eq-then-eq-then-terminal shape other lib/*.test.ts files already
 // model for a plain filtered select with no .single()/.maybeSingle().
 const orderAfterEq = vi.fn();
+const eqAfterEq = vi.fn(() => ({ order: orderAfterEq }));
+// fetchPendingInvites' read path: `.from('club_invites').select(...)
+// .eq('club_id', ...).is('accepted_at', null).order('created_at')` — same
+// terminal `orderAfterEq`, but a one-eq-then-is shape instead of
+// eq-then-eq, since this filters on a nullable timestamp rather than a
+// second equality. Named separately from `eqAfterEq` so tests can assert
+// the exact arguments each filter step was called with.
+const isAfterEq = vi.fn(() => ({ order: orderAfterEq }));
+const eqAfterSelect = vi.fn(() => ({ eq: eqAfterEq, is: isAfterEq }));
 // deleteInvite's write path: `.from('club_invites').delete().eq(...).select(...)`
 // — the same shape lib/greetings.test.ts already models for deleteGreeting.
 const deleteResult = vi.fn();
-// acceptInvite, setDefaultGameMode, createInvite: `.rpc()` calls
+// acceptClubInvite, declineClubInvite, setDefaultGameMode, createInvite,
+// fetchMyPendingInvites: `.rpc()` calls
 const rpcMock = vi.fn();
-const insertAfterFrom = vi.fn();
-// createInvite's write path: `.from('club_invites').insert(...).select(...).single()`
-// Capture the insertMock to assert on its call arguments
-const insertMock = vi.fn();
-const selectAfterInsert = vi.fn();
-selectAfterInsert.mockReturnValue({ single: insertAfterFrom });
-insertMock.mockReturnValue({ select: selectAfterInsert });
+// sendClubInviteEmail: `.functions.invoke()` call. No other test in this
+// codebase mocks `functions` yet, so this follows the same
+// vi.fn()-per-method convention `rpc` and `from` already use above rather
+// than introducing a different pattern.
+const functionsInvokeMock = vi.fn();
 vi.mock('./supabase', () => ({
   supabase: {
     rpc: (...args: unknown[]) => rpcMock(...args),
     from: vi.fn(() => ({
       select: vi.fn(() => ({
-        eq: vi.fn(() => ({
-          eq: vi.fn(() => ({ order: orderAfterEq })),
-        })),
+        eq: eqAfterSelect,
       })),
       delete: vi.fn(() => ({ eq: vi.fn(() => ({ select: deleteResult })) })),
-      insert: insertMock,
     })),
+    functions: {
+      invoke: (...args: unknown[]) => functionsInvokeMock(...args),
+    },
   },
 }));
 
@@ -33,14 +41,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { GENERIC_ERROR } from './constants';
 import {
   MAX_ROSTER_ROWS,
-  acceptInvite,
+  acceptClubInvite,
   canAnnounce,
   canInvite,
   createInvite,
+  declineClubInvite,
   deleteInvite,
+  fetchMyPendingInvites,
   fetchMyRoles,
+  fetchPendingInvites,
   importRoster,
   parseRoster,
+  sendClubInviteEmail,
   setDefaultGameMode,
   slugify,
 } from './clubs';
@@ -49,11 +61,7 @@ beforeEach(() => {
   deleteResult.mockReset();
   deleteResult.mockRejectedValue(new Error('network down'));
   rpcMock.mockReset();
-  insertAfterFrom.mockReset();
-  insertMock.mockReset();
-  insertMock.mockReturnValue({ select: selectAfterInsert });
-  selectAfterInsert.mockReset();
-  selectAfterInsert.mockReturnValue({ single: insertAfterFrom });
+  functionsInvokeMock.mockReset();
 });
 
 describe('slugify', () => {
@@ -234,18 +242,23 @@ describe('parseRoster', () => {
 });
 
 describe('importRoster', () => {
+  beforeEach(() => {
+    rpcMock.mockReset();
+  });
+
   // The plan's own constraint is "treat zero rows as failure", but the
   // function returned `{ created: 0, error: null }` — a success — so the
   // import screen redirected to `/clubs/<id>?imported=0` and told the host
   // their import had worked when it had invited nobody.
   it('treats an empty row list as a failure, not a silent success', async () => {
     const result = await importRoster('club-1', []);
-    expect(result.created).toBe(0);
+    expect(result.invites).toEqual([]);
     expect(result.error).not.toBeNull();
+    expect(rpcMock).not.toHaveBeenCalled();
   });
 
   // Belt to parseRoster's braces: nothing stops a future caller assembling
-  // rows some other way, and the cap protects a single unbounded INSERT.
+  // rows some other way, and the cap protects an unbounded loop of RPC calls.
   it('refuses more rows than the cap without reaching the network', async () => {
     const rows = Array.from({ length: MAX_ROSTER_ROWS + 1 }, (_, i) => ({
       display_name: `Person ${i}`,
@@ -253,8 +266,82 @@ describe('importRoster', () => {
       skill_level: null,
     }));
     const result = await importRoster('club-1', rows);
-    expect(result.created).toBe(0);
+    expect(result.invites).toEqual([]);
     expect(result.error).toMatch(new RegExp(`${MAX_ROSTER_ROWS}`));
+    expect(rpcMock).not.toHaveBeenCalled();
+  });
+
+  // Direct table INSERT on club_invites is revoked (Task 2); creation now
+  // goes through create_club_invite, one call per row.
+  it('calls create_club_invite once per row and returns every created invite', async () => {
+    const rows = [
+      { display_name: 'Jane Doe', email: 'jane@example.com', skill_level: 'beginner' as const },
+      { display_name: 'John Roe', email: 'john@example.com', skill_level: null },
+    ];
+    rpcMock.mockResolvedValueOnce({ data: 'invite-1', error: null });
+    rpcMock.mockResolvedValueOnce({ data: 'invite-2', error: null });
+
+    const result = await importRoster('club-1', rows);
+
+    expect(rpcMock).toHaveBeenCalledTimes(2);
+    expect(rpcMock).toHaveBeenNthCalledWith(1, 'create_club_invite', {
+      target_club_id: 'club-1',
+      target_email: 'jane@example.com',
+      target_display_name: 'Jane Doe',
+      target_event_id: null,
+    });
+    expect(rpcMock).toHaveBeenNthCalledWith(2, 'create_club_invite', {
+      target_club_id: 'club-1',
+      target_email: 'john@example.com',
+      target_display_name: 'John Roe',
+      target_event_id: null,
+    });
+    expect(result).toEqual({
+      invites: [
+        { id: 'invite-1', email: 'jane@example.com', display_name: 'Jane Doe' },
+        { id: 'invite-2', email: 'john@example.com', display_name: 'John Roe' },
+      ],
+      error: null,
+    });
+  });
+
+  // The old bulk INSERT was one statement, so it was genuinely all-or-nothing.
+  // A loop of per-row RPC calls can't offer that same atomicity, so one row
+  // failing (e.g. "already a member") must not sink the rows that already
+  // succeeded -- this is the deliberate non-atomic contract the new
+  // implementation adopts instead of a false all-or-nothing guarantee.
+  it('keeps the rows that succeeded when one row fails', async () => {
+    const rows = [
+      { display_name: 'Jane Doe', email: 'jane@example.com', skill_level: null },
+      { display_name: 'Already Member', email: 'existing@example.com', skill_level: null },
+      { display_name: 'John Roe', email: 'john@example.com', skill_level: null },
+    ];
+    rpcMock.mockResolvedValueOnce({ data: 'invite-1', error: null });
+    rpcMock.mockResolvedValueOnce({
+      data: null,
+      error: { message: 'That person is already in this club.' },
+    });
+    rpcMock.mockResolvedValueOnce({ data: 'invite-3', error: null });
+
+    const result = await importRoster('club-1', rows);
+
+    expect(rpcMock).toHaveBeenCalledTimes(3);
+    expect(result).toEqual({
+      invites: [
+        { id: 'invite-1', email: 'jane@example.com', display_name: 'Jane Doe' },
+        { id: 'invite-3', email: 'john@example.com', display_name: 'John Roe' },
+      ],
+      error: null,
+    });
+  });
+
+  it('returns a generic error when every row fails', async () => {
+    const rows = [{ display_name: 'Jane Doe', email: 'jane@example.com', skill_level: null }];
+    rpcMock.mockResolvedValueOnce({ data: null, error: { message: 'denied' } });
+
+    const result = await importRoster('club-1', rows);
+
+    expect(result).toEqual({ invites: [], error: GENERIC_ERROR });
   });
 });
 
@@ -283,7 +370,72 @@ describe('deleteInvite', () => {
   });
 });
 
-describe('acceptInvite', () => {
+describe('fetchPendingInvites', () => {
+  beforeEach(() => {
+    orderAfterEq.mockReset();
+    eqAfterSelect.mockClear();
+    isAfterEq.mockClear();
+  });
+
+  it('filters by club_id and unaccepted status, with no expires_at filter', async () => {
+    orderAfterEq.mockResolvedValue({ data: [], error: null });
+    await fetchPendingInvites('club-1');
+    expect(eqAfterSelect).toHaveBeenCalledWith('club_id', 'club-1');
+    expect(isAfterEq).toHaveBeenCalledWith('accepted_at', null);
+    // `.is('accepted_at', null)`'s mocked return value only has `order` on
+    // it -- if the source still called `.gt('expires_at', ...)` (the
+    // filter Step 3 of this task removed), that call would hit a method
+    // the mock doesn't provide, throw, and fetchPendingInvites' own catch
+    // would turn the throw into a `null` result instead of the `[]` the
+    // next assertion checks for.
+    expect(isAfterEq.mock.results[0].value).toEqual({ order: orderAfterEq });
+  });
+
+  it('returns the rows, with declined_at intact, on success', async () => {
+    orderAfterEq.mockResolvedValue({
+      data: [
+        {
+          id: 'invite-1',
+          email: 'jane@example.com',
+          display_name: 'Jane Doe',
+          skill_level: 'beginner',
+          declined_at: '2026-09-01T00:00:00.000Z',
+        },
+      ],
+      error: null,
+    });
+    const result = await fetchPendingInvites('club-1');
+    expect(result).toEqual([
+      {
+        id: 'invite-1',
+        email: 'jane@example.com',
+        display_name: 'Jane Doe',
+        skill_level: 'beginner',
+        declined_at: '2026-09-01T00:00:00.000Z',
+      },
+    ]);
+  });
+
+  it('returns an empty array, not null, when there are no invites', async () => {
+    orderAfterEq.mockResolvedValue({ data: [], error: null });
+    const result = await fetchPendingInvites('club-1');
+    expect(result).toEqual([]);
+  });
+
+  it('returns null on a failed read', async () => {
+    orderAfterEq.mockResolvedValue({ data: null, error: { message: 'boom' } });
+    const result = await fetchPendingInvites('club-1');
+    expect(result).toBeNull();
+  });
+
+  it('never rejects on a network failure', async () => {
+    orderAfterEq.mockRejectedValue(new Error('network down'));
+    const result = await fetchPendingInvites('club-1');
+    expect(result).toBeNull();
+  });
+});
+
+describe('acceptClubInvite', () => {
   beforeEach(() => {
     rpcMock.mockReset();
   });
@@ -293,7 +445,7 @@ describe('acceptInvite', () => {
       data: { club_id: 'c1', event_id: 'e1' },
       error: null,
     });
-    const result = await acceptInvite('token-1');
+    const result = await acceptClubInvite('invite-1');
     expect(result).toEqual({
       clubId: 'c1',
       eventId: 'e1',
@@ -306,11 +458,22 @@ describe('acceptInvite', () => {
       data: { club_id: 'c1', event_id: null },
       error: null,
     });
-    const result = await acceptInvite('token-1');
+    const result = await acceptClubInvite('invite-1');
     expect(result).toEqual({
       clubId: 'c1',
       eventId: null,
       error: null,
+    });
+  });
+
+  it('calls the RPC with invite_id, not invite_token', async () => {
+    rpcMock.mockResolvedValue({
+      data: { club_id: 'c1', event_id: null },
+      error: null,
+    });
+    await acceptClubInvite('invite-1');
+    expect(rpcMock).toHaveBeenCalledWith('accept_club_invite', {
+      invite_id: 'invite-1',
     });
   });
 
@@ -319,7 +482,7 @@ describe('acceptInvite', () => {
       data: null,
       error: { message: 'some error' },
     });
-    const result = await acceptInvite('token-1');
+    const result = await acceptClubInvite('invite-1');
     expect(result).toEqual({
       clubId: null,
       eventId: null,
@@ -327,22 +490,22 @@ describe('acceptInvite', () => {
     });
   });
 
-  it('returns expired/invalid invite error when data is null', async () => {
+  it('returns an invalid-invite error when data is null', async () => {
     rpcMock.mockResolvedValue({
       data: null,
       error: null,
     });
-    const result = await acceptInvite('token-1');
+    const result = await acceptClubInvite('invite-1');
     expect(result).toEqual({
       clubId: null,
       eventId: null,
-      error: 'That invite link has expired or has already been used.',
+      error: 'That invite is no longer valid.',
     });
   });
 
   it('never rejects on a network failure', async () => {
     rpcMock.mockRejectedValue(new Error('network down'));
-    const result = await acceptInvite('token-1');
+    const result = await acceptClubInvite('invite-1');
     expect(result).toEqual({
       clubId: null,
       eventId: null,
@@ -351,66 +514,171 @@ describe('acceptInvite', () => {
   });
 });
 
+describe('declineClubInvite', () => {
+  beforeEach(() => {
+    rpcMock.mockReset();
+  });
+
+  it('returns no error on success', async () => {
+    rpcMock.mockResolvedValue({ data: true, error: null });
+    const result = await declineClubInvite('invite-1');
+    expect(result).toEqual({ error: null });
+  });
+
+  it('calls the RPC with invite_id', async () => {
+    rpcMock.mockResolvedValue({ data: true, error: null });
+    await declineClubInvite('invite-1');
+    expect(rpcMock).toHaveBeenCalledWith('decline_club_invite', {
+      invite_id: 'invite-1',
+    });
+  });
+
+  it('returns error when the RPC fails', async () => {
+    rpcMock.mockResolvedValue({
+      data: null,
+      error: { message: 'some error' },
+    });
+    const result = await declineClubInvite('invite-1');
+    expect(result).toEqual({ error: GENERIC_ERROR });
+  });
+
+  it('returns an invalid-invite error when data is null', async () => {
+    rpcMock.mockResolvedValue({ data: null, error: null });
+    const result = await declineClubInvite('invite-1');
+    expect(result).toEqual({ error: 'That invite is no longer valid.' });
+  });
+
+  it('never rejects on a network failure', async () => {
+    rpcMock.mockRejectedValue(new Error('network down'));
+    const result = await declineClubInvite('invite-1');
+    expect(result).toEqual({ error: GENERIC_ERROR });
+  });
+});
+
 describe('createInvite', () => {
   beforeEach(() => {
-    insertAfterFrom.mockReset();
+    rpcMock.mockReset();
   });
 
-  it('returns the token on success', async () => {
-    insertAfterFrom.mockResolvedValue({
-      data: { token: 'generated-token' },
-      error: null,
-    });
-    const result = await createInvite('club-1');
+  it('returns the id on success', async () => {
+    rpcMock.mockResolvedValue({ data: 'invite-1', error: null });
+    const result = await createInvite('club-1', 'jane@example.com');
     expect(result).toEqual({
-      token: 'generated-token',
+      id: 'invite-1',
       error: null,
     });
   });
 
-  it('includes event_id in the insert payload when eventId is provided', async () => {
-    insertAfterFrom.mockResolvedValue({
-      data: { token: 'generated-token' },
-      error: null,
+  it('calls the RPC with the target_* argument names', async () => {
+    rpcMock.mockResolvedValue({ data: 'invite-1', error: null });
+    await createInvite('club-1', 'jane@example.com', 'Jane Doe', 'event-1');
+    expect(rpcMock).toHaveBeenCalledWith('create_club_invite', {
+      target_club_id: 'club-1',
+      target_email: 'jane@example.com',
+      target_display_name: 'Jane Doe',
+      target_event_id: 'event-1',
     });
-    await createInvite('club-1', undefined, 'event-1');
-    // Verify that the insert mock was called with the correct payload including event_id
-    expect(insertMock).toHaveBeenCalledWith(
-      expect.objectContaining({ event_id: 'event-1' }),
-    );
   });
 
-  it('sets event_id to null in the insert payload when eventId is not provided', async () => {
-    insertAfterFrom.mockResolvedValue({
-      data: { token: 'generated-token' },
-      error: null,
+  it('trims the email and display name before sending them', async () => {
+    rpcMock.mockResolvedValue({ data: 'invite-1', error: null });
+    await createInvite('club-1', ' jane@example.com ', ' Jane Doe ');
+    expect(rpcMock).toHaveBeenCalledWith('create_club_invite', {
+      target_club_id: 'club-1',
+      target_email: 'jane@example.com',
+      target_display_name: 'Jane Doe',
+      target_event_id: null,
     });
-    await createInvite('club-1');
-    // Verify that the insert mock was called with event_id set to null
-    expect(insertMock).toHaveBeenCalledWith(
-      expect.objectContaining({ event_id: null }),
-    );
   });
 
-  it('returns an error when the insert fails', async () => {
-    insertAfterFrom.mockResolvedValue({
+  it('defaults target_display_name to an empty string and target_event_id to null when not provided', async () => {
+    rpcMock.mockResolvedValue({ data: 'invite-1', error: null });
+    await createInvite('club-1', 'jane@example.com');
+    expect(rpcMock).toHaveBeenCalledWith('create_club_invite', {
+      target_club_id: 'club-1',
+      target_email: 'jane@example.com',
+      target_display_name: '',
+      target_event_id: null,
+    });
+  });
+
+  it('returns a friendly error when the person is already in the club', async () => {
+    rpcMock.mockResolvedValue({
       data: null,
-      error: { message: 'insert failed' },
+      error: { message: 'That person is already in this club.' },
     });
-    const result = await createInvite('club-1');
+    const result = await createInvite('club-1', 'jane@example.com');
     expect(result).toEqual({
-      token: null,
+      id: null,
+      error: 'That person is already in this club.',
+    });
+  });
+
+  it('returns a generic error for any other RPC failure', async () => {
+    rpcMock.mockResolvedValue({
+      data: null,
+      error: { message: 'some other error' },
+    });
+    const result = await createInvite('club-1', 'jane@example.com');
+    expect(result).toEqual({
+      id: null,
       error: GENERIC_ERROR,
     });
   });
 
   it('never rejects on a network failure', async () => {
-    insertAfterFrom.mockRejectedValue(new Error('network down'));
-    const result = await createInvite('club-1');
+    rpcMock.mockRejectedValue(new Error('network down'));
+    const result = await createInvite('club-1', 'jane@example.com');
     expect(result).toEqual({
-      token: null,
+      id: null,
       error: GENERIC_ERROR,
     });
+  });
+});
+
+describe('fetchMyPendingInvites', () => {
+  beforeEach(() => {
+    rpcMock.mockReset();
+  });
+
+  it('maps club_id/club_name/event_id/event_title to the camelCase shape on success', async () => {
+    rpcMock.mockResolvedValue({
+      data: [
+        {
+          id: 'invite-1',
+          club_id: 'club-1',
+          club_name: 'Riverside Mah Jongg',
+          event_id: 'event-1',
+          event_title: 'Friday Night',
+        },
+      ],
+      error: null,
+    });
+    const result = await fetchMyPendingInvites();
+    expect(result).toEqual([
+      {
+        id: 'invite-1',
+        clubId: 'club-1',
+        clubName: 'Riverside Mah Jongg',
+        eventId: 'event-1',
+        eventTitle: 'Friday Night',
+      },
+    ]);
+  });
+
+  // Matches this function's own code, not `fetchMyRoles`' empty-array
+  // convention: an RPC error here resolves to `null`, same as
+  // `fetchPendingInvites`.
+  it('returns null on an RPC error', async () => {
+    rpcMock.mockResolvedValue({ data: null, error: { message: 'boom' } });
+    const result = await fetchMyPendingInvites();
+    expect(result).toBeNull();
+  });
+
+  it('never rejects on a network failure', async () => {
+    rpcMock.mockRejectedValue(new Error('network down'));
+    const result = await fetchMyPendingInvites();
+    expect(result).toBeNull();
   });
 });
 
@@ -435,5 +703,34 @@ describe('setDefaultGameMode', () => {
     rpcMock.mockRejectedValue(new Error('network down'));
     const result = await setDefaultGameMode('club-1', 'invite_only');
     expect(result).toEqual({ error: GENERIC_ERROR });
+  });
+});
+
+describe('sendClubInviteEmail', () => {
+  it('resolves with an error instead of rejecting when the underlying call throws', async () => {
+    functionsInvokeMock.mockRejectedValueOnce(new Error('network down'));
+    await expect(sendClubInviteEmail('invite-id-123')).resolves.toEqual({
+      error: GENERIC_ERROR,
+    });
+  });
+
+  it('returns GENERIC_ERROR when the edge function reports an error', async () => {
+    functionsInvokeMock.mockResolvedValueOnce({ data: null, error: { message: 'boom' } });
+    const result = await sendClubInviteEmail('invite-id-123');
+    expect(result).toEqual({ error: GENERIC_ERROR });
+  });
+
+  it('passes only the invite id through to the edge function', async () => {
+    functionsInvokeMock.mockResolvedValueOnce({ data: { ok: true }, error: null });
+    await sendClubInviteEmail('invite-id-123');
+    expect(functionsInvokeMock).toHaveBeenCalledWith('send-club-invite', {
+      body: { inviteId: 'invite-id-123' },
+    });
+  });
+
+  it('resolves with no error on success', async () => {
+    functionsInvokeMock.mockResolvedValueOnce({ data: { ok: true }, error: null });
+    const result = await sendClubInviteEmail('invite-id-123');
+    expect(result).toEqual({ error: null });
   });
 });

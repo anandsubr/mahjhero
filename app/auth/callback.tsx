@@ -25,10 +25,8 @@ import { colors, space, type } from '../../lib/theme';
  * then gets out of the way.
  *
  * Getting out of the way means redirecting to "/", not to a fixed screen:
- * `app/index.tsx` is the one place that knows whether this member has a club
- * invite parked (see `PENDING_INVITE_KEY` in `app/join/[token].tsx`) and must
- * land on `/join/<token>` rather than `/clubs`. This screen only knows a
- * session arrived, not where it should lead.
+ * `app/index.tsx` is the one place that decides where a signed-in member
+ * lands. This screen only knows a session arrived, not where it should lead.
  */
 
 /**
