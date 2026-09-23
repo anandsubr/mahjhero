@@ -30,13 +30,10 @@ export type ClubMember = {
  */
 export type ClubInvite = {
   id: string;
-  email: string | null;
+  email: string;
   display_name: string | null;
   skill_level: SkillLevel | null;
-  /** Same select grant and RLS as the rest of the row (organizer-only) --
-   *  the same role that could already read this by creating a NEW invite
-   *  right after this one can read this one's token too. */
-  token: string;
+  declined_at: string | null;
 };
 
 export type RosterRow = {
@@ -48,7 +45,7 @@ export type RosterRow = {
 export type RosterError = { row: number; message: string };
 
 const CLUB_COLUMNS = 'id, name, slug, rhythm, visibility, timezone, default_game_mode';
-const INVITE_COLUMNS = 'id, email, display_name, skill_level, token';
+const INVITE_COLUMNS = 'id, email, display_name, skill_level, declined_at';
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const SKILL_LEVELS: SkillLevel[] = ['beginner', 'intermediate', 'advanced'];
 
@@ -377,7 +374,6 @@ export async function fetchPendingInvites(
       .select(INVITE_COLUMNS)
       .eq('club_id', clubId)
       .is('accepted_at', null)
-      .gt('expires_at', new Date().toISOString())
       .order('created_at');
 
     if (error) {
@@ -440,46 +436,35 @@ export async function createClub(
 }
 
 /**
- * The token is never chosen client-side: it is a bearer credential — whoever
- * holds it can join the club via `acceptInvite` — so `club_invites.token`
- * defaults to `encode(gen_random_bytes(24), 'hex')` in the database. Sending
- * one from here would mean trusting `Math.random()`, which is not a CSPRNG,
- * for a security token. `.select('token')` reads back what the default
- * actually generated.
- *
- * There is no `userId` argument, for the same reason `createClub` has none:
- * `club_invites.invited_by` now defaults to `auth.uid()` and its insert
- * policy checks `invited_by = auth.uid()`, so attribution is decided by the
- * session rather than by whatever the client claims. Passing it from here was
- * unchecked — a host could have signed a whole imported batch with somebody
- * else's profile id.
+ * Now a security-definer RPC, not a plain insert -- `create_club_invite`
+ * (see the migration that added it) can give a real "already a member"
+ * error, which an RLS WITH CHECK failure never could.
  */
 export async function createInvite(
   clubId: string,
-  target?: { email: string; display_name: string; skill_level: SkillLevel | null },
+  email: string,
+  displayName?: string,
   eventId?: string,
-): Promise<{ token: string | null; error: string | null }> {
+): Promise<{ id: string | null; error: string | null }> {
   try {
-    const { data, error } = await supabase
-      .from('club_invites')
-      .insert({
-        club_id: clubId,
-        email: target?.email ?? null,
-        display_name: target?.display_name ?? null,
-        skill_level: target?.skill_level ?? null,
-        event_id: eventId ?? null,
-      })
-      .select('token')
-      .single();
+    const { data, error } = await supabase.rpc('create_club_invite', {
+      target_club_id: clubId,
+      target_email: email.trim(),
+      target_display_name: displayName?.trim() ?? '',
+      target_event_id: eventId ?? null,
+    });
 
-    if (error || !data) {
+    if (error) {
       console.error('createInvite failed', error);
-      return { token: null, error: GENERIC_ERROR };
+      if (error.message.includes('already in this club')) {
+        return { id: null, error: 'That person is already in this club.' };
+      }
+      return { id: null, error: GENERIC_ERROR };
     }
-    return { token: data.token as string, error: null };
+    return { id: data as string, error: null };
   } catch (cause) {
     console.error('createInvite failed', cause);
-    return { token: null, error: GENERIC_ERROR };
+    return { id: null, error: GENERIC_ERROR };
   }
 }
 
@@ -518,51 +503,96 @@ export async function deleteInvite(
   }
 }
 
-/**
- * Where `app/join/[token].tsx` parks an invite token for a signed-out
- * member, and where `app/index.tsx` looks for one after sign-in completes.
- *
- * Most people opening an invite link have never used MahjHero: they arrive
- * signed out, so the token is stored under this key, they sign in, and
- * `app/index.tsx` sends them back to `/join/<token>` to redeem it. Losing
- * the invite across sign-in would mean asking the host to send another.
- *
- * Lives here (not in `app/join/[token].tsx`) so `app/index.tsx` can import
- * just the string without pulling in the whole route module.
- */
-export const PENDING_INVITE_KEY = 'mahjhero.pending-invite';
-
-/**
- * Redeems an invite token.
- *
- * The RPC is a `security definer` function (Task 3) because the member is by
- * definition not yet in the club, so no membership-scoped policy can let them
- * read the invite or write the membership row.
- */
-export async function acceptInvite(
-  token: string,
+export async function acceptClubInvite(
+  inviteId: string,
 ): Promise<{ clubId: string | null; eventId: string | null; error: string | null }> {
   try {
     const { data, error } = await supabase.rpc('accept_club_invite', {
-      invite_token: token,
+      invite_id: inviteId,
     });
 
     if (error) {
-      console.error('acceptInvite failed', error);
+      console.error('acceptClubInvite failed', error);
       return { clubId: null, eventId: null, error: GENERIC_ERROR };
     }
     if (!data) {
       return {
         clubId: null,
         eventId: null,
-        error: 'That invite link has expired or has already been used.',
+        error: 'That invite is no longer valid.',
       };
     }
     const result = data as { club_id: string; event_id: string | null };
     return { clubId: result.club_id, eventId: result.event_id, error: null };
   } catch (cause) {
-    console.error('acceptInvite failed', cause);
+    console.error('acceptClubInvite failed', cause);
     return { clubId: null, eventId: null, error: GENERIC_ERROR };
+  }
+}
+
+export async function declineClubInvite(
+  inviteId: string,
+): Promise<{ error: string | null }> {
+  try {
+    const { data, error } = await supabase.rpc('decline_club_invite', {
+      invite_id: inviteId,
+    });
+    if (error) {
+      console.error('declineClubInvite failed', error);
+      return { error: GENERIC_ERROR };
+    }
+    if (!data) {
+      return { error: 'That invite is no longer valid.' };
+    }
+    return { error: null };
+  } catch (cause) {
+    console.error('declineClubInvite failed', cause);
+    return { error: GENERIC_ERROR };
+  }
+}
+
+export type PendingInvite = {
+  id: string;
+  clubId: string;
+  clubName: string;
+  eventId: string | null;
+  eventTitle: string | null;
+};
+
+/**
+ * Invites addressed to the caller's own authenticated email, across every
+ * club -- not scoped to one club id, unlike `fetchPendingInvites` above,
+ * because the dashboard (unlike a club's own detail screen) has no single
+ * club in view. `fetch_my_pending_invites` is `security definer` for the
+ * same reason `acceptClubInvite`'s RPC is: the caller is by definition not
+ * yet a member of whichever club invited them, so no membership-scoped
+ * policy could let them read it.
+ */
+export async function fetchMyPendingInvites(): Promise<PendingInvite[] | null> {
+  try {
+    const { data, error } = await supabase.rpc('fetch_my_pending_invites');
+    if (error) {
+      console.error('fetchMyPendingInvites failed', error);
+      return null;
+    }
+    return (
+      (data ?? []) as {
+        id: string;
+        club_id: string;
+        club_name: string;
+        event_id: string | null;
+        event_title: string | null;
+      }[]
+    ).map((row) => ({
+      id: row.id,
+      clubId: row.club_id,
+      clubName: row.club_name,
+      eventId: row.event_id,
+      eventTitle: row.event_title,
+    }));
+  } catch (cause) {
+    console.error('fetchMyPendingInvites failed', cause);
+    return null;
   }
 }
 
