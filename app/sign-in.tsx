@@ -1,12 +1,18 @@
 import { Redirect, useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Platform, StyleSheet, Text, View } from 'react-native';
 import Button from '../components/Button';
 import ErrorBanner from '../components/ErrorBanner';
 import { ChevronLeftIcon, MailIcon } from '../components/icons';
 import Screen from '../components/Screen';
 import TextField from '../components/TextField';
-import { availableProviders, isValidEmail, sendMagicLink, signInWithProvider } from '../lib/auth';
+import {
+  availableProviders,
+  isValidEmail,
+  sendSignInCode,
+  signInWithProvider,
+  verifySignInCode,
+} from '../lib/auth';
 import type { OAuthProvider } from '../lib/auth';
 import { useSession } from '../lib/session';
 import { colors, space, type } from '../lib/theme';
@@ -16,11 +22,22 @@ const PROVIDER_LABEL: Record<OAuthProvider, string> = {
   apple: 'Continue with Apple',
 };
 
+/**
+ * Seconds a member must wait before "Resend code" works again, matching
+ * mahjhero-dev's `auth.email.max_frequency` (1 minute) — a second send
+ * within that window fails at Supabase anyway, so this avoids letting a tap
+ * through only to show a rate-limit error.
+ */
+const RESEND_COOLDOWN_SECONDS = 60;
+
 export default function SignIn() {
   const { session, loading } = useSession();
   const router = useRouter();
   const [email, setEmail] = useState('');
-  const [status, setStatus] = useState<'idle' | 'sending' | 'sent'>('idle');
+  const [code, setCode] = useState('');
+  const [status, setStatus] = useState<'idle' | 'sending' | 'code-entry'>('idle');
+  const [verifying, setVerifying] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
   const [pendingProvider, setPendingProvider] = useState<OAuthProvider | null>(
     null,
   );
@@ -29,7 +46,20 @@ export default function SignIn() {
   // One in-flight auth attempt at a time, whichever route started it. On
   // native `openAuthSessionAsync` takes seconds, and a second tap opens a
   // second auth session on top of the first.
-  const busy = status === 'sending' || pendingProvider !== null;
+  const busy = status === 'sending' || verifying || pendingProvider !== null;
+
+  // Ticks the resend cooldown down to zero once a second. Re-created every
+  // tick (the dependency is the count itself) rather than once at 60 — a
+  // single interval started at mount would need its own elapsed-time
+  // bookkeeping to survive a re-render, and this is the same shape as every
+  // other live countdown in this app (see components/RoundTimer.tsx).
+  useEffect(() => {
+    if (resendCooldown === 0) return;
+    const timer = setInterval(() => {
+      setResendCooldown((seconds) => (seconds <= 1 ? 0 : seconds - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [resendCooldown]);
 
   async function onSubmit() {
     if (busy) return;
@@ -39,13 +69,50 @@ export default function SignIn() {
     }
     setError(null);
     setStatus('sending');
-    const { error: sendError } = await sendMagicLink(email);
+    const { error: sendError } = await sendSignInCode(email);
     if (sendError) {
       setError(sendError);
       setStatus('idle');
       return;
     }
-    setStatus('sent');
+    setCode('');
+    setResendCooldown(RESEND_COOLDOWN_SECONDS);
+    setStatus('code-entry');
+  }
+
+  async function onResend() {
+    if (busy || resendCooldown > 0) return;
+    setError(null);
+    const { error: sendError } = await sendSignInCode(email);
+    if (sendError) {
+      setError(sendError);
+      return;
+    }
+    setResendCooldown(RESEND_COOLDOWN_SECONDS);
+  }
+
+  async function onVerify() {
+    if (busy || !code.trim()) return;
+    setError(null);
+    setVerifying(true);
+    const { error: verifyError } = await verifySignInCode(email, code.trim());
+    setVerifying(false);
+    // Wrong and expired codes return the same generic message from GoTrue,
+    // so there is nothing more specific to tell them apart by — one fixed
+    // message covers both rather than surfacing that raw wording.
+    if (verifyError) {
+      setError("That code didn't work — check it or request a new one.");
+    }
+    // On success there is nothing further to do here: verifySignInCode sets
+    // the session in this same mounted screen (lib/session.ts's
+    // onAuthStateChange subscription picks it up), and the redirect below
+    // fires in place.
+  }
+
+  function onUseDifferentEmail() {
+    setStatus('idle');
+    setCode('');
+    setError(null);
   }
 
   async function onProviderPress(provider: OAuthProvider) {
@@ -62,19 +129,12 @@ export default function SignIn() {
     }
   }
 
-  // This screen has to watch the session itself. app/index.tsx doesn't
-  // remount to react to a session appearing here — it has already unmounted
-  // by the time anyone is standing on this screen.
-  //
-  // Warm path: the member is on "Check your email", taps the link, the app
-  // foregrounds, useAuthDeepLink establishes the session — and without this
-  // the screen would go on saying "Check your email" forever. Cold path: the
-  // link launches the app, index.tsx resolves a null session first and sends
-  // the member here, and the session then lands on a screen not watching for
-  // it. Web hid both, because there the redirect is a fresh page load through
-  // index.tsx.
-  //
-  // It fixes the same latent gap for OAuth, which never navigated either.
+  // This screen has to watch the session itself: verifying a code sets the
+  // session directly in this same mounted screen (see verifySignInCode
+  // above), so nothing else re-renders to notice it arrived. OAuth still has
+  // a warm/cold deep-link dimension of its own — the redirect can land here
+  // cold, or resolve while this screen is already showing — and either way
+  // nothing else is watching for that one either.
   //
   // Redirects to "/" rather than a fixed destination: app/index.tsx is the
   // one place that knows whether this member has a pending club invite
@@ -83,26 +143,52 @@ export default function SignIn() {
   // that invite (as `/profile` did) or duplicate index's decision.
   if (!loading && session) return <Redirect href="/" />;
 
-  if (status === 'sent') {
+  if (status === 'code-entry') {
     return (
       <Screen center contentStyle={styles.checkContent}>
         <View style={styles.mailWell}>
           <MailIcon />
         </View>
-        <Text style={styles.heading}>Check your email</Text>
+        <Text style={styles.heading}>Enter your code</Text>
         <Text style={styles.body}>
-          We sent a sign-in link to <Text style={styles.bodyStrong}>{email.trim()}</Text>. Open it
-          on this device and you're in.
+          We sent a sign-in code to <Text style={styles.bodyStrong}>{email.trim()}</Text>. Enter
+          it below.
         </Text>
-        {/* The design's mock also shows an "I opened the link" button, but
-            in the real app the redirect to /profile happens automatically
-            once useAuthDeepLink establishes the session (see the redirect
-            above) — there is nothing left for a manual button to do, so it
-            is omitted rather than shipped as a dead control.
-            "Use a different email" is real: without it the screen is a
-            one-way door for a member who mistyped their address, with no
-            route back short of force-quitting the app. */}
-        <Button variant="ghost" big={false} onPress={() => setStatus('idle')}>
+        <TextField
+          label="Sign-in code"
+          value={code}
+          onChangeText={setCode}
+          placeholder="123456"
+          keyboardType="number-pad"
+          textContentType="oneTimeCode"
+          autoComplete="one-time-code"
+          autoCorrect={false}
+          maxLength={8}
+          accessibilityLabel="Sign-in code"
+        />
+        {error ? <ErrorBanner message={error} /> : null}
+        <Button
+          variant="primary"
+          block
+          onPress={onVerify}
+          disabled={busy || !code.trim()}
+          loading={verifying}
+          accessibilityLabel="Verify code"
+        >
+          Verify code
+        </Button>
+        <Button
+          variant="ghost"
+          big={false}
+          onPress={onResend}
+          disabled={busy || resendCooldown > 0}
+          accessibilityLabel="Resend code"
+        >
+          {resendCooldown > 0 ? `Resend code (${resendCooldown}s)` : 'Resend code'}
+        </Button>
+        {/* Without this, a member who mistyped their address is stuck here
+            with no way back short of force-quitting the app. */}
+        <Button variant="ghost" big={false} onPress={onUseDifferentEmail}>
           Use a different email
         </Button>
       </Screen>
@@ -142,7 +228,7 @@ export default function SignIn() {
       </Button>
       <Text style={styles.heading}>Sign in to MahjHero</Text>
       <Text style={styles.body}>
-        No password to remember. We'll email you a link that signs you straight in.
+        No password to remember. We'll email you a one-time code that signs you straight in.
       </Text>
       <TextField
         label="Email address"
@@ -162,9 +248,9 @@ export default function SignIn() {
         onPress={onSubmit}
         disabled={busy}
         loading={status === 'sending'}
-        accessibilityLabel="Email me a sign-in link"
+        accessibilityLabel="Email me a sign-in code"
       >
-        Email me a sign-in link
+        Email me a sign-in code
       </Button>
       <View style={styles.dividerRow}>
         <View style={styles.dividerLine} />
