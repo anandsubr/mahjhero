@@ -46,6 +46,7 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
+    "build:web": "expo export -p web && node scripts/inject-web-favicon.js",
     "test": "TZ=America/New_York vitest run",
     "test:contract": "TZ=America/New_York REQUIRE_LOCAL_SUPABASE=1 vitest run lib/schema-contract.test.ts",
     "test:concurrency": "TZ=America/New_York REQUIRE_LOCAL_SUPABASE=1 vitest run lib/booking-concurrency.test.ts",
