@@ -54,7 +54,7 @@ export async function fetchProfile(userId: string): Promise<Profile | null> {
 }
 
 /**
- * Never rejects, for the same reason as sendMagicLink in lib/auth.ts: the
+ * Never rejects, for the same reason as sendSignInCode in lib/auth.ts: the
  * profile screen awaits this directly and an escaping rejection would
  * strand the user mid-save with no message explaining why.
  */

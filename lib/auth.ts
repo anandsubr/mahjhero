@@ -19,27 +19,50 @@ export function isValidEmail(value: string): boolean {
  * its status to "sending" before calling this, and an escaping rejection
  * would strand the user in a spinner with the submit button disabled and
  * no message explaining why.
+ *
+ * No `emailRedirectTo` — there is no clickable link in this email anymore
+ * (see docs/superpowers/specs/2026-09-23-otp-sign-in-design.md), only a
+ * typed code, so there is nothing to redirect from.
  */
-export async function sendMagicLink(
+export async function sendSignInCode(
   email: string,
 ): Promise<{ error: string | null }> {
   try {
     const { error } = await supabase.auth.signInWithOtp({
       email: email.trim(),
-      options: {
-        // Without this, GoTrue redirects to the project Site URL, which is a
-        // web address. On iOS/Android that opens a browser and the app never
-        // sees the session, so the "Check your email" screen is a dead end.
-        // The deep link is caught by lib/auth-deep-link.ts at app root.
-        emailRedirectTo: Linking.createURL('auth/callback'),
-      },
     });
     return { error: error ? error.message : null };
   } catch (cause) {
     // The user-facing message is deliberately generic, but keep the original
     // for diagnosis — otherwise a DNS failure, a Supabase outage, and a CORS
     // misconfiguration are indistinguishable from the outside.
-    console.error('sendMagicLink failed', cause);
+    console.error('sendSignInCode failed', cause);
+    return { error: GENERIC_ERROR };
+  }
+}
+
+/**
+ * Never rejects, for the same reason as sendSignInCode above.
+ *
+ * A failure here can mean a wrong code or an expired one — GoTrue returns
+ * the same generic error either way, so this passes the message through
+ * unfiltered; it's the sign-in screen's job (not this function's) to
+ * collapse it to one fixed, user-facing string rather than show GoTrue's
+ * wording directly.
+ */
+export async function verifySignInCode(
+  email: string,
+  code: string,
+): Promise<{ error: string | null }> {
+  try {
+    const { error } = await supabase.auth.verifyOtp({
+      email: email.trim(),
+      token: code,
+      type: 'email',
+    });
+    return { error: error ? error.message : null };
+  } catch (cause) {
+    console.error('verifySignInCode failed', cause);
     return { error: GENERIC_ERROR };
   }
 }
