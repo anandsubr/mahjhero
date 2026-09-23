@@ -427,3 +427,10 @@ enabled = true
 # the cron job makes.
 [functions.deliver-notifications]
 verify_jwt = false
+
+# Called directly by an authenticated app user (not a cron job like
+# deliver-notifications), so this keeps the default verify_jwt = true --
+# unlike deliver-notifications, there is no reason to accept unauthenticated
+# calls here.
+[functions.send-club-invite]
+verify_jwt = true

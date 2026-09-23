@@ -658,3 +658,30 @@ export async function importRoster(
     return { created: 0, error: GENERIC_ERROR };
   }
 }
+
+/**
+ * Fires the invite email. Deliberately fire-and-forget from the caller's
+ * perspective in terms of UX (the invite already exists whether or not
+ * this succeeds -- see the design's own accepted trade-off), but the
+ * result is still surfaced so a call site can offer "Resend invite email"
+ * on a failure rather than claim success it can't back up.
+ */
+export async function sendClubInviteEmail(params: {
+  to: string;
+  clubName: string;
+  inviteeDisplayName?: string;
+}): Promise<{ error: string | null }> {
+  try {
+    const { error } = await supabase.functions.invoke('send-club-invite', {
+      body: params,
+    });
+    if (error) {
+      console.error('sendClubInviteEmail failed', error);
+      return { error: GENERIC_ERROR };
+    }
+    return { error: null };
+  } catch (cause) {
+    console.error('sendClubInviteEmail failed', cause);
+    return { error: GENERIC_ERROR };
+  }
+}

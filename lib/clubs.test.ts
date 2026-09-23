@@ -17,6 +17,11 @@ const deleteResult = vi.fn();
 // acceptClubInvite, declineClubInvite, setDefaultGameMode, createInvite,
 // fetchMyPendingInvites: `.rpc()` calls
 const rpcMock = vi.fn();
+// sendClubInviteEmail: `.functions.invoke()` call. No other test in this
+// codebase mocks `functions` yet, so this follows the same
+// vi.fn()-per-method convention `rpc` and `from` already use above rather
+// than introducing a different pattern.
+const functionsInvokeMock = vi.fn();
 vi.mock('./supabase', () => ({
   supabase: {
     rpc: (...args: unknown[]) => rpcMock(...args),
@@ -26,6 +31,9 @@ vi.mock('./supabase', () => ({
       })),
       delete: vi.fn(() => ({ eq: vi.fn(() => ({ select: deleteResult })) })),
     })),
+    functions: {
+      invoke: (...args: unknown[]) => functionsInvokeMock(...args),
+    },
   },
 }));
 
@@ -44,6 +52,7 @@ import {
   fetchPendingInvites,
   importRoster,
   parseRoster,
+  sendClubInviteEmail,
   setDefaultGameMode,
   slugify,
 } from './clubs';
@@ -52,6 +61,7 @@ beforeEach(() => {
   deleteResult.mockReset();
   deleteResult.mockRejectedValue(new Error('network down'));
   rpcMock.mockReset();
+  functionsInvokeMock.mockReset();
 });
 
 describe('slugify', () => {
@@ -614,5 +624,38 @@ describe('setDefaultGameMode', () => {
     rpcMock.mockRejectedValue(new Error('network down'));
     const result = await setDefaultGameMode('club-1', 'invite_only');
     expect(result).toEqual({ error: GENERIC_ERROR });
+  });
+});
+
+describe('sendClubInviteEmail', () => {
+  it('resolves with an error instead of rejecting when the underlying call throws', async () => {
+    functionsInvokeMock.mockRejectedValueOnce(new Error('network down'));
+    await expect(
+      sendClubInviteEmail({ to: 'a@example.com', clubName: 'Tiles Club' }),
+    ).resolves.toEqual({ error: GENERIC_ERROR });
+  });
+
+  it('returns GENERIC_ERROR when the edge function reports an error', async () => {
+    functionsInvokeMock.mockResolvedValueOnce({ data: null, error: { message: 'boom' } });
+    const result = await sendClubInviteEmail({ to: 'a@example.com', clubName: 'Tiles Club' });
+    expect(result).toEqual({ error: GENERIC_ERROR });
+  });
+
+  it('passes the payload through to the edge function unchanged', async () => {
+    functionsInvokeMock.mockResolvedValueOnce({ data: { ok: true }, error: null });
+    await sendClubInviteEmail({
+      to: 'a@example.com',
+      clubName: 'Tiles Club',
+      inviteeDisplayName: 'Ann',
+    });
+    expect(functionsInvokeMock).toHaveBeenCalledWith('send-club-invite', {
+      body: { to: 'a@example.com', clubName: 'Tiles Club', inviteeDisplayName: 'Ann' },
+    });
+  });
+
+  it('resolves with no error on success', async () => {
+    functionsInvokeMock.mockResolvedValueOnce({ data: { ok: true }, error: null });
+    const result = await sendClubInviteEmail({ to: 'a@example.com', clubName: 'Tiles Club' });
+    expect(result).toEqual({ error: null });
   });
 });
