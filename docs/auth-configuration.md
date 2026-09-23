@@ -30,7 +30,7 @@ it against any environment whose auth settings change.
 
 ## Redirect URLs
 
-Magic-link and OAuth redirects must be on the allow-list or GoTrue silently falls
+OAuth redirects (and any already-sent magic-link email, if tapped) must be on the allow-list or GoTrue silently falls
 back to the Site URL — which on iOS and Android means the link opens a browser and
 the app never receives a session. Add `mahjhero://auth/callback` (what
 `Linking.createURL('auth/callback')` produces in a standalone or dev-client build)

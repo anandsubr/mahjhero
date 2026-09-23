@@ -166,13 +166,12 @@ export default function SignIn() {
           <TextField
             label="Sign-in code"
             value={code}
-            onChangeText={(text) => setCode(text.replace(/\D/g, ''))}
+            onChangeText={(text) => setCode(text.replace(/\D/g, '').slice(0, 12))}
             placeholder="123456"
             keyboardType="number-pad"
             textContentType="oneTimeCode"
             autoComplete="one-time-code"
             autoCorrect={false}
-            maxLength={12}
             onSubmitEditing={onVerify}
             accessibilityLabel="Sign-in code"
           />

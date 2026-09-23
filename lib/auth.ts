@@ -4,6 +4,7 @@ import * as WebBrowser from 'expo-web-browser';
 // this deep import is the path documented in Supabase's own Expo guide.
 import * as QueryParams from 'expo-auth-session/build/QueryParams';
 import { Platform } from 'react-native';
+import { isAuthRetryableFetchError } from '@supabase/supabase-js';
 import { GENERIC_ERROR } from './constants';
 import { supabase } from './supabase';
 
@@ -60,7 +61,10 @@ export async function verifySignInCode(
       token: code,
       type: 'email',
     });
-    return { error: error ? error.message : null };
+    if (!error) return { error: null };
+    return {
+      error: isAuthRetryableFetchError(error) ? GENERIC_ERROR : error.message,
+    };
   } catch (cause) {
     console.error('verifySignInCode failed', cause);
     return { error: GENERIC_ERROR };
