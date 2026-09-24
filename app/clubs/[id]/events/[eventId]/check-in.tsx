@@ -10,6 +10,7 @@ import Screen from '../../../../../components/Screen';
 import TabBar from '../../../../../components/TabBar';
 import Tag from '../../../../../components/Tag';
 import TextField from '../../../../../components/TextField';
+import TipCard, { TipText } from '../../../../../components/TipCard';
 import { ChevronLeftIcon } from '../../../../../components/icons';
 import {
   attendanceSummary,
@@ -25,6 +26,7 @@ import { fetchEvent, formatFeeCents, type SeatingMode } from '../../../../../lib
 import { fetchEventPayments, setPaymentStatus } from '../../../../../lib/payments';
 import { useSession } from '../../../../../lib/session';
 import { addHours } from '../../../../../lib/time';
+import { useGuides } from '../../../../../lib/use-guides';
 import { colors, layout, radius, space, type } from '../../../../../lib/theme';
 
 /**
@@ -238,6 +240,7 @@ export default function CheckInScreen() {
   }>();
   const router = useRouter();
   const { session, loading } = useSession();
+  const guides = useGuides();
 
   const [rows, setRows] = useState<AttendanceRow[]>([]);
   const [roster, setRoster] = useState<ClubMember[]>([]);
@@ -1128,6 +1131,13 @@ export default function CheckInScreen() {
       </Button>
 
       <Text style={styles.heading}>Check-in</Text>
+
+      {guides.isVisible('tip:check-in') ? (
+        <TipCard tag="Tip" title="Running the door" onDismiss={() => guides.dismiss('tip:check-in')}>
+          <TipText>Tap Here when someone arrives, or Not coming if they've told you.</TipText>
+          <TipText>Tap $ once they've paid. Only organizers see who has paid.</TipText>
+        </TipCard>
+      ) : null}
 
       {error ? <ErrorBanner message={error} /> : null}
 

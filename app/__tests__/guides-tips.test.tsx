@@ -63,6 +63,10 @@ const createInvite = vi.fn();
 const sendClubInviteEmail = vi.fn();
 // events-new.test.tsx's own lib/clubs mock: fetchMyRoles, for NewEventScreen.
 const fetchMyRoles = vi.fn();
+// clubs.test.tsx's own club-detail-screen lib/clubs mock: the invite list,
+// for ClubDetailScreen.
+const fetchPendingInvites = vi.fn();
+const deleteInvite = vi.fn();
 
 vi.mock('../../lib/clubs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../lib/clubs')>();
@@ -73,6 +77,8 @@ vi.mock('../../lib/clubs', async (importOriginal) => {
     createInvite: (...args: unknown[]) => createInvite(...args),
     sendClubInviteEmail: (...args: unknown[]) => sendClubInviteEmail(...args),
     fetchMyRoles: (...args: unknown[]) => fetchMyRoles(...args),
+    fetchPendingInvites: (...args: unknown[]) => fetchPendingInvites(...args),
+    deleteInvite: (...args: unknown[]) => deleteInvite(...args),
   };
 });
 
@@ -127,6 +133,9 @@ vi.mock('../../lib/bookings', async (importOriginal) => {
 const fetchMyCheckIn = vi.fn();
 const recordAttendance = vi.fn();
 const clearAttendance = vi.fn();
+// check-in.test.tsx's own lib/attendance mock: the door list's own read, for
+// CheckInScreen.
+const fetchEventAttendance = vi.fn();
 
 vi.mock('../../lib/attendance', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../lib/attendance')>();
@@ -135,6 +144,20 @@ vi.mock('../../lib/attendance', async (importOriginal) => {
     fetchMyCheckIn: (...args: unknown[]) => fetchMyCheckIn(...args),
     recordAttendance: (...args: unknown[]) => recordAttendance(...args),
     clearAttendance: (...args: unknown[]) => clearAttendance(...args),
+    fetchEventAttendance: (...args: unknown[]) => fetchEventAttendance(...args),
+  };
+});
+
+// check-in.test.tsx's own lib/payments mock, for CheckInScreen's paid chip.
+const fetchEventPayments = vi.fn();
+const setPaymentStatus = vi.fn();
+
+vi.mock('../../lib/payments', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/payments')>();
+  return {
+    ...actual,
+    fetchEventPayments: (...args: unknown[]) => fetchEventPayments(...args),
+    setPaymentStatus: (...args: unknown[]) => setPaymentStatus(...args),
   };
 });
 
@@ -175,6 +198,8 @@ vi.mock('../../components/VenuePicker', () => ({
 
 import EventScreen from '../clubs/[id]/events/[eventId]/index';
 import NewEventScreen from '../clubs/[id]/events/new';
+import CheckInScreen from '../clubs/[id]/events/[eventId]/check-in';
+import ClubDetailScreen from '../clubs/[id]/index';
 
 const CLUB = {
   id: 'club-1',
@@ -219,6 +244,21 @@ const MEMBER_ROLE = [
 const HOST_ROLE = [
   { profile_id: 'test-user', role: 'host' as const, display_name: 'Ada', skill_level: null },
 ];
+
+// check-in.test.tsx's own EVENT fixture: a window that is open right now
+// (starts_at an hour ago, inside the 1-hour early-arrival lead; ends_at two
+// hours from now), real-clock based so the suite keeps passing regardless
+// of when it runs.
+const CHECK_IN_NOW = Date.now();
+const CHECK_IN_EVENT = {
+  id: 'event-1',
+  starts_at: new Date(CHECK_IN_NOW - 30 * 60_000).toISOString(),
+  ends_at: new Date(CHECK_IN_NOW + 2 * 60 * 60_000).toISOString(),
+  check_in_required: true,
+  seating_mode: 'assigned_tables' as const,
+  fee_cents: 0,
+  bookings: [] as { profile_id: string; status: string; group_id: string }[],
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -272,6 +312,15 @@ beforeEach(() => {
   createEvent.mockResolvedValue({ eventId: 'event-1', error: null });
   createEventSeries.mockResolvedValue({ seriesId: 'series-1', error: null });
   canGoBack.mockReturnValue(true);
+
+  // CheckInScreen fixtures.
+  fetchEventAttendance.mockResolvedValue([]);
+  fetchEventPayments.mockResolvedValue([]);
+  setPaymentStatus.mockResolvedValue({ error: null });
+
+  // ClubDetailScreen fixtures.
+  fetchPendingInvites.mockResolvedValue([]);
+  deleteInvite.mockResolvedValue({ error: null });
 });
 
 function renderEventAsMember() {
@@ -286,6 +335,22 @@ function renderEventAsOrganizer() {
 
 function renderNewGameAsHost() {
   return render(<NewEventScreen />);
+}
+
+function renderCheckInAsHost() {
+  fetchRoster.mockResolvedValue(HOST_ROLE);
+  fetchEvent.mockResolvedValue(CHECK_IN_EVENT);
+  return render(<CheckInScreen />);
+}
+
+function renderClubAsHost() {
+  fetchRoster.mockResolvedValue(HOST_ROLE);
+  return render(<ClubDetailScreen />);
+}
+
+function renderClubAsMember() {
+  fetchRoster.mockResolvedValue(MEMBER_ROLE);
+  return render(<ClubDetailScreen />);
 }
 
 describe('event page tip', () => {
@@ -368,5 +433,46 @@ describe('new game tip', () => {
     renderNewGameAsHost();
     fireEvent.click(await screen.findByRole('button', { name: 'Got it: Setting up a game' }));
     expect(dismiss).toHaveBeenCalledWith('tip:new-game');
+  });
+});
+
+describe('check-in tip', () => {
+  it('explains Here, Not coming and the $ control', async () => {
+    renderCheckInAsHost();
+    expect(await screen.findByText('Running the door')).toBeTruthy();
+    expect(screen.getByText(/Tap Here when someone arrives, or Not coming/)).toBeTruthy();
+    expect(screen.getByText(/Only organizers see who has paid/)).toBeTruthy();
+  });
+
+  it('dismisses with its key', async () => {
+    renderCheckInAsHost();
+    fireEvent.click(await screen.findByRole('button', { name: 'Got it: Running the door' }));
+    expect(dismiss).toHaveBeenCalledWith('tip:check-in');
+  });
+});
+
+describe('club page tip', () => {
+  it('explains inviting to an organizer', async () => {
+    renderClubAsHost();
+    expect(await screen.findByText('Bringing people in')).toBeTruthy();
+    // Not the brief's own bare /Invite by email/ and /Import a roster/: the
+    // "Invite by email" TextField label and the "Import a roster" Button's
+    // own label (below the tip) render as their own visible text too, same
+    // ambiguity the "new game tip" describe above hits with "Cost to play"
+    // -- anchored to the fuller phrases, unique to the tip's own copy.
+    expect(screen.getByText(/Use Invite by email for one person/)).toBeTruthy();
+    expect(screen.getByText(/Import a roster for a whole list/)).toBeTruthy();
+  });
+
+  it('is not shown to a member', async () => {
+    renderClubAsMember();
+    await screen.findByText('Leaderboard');
+    expect(screen.queryByText('Bringing people in')).toBeNull();
+  });
+
+  it('dismisses with its key', async () => {
+    renderClubAsHost();
+    fireEvent.click(await screen.findByRole('button', { name: 'Got it: Bringing people in' }));
+    expect(dismiss).toHaveBeenCalledWith('tip:club');
   });
 });
