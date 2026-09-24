@@ -525,9 +525,14 @@ export default function ClubsScreen() {
 
   const list = clubs ?? [];
 
-  // A member in no clubs has no clubs to filter, no games to list, and one
-  // thing to do. Returning early says that, instead of walking them past an
-  // empty "Your games" to reach it.
+  // A member in no clubs has no clubs to filter and no games to list, but a
+  // pending invite is still something to act on -- someone invited but never
+  // yet a member of anything hits this branch too, and the invite is the
+  // one thing on this screen that matters to them. It used to return before
+  // `pendingInvites` ever rendered anywhere, which made an invite to a
+  // person with no other club membership permanently unreachable: the
+  // banner lived only in the populated branch below, which this early
+  // return never reaches.
   if (list.length === 0) {
     const empty = headerScope(list, ALL_CLUBS);
     return (
@@ -541,6 +546,13 @@ export default function ClubsScreen() {
               <MahjongTile suit="dots" size="section" />
             </View>
           }
+        />
+        {actionError ? <ErrorBanner message={actionError} /> : null}
+        <PendingInviteCards
+          invites={pendingInvites}
+          busy={busy}
+          onAccept={handleAcceptInvite}
+          onDecline={handleDeclineInvite}
         />
         <View style={styles.list}>
           <Text style={styles.help}>
@@ -693,31 +705,12 @@ export default function ClubsScreen() {
 
       {actionError ? <ErrorBanner message={actionError} /> : null}
 
-      {pendingInvites.map((invite) => (
-        <Card key={invite.id}>
-          <Text style={styles.inviteHeading}>
-            {invite.clubName} invited you to join
-            {invite.eventTitle ? ` — ${invite.eventTitle}` : ''}
-          </Text>
-          <Button
-            block
-            disabled={busy}
-            onPress={() => handleAcceptInvite(invite)}
-            accessibilityLabel={`Join ${invite.clubName}`}
-          >
-            Join
-          </Button>
-          <Button
-            variant="ghost"
-            big={false}
-            disabled={busy}
-            onPress={() => handleDeclineInvite(invite)}
-            accessibilityLabel={`Decline the invite to ${invite.clubName}`}
-          >
-            No thanks
-          </Button>
-        </Card>
-      ))}
+      <PendingInviteCards
+        invites={pendingInvites}
+        busy={busy}
+        onAccept={handleAcceptInvite}
+        onDecline={handleDeclineInvite}
+      />
 
       {alerts.map((alert) => (
         <NeedAFourthCard
@@ -763,6 +756,54 @@ export default function ClubsScreen() {
         ))
       )}
     </Screen>
+  );
+}
+
+/**
+ * Shared by both places this screen can render: the populated dashboard
+ * below, and the "you're not in a club yet" early return above -- the
+ * empty-clubs branch has no other route to a pending invite, so both need
+ * the identical card rather than one drifting from the other.
+ */
+function PendingInviteCards({
+  invites,
+  busy,
+  onAccept,
+  onDecline,
+}: {
+  invites: PendingInvite[];
+  busy: boolean;
+  onAccept: (invite: PendingInvite) => void;
+  onDecline: (invite: PendingInvite) => void;
+}) {
+  return (
+    <>
+      {invites.map((invite) => (
+        <Card key={invite.id}>
+          <Text style={styles.inviteHeading}>
+            {invite.clubName} invited you to join
+            {invite.eventTitle ? ` — ${invite.eventTitle}` : ''}
+          </Text>
+          <Button
+            block
+            disabled={busy}
+            onPress={() => onAccept(invite)}
+            accessibilityLabel={`Join ${invite.clubName}`}
+          >
+            Join
+          </Button>
+          <Button
+            variant="ghost"
+            big={false}
+            disabled={busy}
+            onPress={() => onDecline(invite)}
+            accessibilityLabel={`Decline the invite to ${invite.clubName}`}
+          >
+            No thanks
+          </Button>
+        </Card>
+      ))}
+    </>
   );
 }
 
