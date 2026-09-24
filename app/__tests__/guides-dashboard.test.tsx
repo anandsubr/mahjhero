@@ -61,7 +61,9 @@ const SESSION: { session: { user: { id: string } } | null; loading: boolean } = 
   session: { user: { id: 'test-user' } },
   loading: false,
 };
-const useSessionMock = vi.fn(() => SESSION);
+const useSessionMock = vi.fn(
+  (): { session: { user: { id: string; email?: string } } | null; loading: boolean } => SESSION,
+);
 
 vi.mock('../../lib/session', () => ({
   useSession: () => useSessionMock(),
@@ -214,6 +216,8 @@ const CLUB = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // clearAllMocks keeps implementations, so a test's own session would leak.
+  useSessionMock.mockImplementation(() => SESSION);
   isVisible.mockImplementation(() => true);
   fetchMyClubs.mockResolvedValue([CLUB]);
   fetchUpcomingEvents.mockResolvedValue([]);
@@ -301,6 +305,60 @@ describe('dashboard guides', () => {
     await waitFor(() => expect(fetchMyRoles).toHaveBeenCalled());
     await screen.findAllByText('Riverside');
     expect(fetchHostChecklistCounts).not.toHaveBeenCalled();
+  });
+
+  // The no-clubs screen is an early return above the host checklist and the
+  // player card, so without this card a brand-new account got no guidance.
+  describe('welcome card (no clubs yet)', () => {
+    const SESSION_WITH_EMAIL = {
+      session: { user: { id: 'test-user', email: 'new@example.com' } },
+      loading: false,
+    };
+
+    beforeEach(() => {
+      fetchMyClubs.mockResolvedValue([]);
+      fetchMyRoles.mockResolvedValue([]);
+    });
+
+    it('greets someone in no clubs with both ways in, naming their email', async () => {
+      useSessionMock.mockImplementation(() => SESSION_WITH_EMAIL);
+      render(<ClubsScreen />);
+      expect(await screen.findByText('Welcome to MahjHero')).toBeTruthy();
+      expect(screen.getByText(/Organizing games\?/)).toBeTruthy();
+      expect(screen.getByText(/Joining a club\?/)).toBeTruthy();
+      expect(screen.getByText('new@example.com')).toBeTruthy();
+      expect(isVisible).toHaveBeenCalledWith('welcome');
+      // The card adds guidance, not a second way to start a club.
+      expect(screen.getAllByRole('button', { name: 'Start a club' })).toHaveLength(1);
+      expect(screen.getByText(/not in a club yet/i)).toBeTruthy();
+    });
+
+    it('falls back to a generic phrase when the session has no email', async () => {
+      render(<ClubsScreen />);
+      expect(await screen.findByText('Welcome to MahjHero')).toBeTruthy();
+      expect(screen.getByText('the email you signed in with')).toBeTruthy();
+    });
+
+    it('dismisses under its own key', async () => {
+      render(<ClubsScreen />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Got it: Welcome to MahjHero' }));
+      expect(dismiss).toHaveBeenCalledWith('welcome');
+    });
+
+    it('leaves the plain empty state once dismissed', async () => {
+      isVisible.mockImplementation((key: string) => key !== 'welcome');
+      render(<ClubsScreen />);
+      expect(await screen.findByText(/not in a club yet/i)).toBeTruthy();
+      expect(screen.queryByText('Welcome to MahjHero')).toBeNull();
+    });
+
+    it('is not shown once the person is in a club', async () => {
+      fetchMyClubs.mockResolvedValue([CLUB]);
+      fetchMyRoles.mockResolvedValue([{ club_id: 'club-1', role: 'member' }]);
+      render(<ClubsScreen />);
+      await screen.findAllByText('Riverside');
+      expect(screen.queryByText('Welcome to MahjHero')).toBeNull();
+    });
   });
 
   it('fetches host checklist counts exactly once, not on every render', async () => {

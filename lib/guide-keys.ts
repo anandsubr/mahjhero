@@ -13,6 +13,7 @@
  * unaffected.
  */
 export const STATIC_GUIDE_KEYS = [
+  'welcome',
   'player-intro',
   'tip:event',
   'tip:new-game',
