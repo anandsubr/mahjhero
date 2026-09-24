@@ -20,6 +20,11 @@ type TimeFieldProps = {
  * so no use of lib/time.ts's helpers) is needed on this path at all — that
  * module exists for the native pickers, which only work in Date objects.
  *
+ * `step={900}` (seconds) caps the native picker's own minute control to
+ * :00/:15/:30/:45 — a game's start time has no reason to need finer
+ * granularity than that, and the coarser step is one less decision for
+ * whoever is filling out the form.
+ *
  * No visible <label> is rendered, matching the TextInputs this replaces
  * (app/notifications.tsx put the visible structure — "Quiet hours", the
  * "to" between the two fields — around the inputs, not on them); aria-label
@@ -48,6 +53,7 @@ export default function TimeField({ value, onChange, label }: TimeFieldProps) {
     <View style={{ flex: 1 }}>
       <input
         type="time"
+        step={900}
         value={value}
         onChange={handleChange}
         aria-label={label}

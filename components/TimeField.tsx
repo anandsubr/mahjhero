@@ -90,6 +90,12 @@ export default function TimeField({ value, onChange, label }: TimeFieldProps) {
         // themed further (radius, background, etc. are not visible until
         // the popover opens, which iOS draws itself).
         accentColor={colors.accentColor}
+        // Caps the popover's minute wheel to :00/:15/:30/:45, matching the
+        // step on the web input below -- a game's start time never needed
+        // finer than that. iOS-only: the library does not support this on
+        // Android's system TimePickerDialog (the `display="default"` branch
+        // above), which has no equivalent control to restrict.
+        minuteInterval={15}
       />
     </View>
   );

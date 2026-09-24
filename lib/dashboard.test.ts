@@ -121,11 +121,19 @@ describe('headerScope', () => {
     });
   });
 
-  // A one-club member never picks a chip — the row that would set `selected`
-  // is not drawn for them — so their scope would otherwise read "All your
-  // clubs · 1 club" forever, and the header would have no club to open.
-  it('resolves a lone club to that club whatever the selection', () => {
+  // A one-club member used to be auto-scoped into their one club, skipping
+  // the main dashboard (and its greeting) entirely. Landing everyone there
+  // by default, one club or many, was chosen deliberately over that.
+  it('does not auto-scope a lone club into "Your club"', () => {
     expect(headerScope([CLUBS[0]], ALL_CLUBS)).toEqual({
+      kicker: '',
+      name: 'Your clubs',
+      meta: '',
+    });
+  });
+
+  it('still resolves a lone club when its chip is explicitly picked', () => {
+    expect(headerScope([CLUBS[0]], 'club-1')).toEqual({
       kicker: 'Your club',
       name: 'Riverside Mah Jongg',
       meta: 'Thursdays, 7pm',
@@ -150,8 +158,9 @@ describe('headerScope', () => {
 
   it('falls back to the all-clubs scope for an unknown id', () => {
     expect(headerScope(CLUBS, 'club-gone').name).toBe('Your clubs');
-    // …unless there is only one club it could have meant.
-    expect(headerScope([CLUBS[0]], 'club-gone').name).toBe('Riverside Mah Jongg');
+    // A single-club list is no exception now -- a stale id resolves to the
+    // main dashboard just like an unrecognized id in a longer list does.
+    expect(headerScope([CLUBS[0]], 'club-gone').name).toBe('Your clubs');
   });
 });
 
@@ -444,6 +453,59 @@ describe('buildDashboardRows', () => {
     });
     expect(rows).toHaveLength(1);
     expect(rows[0].organizing).toBe(true);
+  });
+
+  // The regression this covers: a host's own table filled up before it
+  // started, and the game dropped off their dashboard entirely with no way
+  // back in until kickoff -- found on a real dashboard, not from a review.
+  // The organizing branch above (`still adds an organizing row even when
+  // the table is full`) only covers this once the event has already
+  // started; `event()`'s default `starts_at` is in the future relative to
+  // NOW, so this is the pre-kickoff twin of that case.
+  it('adds a not-yet-started, full table as an organizing row for its own host', () => {
+    const rows = buildDashboardRows({
+      bookings: [],
+      events: [
+        event({
+          id: 'full-not-started',
+          bookings: [
+            { profile_id: 'a', status: 'confirmed', event_table_id: 'table-1', group_id: 'g-a' },
+            { profile_id: 'b', status: 'confirmed', event_table_id: 'table-1', group_id: 'g-b' },
+            { profile_id: 'c', status: 'confirmed', event_table_id: 'table-1', group_id: 'g-c' },
+            { profile_id: 'd', status: 'confirmed', event_table_id: 'table-1', group_id: 'g-d' },
+          ],
+        }),
+      ],
+      clubs: CLUBS,
+      userId: 'me',
+      organizerClubIds: new Set(['club-1']),
+      now: NOW,
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].organizing).toBe(true);
+    expect(rows[0].joinable).toBe(false);
+  });
+
+  it('still drops a not-yet-started, full table for a plain member', () => {
+    const rows = buildDashboardRows({
+      bookings: [],
+      events: [
+        event({
+          id: 'full-not-started',
+          bookings: [
+            { profile_id: 'a', status: 'confirmed', event_table_id: 'table-1', group_id: 'g-a' },
+            { profile_id: 'b', status: 'confirmed', event_table_id: 'table-1', group_id: 'g-b' },
+            { profile_id: 'c', status: 'confirmed', event_table_id: 'table-1', group_id: 'g-c' },
+            { profile_id: 'd', status: 'confirmed', event_table_id: 'table-1', group_id: 'g-d' },
+          ],
+        }),
+      ],
+      clubs: CLUBS,
+      userId: 'me',
+      // No organizerClubIds -- a plain member sees nothing to do here.
+      now: NOW,
+    });
+    expect(rows).toEqual([]);
   });
 
   it('drops an event the viewer is waitlisted on, without a booking row', () => {

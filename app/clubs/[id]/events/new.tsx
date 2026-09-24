@@ -11,7 +11,7 @@ import TextField from '../../../../components/TextField';
 import TimeField from '../../../../components/TimeField';
 import Toggle from '../../../../components/Toggle';
 import VenuePicker from '../../../../components/VenuePicker';
-import { fetchClub, type Club, type GameMode } from '../../../../lib/clubs';
+import { fetchClub, fetchMyRoles, type Club, type GameMode } from '../../../../lib/clubs';
 import {
   createEvent,
   createEventSeries,
@@ -192,6 +192,7 @@ export default function NewEventScreen() {
   const router = useRouter();
 
   const [club, setClub] = useState<Club | null>(null);
+  const [isHost, setIsHost] = useState(false);
   const [ready, setReady] = useState(false);
   const [title, setTitle] = useState('');
   const [venueId, setVenueId] = useState<string | null>(null);
@@ -239,12 +240,15 @@ export default function NewEventScreen() {
   useEffect(() => {
     if (!session) return;
     let cancelled = false;
-    fetchClub(clubId).then((result) => {
-      if (cancelled) return;
-      setClub(result);
-      if (result) setGameMode(result.default_game_mode);
-      setReady(true);
-    });
+    Promise.all([fetchClub(clubId), fetchMyRoles(session.user.id)]).then(
+      ([result, roles]) => {
+        if (cancelled) return;
+        setClub(result);
+        if (result) setGameMode(result.default_game_mode);
+        setIsHost(roles?.some((r) => r.club_id === clubId && r.role === 'host') ?? false);
+        setReady(true);
+      },
+    );
     return () => {
       cancelled = true;
     };
@@ -281,6 +285,15 @@ export default function NewEventScreen() {
       </Screen>
     );
   }
+
+  // Mirrors the dashboard's own `canAddGames` gate (app/clubs/index.tsx):
+  // reaching this screen by URL used to show the full form to any member,
+  // even though create_event's own organizer check would always reject
+  // their submit. Host-only, not canInvite's broader host-or-co-organizer --
+  // there is no UI yet to grant co_organizer to anyone, so this stays
+  // reserved for whoever actually created the club until a real cohost
+  // feature exists to extend it deliberately.
+  if (!isHost) return <Redirect href={`/clubs/${clubId}`} />;
 
   const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
   // "Monthly" means "the same weekday-of-month as the date you picked" --
