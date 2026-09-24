@@ -47,10 +47,17 @@ the seat they were offered.
 
 - `booking_status` gains `invited`:
   `confirmed | waitlisted | invited | cancelled | declined`.
-- No new tables or columns. An invite is a `bookings` row with
-  `status = 'invited'`, `booked_by` = the sender, `group_id` = the sender's
-  booking group, and `table_id` set if a seat was held (null if the game was
-  full).
+- No new tables. An invite is a `bookings` row with `status = 'invited'`,
+  `booked_by` = the sender, `group_id` = the sender's booking group, and
+  `event_table_id` set if a seat at a specific table was held.
+- New column `bookings.invite_holds_seat boolean`, null on every non-invited
+  row. For an `invited` row: `true` = the invite holds a seat (at its table,
+  or an "any table" seat counted at event level when the table is null —
+  the same way a confirmed any-table booking counts today); `false` = the
+  game was full when it was sent, and accepting joins the waitlist. A null
+  table alone can't say which, because "any table" bookings are already
+  confirmed-with-no-table today; group status can't either, because a
+  waitlisted group becomes confirmed when promoted.
 - `outbox_kind` gains `booking_invited`, `booking_invite_accepted`,
   `booking_invite_withdrawn`, `booking_cancelled_by_member`. (Each
   `add value` in its own migration, per
@@ -78,8 +85,13 @@ book; invite-only — organizer only (`20260905090000_invite_only_booking_gate.s
 - Caller must be the row's `profile_id`; row must be `invited`; game must
   not have started (same guards and null-caller binding pattern as
   `decline_booking`).
-- With a table → `confirmed`. Without a table → `waitlisted`, with its
-  waitlist time set at acceptance (back of the queue as of accepting).
+- Holding a seat → `confirmed`, keeping its table (or none, for an
+  any-table hold). Not holding a seat → the row moves into a new solo
+  booking group (`created_by` = the invitee, any table, `waitlisted_at` =
+  now) and becomes `waitlisted` — the waitlist is queued by group, so this
+  is what puts them at the back as of accepting rather than at the
+  sender's group's place in line. The old group is closed if now empty,
+  and waitlist promotion runs.
 - Outbox: `booking_invite_accepted` to `booked_by`.
 - Does **not** re-check organizer status for invite-only games — the invite
   was organizer-authorized when sent (same reasoning as guest invites).
@@ -135,11 +147,23 @@ migrations define such checks; the plan lists each). The rule:
 | Invite-only event visibility (`events_select_member`) | Yes |
 | Headcount, "who's playing", `event_accepted_count` | No |
 | Waitlist promotion candidates | No |
-| "Need a fourth", event reminders, check-in / door list | No |
+| "Need a fourth" — is the seat free? | Yes (a held seat is not free; no call goes out over it) |
+| "Need a fourth" recipients, event reminders, check-in / door list | No |
+| Removing a table | Held invites at it are unseated like confirmed rows (table → null) and keep holding at event level |
 | `close_group_if_empty` (group still live?) | Yes — a group with only pending invitees stays open |
 
-Invite-only attendee-list privacy is unchanged: an invitee sees the game but
-not other names until they hold a seated booking.
+### Who sees pending invitees (revised 2026-09-24)
+
+- **Open play:** pending invitees are shown by name to every member who can
+  see the game, the same as confirmed players. (This also lets the Invite
+  sheet grey out people someone else already invited.)
+- **Invite-only:** a pending invite is visible, with its name, only to the
+  club's organizers, its sender, and the invitee — enforced in the
+  `bookings` RLS policy, not just the UI. Other viewers see the held seat as
+  an anonymous "Invited" seat.
+- **Invite-only roster unlock** changes from "seated at a specific table" to
+  "accepted and holding a seat" (`confirmed`, with or without a table). A
+  pending invitee, or someone on the waitlist, sees only the headcount.
 
 ## UI
 
@@ -157,8 +181,10 @@ not other names until they hold a seated booking.
 
 ### Game screen — other members
 
-- A held seat reads **Invited** with no name.
-- Headcount reads e.g. "5 playing · 2 invited".
+- Open play: a held seat shows the invitee's name with the **Invited** tag.
+  Invite-only: an anonymous **Invited** seat (see "Who sees pending
+  invitees").
+- When there are pending invites, a line reads e.g. "5 playing · 2 invited".
 
 ### Game screen — the invitee
 
