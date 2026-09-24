@@ -588,22 +588,23 @@ export default function ClubsScreen() {
   }).filter((alert) => inScope(alert.clubId, selected));
 
   // The club in scope — what "Host a table" and the header's own "Add a
-  // game" create in, and what the header's pencil opens. Derived from the
-  // clubs themselves, NOT from the chip state: a one-club member's
-  // `selected` stays ALL_CLUBS unless they redundantly tap their own tile,
-  // and gating on `selected !== ALL_CLUBS` alone would hide every one of
-  // these affordances from exactly the member most likely to want them.
-  // With several clubs and no chip picked the scope genuinely is ambiguous,
-  // so none of them is offered rather than one that guesses. `headerScope`
-  // resolves the lone club the same way, for the same reason. The lookup
-  // below also guards against a `selected` that no longer names a club in
-  // `list` — the same "left, removed, or the list reloaded" case
-  // `headerScope` (lib/dashboard.ts) validates against, for the same reason:
-  // trusting `selected` blindly would let the header read the all-clubs
-  // scope while still pushing a route built from a stale, non-existent id.
-  const scopeClubId =
-    list.find((club) => club.id === selected)?.id ??
-    (list.length === 1 ? list[0].id : null);
+  // game" create in, and what the header's pencil opens. `null` until a
+  // club is explicitly chip-picked (see headerScope's own doc comment for
+  // why a lone club is no longer auto-picked either) — the lookup also
+  // guards against a `selected` that no longer names a club in `list` (left,
+  // removed, or the list reloaded): trusting `selected` blindly would let
+  // the header read the all-clubs scope while still pushing a route built
+  // from a stale, non-existent id.
+  const scopeClubId = list.find((club) => club.id === selected)?.id ?? null;
+  // Event creation stays host-only for now -- co_organizer already carries
+  // canInvite's broader "can invite/manage venues" powers, but there is no
+  // UI yet to grant that role to anyone, and creating games is reserved for
+  // whoever actually created the club until a real cohost feature exists to
+  // extend it deliberately.
+  const hostClubIds = new Set(
+    roles.filter((r) => r.role === 'host').map((r) => r.club_id),
+  );
+  const canAddGames = scopeClubId !== null && hostClubIds.has(scopeClubId);
 
   const todaysGreeting = pickDailyGreeting(greetings, new Date());
   const greetingText = todaysGreeting
@@ -628,14 +629,13 @@ export default function ClubsScreen() {
           onPressScope={
             scopeClubId ? () => router.push(`/clubs/${scopeClubId}`) : undefined
           }
-          // Same club the pencil opens — a member looking at one club's games
-          // reaches for the header's + expecting "add a game here", not
-          // "start an unrelated club". `scopeClubId` already resolves both the
-          // ways a single club ends up in view: an explicit chip pick, and a
-          // one-club member's own club, which `headerScope` shows regardless
-          // of `selected` — so this covers both with no special-casing.
+          // Host-only (see `canAddGames`'s own comment) -- this used to be
+          // offered to every member of the club in scope, with only the
+          // create_event RPC's own organizer check standing between a plain
+          // member and the form, which let anyone reach the "Add a game"
+          // screen even though submitting from it would always fail.
           onPressAddGame={
-            scopeClubId ? () => router.push(`/clubs/${scopeClubId}/events/new`) : undefined
+            canAddGames ? () => router.push(`/clubs/${scopeClubId}/events/new`) : undefined
           }
           // Shown exactly when the chip row is hidden (see the row's own
           // guard below) — the chevron is the way back once a club is
@@ -727,7 +727,7 @@ export default function ClubsScreen() {
       ) : rows.length === 0 ? (
         <View style={styles.emptyCard}>
           <Text style={styles.help}>Nothing else coming up.</Text>
-          {scopeClubId ? (
+          {canAddGames ? (
             <Button
               variant="secondary"
               big={false}

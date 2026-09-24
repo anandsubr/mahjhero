@@ -35,22 +35,21 @@ export type HeaderScope = { kicker: string; name: string; meta: string };
  * the spec's deferred item 4), and the club count itself was a redundant
  * subtitle under "Your clubs", so this scope now carries no meta at all.
  *
- * One club is the exception to both fallbacks. There is nothing to disambiguate
- * and no chip row to pick with, so a single-club list resolves to that club
- * whatever `selected` says.
+ * A single-club member used to be auto-scoped into their one club here,
+ * skipping the all-clubs dashboard entirely -- there was "nothing to
+ * disambiguate," so the lone club won by default. That also meant the
+ * greeting (suppressed on any 'Your club' scope, further down the
+ * dashboard) could never show for the common case of a member with exactly
+ * one club, and there was no way back to the general dashboard without a
+ * second club to compare against. Landing everyone on the main dashboard by
+ * default, one club or many, and letting the chip row be the only way into
+ * a specific club's own scope, was chosen deliberately over that.
  */
 export function headerScope(clubs: Club[], selected: string): HeaderScope {
-  const picked =
+  const club =
     selected === ALL_CLUBS
       ? null
       : (clubs.find((candidate) => candidate.id === selected) ?? null);
-  // A one-club member's scope is never ambiguous even if they tap their own
-  // chip: `selected` would carry that club's own id instead of ALL_CLUBS,
-  // but `picked` resolves to the identical club either way, so this branch
-  // returns the same result regardless of which one drew it. Resolving the
-  // lone club here is what lets the header name it and be pressed into it.
-  // Same derivation, for the same reason, as the screen's own `scopeClubId`.
-  const club = picked ?? (clubs.length === 1 ? clubs[0] : null);
   if (!club) {
     return {
       // No kicker, and a shorter name. "YOUR CLUBS" above "All your clubs"
@@ -211,14 +210,16 @@ function hasFreeSeat(event: ClubEvent): boolean {
  * the booking is the richer row — it is what the offer, waitlist and check-in
  * controls hang off.
  *
- * A THIRD source, folded into the same loop as the joinable branch: an
- * in-progress event the viewer organizes (host or co-organizer) but holds no
- * booking at. Before this existed, an organizer who never booked their own
- * seat lost all access to their own game the instant it started — neither
- * `my_upcoming_bookings` (no booking to find) nor the joinable branch (which
- * requires `!started`) ever covered it. See the design doc for how this was
- * found: two organizer-created, self-unbooked games vanished from a real
- * dashboard at kickoff.
+ * A THIRD source, folded into the same loop as the joinable branch: an event
+ * the viewer organizes (host or co-organizer) but holds no booking at,
+ * whether or not it has started or has a free seat. Before this existed, an
+ * organizer who never booked their own seat lost all access to their own
+ * game the instant its last seat filled — the joinable branch requires
+ * `hasFreeSeat`, so a full, not-yet-started table dropped the row entirely,
+ * and the same organizer had no way back in until kickoff (the in-progress
+ * branch's own fix for the post-kickoff half of this). Found on a real
+ * dashboard: a host's own table filled up before it started and the game
+ * disappeared from their "Your games" list with no way back to it.
  *
  * `organizerClubIds` defaults to an empty set — every existing caller that
  * does not pass it gets exactly today's behavior, since an empty set can
@@ -262,6 +263,8 @@ export function buildDashboardRows(input: {
 
     const started = new Date(event.starts_at).getTime() <= now.getTime();
     const ended = new Date(event.ends_at).getTime() <= now.getTime();
+    const isOrganizer = organizerClubIds.has(event.club_id);
+    const freeSeat = hasFreeSeat(event);
 
     if (started) {
       // The organizing branch. `ended` is checked unconditionally (not
@@ -269,11 +272,18 @@ export function buildDashboardRows(input: {
       // refused outright; only once that passes does organizer status
       // decide it. Deliberately does NOT check hasFreeSeat -- an organizer
       // needs this row whether the table is full or not.
-      if (ended || !organizerClubIds.has(event.club_id)) continue;
-    } else {
-      // The existing joinable branch, unchanged.
-      if (!hasFreeSeat(event)) continue;
+      if (ended || !isOrganizer) continue;
+    } else if (!freeSeat) {
+      // The pre-kickoff twin of the branch above: a full table with no
+      // organizer booking is nothing for a plain member to do, but the
+      // organizer still needs a way in before kickoff (door list, adding a
+      // walk-in, editing the game) -- same "a full table is not a reason to
+      // hide this from its own host" reasoning, just before vs. after
+      // start. A non-organizer is dropped here exactly as before.
+      if (!isOrganizer) continue;
     }
+    // else: the existing joinable branch (not started, has a free seat) --
+    // unchanged, reachable by organizer and non-organizer alike.
 
     seen.add(event.id);
     rows.push({
@@ -285,8 +295,8 @@ export function buildDashboardRows(input: {
       timezone: club.timezone,
       venueName: event.venue_name,
       booking: null,
-      joinable: !started,
-      organizing: started && !ended,
+      joinable: !started && freeSeat,
+      organizing: (started && !ended) || (!started && !freeSeat),
       feeCents: event.fee_cents,
       minSpendCents: event.min_spend_cents,
     });

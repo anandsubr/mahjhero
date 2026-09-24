@@ -37,9 +37,11 @@ vi.mock('../../lib/session', () => ({
 }));
 
 const fetchClub = vi.fn();
+const fetchMyRoles = vi.fn();
 
 vi.mock('../../lib/clubs', () => ({
   fetchClub: (...args: unknown[]) => fetchClub(...args),
+  fetchMyRoles: (...args: unknown[]) => fetchMyRoles(...args),
 }));
 
 // TabBar (now carried by this screen) calls `useUnreadCounts`, which reaches
@@ -109,6 +111,11 @@ beforeEach(() => {
     loading: false,
   });
   fetchClub.mockResolvedValue(CLUB);
+  // This screen is host-only now (app/clubs/index.tsx's own canAddGames
+  // gate has a server-mirroring twin here) -- every test in this file
+  // exercises the form itself, which only a host ever reaches, so host is
+  // the default fixture rather than something each test opts into.
+  fetchMyRoles.mockResolvedValue([{ club_id: 'club-1', role: 'host' }]);
   createEvent.mockResolvedValue({ eventId: 'event-1', error: null });
   createEventSeries.mockResolvedValue({ seriesId: 'series-1', error: null });
   // Defaults to the common case (reached via a push from the club screen).

@@ -1,6 +1,6 @@
 import { useEffect, type ComponentType } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import TabBar, { suitFor, type TabKey } from '../../components/TabBar';
 import type { MahjongSuit } from '../../components/MahjongTile';
 import { fetchMyClubs } from '../../lib/clubs';
@@ -185,6 +185,10 @@ describe('nav glyph parity', () => {
     vi.mocked(fetchMyClubs).mockResolvedValueOnce([club]);
 
     render(<ClubsScreen />);
+    // A one-club member no longer auto-scopes into "Your club" (see
+    // lib/dashboard.ts's headerScope) -- their chip has to be picked to
+    // reach the header that draws this tile, same as any other member's.
+    fireEvent.click(await screen.findByRole('button', { name: club.name }));
     const tile = await screen.findByTestId('thread-avatar-club-tile');
     expect(within(tile).getByTestId(`glyph-${glyphForClub(club.id)}`)).toBeTruthy();
   });
