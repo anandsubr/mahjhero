@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(44);
+select plan(51);
 
 insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-000000000001', 'alice@example.com'),
@@ -346,27 +346,27 @@ select lives_ok(
             'ffffffff-0000-0000-0000-000000000006',
             '99999999-0000-0000-0000-000000000007']::uuid[],
       '7ab1e000-0000-0000-0000-000000000002', true)$$,
-  'committing the split books all three');
+  'committing the split books the sender and invites the other two');
 
 reset role;
 select is(
   (select count(distinct event_table_id)::int from public.bookings
     where booked_by = 'eeeeeeee-0000-0000-0000-000000000005'),
   2,
-  'across the two tables the proposal named');
+  'across the two tables the proposal named -- the invitees'' seats are held there');
 select is(
   (select count(*)::int from public.notification_outbox
-    where kind = 'booked_by_friend'),
+    where kind = 'booking_invited'),
   2,
-  'the two friends are told their seats were booked for them');
+  'the two friends are sent an invite, not told a seat was booked for them');
 select is(
   (select count(*)::int from public.notification_outbox
-    where kind = 'booked_by_friend'
+    where kind = 'booking_invited'
       and recipient_id = 'eeeeeeee-0000-0000-0000-000000000005'),
   0,
-  'and the booker is not told about her own seat');
+  'and the sender is not invited to her own game');
 select is(public.event_free_seats('e1e1e1e1-0000-0000-0000-000000000001'), 0,
-  'the game is now full');
+  'the game is now full -- the held seats count');
 
 -- ---------------------------------------------------------------------
 -- Full: the next member waits.
@@ -423,14 +423,19 @@ set local role authenticated;
 set local request.jwt.claims =
   '{"sub": "77777777-0000-0000-0000-000000000009", "role": "authenticated"}';
 
+-- Under game invites only Ivy's own row waits; Jack is invited with no
+-- seat held. The group therefore needs ONE seat, not a table for two, and
+-- the promote_waitlist inside commit_booking seats her (and Hank) at once:
+-- two single-seat groups, one free seat at each table.
 select is(
   (select public.commit_booking(
       'e1e1e1e1-0000-0000-0000-000000000001',
       array['77777777-0000-0000-0000-000000000009',
             '66666666-0000-0000-0000-000000000010']::uuid[],
       '7ab1e000-0000-0000-0000-000000000001', false)->>'outcome'),
-  'waitlisted',
-  'a group that will not split waits until one table can hold it');
+  'seated',
+  'a pair that will not split no longer waits for a table for two: only the '
+  'sender needs a seat, and she is promoted straight into one');
 
 reset role;
 select is(
@@ -438,9 +443,18 @@ select is(
     where profile_id = '88888888-0000-0000-0000-000000000008'),
   'confirmed',
   'and committing it promoted the member who was already waiting');
+select ok(
+  (select status = 'invited' and invite_holds_seat = false
+          and event_table_id is null
+     from public.bookings
+    where profile_id = '66666666-0000-0000-0000-000000000010'),
+  'her partner is invited, holding no seat, because the game had no seat for him');
 
 -- ---------------------------------------------------------------------
--- One seat free, a splittable pair: an offer, immediately.
+-- A splittable pair into a full game: the sender waits, the partner is
+-- invited with no seat held. Only the sender's row is in the queue, so no
+-- partial offer is ever minted around an invitee (the partial-offer path
+-- itself is covered with direct fixtures in waitlist_promotion.test.sql).
 -- ---------------------------------------------------------------------
 set local role authenticated;
 set local request.jwt.claims =
@@ -452,54 +466,37 @@ select lives_ok(
       array['55555555-0000-0000-0000-000000000011',
             '44444444-0000-0000-0000-000000000012']::uuid[],
       '7ab1e000-0000-0000-0000-000000000001', true)$$,
-  'a splittable pair with one seat free is accepted onto the waitlist');
-
--- Kim's group lands on the waitlist behind Ivy/Jack's -- narratively. Both
--- commits ran inside this same test transaction, where now() is pinned to
--- the transaction start, so their waitlisted_at (and created_at) values tie
--- exactly; the ordering's final tiebreaker, group id, is a fresh random
--- uuid and settles the tie arbitrarily. That is fine for promote_waitlist
--- (a real tie genuinely doesn't matter -- nobody is disadvantaged either
--- way) but makes a bad fixture: "behind one other group" has to be true
--- unconditionally, not by the luck of two random uuids. Backdating Ivy and
--- Jack's own waitlisted_at, rather than advancing Kim's, keeps this test
--- reading the same clock direction as production -- the group that has
--- been waiting LONGER is the one further ahead.
-reset role;
-update public.booking_groups
-   set waitlisted_at = waitlisted_at - interval '1 minute'
- where created_by = '77777777-0000-0000-0000-000000000009';
-
-set local role authenticated;
-set local request.jwt.claims =
-  '{"sub": "55555555-0000-0000-0000-000000000011", "role": "authenticated"}';
+  'a splittable pair into a full game is accepted onto the waitlist');
 
 -- my_upcoming_bookings() -- what "Your games" reads -- must report the
--- same position booking_result already does, computed with the identical
--- (waitlisted_at, created_at, id) ordering promote_waitlist walks; a
--- screen that disagrees with the function that actually seats people is
--- worse than a screen that says nothing.
+-- same position booking_result does, computed with the identical
+-- (waitlisted_at, created_at, id) ordering promote_waitlist walks.
 select is(
   (select waitlist_position from public.my_upcoming_bookings()
     where event_id = 'e1e1e1e1-0000-0000-0000-000000000001'),
-  2,
-  'my_upcoming_bookings reports the same waitlist position booking_result '
-  'does -- 2nd, behind the one group ahead of it');
+  1,
+  'my_upcoming_bookings reports the waitlist position -- 1st, the only '
+  'group still waiting');
 
 reset role;
 select is(
-  (select offered_seat_count from public.promotion_offers po
-     join public.booking_groups bg on bg.id = po.group_id
-    where bg.created_by = '55555555-0000-0000-0000-000000000011'),
-  1,
-  'and is offered the one seat that exists, without waiting for the sweep');
-select is(
-  (select public.booking_result(bg.id)->'offer'->>'seats'
+  (select public.booking_result(bg.id)->>'waitlist_position'
      from public.booking_groups bg
     where bg.created_by = '55555555-0000-0000-0000-000000000011'),
   '1',
-  'and booking_result itself carries that offer -- reading only from '
-  'promotion_offers here would miss a rename inside the returned jsonb');
+  'and booking_result agrees');
+select ok(
+  (select status = 'invited' and invite_holds_seat = false
+          and event_table_id is null
+     from public.bookings
+    where profile_id = '44444444-0000-0000-0000-000000000012'),
+  'the partner is invited, holding no seat');
+select is(
+  (select count(*)::int from public.promotion_offers po
+     join public.booking_groups bg on bg.id = po.group_id
+    where bg.created_by = '55555555-0000-0000-0000-000000000011'),
+  0,
+  'and no offer is minted: nothing is free');
 
 -- ---------------------------------------------------------------------
 -- A cancelled group reports itself as cancelled, not lumped in with
@@ -520,6 +517,58 @@ select is(
                  where profile_id = 'cccccccc-0000-0000-0000-000000000003')),
   'cancelled',
   'a cancelled group is reported as cancelled, not seated');
+
+-- ---------------------------------------------------------------------
+-- A sender who is not playing, inviting into a full game: nobody in the
+-- group is queued, so the group is not a waiting group (it would sit in
+-- every waitlist_position count forever while promote_waitlist skipped
+-- it), yet booking_result still reports the waitlisted outcome the
+-- proposal showed.
+-- ---------------------------------------------------------------------
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "aaaaaaaa-0000-0000-0000-000000000001", "role": "authenticated"}';
+
+create temporary table carol_invite on commit drop as
+  select public.commit_booking(
+      'e1e1e1e1-0000-0000-0000-000000000001',
+      array['cccccccc-0000-0000-0000-000000000003']::uuid[],
+      null, true) as result;
+
+reset role;
+select is(
+  (select status::text from public.booking_groups
+    where id = (select (result->>'group_id')::uuid from carol_invite)),
+  'confirmed',
+  'an invites-only group into a full game is not a waiting group');
+select is(
+  (select result->>'outcome' from carol_invite),
+  'waitlisted',
+  'but the sender is told the invite would join the waitlist');
+select is(
+  (select result->>'waitlist_position' from carol_invite),
+  null,
+  'with no queue position -- nobody in it is queued until they accept');
+
+-- close_group_if_empty (P5): Kim leaves; her group now holds only Lee's
+-- pending invite, and must stop counting as a waiting group.
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "55555555-0000-0000-0000-000000000011", "role": "authenticated"}';
+
+select lives_ok(
+  $$select public.cancel_booking(
+      (select id from public.bookings
+        where profile_id = '55555555-0000-0000-0000-000000000011'))$$,
+  'the waiting sender leaves while her invite is still pending');
+
+reset role;
+select is(
+  (select status::text from public.booking_groups
+    where created_by = '55555555-0000-0000-0000-000000000011'),
+  'confirmed',
+  'a waitlisted group left holding only invites stops waiting (and stays '
+  'open for the pending invite)');
 
 -- ---------------------------------------------------------------------
 -- Tenancy.
