@@ -228,15 +228,21 @@ export default function ClubsScreen() {
   // First-run checklist progress for every club this member hosts. Derived
   // from head counts each time roles load; nothing about progress is stored.
   // Skips a club once its checklist is dismissed — fetching four head counts
-  // forever for a card nobody will see again is pure waste. `guides` is a
-  // dependency because `isVisible` is read here, not just `roles`; its
-  // identity only changes on a load/dismiss/reset (see lib/use-guides.tsx),
-  // so this does not refetch on unrelated renders.
+  // forever for a card nobody will see again is pure waste.
+  const hosted = roles
+    .filter((r) => r.role === 'host')
+    .map((r) => r.club_id)
+    .filter((id) => guides.isVisible(hostChecklistKey(id)));
+  // A stable primitive, not `guides` itself, is the effect's dependency
+  // below: `guides` is a fresh object on many renders (real hook and test
+  // mocks alike — see app/__tests__/guides-dashboard.test.tsx), and
+  // depending on its identity refetches every render, forever, silently,
+  // since a promise resolving into the same state looks like nothing
+  // happened. Sorted and joined so the effect only reruns when the actual
+  // SET of visible hosted clubs changes, not on every render or on a
+  // dismissal elsewhere that leaves this set untouched.
+  const hostedKey = [...hosted].sort().join(',');
   useEffect(() => {
-    const hosted = roles
-      .filter((r) => r.role === 'host')
-      .map((r) => r.club_id)
-      .filter((id) => guides.isVisible(hostChecklistKey(id)));
     if (hosted.length === 0) return;
     let cancelled = false;
     Promise.all(hosted.map(async (id) => [id, await fetchHostChecklistCounts(id)] as const)).then(
@@ -247,7 +253,10 @@ export default function ClubsScreen() {
     return () => {
       cancelled = true;
     };
-  }, [roles, guides]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `hostedKey` is
+    // `hosted`'s stable summary; `hosted` itself is intentionally excluded
+    // (see its own comment above).
+  }, [hostedKey]);
 
   // Mirrors `scopeClubId`'s own derivation (computed further down, past this
   // component's early returns for loading/no-session/no-clubs) directly off

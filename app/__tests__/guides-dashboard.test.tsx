@@ -188,8 +188,17 @@ vi.mock('../../lib/use-notifications-unread', () => ({
 
 const isVisible = vi.fn((_key: string) => true);
 const dismiss = vi.fn();
+// A single module-level object, not a fresh one per render/call: the real
+// hook (lib/use-guides.tsx) only changes identity on a load/dismiss/reset,
+// and app/clubs/index.tsx's checklist-counts effect depends on a value
+// derived from `guides`. A fresh object per render here would mask a
+// dependency-array regression that puts `guides` itself (or anything with
+// its per-render instability) back in that effect's deps — see the "fetches
+// host checklist counts exactly once" test below, which is what actually
+// catches that regression.
+const guidesMock = { isVisible, dismiss, reset: vi.fn() };
 vi.mock('../../lib/use-guides', () => ({
-  useGuides: () => ({ isVisible, dismiss, reset: vi.fn() }),
+  useGuides: () => guidesMock,
 }));
 
 const fetchHostChecklistCounts = vi.fn();
@@ -292,5 +301,12 @@ describe('dashboard guides', () => {
     await waitFor(() => expect(fetchMyRoles).toHaveBeenCalled());
     await screen.findAllByText('Riverside');
     expect(fetchHostChecklistCounts).not.toHaveBeenCalled();
+  });
+
+  it('fetches host checklist counts exactly once, not on every render', async () => {
+    fetchMyRoles.mockResolvedValue([{ club_id: 'club-1', role: 'host' }]);
+    render(<ClubsScreen />);
+    await screen.findByText('Get Riverside going');
+    expect(fetchHostChecklistCounts).toHaveBeenCalledTimes(1);
   });
 });
