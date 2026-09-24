@@ -23,6 +23,7 @@ import {
   type AttendanceState,
 } from '../../lib/attendance';
 import {
+  acceptBookingInvite,
   acceptPromotionOffer,
   cancelBooking,
   commitBooking,
@@ -54,6 +55,7 @@ import {
   headerScope,
   inScope,
   needAFourthAlerts,
+  pendingGameInvites,
 } from '../../lib/dashboard';
 import type { DashboardRow, FourthAlert } from '../../lib/dashboard';
 import { fetchUpcomingEvents, formatEventTime, formatFeeCents, formatEventWhen } from '../../lib/events';
@@ -345,6 +347,19 @@ export default function ClubsScreen() {
 
   function handleDecline(booking: MyBooking) {
     void runBookingAction(() => declineBooking(booking.booking_id));
+  }
+
+  function handleAcceptGameInvite(booking: MyBooking) {
+    void runBookingAction(() => acceptBookingInvite(booking.booking_id));
+  }
+
+  // "Can't make it" on a seat someone else secured for you (an accepted
+  // invite): cancel_booking, which tells the sender
+  // (booking_cancelled_by_member). Replaces the old Decline here --
+  // declining is for answering an invite, not for leaving a game you
+  // already said yes to.
+  function handleCantMakeIt(booking: MyBooking) {
+    void runBookingAction(() => cancelBooking(booking.booking_id));
   }
 
   function handleAcceptOffer(booking: MyBooking) {
@@ -765,6 +780,15 @@ export default function ClubsScreen() {
         onDecline={handleDeclineInvite}
       />
 
+      <GameInviteCards
+        invites={pendingGameInvites(bookings ?? []).filter((invite) =>
+          inScope(invite.club_id, selected),
+        )}
+        busy={busy}
+        onAccept={handleAcceptGameInvite}
+        onDecline={handleDecline}
+      />
+
       {list
         .filter((club) => hostClubIds.has(club.id) && inScope(club.id, selected))
         .map((club) => {
@@ -859,7 +883,7 @@ export default function ClubsScreen() {
             busy={busy}
             checkInBusy={checkInBusy}
             onJoin={joinGame}
-            onDecline={handleDecline}
+            onCantMakeIt={handleCantMakeIt}
             onAcceptOffer={handleAcceptOffer}
             onDeclineOffer={handleDeclineOffer}
             onLeaveWaitlist={handleLeaveWaitlist}
@@ -920,6 +944,64 @@ function PendingInviteCards({
 }
 
 /**
+ * A pending game invite (bookings.status 'invited', from
+ * my_upcoming_bookings) -- the invitee's one dashboard surface for
+ * answering it. Sits beside the club-invite card: both are "somebody asked
+ * you something", and neither belongs in "Your games" until it is
+ * answered.
+ */
+function GameInviteCards({
+  invites,
+  busy,
+  onAccept,
+  onDecline,
+}: {
+  invites: MyBooking[];
+  busy: boolean;
+  onAccept: (booking: MyBooking) => void;
+  onDecline: (booking: MyBooking) => void;
+}) {
+  return (
+    <>
+      {invites.map((invite) => {
+        const where = invite.table_label
+          ? ` — ${invite.table_label}`
+          : invite.invite_holds_seat === false
+            ? " — you'd join the waitlist"
+            : '';
+        return (
+          <Card key={invite.booking_id}>
+            <Text style={styles.inviteHeading}>
+              {`${invite.booked_by_name} invited you to ${invite.event_title}${where}`}
+            </Text>
+            <Text style={styles.help}>
+              {`${invite.club_name} · ${formatEventWhen(invite.starts_at, invite.club_timezone)}`}
+            </Text>
+            <Button
+              block
+              disabled={busy}
+              onPress={() => onAccept(invite)}
+              accessibilityLabel={`Accept the invite to ${invite.event_title}`}
+            >
+              Accept
+            </Button>
+            <Button
+              variant="ghost"
+              big={false}
+              disabled={busy}
+              onPress={() => onDecline(invite)}
+              accessibilityLabel={`Decline ${invite.booked_by_name}'s invite to ${invite.event_title}`}
+            >
+              Decline
+            </Button>
+          </Card>
+        );
+      })}
+    </>
+  );
+}
+
+/**
  * One row of "Your games": the artboard's date tile, the club and title, and
  * a single right-hand affordance — Join for an open game the member is not
  * in yet, "Seated" for one they hold, "Hosting" for an in-progress game they
@@ -936,7 +1018,7 @@ function GameRow({
   busy,
   checkInBusy,
   onJoin,
-  onDecline,
+  onCantMakeIt,
   onAcceptOffer,
   onDeclineOffer,
   onLeaveWaitlist,
@@ -947,7 +1029,7 @@ function GameRow({
   busy: boolean;
   checkInBusy: boolean;
   onJoin: (row: DashboardRow) => void;
-  onDecline: (booking: MyBooking) => void;
+  onCantMakeIt: (booking: MyBooking) => void;
   onAcceptOffer: (booking: MyBooking) => void;
   onDeclineOffer: (booking: MyBooking) => void;
   onLeaveWaitlist: (booking: MyBooking) => void;
@@ -1061,7 +1143,7 @@ function GameRow({
           youId={youId}
           busy={busy}
           checkInBusy={checkInBusy}
-          onDecline={onDecline}
+          onCantMakeIt={onCantMakeIt}
           onAcceptOffer={onAcceptOffer}
           onDeclineOffer={onDeclineOffer}
           onLeaveWaitlist={onLeaveWaitlist}
@@ -1075,8 +1157,8 @@ function GameRow({
 /**
  * The seat this member holds, and whatever they can do about it. Each booking
  * carries its own action, in priority order: a live offer (accept/decline,
- * with its countdown) beats a seat someone else booked for you (decline),
- * which beats a self-held waitlist spot (leave the waitlist). An ordinary
+ * with its countdown) beats a seat someone else booked for you (can't make
+ * it), which beats a self-held waitlist spot (leave the waitlist). An ordinary
  * confirmed seat you booked yourself has nothing to press.
  *
  * Split out of `GameRow` rather than inlined behind a `booking !== null`
@@ -1089,7 +1171,7 @@ function BookingSeatControls({
   youId,
   busy,
   checkInBusy,
-  onDecline,
+  onCantMakeIt,
   onAcceptOffer,
   onDeclineOffer,
   onLeaveWaitlist,
@@ -1099,7 +1181,7 @@ function BookingSeatControls({
   youId: string | undefined;
   busy: boolean;
   checkInBusy: boolean;
-  onDecline: (booking: MyBooking) => void;
+  onCantMakeIt: (booking: MyBooking) => void;
   onAcceptOffer: (booking: MyBooking) => void;
   onDeclineOffer: (booking: MyBooking) => void;
   onLeaveWaitlist: (booking: MyBooking) => void;
@@ -1213,10 +1295,10 @@ function BookingSeatControls({
               variant="ghost"
               big={false}
               disabled={busy}
-              onPress={() => onDecline(booking)}
-              accessibilityLabel={`Decline the seat ${booking.booked_by_name} booked`}
+              onPress={() => onCantMakeIt(booking)}
+              accessibilityLabel={`Can't make ${booking.event_title} — tell ${booking.booked_by_name}`}
             >
-              Decline
+              {"Can't make it"}
             </Button>
           ) : null}
         </>

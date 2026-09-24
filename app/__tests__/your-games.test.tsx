@@ -7,6 +7,7 @@ const declineBooking = vi.fn();
 const acceptPromotionOffer = vi.fn();
 const declinePromotionOffer = vi.fn();
 const cancelBooking = vi.fn();
+const acceptBookingInvite = vi.fn();
 
 vi.mock('../../lib/bookings', async () => {
   const actual = await vi.importActual<typeof import('../../lib/bookings')>(
@@ -19,6 +20,7 @@ vi.mock('../../lib/bookings', async () => {
     acceptPromotionOffer: (...a: unknown[]) => acceptPromotionOffer(...a),
     declinePromotionOffer: (...a: unknown[]) => declinePromotionOffer(...a),
     cancelBooking: (...a: unknown[]) => cancelBooking(...a),
+    acceptBookingInvite: (...a: unknown[]) => acceptBookingInvite(...a),
   };
 });
 
@@ -192,6 +194,7 @@ beforeEach(() => {
   acceptPromotionOffer.mockReset();
   declinePromotionOffer.mockReset();
   cancelBooking.mockReset();
+  acceptBookingInvite.mockReset();
   recordAttendance.mockReset();
   clearAttendance.mockReset();
   fetchMyClubs.mockReset();
@@ -257,22 +260,27 @@ describe('Your games', () => {
     expect(screen.getByText(/St Mary's Hall/)).toBeTruthy();
   });
 
-  it('says who booked a seat for you, and offers a way out', async () => {
+  it("says who booked a seat for you, and offers Can't make it", async () => {
     fetchMyUpcomingBookings.mockResolvedValue([
       booking({ booked_by: 'p2', booked_by_name: 'Jane P.' }),
     ]);
-    declineBooking.mockResolvedValue({ error: null });
+    cancelBooking.mockResolvedValue({ error: null });
     render(<ClubsScreen />);
     expect(await screen.findByText('Jane P. booked this for you')).toBeTruthy();
-    fireEvent.click(screen.getByLabelText('Decline the seat Jane P. booked'));
-    await waitFor(() => expect(declineBooking).toHaveBeenCalledWith('b1'));
+    expect(screen.getByText("Can't make it")).toBeTruthy();
+    fireEvent.click(
+      screen.getByLabelText("Can't make Tuesday game — tell Jane P."),
+    );
+    await waitFor(() => expect(cancelBooking).toHaveBeenCalledWith('b1'));
+    expect(declineBooking).not.toHaveBeenCalled();
   });
 
-  it('offers no decline on a seat you booked yourself', async () => {
+  it('offers no way out on a seat you booked yourself', async () => {
     fetchMyUpcomingBookings.mockResolvedValue([booking()]);
     render(<ClubsScreen />);
     await screen.findByText("St Mary's Hall");
     expect(screen.queryByText(/booked this for you/)).toBeNull();
+    expect(screen.queryByText("Can't make it")).toBeNull();
   });
 
   it('shows a live offer with its countdown', async () => {
@@ -432,12 +440,12 @@ describe('Your games', () => {
     fetchMyUpcomingBookings.mockResolvedValue([
       booking({ booked_by: 'p2', booked_by_name: 'Jane P.' }),
     ]);
-    declineBooking.mockResolvedValue({
+    cancelBooking.mockResolvedValue({
       error: 'That is not your seat to change.',
     });
     render(<ClubsScreen />);
     fireEvent.click(
-      await screen.findByLabelText('Decline the seat Jane P. booked'),
+      await screen.findByLabelText("Can't make Tuesday game — tell Jane P."),
     );
     expect(
       await screen.findByText('That is not your seat to change.'),
@@ -574,7 +582,7 @@ describe('Check-in', () => {
   // kickoff, where cancel_booking/decline_booking both now refuse with
   // "event already started". A button whose only possible outcome is an
   // error should not be offered.
-  it('hides Decline on an in-progress booking someone else made, but keeps the check-in control', async () => {
+  it("hides Can't make it on an in-progress booking someone else made, but keeps the check-in control", async () => {
     fetchMyUpcomingBookings.mockResolvedValue([
       booking({
         starts_at: '2026-08-25T08:00:00Z', // before the frozen "now" of 10:00
@@ -587,10 +595,10 @@ describe('Check-in', () => {
     ]);
     render(<ClubsScreen />);
     // The friend note is information, not an action -- it stays. Only the
-    // dead-end Decline button is gated on `starts_at > now()`.
+    // dead-end Can't make it button is gated on `starts_at > now()`.
     expect(await screen.findByText('Jane P. booked this for you')).toBeTruthy();
     expect(
-      screen.queryByLabelText('Decline the seat Jane P. booked'),
+      screen.queryByLabelText("Can't make Tuesday game — tell Jane P."),
     ).toBeNull();
     expect(await screen.findByLabelText('Here: you')).toBeTruthy();
   });
@@ -693,5 +701,59 @@ describe('Promotion offer expiry', () => {
     expect(
       screen.queryByLabelText('Decline the 2 seats offered for Tuesday game'),
     ).toBeNull();
+  });
+});
+
+describe('Game invites on the dashboard', () => {
+  function invite(overrides: Partial<MyBooking> = {}): MyBooking {
+    return booking({
+      status: 'invited',
+      booked_by: 'p2',
+      booked_by_name: 'Jane P.',
+      invite_holds_seat: true,
+      ...overrides,
+    });
+  }
+
+  it('shows a pending invite as its own card, not a "Your games" row', async () => {
+    fetchMyUpcomingBookings.mockResolvedValue([invite()]);
+    render(<ClubsScreen />);
+    expect(
+      await screen.findByText('Jane P. invited you to Tuesday game — Table 2'),
+    ).toBeTruthy();
+    expect(screen.queryByText('Seated · Table 2')).toBeNull();
+    expect(screen.queryByText('Jane P. booked this for you')).toBeNull();
+  });
+
+  it("says an invite into a full game would join the waitlist", async () => {
+    fetchMyUpcomingBookings.mockResolvedValue([
+      invite({ event_table_id: null, table_label: null, invite_holds_seat: false }),
+    ]);
+    render(<ClubsScreen />);
+    expect(
+      await screen.findByText(
+        "Jane P. invited you to Tuesday game — you'd join the waitlist",
+      ),
+    ).toBeTruthy();
+  });
+
+  it('accepts from the card', async () => {
+    fetchMyUpcomingBookings.mockResolvedValue([invite()]);
+    acceptBookingInvite.mockResolvedValue({ error: null });
+    render(<ClubsScreen />);
+    fireEvent.click(
+      await screen.findByLabelText('Accept the invite to Tuesday game'),
+    );
+    await waitFor(() => expect(acceptBookingInvite).toHaveBeenCalledWith('b1'));
+  });
+
+  it('declines from the card', async () => {
+    fetchMyUpcomingBookings.mockResolvedValue([invite()]);
+    declineBooking.mockResolvedValue({ error: null });
+    render(<ClubsScreen />);
+    fireEvent.click(
+      await screen.findByLabelText("Decline Jane P.'s invite to Tuesday game"),
+    );
+    await waitFor(() => expect(declineBooking).toHaveBeenCalledWith('b1'));
   });
 });
