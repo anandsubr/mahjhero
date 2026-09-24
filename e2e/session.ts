@@ -2,6 +2,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import { STATIC_GUIDE_KEYS } from '../lib/guides';
 
 /**
  * The one place the service_role key is read and the one place the local-only
@@ -37,8 +38,6 @@ function adminClient(purpose: string): SupabaseClient {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 }
-
-const STATIC_GUIDE_KEYS = ['player-intro', 'tip:event', 'tip:new-game', 'tip:check-in', 'tip:club'];
 
 /**
  * Existing baselines predate first-run guidance; every one of them would
