@@ -505,3 +505,79 @@ describe('SeatGrid: the point badge', () => {
     expect(screen.queryByTestId('badge-round-b1')).toBeNull();
   });
 });
+
+describe('SeatGrid: held seats (game invites)', () => {
+  const held = {
+    bookingId: 'b9',
+    profileId: 'p9',
+    name: 'Jane P.',
+    isYou: false,
+    invited: true,
+  };
+
+  it('draws a named held seat with an Invited tag, and counts it as taken', () => {
+    render(
+      <SeatGrid
+        tableLabel="Table 1"
+        capacity={2}
+        seats={[seats[1], held]}
+        onTakeSeat={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('Jane P.')).toBeTruthy();
+    expect(screen.getByText('Invited')).toBeTruthy();
+    expect(screen.queryByLabelText('Take a seat at Table 1')).toBeNull();
+  });
+
+  it('draws an anonymous held seat as a single "Invited"', () => {
+    render(
+      <SeatGrid
+        tableLabel="Table 1"
+        capacity={4}
+        seats={[{ ...held, profileId: '', name: null }]}
+      />,
+    );
+    expect(screen.getAllByText('Invited')).toHaveLength(1);
+  });
+
+  it('offers only Withdraw invite on a held seat, even to an organizer', () => {
+    const onWithdrawInvite = vi.fn();
+    function Harness() {
+      const [open, setOpen] = useState<string | null>(null);
+      return (
+        <SeatGrid
+          tableLabel="Table 1"
+          capacity={4}
+          seats={[{ ...held, canWithdraw: true }]}
+          otherTables={[{ id: 't2', label: 'Table 2' }]}
+          onMove={vi.fn()}
+          onRemove={vi.fn()}
+          openBookingId={open}
+          onToggleManage={(id) => setOpen((cur) => (cur === id ? null : id))}
+          onWithdrawInvite={onWithdrawInvite}
+        />
+      );
+    }
+    render(<Harness />);
+    fireEvent.click(screen.getByLabelText('Manage the invite for Jane P.'));
+    expect(screen.queryByText('Move to Table 2')).toBeNull();
+    expect(screen.queryByText('Remove from game')).toBeNull();
+    fireEvent.click(screen.getByLabelText('Withdraw the invite to Jane P.'));
+    expect(onWithdrawInvite).toHaveBeenCalledWith('b9');
+  });
+
+  it('is not tappable for a viewer who may not withdraw it', () => {
+    render(
+      <SeatGrid
+        tableLabel="Table 1"
+        capacity={4}
+        seats={[{ ...held, canWithdraw: false }]}
+        openBookingId={null}
+        onToggleManage={vi.fn()}
+        onWithdrawInvite={vi.fn()}
+      />,
+    );
+    expect(screen.queryByLabelText('Manage the invite for Jane P.')).toBeNull();
+    expect(screen.getByText('Jane P.')).toBeTruthy();
+  });
+});

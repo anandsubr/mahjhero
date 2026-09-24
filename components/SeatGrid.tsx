@@ -13,7 +13,10 @@ export type Seat = {
   /** Needed for `onRecordRound` (Task 4) -- record_round takes a winner's
    *  profile id, not a booking id. */
   profileId: string;
-  name: string;
+  /** Null only for an invited seat the viewer may not see the name of
+   *  (event_seating hides invite-only invitees from everyone but
+   *  organizers, the sender and the invitee). */
+  name: string | null;
   isYou: boolean;
   /** This seat's running point total at this table, or null/omitted if
    *  they have never won a round here -- no badge renders in that case.
@@ -26,6 +29,14 @@ export type Seat = {
    *  the lead gets the star, not just whoever reached it first. Optional,
    *  same reasoning as `points` -- defaults to false when omitted. */
   isLeader?: boolean;
+  /** A pending game invite holding this seat ('invited' booking). Drawn
+   *  dimmed with an "Invited" tag; never offered Move / Remove / Leave /
+   *  Record -- none of those apply until the invitee accepts, and
+   *  place_booking refuses invited rows. */
+  invited?: boolean;
+  /** Invited seats only: this viewer may withdraw it (an organizer, or the
+   *  sender). Computed by the caller (TableCard). */
+  canWithdraw?: boolean;
 };
 
 function SeatBadge({ seat }: { seat: Seat }) {
@@ -126,6 +137,10 @@ type Props = {
    *  screen, so the panel has to open on either one alone. */
   canRecordRound?: boolean;
   onRecordRound?: (profileId: string, points: number) => void;
+  /** Withdraw a held invite. An invited seat opens a panel only when it
+   *  has `canWithdraw`, this handler, and `onToggleManage` -- and that
+   *  panel's one action is this, in place of Move / Remove. */
+  onWithdrawInvite?: (bookingId: string) => void;
 };
 
 /**
@@ -252,7 +267,115 @@ type Props = {
  * `accessibilityState` does NOT turn it red here — the `disabled` prop's
  * own effect on `Pressable` already covers it, which is the mutation-tested
  * evidence for this note.)
+ *
+ * ## Held seats (game invites)
+ *
+ * A seat with `invited: true` is a pending invite holding it. It renders
+ * through `InvitedSeat` (above) and never through the occupied-seat
+ * branches below, so none of Move / Remove / Leave / Record can reach an
+ * invited booking.
  */
+/**
+ * A seat held for a pending game invite. Taken (it counts toward the
+ * grid's filled seats, so no Empty cell is drawn for it), but not by
+ * someone who has said yes: dimmed and dashed, the invitee's name plus an
+ * "Invited" tag -- or, when the viewer may not see who (an invite-only
+ * game's other members), the single word "Invited".
+ *
+ * The only thing anyone can do to it is withdraw it, and only the sender or
+ * an organizer (`seat.canWithdraw`, computed by TableCard) -- so its panel
+ * carries that one action instead of Move / Remove / Leave / Record.
+ */
+function InvitedSeat({
+  seat,
+  busy,
+  open,
+  onToggleManage,
+  onWithdrawInvite,
+}: {
+  seat: Seat;
+  busy: boolean;
+  open: boolean;
+  onToggleManage?: (bookingId: string) => void;
+  onWithdrawInvite?: (bookingId: string) => void;
+}) {
+  const shownName = seat.isYou ? 'You' : seat.name;
+  const nameText = (
+    <Text
+      style={[styles.name, styles.nameInvited]}
+      numberOfLines={1}
+      ellipsizeMode="tail"
+    >
+      {shownName ?? 'Invited'}
+    </Text>
+  );
+  // A named held seat carries its own tag; an anonymous one already reads
+  // "Invited" as its name, so no second copy.
+  const tag = shownName !== null ? <Text style={styles.invitedTag}>Invited</Text> : null;
+  const manageable = Boolean(seat.canWithdraw && onWithdrawInvite && onToggleManage);
+
+  if (!manageable) {
+    return (
+      <View style={[styles.seat, styles.seatInvited, styles.seatRow]}>
+        {nameText}
+        {tag}
+      </View>
+    );
+  }
+
+  const label = `Manage the invite for ${seat.name ?? 'this seat'}`;
+  const toggle = () => onToggleManage!(seat.bookingId);
+
+  if (!open) {
+    return (
+      <Pressable
+        style={[styles.seat, styles.seatInvited]}
+        onPress={busy ? undefined : toggle}
+        disabled={busy}
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        aria-expanded={false}
+      >
+        <View style={styles.nameRow}>
+          {nameText}
+          <Text aria-hidden style={styles.chevron}>▾</Text>
+          {tag}
+        </View>
+      </Pressable>
+    );
+  }
+
+  return (
+    <View style={[styles.seat, styles.seatOpen, styles.seatInvited]}>
+      <Pressable
+        onPress={busy ? undefined : toggle}
+        disabled={busy}
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        aria-expanded
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+      >
+        <View style={styles.nameRow}>
+          {nameText}
+          <Text aria-hidden style={styles.chevron}>▴</Text>
+          {tag}
+        </View>
+      </Pressable>
+      <View style={styles.manageActions}>
+        <Button
+          variant="ghost"
+          big={false}
+          disabled={busy}
+          onPress={() => onWithdrawInvite!(seat.bookingId)}
+          accessibilityLabel={`Withdraw the invite to ${seat.name ?? 'this seat'}`}
+        >
+          Withdraw invite
+        </Button>
+      </View>
+    </View>
+  );
+}
+
 export default function SeatGrid({
   tableLabel,
   capacity,
@@ -268,6 +391,7 @@ export default function SeatGrid({
   onToggleManage,
   canRecordRound,
   onRecordRound,
+  onWithdrawInvite,
 }: Props) {
   const [recordingBookingId, setRecordingBookingId] = useState<string | null>(null);
   const empties = seatsRemaining(capacity, seats.length);
@@ -279,6 +403,19 @@ export default function SeatGrid({
   return (
     <View style={styles.grid}>
       {seats.map((seat) => {
+        if (seat.invited) {
+          return (
+            <InvitedSeat
+              key={seat.bookingId}
+              seat={seat}
+              busy={busy}
+              open={seat.bookingId === openBookingId}
+              onToggleManage={onToggleManage}
+              onWithdrawInvite={onWithdrawInvite}
+            />
+          );
+        }
+
         const displayName = seat.isYou ? 'You' : seat.name;
         // See the "A member's own seat" section of this component's
         // docstring for why these two are separate booleans rather than one
@@ -534,6 +671,26 @@ const styles = StyleSheet.create({
     gap: space[2],
   },
   seatYou: { backgroundColor: colors.accent2Color },
+  // A held seat (pending game invite): taken, but not by someone who has
+  // said yes yet -- lighter fill and a dashed edge so it reads between
+  // "Empty" and a filled seat. textMuted on surface is already pinned AA
+  // in lib/theme.test.ts.
+  seatInvited: {
+    backgroundColor: colors.surface,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    borderColor: colors.neutral[600],
+  },
+  nameInvited: {
+    color: colors.textMuted,
+    fontStyle: 'italic',
+  },
+  invitedTag: {
+    fontFamily: type.bodySemiBold,
+    fontSize: type.size.helper,
+    color: colors.textMuted,
+    marginLeft: 'auto',
+  },
   // Read-only occupied seats have no nameRow of their own (that wrapper is
   // only used by the manageable Pressable/open-panel branches) -- this puts
   // the name and the trailing badge on the same row for that plain case.
