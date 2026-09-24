@@ -1827,7 +1827,8 @@ describe.runIf(reachable || required)(
         [
           'booked_by', 'booked_by_name', 'booking_id', 'created_at',
           'display_name', 'event_table_id', 'group_id', 'group_status',
-          'profile_id', 'skill_level', 'status', 'waitlist_position',
+          'invite_holds_seat', 'profile_id', 'skill_level', 'status',
+          'waitlist_position',
         ].sort(),
       );
       // Enums arrive as strings. A typo in the TS union would type-check
@@ -2271,6 +2272,18 @@ describe.runIf(reachable || required)('attendance schema contract', () => {
         row!.check_in_closes_at as string,
       ),
     ).toBe(true);
+  });
+
+  it('returns invite_holds_seat on my_upcoming_bookings rows, null for an ordinary booking', async () => {
+    const { data, error } = await supabase.rpc('my_upcoming_bookings');
+    expect(error, `my_upcoming_bookings failed: ${error?.message}`).toBeNull();
+    const rows = data as Record<string, unknown>[];
+    const row = rows.find((r) => r.event_id === eventId);
+    expect(row, 'my_upcoming_bookings did not return the seeded booking').toBeDefined();
+    // Present as a key (MyBooking.invite_holds_seat), and null because this
+    // seeded booking is confirmed, not a pending invite.
+    expect(row).toHaveProperty('invite_holds_seat');
+    expect(row!.invite_holds_seat).toBeNull();
   });
 });
 
