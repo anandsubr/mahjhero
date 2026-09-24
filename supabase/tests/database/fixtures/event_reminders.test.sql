@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(10);
+select plan(11);
 
 insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-000000000001', 'alice@example.com'),
@@ -108,12 +108,31 @@ insert into public.bookings
    'cccccccc-0000-0000-0000-000000000003',
    'cccccccc-0000-0000-0000-000000000003', 'waitlisted');
 
+-- Game invites: Alice holds a pending invite to tonight's game, seat
+-- held. She is not coming until she accepts, so she is not reminded.
+insert into public.bookings
+  (group_id, event_id, club_id, event_table_id, profile_id, booked_by,
+   status, invite_holds_seat)
+  values
+  ('9409409e-0000-0000-0000-000000000001',
+   'e1e1e1e1-0000-0000-0000-000000000001',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   '7ab1e000-0000-0000-0000-000000000001',
+   'aaaaaaaa-0000-0000-0000-000000000001',
+   'bbbbbbbb-0000-0000-0000-000000000002', 'invited', true);
+
 -- Three: two thresholds for tonight's game, one for tomorrow's.
 select is(
   public.queue_event_reminders(),
   3,
   'each crossed threshold queues one reminder per confirmed booking'
 );
+select is(
+  (select count(*)::int from public.notification_outbox
+    where kind = 'event_reminder'
+      and recipient_id = 'aaaaaaaa-0000-0000-0000-000000000001'),
+  0,
+  'a pending invitee gets no reminder -- reminders are for confirmed seats');
 select is(
   (select count(*)::int from public.notification_outbox
     where kind = 'event_reminder'
