@@ -1449,6 +1449,34 @@ describe('pending club invites', () => {
     expect(await screen.findByText('That invite is no longer valid.')).toBeTruthy();
     expect(screen.getByText(/Harbour Mah Jongg invited you to join/)).toBeTruthy();
   });
+
+  // The regression this covers: someone invited to their very first club has
+  // zero memberships, so `fetchMyClubs` returns `[]` and the screen takes
+  // its "you're not in a club yet" early return -- which used to return
+  // before pendingInvites was ever rendered anywhere, making the invite
+  // permanently unreachable for exactly the person who needs it most.
+  it('still shows a pending invite for a member in no clubs at all', async () => {
+    fetchMyClubs.mockResolvedValue([]);
+    fetchMyPendingInvites.mockResolvedValue([INVITE]);
+
+    render(<ClubsScreen />);
+
+    expect(await screen.findByText(/Harbour Mah Jongg invited you to join/)).toBeTruthy();
+    expect(screen.getByText(/not in a club yet/i)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Join Harbour Mah Jongg' })).toBeTruthy();
+  });
+
+  it('accepts a pending invite from the zero-clubs screen the same way as the populated one', async () => {
+    fetchMyClubs.mockResolvedValue([]);
+    fetchMyPendingInvites.mockResolvedValue([INVITE]);
+    acceptClubInvite.mockResolvedValue({ clubId: 'club-9', eventId: null, error: null });
+
+    render(<ClubsScreen />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Join Harbour Mah Jongg' }));
+
+    await waitFor(() => expect(acceptClubInvite).toHaveBeenCalledWith('invite-1'));
+    expect(push).toHaveBeenCalledWith('/clubs/club-9');
+  });
 });
 
 describe('organizing an unbooked, in-progress game', () => {
