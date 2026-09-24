@@ -16,6 +16,7 @@ import SkillLevelPips from '../../../components/SkillLevelPips';
 import Tag from '../../../components/Tag';
 import TabBar from '../../../components/TabBar';
 import TextField from '../../../components/TextField';
+import TipCard, { TipText } from '../../../components/TipCard';
 import Toggle from '../../../components/Toggle';
 import { SendIcon, TrashIcon } from '../../../components/icons';
 import {
@@ -33,6 +34,7 @@ import { isValidEmail } from '../../../lib/auth';
 import { GENERIC_ERROR } from '../../../lib/constants';
 import { openThreadForClub } from '../../../lib/messages';
 import { useSession } from '../../../lib/session';
+import { useGuides } from '../../../lib/use-guides';
 import { colors, space, type } from '../../../lib/theme';
 
 export default function ClubDetailScreen() {
@@ -43,6 +45,7 @@ export default function ClubDetailScreen() {
   const { session, loading } = useSession();
   const userId = session?.user.id;
   const router = useRouter();
+  const guides = useGuides();
 
   const [club, setClub] = useState<Club | null>(null);
   const [roster, setRoster] = useState<ClubMember[]>([]);
@@ -426,6 +429,16 @@ export default function ClubDetailScreen() {
 
       {mayInvite ? (
         <>
+          {guides.isVisible('tip:club') ? (
+            <TipCard tag="Tip" title="Bringing people in" onDismiss={() => guides.dismiss('tip:club')}>
+              <TipText>
+                Use Invite by email for one person, or Import a roster for a whole list.
+              </TipText>
+              <TipText>
+                They'll see the invite on their dashboard once they sign in with that email.
+              </TipText>
+            </TipCard>
+          ) : null}
           <TextField
             label="Invite by email"
             value={inviteEmail}

@@ -12,6 +12,7 @@ import {
   seedTableWithRound,
   seedThreadWithAttachments,
   seedUnreadClubMessage,
+  setDismissedGuides,
   storageKeyFor,
 } from './session';
 
@@ -89,7 +90,12 @@ async function settle(page: Page) {
  * if a screen grows or shrinks, Playwright reports a size mismatch, which is
  * a diff, which is the point.
  */
-async function captureScreen(page: Page, vp: Viewport, name: string) {
+async function captureScreen(
+  page: Page,
+  vp: Viewport,
+  name: string,
+  extraMask: string[] = [],
+) {
   await settle(page);
 
   // Grow-and-resettle can itself introduce a little more overflow (a taller
@@ -136,7 +142,18 @@ async function captureScreen(page: Page, vp: Viewport, name: string) {
     // maxDiffPixels's own comment asks for, rather than a wider tolerance
     // that would blunt this suite everywhere. A no-op on any screen that
     // doesn't render the tile.
-    mask: [page.locator('[data-testid="thread-avatar-club-tile"]')],
+    //
+    // `extraMask` layers in additional per-call CSS selectors (e.g. the
+    // dashboard's club-chip glyphs, components/ClubChips.tsx's
+    // `chip-glyph-<clubId>` tiles) for the same class of sub-pixel SVG
+    // jitter on a screen-specific element, without widening this global
+    // list — a global addition would shift the masked region on every
+    // other baseline that uses captureScreen, forcing a regeneration of
+    // all of them instead of just the one screen that actually needs it.
+    mask: [
+      page.locator('[data-testid="thread-avatar-club-tile"]'),
+      ...extraMask.map((selector) => page.locator(selector)),
+    ],
   });
 }
 
@@ -329,6 +346,11 @@ test.describe('signed in', () => {
   test.beforeEach(async ({ page }) => {
     const session = await mintSession(`visual-${Date.now()}@example.com`);
     userId = session.user_id;
+    // First-run guidance predates almost every baseline in this file. This
+    // user belongs to no club yet, so this only dismisses the static keys —
+    // the nested `with a seeded club` hook below calls it again once this
+    // user hosts a club, to also cover that club's host checklist.
+    await setDismissedGuides(userId, 'all');
     const key = storageKeyFor(SUPABASE_URL);
     await page.addInitScript(
       ([k, s]) => window.localStorage.setItem(k, JSON.stringify(s)),
@@ -472,6 +494,11 @@ test.describe('signed in', () => {
       // client and no spurious token refresh is triggered.
       await page.clock.setFixedTime(new Date('2026-08-22T16:00:00Z'));
       seeded = await seedClubWithEvent(userId);
+      // Re-dismiss with 'all' now that this user hosts Riverside and
+      // Thursday Casuals — both clubs' `host-checklist:<id>` keys need to be
+      // in `dismissed_guides` too, or every baseline below would grow a
+      // checklist card that predates this feature.
+      await setDismissedGuides(userId, 'all');
     });
 
     for (const vp of WIDTHS) {
@@ -1318,6 +1345,64 @@ test.describe('signed in', () => {
         await expect(page.getByText('$15 owed').first()).toBeVisible();
         await captureScreen(page, vp, `check-in-open-seating-${vp.name}.png`);
       });
+
+      // The dashboard's host checklist, not the player-intro card: this
+      // user hosts Riverside (and Thursday Casuals), and `hostChecklist`
+      // (lib/guides.ts) is NOT complete for either — `seedClubWithEvent`
+      // only ever adds the host to `club_members` (both clubs read
+      // `members === 1`, `pendingInvites === 0`), so the "Invite your
+      // players" step stays undone on BOTH clubs' cards even though
+      // "Schedule your first game" and the optional "Say hello"
+      // (Riverside's seeded broadcast) are both done. Checked against the
+      // real screen rather than assumed: both cards render, so every
+      // assertion below is scoped to Riverside's own card
+      // (`testID="host-checklist-<clubId>"`, app/clubs/index.tsx) — the
+      // bare text queries this test started with hit "Schedule your first
+      // game" and "Invite your players" on BOTH cards and failed Playwright
+      // strict mode.
+      test(`dashboard with host checklist at ${vp.name}`, async ({ page }) => {
+        await setDismissedGuides(userId, []);
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        await page.goto('/clubs');
+        const card = page.getByTestId(`host-checklist-${seeded.clubId}`);
+        await expect(card.getByText('Get Riverside Mah Jongg going')).toBeVisible();
+        await expect(card.getByText('Schedule your first game')).toBeVisible();
+        await expect(card.getByText('Invite your players')).toBeVisible();
+        await expect(card.getByRole('button', { name: 'Got it: Get Riverside Mah Jongg going' })).toBeVisible();
+        // Same sub-pixel SVG jitter captureScreen's own thread-avatar mask
+        // exists for, on this screen's dashboard club-chip tiles instead
+        // (components/ClubChips.tsx's `chip-glyph-<clubId>` wrapper around
+        // each MahjongTile glyph) — this dashboard renders two clubs'
+        // chips, so the prefix selector masks both rather than naming one
+        // clubId and missing the other.
+        await captureScreen(page, vp, `clubs-guides-${vp.name}.png`, [
+          '[data-testid^="chip-glyph-"]',
+        ]);
+      });
+
+      // The "Add a game" screen's own tip — not gated by role in the
+      // component, but only a host ever reaches this route in practice, and
+      // this user is Riverside's host.
+      test(`new event with tip at ${vp.name}`, async ({ page }) => {
+        await setDismissedGuides(userId, []);
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        await page.goto(`/clubs/${seeded.clubId}/events/new`);
+        await expect(page.getByText('Setting up a game')).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Got it: Setting up a game' })).toBeVisible();
+        await captureScreen(page, vp, `new-event-tip-${vp.name}.png`);
+      });
     }
   });
+
+  for (const vp of WIDTHS) {
+    // The replayable half of first-run guidance (app/how-it-works.tsx) —
+    // reachable from Profile regardless of whether any tip has ever been
+    // dismissed, so this test needs no `setDismissedGuides` call of its own.
+    test(`how it works at ${vp.name}`, async ({ page }) => {
+      await page.setViewportSize({ width: vp.width, height: vp.height });
+      await page.goto('/how-it-works');
+      await expect(page.getByText('Show tips again')).toBeVisible();
+      await captureScreen(page, vp, `how-it-works-${vp.name}.png`);
+    });
+  }
 });

@@ -238,6 +238,16 @@ export default function ProfileScreen() {
         <Text style={styles.help}>The people you can hold seats with</Text>
       </Card>
 
+      <Card style={styles.settingsCard}>
+        <View style={styles.settingsRow}>
+          <Text style={styles.settingsLabel}>How it works</Text>
+          <Link href="/how-it-works" style={styles.editLink}>
+            <Text style={styles.editLinkText}>Open</Text>
+          </Link>
+        </View>
+        <Text style={styles.help}>Getting started, and tips you've hidden</Text>
+      </Card>
+
       {isAdmin ? (
         <Card style={styles.settingsCard}>
           <View style={styles.settingsRow}>

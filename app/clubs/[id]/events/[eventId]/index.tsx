@@ -18,6 +18,7 @@ import Tag from '../../../../../components/Tag';
 import TabBar from '../../../../../components/TabBar';
 import TableCard from '../../../../../components/TableCard';
 import TextField from '../../../../../components/TextField';
+import TipCard, { TipText } from '../../../../../components/TipCard';
 import WaitlistPanel from '../../../../../components/WaitlistPanel';
 import { PencilIcon } from '../../../../../components/icons';
 import {
@@ -77,6 +78,7 @@ import {
   recordRound,
   type TableRound,
 } from '../../../../../lib/rounds';
+import { useGuides } from '../../../../../lib/use-guides';
 import { useSession } from '../../../../../lib/session';
 import { addHours } from '../../../../../lib/time';
 import { colors, space, type } from '../../../../../lib/theme';
@@ -142,6 +144,7 @@ export default function EventScreen() {
     eventId: string;
   }>();
   const { session, loading } = useSession();
+  const guides = useGuides();
   const router = useRouter();
 
   const [club, setClub] = useState<Club | null>(null);
@@ -950,6 +953,19 @@ export default function EventScreen() {
       ) : null}
 
       {error ? <ErrorBanner message={error} /> : null}
+
+      {/*
+        Also gated on `canBook`: once a game has started (or isn't
+        published), Join has nothing left to point at, so the tip would be
+        advice about a control that's no longer there.
+      */}
+      {!isOrganizer && event.status !== 'cancelled' && canBook && guides.isVisible('tip:event') ? (
+        <TipCard tag="Tip" title="Getting a seat" onDismiss={() => guides.dismiss('tip:event')}>
+          <TipText>Tap Join, or an Empty seat at a table, to take a spot.</TipText>
+          {canBringSomeone ? <TipText>Tap Invite to bring someone along.</TipText> : null}
+          <TipText>Game full? Tap Join the waitlist and you'll move up if a seat opens.</TipText>
+        </TipCard>
+      ) : null}
 
       <Card>
         <Text style={styles.when}>

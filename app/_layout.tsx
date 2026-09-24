@@ -12,6 +12,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import InAppBrowserBanner from '../components/InAppBrowserBanner';
 import { useAuthDeepLink } from '../lib/auth-deep-link';
 import { SessionProvider } from '../lib/session';
+import { GuidesProvider } from '../lib/use-guides';
 
 // Keep the splash screen up until the design system's fonts (Caprasimo,
 // Figtree) are ready, so headings don't flash in the system face before
@@ -64,8 +65,10 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <SessionProvider>
-        <InAppBrowserBanner />
-        <Stack screenOptions={{ headerShown: false }} />
+        <GuidesProvider>
+          <InAppBrowserBanner />
+          <Stack screenOptions={{ headerShown: false }} />
+        </GuidesProvider>
       </SessionProvider>
     </SafeAreaProvider>
   );
