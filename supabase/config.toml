@@ -437,3 +437,73 @@ verify_jwt = false
 # calls here.
 [functions.send-club-invite]
 verify_jwt = true
+
+# ---------------------------------------------------------------------------
+# Production (app.mahjhero.com). Everything above is the LOCAL config; this
+# block overrides it only when `supabase config push` targets the prod
+# project. See docs/environments.md for the full runbook.
+#
+# There is deliberately no block for mahjhero-dev: its dashboard has drifted
+# from this file (`supabase config diff --project-ref <dev-ref>` shows ~20
+# differences), so a config push against dev would undo real settings. Change
+# dev in its dashboard, or add a [remotes.dev] block and diff it first.
+#
+# Secrets come from the shell (`set -a; source supabase/.env.prod.auth`), and
+# the PROD_ prefix keeps them from colliding with the dev values in the root
+# .env.
+# ---------------------------------------------------------------------------
+[remotes.prod]
+# mahjhero-prod
+project_id = "tnqofwoqivyhvjnntaau"
+
+[remotes.prod.auth]
+site_url = "https://app.mahjhero.com"
+additional_redirect_urls = [
+  "https://app.mahjhero.com/auth/callback",
+  "mahjhero://auth/callback",
+]
+
+[remotes.prod.auth.rate_limit]
+# The local value (2/hour) only suits Mailpit. Custom SMTP lifts the cap.
+email_sent = 30
+
+[remotes.prod.auth.email]
+# Matches RESEND_COOLDOWN_SECONDS in app/sign-in.tsx.
+max_frequency = "60s"
+
+[remotes.prod.auth.email.smtp]
+enabled = true
+host = "smtp.resend.com"
+port = 587
+user = "resend"
+pass = "env(PROD_SMTP_PASS)"
+admin_email = "noreply@mail.mahjhero.com"
+sender_name = "MahjHero Administrator"
+
+# Code-first emails for OTP sign-in (docs/superpowers/specs/2026-09-23-otp-sign-in-design.md).
+[remotes.prod.auth.email.template.magic_link]
+subject = "Your MahjHero sign-in code"
+content_path = "./supabase/templates/magic_link.html"
+
+[remotes.prod.auth.email.template.confirmation]
+subject = "Your MahjHero confirmation code"
+content_path = "./supabase/templates/confirmation.html"
+
+# Same Google OAuth client as dev; its console just needs prod's callback
+# URL added as another authorized redirect URI.
+[remotes.prod.auth.external.google]
+enabled = true
+client_id = "154945390548-4it9ejppclrn3csecavm1fer7hriu2fe.apps.googleusercontent.com"
+secret = "env(PROD_GOOGLE_SECRET)"
+skip_nonce_check = false
+
+[remotes.prod.auth.external.apple]
+enabled = true
+client_id = "app.mahjhero.client.signin"
+secret = "env(PROD_APPLE_SECRET)"
+
+# Hosted defaults for the smallest compute size. The local values above
+# (20/100) would otherwise be pushed and lower the client limit.
+[remotes.prod.db.pooler]
+default_pool_size = 15
+max_client_conn = 200
