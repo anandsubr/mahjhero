@@ -6,11 +6,25 @@ const single = vi.fn();
 const selectAfterUpdate = vi.fn();
 const countResults: Record<string, { count: number | null; error: unknown }> = {};
 
+// Track all mocked method calls to verify query structure
+let fromCalls: Array<{ table: string }> = [];
+let selectCalls: Array<{ table: string; cols: string; opts?: { head?: boolean } }> = [];
+let eqCalls: Array<{ table: string; col: string; value: unknown }> = [];
+let isCalls: Array<{ table: string; col: string; value: unknown }> = [];
+let updateCalls: Array<{ table: string; payload: unknown }> = [];
+let selectAfterUpdateCalls: Array<{ table: string; cols: string }> = [];
+
 function countChain(table: string) {
   const result = () => Promise.resolve(countResults[table]);
   const chain: Record<string, unknown> = {};
-  chain.eq = () => chain;
-  chain.is = () => chain;
+  chain.eq = vi.fn((col: string, value: unknown) => {
+    eqCalls.push({ table, col, value });
+    return chain;
+  });
+  chain.is = vi.fn((col: string, value: unknown) => {
+    isCalls.push({ table, col, value });
+    return chain;
+  });
   chain.then = (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
     result().then(resolve, reject);
   return chain;
@@ -18,12 +32,41 @@ function countChain(table: string) {
 
 vi.mock('./supabase', () => ({
   supabase: {
-    from: vi.fn((table: string) => ({
-      select: vi.fn((_cols: string, opts?: { head?: boolean }) =>
-        opts?.head ? countChain(table) : { eq: vi.fn(() => ({ single })) },
-      ),
-      update: vi.fn(() => ({ eq: vi.fn(() => ({ select: selectAfterUpdate })) })),
-    })),
+    from: vi.fn((table: string) => {
+      fromCalls.push({ table });
+      return {
+        select: vi.fn((cols: string, opts?: { head?: boolean }) => {
+          selectCalls.push({ table, cols, opts });
+          if (opts?.head) {
+            return countChain(table);
+          }
+          return {
+            eq: vi.fn((col: string, value: unknown) => {
+              eqCalls.push({ table, col, value });
+              return { single };
+            }),
+          };
+        }),
+        update: vi.fn((payload: unknown) => {
+          updateCalls.push({ table, payload });
+          return {
+            eq: vi.fn((col: string, value: unknown) => {
+              eqCalls.push({ table, col, value });
+              return {
+                select: vi.fn((cols: string) => {
+                  selectAfterUpdateCalls.push({ table, cols });
+                  // Return a thenable that delegates to selectAfterUpdate
+                  return {
+                    then: (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
+                      selectAfterUpdate().then(resolve, reject),
+                  };
+                }),
+              };
+            }),
+          };
+        }),
+      };
+    }),
   },
 }));
 
@@ -39,6 +82,12 @@ beforeEach(() => {
   single.mockReset();
   selectAfterUpdate.mockReset();
   for (const k of Object.keys(countResults)) delete countResults[k];
+  fromCalls = [];
+  selectCalls = [];
+  eqCalls = [];
+  isCalls = [];
+  updateCalls = [];
+  selectAfterUpdateCalls = [];
 });
 
 describe('hostChecklistKey', () => {
@@ -51,6 +100,9 @@ describe('fetchDismissedGuides', () => {
   it('returns the stored keys', async () => {
     single.mockResolvedValue({ data: { dismissed_guides: ['player-intro'] }, error: null });
     await expect(fetchDismissedGuides('u1')).resolves.toEqual(['player-intro']);
+    expect(fromCalls).toEqual([{ table: 'profiles' }]);
+    expect(selectCalls).toEqual([{ table: 'profiles', cols: 'dismissed_guides', opts: undefined }]);
+    expect(eqCalls).toEqual([{ table: 'profiles', col: 'id', value: 'u1' }]);
   });
 
   it('returns null (unknown) on an error, never []', async () => {
@@ -62,12 +114,26 @@ describe('fetchDismissedGuides', () => {
     single.mockRejectedValue(new Error('network down'));
     await expect(fetchDismissedGuides('u1')).resolves.toBeNull();
   });
+
+  it('returns [] when the row dismissed_guides is null', async () => {
+    single.mockResolvedValue({ data: { dismissed_guides: null }, error: null });
+    await expect(fetchDismissedGuides('u1')).resolves.toEqual([]);
+  });
 });
 
 describe('saveDismissedGuides', () => {
   it('reports success when a row was written', async () => {
     selectAfterUpdate.mockResolvedValue({ data: [{ id: 'u1' }], error: null });
     await expect(saveDismissedGuides('u1', ['tip:event'])).resolves.toBe(true);
+    expect(fromCalls).toEqual([{ table: 'profiles' }]);
+    expect(updateCalls.length).toBe(1);
+    expect(updateCalls[0].table).toBe('profiles');
+    expect(updateCalls[0].payload).toEqual({
+      dismissed_guides: ['tip:event'],
+      updated_at: expect.any(String),
+    });
+    expect(eqCalls).toEqual([{ table: 'profiles', col: 'id', value: 'u1' }]);
+    expect(selectAfterUpdateCalls).toEqual([{ table: 'profiles', cols: 'id' }]);
   });
 
   it('reports failure when the update matched no rows', async () => {
@@ -90,6 +156,32 @@ describe('fetchHostChecklistCounts', () => {
     await expect(fetchHostChecklistCounts('c1')).resolves.toEqual({
       events: 1, members: 3, pendingInvites: 0, announcements: 2,
     });
+    // Verify all four tables are queried
+    expect(fromCalls).toEqual([
+      { table: 'events' },
+      { table: 'club_members' },
+      { table: 'club_invites' },
+      { table: 'broadcasts' },
+    ]);
+    // Verify select calls use count: 'exact' and head: true
+    expect(selectCalls).toEqual([
+      { table: 'events', cols: 'id', opts: { count: 'exact', head: true } },
+      { table: 'club_members', cols: 'profile_id', opts: { count: 'exact', head: true } },
+      { table: 'club_invites', cols: 'id', opts: { count: 'exact', head: true } },
+      { table: 'broadcasts', cols: 'id', opts: { count: 'exact', head: true } },
+    ]);
+    // Verify exact filters on each table
+    expect(eqCalls).toEqual([
+      { table: 'events', col: 'club_id', value: 'c1' },
+      { table: 'club_members', col: 'club_id', value: 'c1' },
+      { table: 'club_members', col: 'status', value: 'active' },
+      { table: 'club_invites', col: 'club_id', value: 'c1' },
+      { table: 'broadcasts', col: 'club_id', value: 'c1' },
+    ]);
+    // Verify is() for null check
+    expect(isCalls).toEqual([
+      { table: 'club_invites', col: 'accepted_at', value: null },
+    ]);
   });
 
   it('returns null if any count fails', async () => {
