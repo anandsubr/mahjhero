@@ -1,16 +1,26 @@
 import { supabase } from './supabase';
 
 /**
+ * The fixed (non-templated) guide keys — every one of `GuideKey` except
+ * `host-checklist:${string}`, which is per-club rather than a static string.
+ * e2e/session.ts's `setDismissedGuides('all', ...)` imports this rather than
+ * hand-duplicating the list, so the two can't drift apart.
+ */
+export const STATIC_GUIDE_KEYS = [
+  'player-intro',
+  'tip:event',
+  'tip:new-game',
+  'tip:check-in',
+  'tip:club',
+] as const;
+
+/**
  * First-run guidance (docs/superpowers/specs/2026-09-23-first-run-guidance-design.md).
  * Every tip and card is identified by one of these keys; a key present in
  * `profiles.dismissed_guides` means that person has dismissed it.
  */
 export type GuideKey =
-  | 'player-intro'
-  | 'tip:event'
-  | 'tip:new-game'
-  | 'tip:check-in'
-  | 'tip:club'
+  | (typeof STATIC_GUIDE_KEYS)[number]
   | `host-checklist:${string}`;
 
 /** Per club: a host of two clubs dismisses each club's checklist separately. */
@@ -106,9 +116,15 @@ export async function fetchHostChecklistCounts(
         supabase.from('club_members').select('profile_id', opts)
           .eq('club_id', clubId).eq('status', 'active'),
       ),
+      // Genuinely pending only — not accepted, not declined, and not yet
+      // expired (`expires_at` is `not null default now() + 30 days`, so a
+      // plain `.gt` is enough; there is no "no expiry" case to special-case).
       headCount(() =>
         supabase.from('club_invites').select('id', opts)
-          .eq('club_id', clubId).is('accepted_at', null),
+          .eq('club_id', clubId)
+          .is('accepted_at', null)
+          .is('declined_at', null)
+          .gt('expires_at', new Date().toISOString()),
       ),
       headCount(() => supabase.from('broadcasts').select('id', opts).eq('club_id', clubId)),
     ]);

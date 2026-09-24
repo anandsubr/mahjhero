@@ -11,6 +11,7 @@ let fromCalls: Array<{ table: string }> = [];
 let selectCalls: Array<{ table: string; cols: string; opts?: { head?: boolean } }> = [];
 let eqCalls: Array<{ table: string; col: string; value: unknown }> = [];
 let isCalls: Array<{ table: string; col: string; value: unknown }> = [];
+let gtCalls: Array<{ table: string; col: string; value: unknown }> = [];
 let updateCalls: Array<{ table: string; payload: unknown }> = [];
 let selectAfterUpdateCalls: Array<{ table: string; cols: string }> = [];
 
@@ -23,6 +24,10 @@ function countChain(table: string) {
   });
   chain.is = vi.fn((col: string, value: unknown) => {
     isCalls.push({ table, col, value });
+    return chain;
+  });
+  chain.gt = vi.fn((col: string, value: unknown) => {
+    gtCalls.push({ table, col, value });
     return chain;
   });
   chain.then = (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
@@ -86,6 +91,7 @@ beforeEach(() => {
   selectCalls = [];
   eqCalls = [];
   isCalls = [];
+  gtCalls = [];
   updateCalls = [];
   selectAfterUpdateCalls = [];
 });
@@ -178,9 +184,14 @@ describe('fetchHostChecklistCounts', () => {
       { table: 'club_invites', col: 'club_id', value: 'c1' },
       { table: 'broadcasts', col: 'club_id', value: 'c1' },
     ]);
-    // Verify is() for null check
+    // Verify is() for the not-accepted, not-declined checks
     expect(isCalls).toEqual([
       { table: 'club_invites', col: 'accepted_at', value: null },
+      { table: 'club_invites', col: 'declined_at', value: null },
+    ]);
+    // Verify gt() excludes invites that have already expired
+    expect(gtCalls).toEqual([
+      { table: 'club_invites', col: 'expires_at', value: expect.any(String) },
     ]);
   });
 
