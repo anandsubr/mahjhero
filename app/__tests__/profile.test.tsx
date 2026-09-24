@@ -5,7 +5,9 @@ import ProfileScreen from '../profile';
 
 vi.mock('expo-router', () => ({
   Redirect: () => null,
-  Link: ({ children }: { children: React.ReactNode }) => children,
+  Link: ({ href, children }: { href: string; children: React.ReactNode }) => (
+    <a data-href={href}>{children}</a>
+  ),
   useRouter: () => ({ push: vi.fn(), back: vi.fn() }),
   // TabBar's own Profile tab route: this screen IS /profile, so its
   // highlighted Profile button stays the documented no-op.
@@ -193,6 +195,22 @@ describe('profile screen', () => {
     });
     render(<ProfileScreen />);
     expect(await screen.findByText('Friends')).toBeTruthy();
+  });
+
+  // The only way to /how-it-works — nothing else in the app links there.
+  it('links to How it works', async () => {
+    fetchProfile.mockResolvedValueOnce({
+      id: 'test-user',
+      display_name: 'Alice Ng',
+      skill_level: 'intermediate',
+      avatar_url: null,
+      timezone: 'America/New_York',
+    });
+    render(<ProfileScreen />);
+    await screen.findByText('How it works');
+    expect(screen.getByText('Open').closest('a')?.getAttribute('data-href')).toBe(
+      '/how-it-works',
+    );
   });
 
   // The tile is purely decorative -- scoped to a wrapping testID rather than
