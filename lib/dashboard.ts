@@ -212,14 +212,24 @@ function hasFreeSeat(event: ClubEvent): boolean {
  *
  * A THIRD source, folded into the same loop as the joinable branch: an event
  * the viewer organizes (host or co-organizer) but holds no booking at,
- * whether or not it has started or has a free seat. Before this existed, an
+ * whether or not it has started, shown as "Hosting" rather than "Join" once
+ * it has started or is full — an organizer's own game is never something
+ * for them to "Join" and land on the waitlist for. Before this existed, an
  * organizer who never booked their own seat lost all access to their own
- * game the instant its last seat filled — the joinable branch requires
- * `hasFreeSeat`, so a full, not-yet-started table dropped the row entirely,
- * and the same organizer had no way back in until kickoff (the in-progress
- * branch's own fix for the post-kickoff half of this). Found on a real
+ * game the instant its last seat filled or it started. Found on a real
  * dashboard: a host's own table filled up before it started and the game
  * disappeared from their "Your games" list with no way back to it.
+ *
+ * A not-yet-started event is never dropped for being full, for anyone, not
+ * only its organizer -- this dashboard is the only place an upcoming event
+ * is listed at all, so a full-but-not-started event dropping out here left
+ * a plain member with zero path to it, not merely a worse "Join" button.
+ * `commit_booking`'s own outcome handling already lands an over-capacity
+ * join on the waitlist correctly (`joinGame`'s own `waitlistNotice`
+ * reports it) -- the row only ever needed to stay reachable for that to
+ * fire. Once started, a full game genuinely has nothing left for a plain
+ * member to do (there is no post-kickoff waitlist to join), so the
+ * started+non-organizer case is still dropped.
  *
  * `organizerClubIds` defaults to an empty set — every existing caller that
  * does not pass it gets exactly today's behavior, since an empty set can
@@ -273,17 +283,17 @@ export function buildDashboardRows(input: {
       // decide it. Deliberately does NOT check hasFreeSeat -- an organizer
       // needs this row whether the table is full or not.
       if (ended || !isOrganizer) continue;
-    } else if (!freeSeat) {
-      // The pre-kickoff twin of the branch above: a full table with no
-      // organizer booking is nothing for a plain member to do, but the
-      // organizer still needs a way in before kickoff (door list, adding a
-      // walk-in, editing the game) -- same "a full table is not a reason to
-      // hide this from its own host" reasoning, just before vs. after
-      // start. A non-organizer is dropped here exactly as before.
-      if (!isOrganizer) continue;
     }
-    // else: the existing joinable branch (not started, has a free seat) --
-    // unchanged, reachable by organizer and non-organizer alike.
+    // A not-yet-started event is never dropped for fullness, for anyone.
+    // A full table used to drop a plain member's row entirely -- the same
+    // hasFreeSeat check the joinable branch always needed, applied here
+    // too -- which meant a member had no way to even find a full game to
+    // join its waitlist: this dashboard is the only place an upcoming
+    // event is listed at all, so a dropped row was not just a worse "Join"
+    // button, it was zero path to the waitlist. commit_booking's own
+    // outcome handling already lands an over-capacity join on the
+    // waitlist correctly (see joinGame's own waitlistNotice) -- the row
+    // only ever needed to stay reachable for that to work.
 
     seen.add(event.id);
     rows.push({
@@ -295,8 +305,13 @@ export function buildDashboardRows(input: {
       timezone: club.timezone,
       venueName: event.venue_name,
       booking: null,
-      joinable: !started && freeSeat,
-      organizing: (started && !ended) || (!started && !freeSeat),
+      // The organizer's own full-before-start game is the one exception:
+      // "Join" would just waitlist them on their own game, so they get
+      // "Hosting" (organizing) instead, same as the post-kickoff case --
+      // everyone else always gets "Join", whether it seats them or
+      // waitlists them.
+      joinable: !started && !(isOrganizer && !freeSeat),
+      organizing: (started && !ended) || (!started && !freeSeat && isOrganizer),
       feeCents: event.fee_cents,
       minSpendCents: event.min_spend_cents,
     });
