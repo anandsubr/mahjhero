@@ -74,6 +74,10 @@ export function GuidesProvider({ children }: { children: ReactNode }) {
     if (!userId) return false;
     const resetUserId = userId;
     const generationAtStart = generation.current;
+    // What reset is about to clear. On a generation mismatch below,
+    // `latest.current` may hold both these pre-reset keys AND keys dismissed
+    // while the save was in flight — only the latter should survive.
+    const snapshotAtStart = latest.current ?? [];
     const ok = await saveDismissedGuides(userId, []);
     if (ok) {
       if (userIdRef.current !== resetUserId) {
@@ -86,10 +90,17 @@ export function GuidesProvider({ children }: { children: ReactNode }) {
         latest.current = [];
         setDismissed([]);
       } else {
-        // A dismiss() landed while this reset's save was in flight. Keep it
-        // locally rather than wiping it, and re-save so the server's last
-        // write matches local state instead of racing the two writes.
-        void saveDismissedGuides(resetUserId, latest.current ?? []);
+        // A dismiss() landed while this reset's save was in flight.
+        // Re-saving `latest.current` as-is would include whatever was
+        // dismissed BEFORE reset started too (`snapshotAtStart`), silently
+        // reverting the reset for those keys while `reset()` still reports
+        // success. Keep only the keys dismissed after reset began, locally
+        // and on the server, so the server's last write matches local state
+        // instead of racing the two writes.
+        const survivors = (latest.current ?? []).filter((k) => !snapshotAtStart.includes(k));
+        latest.current = survivors;
+        setDismissed(survivors);
+        void saveDismissedGuides(resetUserId, survivors);
       }
     }
     return ok;

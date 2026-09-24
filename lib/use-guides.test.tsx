@@ -161,4 +161,37 @@ describe('useGuides', () => {
     const lastCall = saveDismissedGuides.mock.calls[saveDismissedGuides.mock.calls.length - 1];
     expect(lastCall).toEqual(['u1', ['tip:event']]);
   });
+
+  // Regression: the generation-mismatch branch used to re-save
+  // `latest.current` as-is, which still carried whatever was dismissed
+  // BEFORE reset even started -- silently reverting the reset for those
+  // keys while `reset()` still resolved true. Starting from a non-empty
+  // dismissed list makes that distinguishable from "reset cleared nothing
+  // yet": only the key dismissed DURING the reset should survive.
+  it('does not revive pre-reset dismissals when a dismissal lands mid-reset', async () => {
+    fetchDismissedGuides.mockResolvedValueOnce(Promise.resolve(['tip:club', 'tip:new-game']));
+    render(<GuidesProvider><Probe /></GuidesProvider>);
+    await waitFor(() => expect(screen.getByTestId('event').textContent).toBe('true'));
+
+    const resetSave = deferred<boolean>();
+    saveDismissedGuides.mockReturnValueOnce(resetSave.promise);
+    fireEvent.click(screen.getByText('reset'));
+
+    // A dismissal of a DIFFERENT guide lands while the reset's save for
+    // ['tip:club', 'tip:new-game'] -> [] is still in flight.
+    saveDismissedGuides.mockResolvedValueOnce(true);
+    fireEvent.click(screen.getByText('dismiss'));
+    expect(screen.getByTestId('event').textContent).toBe('false');
+
+    // The reset's save now resolves ok. The final state must show only the
+    // guide dismissed during the reset -- not the two pre-reset ones, which
+    // reset was clearing -- and the server must end up holding exactly that.
+    await act(async () => {
+      resetSave.resolve(true);
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId('event').textContent).toBe('false');
+    const lastCall = saveDismissedGuides.mock.calls[saveDismissedGuides.mock.calls.length - 1];
+    expect(lastCall).toEqual(['u1', ['tip:event']]);
+  });
 });
