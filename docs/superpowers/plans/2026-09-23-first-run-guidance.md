@@ -1594,7 +1594,7 @@ export default function HowItWorks() {
         <Text style={styles.body}>2. Schedule your first game. Choose Assigned tables or Open seating, and set Cost to play.</Text>
         <Text style={styles.body}>3. Invite your players by email, or import a roster.</Text>
         <Text style={styles.body}>4. Say hello with an announcement in the club thread.</Text>
-        <Text style={styles.body}>On the night, use Check-in to mark who's Here and who has paid.</Text>
+        <Text style={styles.body}>On the night, open the game's Door list to mark who's Here and who has paid.</Text>
       </Card>
 
       <View style={styles.resetGroup}>
