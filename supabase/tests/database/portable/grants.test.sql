@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(126);
+select plan(127);
 
 /*
  * Guards the privileges themselves, not the policies.
@@ -606,6 +606,14 @@ select ok(
   'authenticated cannot execute announce_need_a_fourth'
 );
 
+-- close_started_invites (20260924103000) runs as postgres from the
+-- close-started-invites cron job and sweeps every event in the system.
+select ok(
+  not has_function_privilege(
+    'authenticated', 'public.close_started_invites()', 'EXECUTE'),
+  'authenticated cannot execute close_started_invites'
+);
+
 -- Clients read these tables and never write them. Every mutation is a
 -- security definer function that checks the caller's role against the row's
 -- own club.
@@ -815,6 +823,8 @@ select is(
        'public.booking_result(uuid)',
        'public.cancel_booking(uuid)',
        'public.decline_booking(uuid)',
+       'public.accept_booking_invite(uuid)',
+       'public.withdraw_booking_invite(uuid)',
        'public.cancel_booking_group(uuid)',
        'public.place_booking(uuid, uuid)',
        'public.call_for_a_fourth(uuid)',
@@ -914,6 +924,8 @@ select is(
          'public.booking_result(uuid)',
          'public.cancel_booking(uuid)',
          'public.decline_booking(uuid)',
+         'public.accept_booking_invite(uuid)',
+         'public.withdraw_booking_invite(uuid)',
          'public.cancel_booking_group(uuid)',
          'public.place_booking(uuid, uuid)',
          'public.call_for_a_fourth(uuid)',

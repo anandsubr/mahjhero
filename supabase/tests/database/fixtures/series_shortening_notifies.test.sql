@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(8);
+select plan(9);
 
 /*
  * update_event_series (20260825042000) has to tell the people it unseats
@@ -37,7 +37,8 @@ insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-000000000001', 'alice@example.com'),
   ('11110000-0000-0000-0000-000000000001', 'mallory@example.com'),
   ('11110000-0000-0000-0000-000000000002', 'ned@example.com'),
-  ('11110000-0000-0000-0000-000000000003', 'carol@example.com');
+  ('11110000-0000-0000-0000-000000000003', 'carol@example.com'),
+  ('11110000-0000-0000-0000-000000000004', 'olive@example.com');
 
 insert into public.clubs (id, name, slug, timezone, created_by) values
   ('c1c1c1c1-0000-0000-0000-000000000001', 'Riverside', 'riverside',
@@ -51,7 +52,9 @@ insert into public.club_members (club_id, profile_id, role) values
   ('c1c1c1c1-0000-0000-0000-000000000001',
    '11110000-0000-0000-0000-000000000002', 'member'),
   ('c1c1c1c1-0000-0000-0000-000000000001',
-   '11110000-0000-0000-0000-000000000003', 'member');
+   '11110000-0000-0000-0000-000000000003', 'member'),
+  ('c1c1c1c1-0000-0000-0000-000000000001',
+   '11110000-0000-0000-0000-000000000004', 'member');
 
 insert into public.venues (id, name, added_by_club_id, created_by) values
   ('11111111-0000-0000-0000-000000000001', 'The Hall',
@@ -167,6 +170,29 @@ insert into public.bookings
 -- value". A payload missing the key entirely would otherwise still read
 -- as "not exists", since `payload->>'event_id'` on a missing key is NULL
 -- and `e.id = NULL` matches nothing under `not exists`.
+-- Olive holds a pending game invite (seat held, any table) on +38, which
+-- the first shortening drops. She was told about that game, so she is told
+-- it is gone (game invites, 20260924103100).
+insert into public.booking_groups (id, event_id, club_id, created_by) values
+  ('99990000-0000-0000-0000-000000000005',
+   (select id from public.events
+     where series_id = (select id from public.event_series
+                          where title = 'Weekly game')
+       and occurrence_date = current_date + 38),
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   'aaaaaaaa-0000-0000-0000-000000000001');
+insert into public.bookings
+  (group_id, event_id, club_id, profile_id, booked_by, status,
+   invite_holds_seat) values
+  ('99990000-0000-0000-0000-000000000005',
+   (select id from public.events
+     where series_id = (select id from public.event_series
+                          where title = 'Weekly game')
+       and occurrence_date = current_date + 38),
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   '11110000-0000-0000-0000-000000000004',
+   'aaaaaaaa-0000-0000-0000-000000000001', 'invited', true);
+
 create temporary table doomed_occurrences as
 select b.profile_id, e.id as event_id, e.starts_at
 from public.bookings b
@@ -204,8 +230,9 @@ select bag_eq(
              = (select id from public.event_series
                  where title = 'Weekly game')::text$$,
   ARRAY['11110000-0000-0000-0000-000000000001',
-        '11110000-0000-0000-0000-000000000002']::uuid[],
-  'exactly the two members still booked on a dropped week are told, once each'
+        '11110000-0000-0000-0000-000000000002',
+        '11110000-0000-0000-0000-000000000004']::uuid[],
+  'exactly the three members still booked or invited on a dropped week are told, once each'
 );
 
 -- Mallory holds two live bookings on two occurrences dropped in this same
@@ -253,6 +280,13 @@ select is(
   0,
   'Carol, whose occurrence was kept, hears nothing');
 
+select is(
+  (select count(*)::int from public.notification_outbox
+    where kind = 'event_cancelled'
+      and recipient_id = '11110000-0000-0000-0000-000000000004'),
+  1,
+  'Olive, invited to a dropped week, is told it is gone');
+
 -- ---------------------------------------------------------------------
 -- 2. Shortening again to +3 deletes only +10, which nobody is booked
 --    into. Nothing new should be written.
@@ -276,7 +310,7 @@ select is(
       and payload->>'series_id'
             = (select id from public.event_series
                 where title = 'Weekly game')::text),
-  2,
+  3,
   'and a shortening that removes no booked occurrence writes nothing new');
 
 select * from finish();
