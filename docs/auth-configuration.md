@@ -5,8 +5,10 @@ exactly one profile, regardless of how many providers the person uses.
 
 ## Required settings on the hosted Supabase project
 
-These are not captured by migrations and must be set in the dashboard for each
-environment (Authentication → Providers / Sign In).
+These are not captured by migrations. On `mahjhero-prod` they are declared in
+`[remotes.prod]` in `supabase/config.toml` and applied with `supabase config push`
+(see `docs/environments.md`); on `mahjhero-dev` they are set by hand in the
+dashboard (Authentication → Providers / Sign In).
 
 | Setting | Value | Why |
 |---|---|---|

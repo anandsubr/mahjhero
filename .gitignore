@@ -60,3 +60,8 @@ playwright-report/
 .env
 .vercel
 .env*
+
+# Templates for the prod secret files (names only, no values). The real
+# supabase/.env.prod and supabase/.env.prod.auth stay ignored by `.env*` above.
+!supabase/.env.prod.example
+!supabase/.env.prod.auth.example
