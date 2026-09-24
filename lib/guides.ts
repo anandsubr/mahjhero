@@ -1,27 +1,14 @@
 import { supabase } from './supabase';
+import { STATIC_GUIDE_KEYS, type GuideKey } from './guide-keys';
 
 /**
- * The fixed (non-templated) guide keys — every one of `GuideKey` except
- * `host-checklist:${string}`, which is per-club rather than a static string.
- * e2e/session.ts's `setDismissedGuides('all', ...)` imports this rather than
- * hand-duplicating the list, so the two can't drift apart.
+ * `STATIC_GUIDE_KEYS` and `GuideKey` now live in lib/guide-keys.ts, which has
+ * zero imports so e2e/session.ts (Playwright's Node loader, which cannot
+ * parse this module's ./supabase → react-native chain) can import them
+ * directly. Re-exported here so every existing importer of these two names
+ * keeps working unchanged.
  */
-export const STATIC_GUIDE_KEYS = [
-  'player-intro',
-  'tip:event',
-  'tip:new-game',
-  'tip:check-in',
-  'tip:club',
-] as const;
-
-/**
- * First-run guidance (docs/superpowers/specs/2026-09-23-first-run-guidance-design.md).
- * Every tip and card is identified by one of these keys; a key present in
- * `profiles.dismissed_guides` means that person has dismissed it.
- */
-export type GuideKey =
-  | (typeof STATIC_GUIDE_KEYS)[number]
-  | `host-checklist:${string}`;
+export { STATIC_GUIDE_KEYS, type GuideKey };
 
 /** Per club: a host of two clubs dismisses each club's checklist separately. */
 export function hostChecklistKey(clubId: string): GuideKey {

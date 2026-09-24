@@ -2,7 +2,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { STATIC_GUIDE_KEYS } from '../lib/guides';
+import { STATIC_GUIDE_KEYS } from '../lib/guide-keys';
 
 /**
  * The one place the service_role key is read and the one place the local-only
