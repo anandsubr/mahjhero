@@ -1308,6 +1308,22 @@ describe('organizer view', () => {
   // app/__tests__/clubs.test.tsx's own tests for the club-level form this
   // one is scoped down from.
   describe('the guest-invite email form', () => {
+    // The Invite sheet opens where the organizer tapped, not below this
+    // form -- otherwise "Who's coming?" lands under an unrelated email
+    // field and reads as part of it.
+    it('opens the Invite sheet directly under Invite, above the guest form', async () => {
+      render(<EventScreen />);
+      await screen.findByText('Thursday Mahjong');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Invite' }));
+      const sheet = await screen.findByText("Who's coming?");
+      const guestField = screen.getByLabelText("Guest's email address");
+
+      expect(
+        sheet.compareDocumentPosition(guestField) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
+
     it('creates the invite scoped to this event, then sends the email', async () => {
       render(<EventScreen />);
       await screen.findByText('Thursday Mahjong');

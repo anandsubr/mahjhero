@@ -1461,6 +1461,26 @@ export default function EventScreen() {
       ) : null}
 
       {/*
+        Rendered right under "Invite", ahead of the organizer's guest form
+        below, so the sheet opens where it was asked for rather than under
+        an unrelated email field.
+      */}
+      {isBringingSomeone ? (
+        <BringSomeoneSheet
+          roster={roster}
+          booked={seating
+            .map((o) => o.profile_id)
+            .filter((id): id is string => id !== null)}
+          youId={me}
+          tables={tables}
+          initialTableId={null}
+          onPropose={(input) => proposeBooking({ eventId, ...input })}
+          onCommit={(input) => commitBooking({ eventId, ...input })}
+          onClose={closeBringSomeone}
+        />
+      ) : null}
+
+      {/*
         The organizer's own guest-invite form -- always visible to them
         regardless of game mode (unlike "Invite" above, which an invite-only
         game hides from everyone else). Mirrors the club page's
@@ -1495,21 +1515,6 @@ export default function EventScreen() {
             </Text>
           ) : null}
         </>
-      ) : null}
-
-      {isBringingSomeone ? (
-        <BringSomeoneSheet
-          roster={roster}
-          booked={seating
-            .map((o) => o.profile_id)
-            .filter((id): id is string => id !== null)}
-          youId={me}
-          tables={tables}
-          initialTableId={null}
-          onPropose={(input) => proposeBooking({ eventId, ...input })}
-          onCommit={(input) => commitBooking({ eventId, ...input })}
-          onClose={closeBringSomeone}
-        />
       ) : null}
 
       {canBook && gameFull && !myHoldsSeat && !myInvite ? (
