@@ -117,6 +117,11 @@ const fetchEventAcceptedCount = vi.fn();
 // call above is: a real call would hit the network-blocked `supabase.rpc`
 // this sandbox fails closed on, slowly.
 const commitBooking = vi.fn();
+// Game invites (2026-09-24): the invitee's Accept/Decline and the
+// sender's/organizer's Withdraw.
+const acceptBookingInvite = vi.fn();
+const declineBooking = vi.fn();
+const withdrawBookingInvite = vi.fn();
 
 vi.mock('../../lib/bookings', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../lib/bookings')>();
@@ -130,6 +135,9 @@ vi.mock('../../lib/bookings', async (importOriginal) => {
     fetchEventAcceptedCount: (...args: unknown[]) =>
       fetchEventAcceptedCount(...args),
     commitBooking: (...args: unknown[]) => commitBooking(...args),
+    acceptBookingInvite: (...args: unknown[]) => acceptBookingInvite(...args),
+    declineBooking: (...args: unknown[]) => declineBooking(...args),
+    withdrawBookingInvite: (...args: unknown[]) => withdrawBookingInvite(...args),
   };
 });
 
@@ -342,6 +350,12 @@ beforeEach(() => {
   placeBooking.mockResolvedValue({ error: null });
   cancelBooking.mockResolvedValue({ error: null });
   callForAFourth.mockResolvedValue({ error: null });
+  acceptBookingInvite.mockReset();
+  acceptBookingInvite.mockResolvedValue({ error: null });
+  declineBooking.mockReset();
+  declineBooking.mockResolvedValue({ error: null });
+  withdrawBookingInvite.mockReset();
+  withdrawBookingInvite.mockResolvedValue({ error: null });
   commitBooking.mockReset();
   commitBooking.mockResolvedValue({
     result: {
@@ -672,42 +686,58 @@ describe('member view: what is shown, and what is not', () => {
   });
 });
 
-// Task 15: the privacy piece on top of the invite-only gating Task 14 added
-// to this same screen. The database layer (Tasks 2/3) already restricts
-// what a not-yet-placed invitee's own `seating` fetch can return -- their
-// row and nobody else's -- so these tests aren't re-proving that access
-// control; they're proving `canSeeFullRoster` picks the right JSX branch
-// given that already-narrowed data.
-describe('not-yet-placed invitee headcount view', () => {
+// The invite-only privacy piece. The database layer already restricts what
+// a locked viewer's own `seating` fetch returns -- their row and nobody
+// else's -- so these tests prove `canSeeFullRoster` picks the right JSX
+// branch given that already-narrowed data. Since game invites (P1,
+// 2026-09-24) the roster unlocks on a CONFIRMED booking, table or not;
+// waitlisted and pending invites stay locked.
+describe('invite-only headcount view', () => {
   const INVITE_ONLY_EVENT = { ...EVENT, game_mode: 'invite_only' as const };
 
-  // Confirmed and accepted, but `event_table_id` is still null -- exactly
-  // the shape the not-yet-placed case rests on (see `canSeeFullRoster`'s own
-  // comment in index.tsx).
-  const UNPLACED_ME = {
-    booking_id: 'booking-unplaced',
-    group_id: 'group-unplaced',
+  const WAITLISTED_ME = {
+    booking_id: 'booking-waiting',
+    group_id: 'group-waiting',
     profile_id: 'test-user',
     display_name: 'Ada',
     skill_level: null,
     event_table_id: null as string | null,
-    status: 'confirmed' as const,
+    status: 'waitlisted' as const,
     booked_by: 'test-user',
     booked_by_name: 'Ada',
-    group_status: 'confirmed' as const,
-    waitlist_position: null,
+    group_status: 'waitlisted' as const,
+    waitlist_position: 1,
     created_at: '2026-08-20T10:00:00Z',
   };
 
-  it('shows only the headcount note, not the tables, for a not-yet-placed member on an invite-only game', async () => {
+  const UNPLACED_ME = {
+    ...WAITLISTED_ME,
+    booking_id: 'booking-unplaced',
+    group_id: 'group-unplaced',
+    status: 'confirmed' as const,
+    group_status: 'confirmed' as const,
+    waitlist_position: null,
+  };
+
+  const INVITED_ME = {
+    ...UNPLACED_ME,
+    booking_id: 'booking-invited',
+    group_id: 'group-owen',
+    status: 'invited' as const,
+    booked_by: 'p-owen',
+    booked_by_name: 'Owen B.',
+    invite_holds_seat: true,
+  };
+
+  it('shows only the headcount note, not the tables, to a waitlisted member of an invite-only game', async () => {
     fetchEvent.mockResolvedValue(INVITE_ONLY_EVENT);
-    fetchEventSeating.mockResolvedValue([UNPLACED_ME]);
+    fetchEventSeating.mockResolvedValue([WAITLISTED_ME]);
     fetchEventAcceptedCount.mockResolvedValue(8);
     render(<EventScreen />);
 
     expect(
       await screen.findByText(
-        "8 people have accepted. You won't see who else is playing until you're placed on a table.",
+        "8 people have accepted. You won't see who else is playing until you have a seat.",
       ),
     ).toBeTruthy();
     expect(screen.queryByText('Table 1')).toBeNull();
@@ -716,34 +746,48 @@ describe('not-yet-placed invitee headcount view', () => {
 
   it('says "1 person has accepted", not "1 people have accepted"', async () => {
     fetchEvent.mockResolvedValue(INVITE_ONLY_EVENT);
-    fetchEventSeating.mockResolvedValue([UNPLACED_ME]);
+    fetchEventSeating.mockResolvedValue([WAITLISTED_ME]);
     fetchEventAcceptedCount.mockResolvedValue(1);
     render(<EventScreen />);
 
     expect(
       await screen.findByText(
-        "1 person has accepted. You won't see who else is playing until you're placed on a table.",
+        "1 person has accepted. You won't see who else is playing until you have a seat.",
       ),
     ).toBeTruthy();
   });
 
   it('falls back to a plain mode statement while the headcount is still null', async () => {
     fetchEvent.mockResolvedValue(INVITE_ONLY_EVENT);
-    fetchEventSeating.mockResolvedValue([UNPLACED_ME]);
+    fetchEventSeating.mockResolvedValue([WAITLISTED_ME]);
     fetchEventAcceptedCount.mockResolvedValue(null);
     render(<EventScreen />);
 
     expect(
       await screen.findByText(
-        "This is an invite-only game. You won't see who else is playing until you're placed on a table.",
+        "This is an invite-only game. You won't see who else is playing until you have a seat.",
       ),
     ).toBeTruthy();
   });
 
-  it('reveals the full table view once that same member is placed at a table', async () => {
+  it('tells a pending invitee the roster opens once they accept', async () => {
+    fetchEvent.mockResolvedValue(INVITE_ONLY_EVENT);
+    fetchEventSeating.mockResolvedValue([INVITED_ME]);
+    fetchEventAcceptedCount.mockResolvedValue(3);
+    render(<EventScreen />);
+
+    expect(
+      await screen.findByText(
+        "3 people have accepted. You'll see who else is playing once you accept.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText('Table 1')).toBeNull();
+  });
+
+  it('reveals the full table view to a confirmed member, even before they are placed at a table', async () => {
     fetchEvent.mockResolvedValue(INVITE_ONLY_EVENT);
     fetchEventTables.mockResolvedValue([TABLE_1]);
-    fetchEventSeating.mockResolvedValue([{ ...UNPLACED_ME, event_table_id: 'table-1' }]);
+    fetchEventSeating.mockResolvedValue([UNPLACED_ME]);
     fetchEventAcceptedCount.mockResolvedValue(8);
     render(<EventScreen />);
 
@@ -751,11 +795,11 @@ describe('not-yet-placed invitee headcount view', () => {
     expect(screen.queryByText(/people have accepted/)).toBeNull();
   });
 
-  it('still shows the full table view to the organizer of an invite-only game, even before anyone is placed', async () => {
+  it('still shows the full table view to the organizer of an invite-only game', async () => {
     fetchRoster.mockResolvedValue(HOST_ROLE);
     fetchEvent.mockResolvedValue(INVITE_ONLY_EVENT);
     fetchEventTables.mockResolvedValue([TABLE_1]);
-    fetchEventSeating.mockResolvedValue([UNPLACED_ME]);
+    fetchEventSeating.mockResolvedValue([WAITLISTED_ME]);
     fetchEventAcceptedCount.mockResolvedValue(8);
     render(<EventScreen />);
 
@@ -763,12 +807,9 @@ describe('not-yet-placed invitee headcount view', () => {
     expect(screen.queryByText(/people have accepted/)).toBeNull();
   });
 
-  it('keeps the full table view on an open_play game regardless of placement', async () => {
-    // EVENT's own default is already `open_play` -- this is the explicit
-    // regression guard against `canSeeFullRoster` ever tightening past what
-    // Task 14's `canBringSomeone` gate already established for this mode.
+  it('keeps the full table view on an open_play game regardless of status', async () => {
     fetchEventTables.mockResolvedValue([TABLE_1]);
-    fetchEventSeating.mockResolvedValue([UNPLACED_ME]);
+    fetchEventSeating.mockResolvedValue([WAITLISTED_ME]);
     fetchEventAcceptedCount.mockResolvedValue(8);
     render(<EventScreen />);
 
@@ -1906,10 +1947,17 @@ describe('open seating', () => {
       game_mode: 'invite_only' as const,
     };
 
-    // Exactly what a non-organizer's own `event_seating` fetch returns on
-    // an invite-only, not-yet-placed night: their own row, and nobody
-    // else's.
-    const ONLY_MY_ROW = { ...SIGNED_UP_PRIYA, profile_id: 'test-user' };
+    // Exactly what a locked non-organizer's own `event_seating` fetch
+    // returns on an invite-only night: their own row, and nobody else's.
+    // Waitlisted, since game invites (P1, 2026-09-24) -- a confirmed
+    // booking now unlocks the roster, table or not.
+    const ONLY_MY_ROW = {
+      ...SIGNED_UP_PRIYA,
+      profile_id: 'test-user',
+      status: 'waitlisted' as const,
+      group_status: 'waitlisted' as const,
+      waitlist_position: 1,
+    };
 
     it('uses acceptedCount, not the roster length, for a non-organizer', async () => {
       fetchEvent.mockResolvedValue(INVITE_ONLY_OPEN_EVENT);
@@ -2087,5 +2135,154 @@ describe('open seating', () => {
       await screen.findByText('Thursday Mahjong');
       expect(screen.queryByRole('button', { name: 'Leave this game' })).toBeNull();
     });
+  });
+});
+
+describe('game invites', () => {
+  const OWEN = {
+    profile_id: 'p-owen',
+    role: 'member' as const,
+    display_name: 'Owen B.',
+    skill_level: null,
+  };
+
+  // Ada (the viewer) invited by Owen, her seat at Table 1 held.
+  const INVITED_ADA = {
+    ...SEATED_ADA,
+    booking_id: 'b-inv',
+    group_id: 'g-owen',
+    status: 'invited' as const,
+    booked_by: 'p-owen',
+    booked_by_name: 'Owen B.',
+    invite_holds_seat: true,
+  };
+
+  // Ravi invited by Owen, his seat at Table 1 held.
+  const INVITED_RAVI = {
+    ...SEATED_RAVI,
+    booking_id: 'b-ravi-inv',
+    group_id: 'g-owen',
+    status: 'invited' as const,
+    booked_by: 'p-owen',
+    booked_by_name: 'Owen B.',
+    invite_holds_seat: true,
+  };
+
+  it('shows the invitee a banner naming the sender and the held table', async () => {
+    fetchRoster.mockResolvedValue([...MEMBER_ROLE, OWEN]);
+    fetchEventSeating.mockResolvedValue([INVITED_ADA]);
+    render(<EventScreen />);
+    expect(
+      await screen.findByText('Owen B. invited you to this game — Table 1'),
+    ).toBeTruthy();
+  });
+
+  it("says an invite into a full game would join the waitlist", async () => {
+    fetchEventSeating.mockResolvedValue([
+      { ...INVITED_ADA, event_table_id: null, invite_holds_seat: false },
+    ]);
+    render(<EventScreen />);
+    expect(
+      await screen.findByText("Owen B. invited you to this game — you'd join the waitlist"),
+    ).toBeTruthy();
+  });
+
+  it('accepts the invite', async () => {
+    fetchEventSeating.mockResolvedValue([INVITED_ADA]);
+    render(<EventScreen />);
+    fireEvent.click(await screen.findByLabelText('Accept the invite'));
+    await waitFor(() => expect(acceptBookingInvite).toHaveBeenCalledWith('b-inv'));
+  });
+
+  it('declines an open-play invite and stays on the game', async () => {
+    fetchEventSeating.mockResolvedValue([INVITED_ADA]);
+    render(<EventScreen />);
+    fireEvent.click(await screen.findByLabelText('Decline the invite'));
+    await waitFor(() => expect(declineBooking).toHaveBeenCalledWith('b-inv'));
+    expect(push).not.toHaveBeenCalledWith('/clubs');
+  });
+
+  it('declines an invite-only invite and goes back to the dashboard', async () => {
+    fetchEvent.mockResolvedValue({ ...EVENT, game_mode: 'invite_only' as const });
+    fetchEventSeating.mockResolvedValue([INVITED_ADA]);
+    render(<EventScreen />);
+    fireEvent.click(await screen.findByLabelText('Decline the invite'));
+    await waitFor(() => expect(declineBooking).toHaveBeenCalledWith('b-inv'));
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/clubs'));
+  });
+
+  it('offers an invitee no seat tap and no waitlist -- the invite is their way in', async () => {
+    // Table 1 full: three confirmed plus Ada's held seat.
+    fetchEventSeating.mockResolvedValue([
+      { ...SEATED_RAVI, booking_id: 'c1', profile_id: 'c1', display_name: 'C One' },
+      { ...SEATED_RAVI, booking_id: 'c2', profile_id: 'c2', display_name: 'C Two' },
+      { ...SEATED_RAVI, booking_id: 'c3', profile_id: 'c3', display_name: 'C Three' },
+      INVITED_ADA,
+    ]);
+    render(<EventScreen />);
+    await screen.findByText('Owen B. invited you to this game — Table 1');
+    expect(screen.queryByLabelText('Join the waitlist')).toBeNull();
+    expect(screen.queryByLabelText('Take a seat at Table 1')).toBeNull();
+  });
+
+  it('draws an empty seat as not tappable for an invitee', async () => {
+    fetchEventSeating.mockResolvedValue([INVITED_ADA]);
+    render(<EventScreen />);
+    await screen.findByText('Owen B. invited you to this game — Table 1');
+    const seats = screen.getAllByLabelText('Take a seat at Table 1');
+    expect(seats[0].getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('shows an organizer who is invited and lets them withdraw it', async () => {
+    fetchRoster.mockResolvedValue(HOST_ROSTER_WITH_RAVI);
+    fetchEventSeating.mockResolvedValue([INVITED_RAVI]);
+    render(<EventScreen />);
+    expect(await screen.findByText('Ravi K.')).toBeTruthy();
+    expect(screen.getByText('Invited')).toBeTruthy();
+    fireEvent.click(screen.getByLabelText('Manage the invite for Ravi K.'));
+    fireEvent.click(screen.getByLabelText('Withdraw the invite to Ravi K.'));
+    await waitFor(() =>
+      expect(withdrawBookingInvite).toHaveBeenCalledWith('b-ravi-inv'),
+    );
+  });
+
+  it('shows another member an anonymous held seat they cannot manage', async () => {
+    fetchRoster.mockResolvedValue(ROSTER_WITH_RAVI);
+    fetchEventSeating.mockResolvedValue([
+      { ...INVITED_RAVI, profile_id: null, display_name: null },
+    ]);
+    render(<EventScreen />);
+    expect(await screen.findByText('Invited')).toBeTruthy();
+    expect(screen.queryByLabelText(/Manage the invite/)).toBeNull();
+  });
+
+  it('reads "N playing · M invited" when invites are pending', async () => {
+    fetchRoster.mockResolvedValue(ROSTER_WITH_RAVI);
+    fetchEventSeating.mockResolvedValue([SEATED_ADA, INVITED_RAVI]);
+    render(<EventScreen />);
+    expect(await screen.findByText('1 playing · 1 invited')).toBeTruthy();
+  });
+
+  it('has no playing/invited line when nobody is invited', async () => {
+    fetchRoster.mockResolvedValue(ROSTER_WITH_RAVI);
+    fetchEventSeating.mockResolvedValue([SEATED_ADA, SEATED_RAVI]);
+    render(<EventScreen />);
+    await screen.findByText('Ravi K.');
+    expect(screen.queryByText(/invited$/)).toBeNull();
+  });
+
+  it("does not show an invitee the sender's group offer", async () => {
+    fetchEventSeating.mockResolvedValue([
+      { ...INVITED_ADA, event_table_id: null, invite_holds_seat: false },
+    ]);
+    fetchOpenOffer.mockResolvedValue({
+      id: 'offer-1',
+      group_id: 'g-owen',
+      offered_seat_count: 2,
+      expires_at: new Date(Date.now() + 3_600_000).toISOString(),
+    });
+    render(<EventScreen />);
+    await screen.findByText("Owen B. invited you to this game — you'd join the waitlist");
+    expect(screen.queryByLabelText('Take the 2 seats')).toBeNull();
   });
 });

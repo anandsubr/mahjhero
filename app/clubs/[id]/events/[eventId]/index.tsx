@@ -39,10 +39,12 @@ import type { Club, ClubMember } from '../../../../../lib/clubs';
 import { isValidEmail } from '../../../../../lib/auth';
 import { GENERIC_ERROR } from '../../../../../lib/constants';
 import {
+  acceptBookingInvite,
   acceptPromotionOffer,
   callForAFourth,
   cancelBooking,
   commitBooking,
+  declineBooking,
   declinePromotionOffer,
   fetchEventAcceptedCount,
   fetchEventSeating,
@@ -51,8 +53,10 @@ import {
   placeBooking,
   proposeBooking,
   seatsRemaining,
+  takesSeat,
   tierWarning,
   waitlistLabel,
+  withdrawBookingInvite,
   type SeatOccupant,
   type SkillLevel,
 } from '../../../../../lib/bookings';
@@ -465,18 +469,18 @@ export default function EventScreen() {
   const canManageOwnSeat =
     event.status === 'published' && new Date(event.ends_at) > now;
 
-  // Every table full, counting only bookings actually placed at one — a
-  // booking still awaiting placement (`event_table_id === null`) occupies a
+  // Every table full, counting only bookings actually placed at one —
+  // confirmed, or held for a pending invite — a booking still awaiting placement (`event_table_id === null`) occupies a
   // seat somewhere but isn't blocking any *specific* table from showing an
   // empty one, so it is deliberately excluded from this per-table count.
   const gameFull =
     !tablesFailed &&
     tables.length > 0 &&
     tables.every((t) => {
-      const confirmedHere = seating.filter(
-        (o) => o.status === 'confirmed' && o.event_table_id === t.id,
+      const takenHere = seating.filter(
+        (o) => takesSeat(o) && o.event_table_id === t.id,
       ).length;
-      return seatsRemaining(t.capacity, confirmedHere) === 0;
+      return seatsRemaining(t.capacity, takenHere) === 0;
     });
 
   // The opposite window from `canBook`: rounds can only be recorded once
@@ -499,19 +503,33 @@ export default function EventScreen() {
   );
   const myHoldsSeat = myBooking !== undefined;
 
+  // This member's own pending game invite, if any. `myBooking` above stays
+  // confirmed/waitlisted only -- an invite is not a seat yet, so it must
+  // not unlock the roster or the leave controls. It drives the Accept /
+  // Decline banner and blocks every "book myself" control below:
+  // commit_booking would refuse (the invite is the one active row per
+  // person per game).
+  const myInvite = seating.find(
+    (o) => o.profile_id === me && o.status === 'invited',
+  );
+  const invitedRows = seating.filter((o) => o.status === 'invited');
+  // withdraw_booking_invite's own gate: any organizer, or the sender.
+  const canWithdraw = (o: SeatOccupant) =>
+    canBook && o.status === 'invited' && (isOrganizer || o.booked_by === me);
+
   // The privacy gate this task adds: on an `invite_only` game, an accepted
   // member who is not yet placed at a table can see only the headcount
   // note below, never the tables/roster themselves -- the database layer
   // (Tasks 2/3) already restricts what such a viewer's own `seating` fetch
   // can return (just their own row), so this is purely about which JSX
   // renders, not an additional access check. `open_play` and an organizer
-  // always see the full roster; a placed booking (`event_table_id != null`)
-  // means the game has already revealed who else is at that person's own
-  // table, so there is nothing left to hide from them either.
+  // always see the full roster; a confirmed booking, placed or not (P1,
+  // 2026-09-24: "accepted and holding a seat"), means the member is in the
+  // game, so there is nothing left to hide from them either.
   const canSeeFullRoster =
     event.game_mode === 'open_play' ||
     isOrganizer ||
-    myBooking?.event_table_id != null;
+    myBooking?.status === 'confirmed';
 
   // The member's own check-in window: starts_at - 1h to ends_at, no
   // organizer tail — once the game ends, self-check-in is done. The
@@ -542,9 +560,9 @@ export default function EventScreen() {
 
   // The section title below must not read `confirmedRoster.length` when the
   // full roster is hidden (`!canSeeFullRoster`): on an `invite_only` open-
-  // seating night nothing is EVER placed at a table (there are no tables),
-  // so a non-organizer's own booking's `event_table_id` is null forever and
-  // `event_seating` hands them back exactly one row -- their own. Rendering
+  // seating night a non-organizer without a confirmed booking (waitlisted,
+  // or a pending invitee) gets back from `event_seating` exactly one row --
+  // their own. Rendering
   // that count as the headcount used to show "1 signed up" directly above
   // the privacy card's own, honest `acceptedCount` a few lines down -- two
   // numbers, on the same screen, contradicting each other. `acceptedCount`
@@ -630,7 +648,7 @@ export default function EventScreen() {
   // fill), so it would never be true here — a capped, full open-seating
   // night still needs this button to book AND land on the waitlist, which
   // `commitBooking`/`bookSeat` already handle without any special-casing.
-  const canJoinOpenSeating = isOpenSeating && canBook && !myHoldsSeat;
+  const canJoinOpenSeating = isOpenSeating && canBook && !myHoldsSeat && !myInvite;
 
   // The other half of the same gap: a CONFIRMED open-seating booking had no
   // way to give it up at all, on this screen or the dashboard. Assigned
@@ -827,6 +845,40 @@ export default function EventScreen() {
     await run(() => cancelBooking(bookingId));
   }
 
+  // The invitee's answers. Accept reloads like any seat change.
+  async function acceptInvite() {
+    if (!myInvite) return;
+    await run(() => acceptBookingInvite(myInvite.booking_id));
+  }
+
+  // Declining an invite-only game's invite also removes the caller's only
+  // reason to see it (events_select_member), so a reload would land on
+  // "That game could not be loaded." -- go back to the dashboard instead
+  // (P6). An organizer can always see their own game, so they stay.
+  async function declineInvite() {
+    if (!myInvite) return;
+    setBusy(true);
+    setError(null);
+    const { error: declineError } = await declineBooking(myInvite.booking_id);
+    setBusy(false);
+    if (declineError) {
+      setError(declineError);
+      return;
+    }
+    if (event?.game_mode === 'invite_only' && !isOrganizer) {
+      router.push('/clubs');
+      return;
+    }
+    await load();
+  }
+
+  // The sender's or an organizer's Withdraw invite, from a held seat's
+  // panel or the waitlist area's "Invited" card.
+  async function withdrawInvite(bookingId: string) {
+    setOpenBookingId(null);
+    await run(() => withdrawBookingInvite(bookingId));
+  }
+
   // The seat grid's own toggle: tapping an occupied seat opens that
   // person's panel, tapping it again (or tapping any OTHER occupied seat —
   // see `openBookingId` above) closes/replaces it. A plain toggle rather
@@ -953,13 +1005,45 @@ export default function EventScreen() {
       ) : null}
 
       {error ? <ErrorBanner message={error} /> : null}
+      {myInvite && canBook ? (
+        <Card>
+          <Text style={styles.inviteBanner}>
+            {`${myInvite.booked_by_name} invited you to this game${
+              myInvite.event_table_id
+                ? ` — ${tables.find((t) => t.id === myInvite.event_table_id)?.label ?? 'a table'}`
+                : myInvite.invite_holds_seat === false
+                  ? " — you'd join the waitlist"
+                  : ''
+            }`}
+          </Text>
+          <View style={styles.chips}>
+            <Button
+              big={false}
+              disabled={busy}
+              onPress={() => void acceptInvite()}
+              accessibilityLabel="Accept the invite"
+            >
+              Accept
+            </Button>
+            <Button
+              variant="ghost"
+              big={false}
+              disabled={busy}
+              onPress={() => void declineInvite()}
+              accessibilityLabel="Decline the invite"
+            >
+              Decline
+            </Button>
+          </View>
+        </Card>
+      ) : null}
 
       {/*
         Also gated on `canBook`: once a game has started (or isn't
         published), Join has nothing left to point at, so the tip would be
         advice about a control that's no longer there.
       */}
-      {!isOrganizer && event.status !== 'cancelled' && canBook && guides.isVisible('tip:event') ? (
+      {!isOrganizer && !myInvite && event.status !== 'cancelled' && canBook && guides.isVisible('tip:event') ? (
         <TipCard tag="Tip" title="Getting a seat" onDismiss={() => guides.dismiss('tip:event')}>
           <TipText>Tap Join, or an Empty seat at a table, to take a spot.</TipText>
           {canBringSomeone ? <TipText>Tap Invite to bring someone along.</TipText> : null}
@@ -1039,6 +1123,11 @@ export default function EventScreen() {
                 return `${seats} ${seats === 1 ? 'seat' : 'seats'}`;
               })()}`}
       </Text>
+      {canSeeFullRoster && invitedRows.length > 0 ? (
+        <Text style={styles.help}>
+          {`${seating.filter((o) => o.status === 'confirmed').length} playing · ${invitedRows.length} invited`}
+        </Text>
+      ) : null}
 
       {canSeeFullRoster ? (
         <>
@@ -1081,10 +1170,9 @@ export default function EventScreen() {
                   const tableOccupants = seating.filter(
                     (o) => o.event_table_id === table.id,
                   );
-                  const confirmedAtTable = tableOccupants.filter(
-                    (o) => o.status === 'confirmed',
-                  );
-                  const confirmedHere = confirmedAtTable.length;
+                  // Seats actually taken here: confirmed plus held invites.
+                  // A held seat is not a missing fourth.
+                  const takenHere = tableOccupants.filter(takesSeat).length;
                   const displayRounds = rounds
                     .filter((r) => r.event_table_id === table.id)
                     .map((r) => ({
@@ -1124,6 +1212,7 @@ export default function EventScreen() {
                       // whole live game (see its own comment above, "A member's own
                       // already-confirmed booking...", for why).
                       onTakeSeat={
+                        !myInvite &&
                         (myBooking && myBooking.status === 'confirmed'
                           ? canManageOwnSeat
                           : canBook) &&
@@ -1136,7 +1225,7 @@ export default function EventScreen() {
                       busy={busy}
                       needsFourth={needsAFourth(
                         table.capacity,
-                        confirmedHere,
+                        takenHere,
                         new Date(event.starts_at),
                         now,
                       )}
@@ -1176,6 +1265,8 @@ export default function EventScreen() {
                       onLeaveSeat={canBook ? leaveSeat : undefined}
                       openBookingId={openBookingId}
                       onToggleManage={toggleManageSeat}
+                      isOrganizer={isOrganizer}
+                      onWithdrawInvite={canBook ? withdrawInvite : undefined}
                       rounds={roundsFailed ? undefined : displayRounds}
                       canRecordRound={gameLive && (isOrganizer || iAmSeatedHere)}
                       canDeleteRound={isOrganizer}
@@ -1232,7 +1323,7 @@ export default function EventScreen() {
                             reason they chose invite_only in the first place.
                           */}
                           {table.capacity >= 2 &&
-                          confirmedHere === table.capacity - 1 &&
+                          takenHere === table.capacity - 1 &&
                           canBook &&
                           event.game_mode === 'open_play' ? (
                             <Button
@@ -1265,7 +1356,8 @@ export default function EventScreen() {
         </>
       ) : (
         // The privacy note replacing the full tables/roster view for an
-        // accepted-but-not-yet-placed invitee on an `invite_only` game --
+        // viewer without a confirmed booking — waitlisted, or a pending
+        // invitee — on an `invite_only` game --
         // `acceptedCount` is the total headcount, with no identities
         // attached (see `fetchEventAcceptedCount`'s own doc comment).
         // `null` covers both "still loading" and a failed fetch, so the
@@ -1277,8 +1369,9 @@ export default function EventScreen() {
               ? 'This is an invite-only game.'
               : `${acceptedCount} ${acceptedCount === 1 ? 'person has' : 'people have'} accepted.`}
             {' '}
-            You won&apos;t see who else is playing until you&apos;re placed on
-            a table.
+            {myInvite
+              ? "You'll see who else is playing once you accept."
+              : "You won't see who else is playing until you have a seat."}
           </Text>
         </Card>
       )}
@@ -1407,7 +1500,9 @@ export default function EventScreen() {
       {isBringingSomeone ? (
         <BringSomeoneSheet
           roster={roster}
-          booked={seating.map((o) => o.profile_id)}
+          booked={seating
+            .map((o) => o.profile_id)
+            .filter((id): id is string => id !== null)}
           youId={me}
           tables={tables}
           initialTableId={null}
@@ -1417,7 +1512,7 @@ export default function EventScreen() {
         />
       ) : null}
 
-      {canBook && gameFull && !myHoldsSeat ? (
+      {canBook && gameFull && !myHoldsSeat && !myInvite ? (
         <Button
           variant="secondary"
           disabled={busy}
@@ -1462,8 +1557,16 @@ export default function EventScreen() {
       <WaitlistPanel
         unseated={unseatedBookings}
         waiting={seating.filter((o) => o.status === 'waitlisted')}
+        invited={invitedRows.filter((o) => o.event_table_id === null)}
+        canWithdraw={canWithdraw}
+        onWithdrawInvite={withdrawInvite}
         youId={me}
-        offer={offer}
+        // Never to a pending invitee: fetchOpenOffer reads
+        // promotion_offers through is_booking_group_member, which has no
+        // status filter, so an invitee in the sender's group would
+        // otherwise see the sender's offer -- one only the group's
+        // creator can take.
+        offer={myInvite ? null : offer}
         now={now}
         busy={busy}
         onAcceptOffer={acceptOffer}
@@ -1623,6 +1726,11 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: space[2],
     marginTop: space[3],
+  },
+  inviteBanner: {
+    fontFamily: type.bodySemiBold,
+    fontSize: type.size.bodyLarge,
+    color: colors.text,
   },
   help: {
     fontFamily: type.bodyRegular,
