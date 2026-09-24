@@ -620,6 +620,29 @@ export default function ClubsScreen() {
           onAccept={handleAcceptInvite}
           onDecline={handleDeclineInvite}
         />
+        {/* The host checklist and player card live in the populated branch
+            below, which this early return never reaches -- so without this
+            card a brand-new account got no guidance at all. */}
+        {guides.isVisible('welcome') ? (
+          <TipCard
+            testID="welcome-card"
+            tag="New here?"
+            title="Welcome to MahjHero"
+            onDismiss={() => guides.dismiss('welcome')}
+          >
+            <TipText>
+              Organizing games? Start a club below, then schedule a game and
+              invite your players.
+            </TipText>
+            <TipText>
+              Joining a club? Ask its organizer to invite{' '}
+              <Text style={styles.welcomeEmail}>
+                {session.user.email || 'the email you signed in with'}
+              </Text>
+              . The invite will show up right here.
+            </TipText>
+          </TipCard>
+        ) : null}
         <View style={styles.list}>
           <Text style={styles.help}>
             You are not in a club yet. Start one and invite the people you
@@ -1329,6 +1352,9 @@ function BookingSeatControls({
 }
 
 const styles = StyleSheet.create({
+  welcomeEmail: {
+    fontFamily: type.bodyBold,
+  },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   container: {
     // Every other screen gets its side margins from its own `contentStyle`
