@@ -8,6 +8,7 @@ import {
   initialsFrom,
   inScope,
   needAFourthAlerts,
+  pendingGameInvites,
 } from './dashboard';
 import type { Club } from './clubs';
 import type { ClubEvent } from './events';
@@ -766,5 +767,133 @@ describe('glyphForClub', () => {
       ['club-1', 'club-2', 'club-3', 'club-4', 'club-5', 'club-6'].map(glyphForClub),
     );
     expect(glyphs.size).toBeGreaterThan(1);
+  });
+});
+
+describe('game invites', () => {
+  const threeSeated = [
+    { profile_id: 'a', status: 'confirmed' as const, event_table_id: 'table-1', group_id: 'g-a' },
+    { profile_id: 'b', status: 'confirmed' as const, event_table_id: 'table-1', group_id: 'g-b' },
+    { profile_id: 'c', status: 'confirmed' as const, event_table_id: 'table-1', group_id: 'g-c' },
+  ];
+
+  it('keeps a pending invite out of "Your games", and its game off the joinable list', () => {
+    const rows = buildDashboardRows({
+      bookings: [
+        booking({ event_id: 'event-1', status: 'invited', invite_holds_seat: true }),
+      ],
+      events: [event()],
+      clubs: CLUBS,
+      userId: 'me',
+      now: NOW,
+    });
+    expect(rows).toEqual([]);
+  });
+
+  it('lists pending invites, and only those, for the invite card', () => {
+    const invite = booking({
+      booking_id: 'inv',
+      status: 'invited',
+      invite_holds_seat: false,
+      event_table_id: null,
+      table_label: null,
+    });
+    expect(pendingGameInvites([booking(), invite])).toEqual([invite]);
+  });
+
+  it("counts a held invite as a taken seat: an organizer's table full of held seats reads as Hosting", () => {
+    const rows = buildDashboardRows({
+      bookings: [],
+      events: [
+        event({
+          bookings: [
+            ...threeSeated,
+            {
+              profile_id: 'd',
+              status: 'invited',
+              event_table_id: 'table-1',
+              group_id: 'g-a',
+              invite_holds_seat: true,
+            },
+          ],
+        }),
+      ],
+      clubs: CLUBS,
+      userId: 'me',
+      organizerClubIds: new Set(['club-1']),
+      now: NOW,
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].joinable).toBe(false);
+    expect(rows[0].organizing).toBe(true);
+  });
+
+  it('does not call for a fourth over a held seat', () => {
+    const alerts = needAFourthAlerts({
+      events: [
+        event({
+          bookings: [
+            ...threeSeated,
+            {
+              profile_id: 'd',
+              status: 'invited',
+              event_table_id: 'table-1',
+              group_id: 'g-a',
+              invite_holds_seat: true,
+            },
+          ],
+        }),
+      ],
+      clubs: CLUBS,
+      userId: 'me',
+      now: NOW,
+    });
+    expect(alerts).toEqual([]);
+  });
+
+  it('does not ask someone already invited to the game to be the fourth', () => {
+    const alerts = needAFourthAlerts({
+      events: [
+        event({
+          bookings: [
+            ...threeSeated,
+            {
+              profile_id: 'me',
+              status: 'invited',
+              event_table_id: null,
+              group_id: 'g-me',
+              invite_holds_seat: false,
+            },
+          ],
+        }),
+      ],
+      clubs: CLUBS,
+      userId: 'me',
+      now: NOW,
+    });
+    expect(alerts).toEqual([]);
+  });
+
+  it('ignores an invite that holds no seat when counting the table', () => {
+    const alerts = needAFourthAlerts({
+      events: [
+        event({
+          bookings: [
+            ...threeSeated,
+            {
+              profile_id: 'd',
+              status: 'invited',
+              event_table_id: null,
+              group_id: 'g-a',
+              invite_holds_seat: false,
+            },
+          ],
+        }),
+      ],
+      clubs: CLUBS,
+      userId: 'me',
+      now: NOW,
+    });
+    expect(alerts).toHaveLength(1);
   });
 });

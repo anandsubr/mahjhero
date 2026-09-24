@@ -728,23 +728,26 @@ this is a `postgres`/dashboard-only inspection) and in the Postgres server
 log for whichever environment ran it. Nobody currently polls either one, so
 today a skipped series is discoverable but not alerted on.
 
-Five jobs now run on `pg_cron`:
+Six jobs now run on `pg_cron`:
 
 | Job | Schedule | What it does |
 |---|---|---|
 | `materialize-event-series` | `0 3 * * *` | Keeps ~6 weeks of recurring events materialized |
 | `sweep-promotion-offers` | `*/5 * * * *` | Expires promotion offers past `expires_at`, releases their held seats, and promotes the next eligible group |
+| `close-started-invites` | `*/5 * * * *` | Closes game invites still pending when their game has started (`cancelled`, no notification) |
 | `announce-need-a-fourth` | `*/15 * * * *` | Writes `notification_outbox` rows for tables at `capacity - 1` inside the 48-hour window |
 | `queue-event-reminders` | `*/15 * * * *` | Writes `notification_outbox` rows at each club's configured reminder offsets |
 | `deliver-notifications` | `* * * * *` | Drains the outbox by POSTing to the `deliver-notifications` Edge Function |
 
-Four of these five are ordinary plpgsql and are tested by **calling them**,
+Five of these six are ordinary plpgsql and are tested by **calling them**,
 not by waiting for a schedule. `sweep_promotion_offers()`,
 `announce_need_a_fourth()` and `queue_event_reminders()` each return a
 count, so a fixture can assert what a run did rather than inspecting
 `cron.job_run_details` — which the hosted suite could not read anyway.
+`close_started_invites()` returns `void`; its tests assert the row state it
+leaves behind (status, held seat and table cleared) instead of a count.
 
-The fifth, `deliver-notifications`, is not plpgsql at all — `pg_cron` POSTs
+The sixth, `deliver-notifications`, is not plpgsql at all — `pg_cron` POSTs
 to an Edge Function through `pg_net` rather than calling a function in the
 database, so "call it and assert what it did" doesn't apply the same way.
 It's covered separately, in "The notification drain" below.

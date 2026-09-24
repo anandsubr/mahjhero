@@ -48,8 +48,8 @@ describe('describeNotification', () => {
 
   it('booking_declined', () => {
     const result = describeNotification(row({ kind: 'booking_declined', actor_name: 'Ben' }));
-    expect(result.headline).toBe('A seat came free');
-    expect(result.detail).toContain('Ben declined the seat');
+    expect(result.headline).toBe('Invite declined');
+    expect(result.detail).toContain('Ben declined your invite');
   });
 
   it('booking_cancelled_by_host', () => {
@@ -137,6 +137,44 @@ describe('describeNotification', () => {
     );
     expect(result.headline).toBe('Someone is not coming');
     expect(result.detail).toContain("Dev says they can't make");
+  });
+
+  it('booking_invited: names the sender and says the seat is held', () => {
+    const result = describeNotification(
+      row({ kind: 'booking_invited', actor_name: 'Ada', table_label: 'Table 2', payload: { holds_seat: true } }),
+    );
+    expect(result.headline).toBe("You're invited");
+    expect(result.detail).toContain('Ada invited you to');
+    expect(result.detail).toContain('at Table 2');
+    expect(result.detail).toContain('Your seat is held');
+    expect(result.href).toBe('/clubs/club-1/events/event-1');
+  });
+
+  it('booking_invited: into a full game, says accepting joins the waitlist', () => {
+    const result = describeNotification(
+      row({ kind: 'booking_invited', actor_name: 'Ada', payload: { holds_seat: false } }),
+    );
+    expect(result.detail).toContain('accepting puts you on the waitlist');
+  });
+
+  it('booking_invite_accepted', () => {
+    const result = describeNotification(row({ kind: 'booking_invite_accepted', actor_name: 'Ben' }));
+    expect(result.headline).toBe('Invite accepted');
+    expect(result.detail).toContain('Ben is in for');
+  });
+
+  it('booking_invite_withdrawn: links to the club, not the game', () => {
+    const result = describeNotification(row({ kind: 'booking_invite_withdrawn', actor_name: 'Cara' }));
+    expect(result.headline).toBe('Invite withdrawn');
+    expect(result.detail).toContain('Cara withdrew your invite');
+    expect(result.href).toBe('/clubs/club-1');
+  });
+
+  it('booking_cancelled_by_member', () => {
+    const result = describeNotification(row({ kind: 'booking_cancelled_by_member', actor_name: 'Ben' }));
+    expect(result.headline).toBe('A seat opened up');
+    expect(result.detail).toContain("Ben can't make");
+    expect(result.detail).toContain('their seat is open');
   });
 });
 

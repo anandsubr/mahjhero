@@ -14,7 +14,7 @@ const SPLIT_TOGGLE_LABEL = "Split us up if we can't sit together";
 
 type Props = {
   roster: ClubMember[];
-  /** profile ids already holding a live booking for this game. */
+  /** profile ids already holding a live booking or a pending invite for this game. */
   booked: string[];
   youId: string;
   tables: EventTable[];
@@ -78,6 +78,11 @@ export default function BringSomeoneSheet({
   const available = roster.filter(
     (m) => m.profile_id !== youId && !booked.includes(m.profile_id),
   );
+
+  // Anyone besides the opener makes this an invitation (commit_booking
+  // books only the caller; everyone else is invited and must accept), so
+  // the buttons say so. A You-only sheet is still a plain booking.
+  const invitingOthers = players.some((id) => id !== youId);
 
   const nameOf = (id: string) =>
     id === youId
@@ -264,9 +269,9 @@ export default function BringSomeoneSheet({
           loading={busy}
           disabled={players.length === 0}
           onPress={confirm}
-          accessibilityLabel="Confirm this booking"
+          accessibilityLabel={invitingOthers ? 'Send invites' : 'Confirm this booking'}
         >
-          Confirm
+          {invitingOthers ? 'Send invites' : 'Confirm'}
         </Button>
       ) : plan.outcome === 'seated' ? (
         <>
@@ -276,24 +281,40 @@ export default function BringSomeoneSheet({
               {nameOf(placement.profile_id)} → {placement.table_label}
             </Text>
           ))}
-          <Button block loading={busy} onPress={() => commit(true)} accessibilityLabel="Book it this way">
-            Book it this way
-          </Button>
           <Button
-            variant="ghost"
-            big={false}
-            disabled={busy}
-            onPress={() => commit(false)}
-            accessibilityLabel="Wait together instead"
+            block
+            loading={busy}
+            onPress={() => commit(true)}
+            accessibilityLabel={invitingOthers ? 'Send invites this way' : 'Book it this way'}
           >
-            Wait together instead
+            {invitingOthers ? 'Send invites this way' : 'Book it this way'}
           </Button>
+          {invitingOthers ? null : (
+            <Button
+              variant="ghost"
+              big={false}
+              disabled={busy}
+              onPress={() => commit(false)}
+              accessibilityLabel="Wait together instead"
+            >
+              Wait together instead
+            </Button>
+          )}
         </>
       ) : (
         <>
-          <Text style={styles.placement}>There is no room for all of you right now.</Text>
-          <Button block loading={busy} onPress={() => commit(allowSplit)} accessibilityLabel="Wait together">
-            Wait together
+          <Text style={styles.placement}>
+            {invitingOthers
+              ? 'The game is full — anyone who accepts joins the waitlist.'
+              : 'There is no room for all of you right now.'}
+          </Text>
+          <Button
+            block
+            loading={busy}
+            onPress={() => commit(allowSplit)}
+            accessibilityLabel={invitingOthers ? "Send invites — they'd join the waitlist" : 'Wait together'}
+          >
+            {invitingOthers ? "Send invites — they'd join the waitlist" : 'Wait together'}
           </Button>
         </>
       )}

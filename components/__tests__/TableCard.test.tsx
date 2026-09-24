@@ -237,3 +237,84 @@ describe('TableCard', () => {
     ).toBeNull();
   });
 });
+
+describe('TableCard: held seats (game invites)', () => {
+  const heldInvite = {
+    ...occupants[0],
+    booking_id: 'b9',
+    profile_id: 'p5',
+    display_name: 'Owen B.',
+    status: 'invited' as const,
+    booked_by: 'p1',
+    booked_by_name: 'Ravi K.',
+    invite_holds_seat: true,
+  };
+
+  it('draws a held seat after the confirmed ones, named, with an Invited tag', () => {
+    render(<TableCard table={table} occupants={[...occupants, heldInvite]} youId="p9" />);
+    expect(screen.getByText('Owen B.')).toBeTruthy();
+    expect(screen.getByText('Invited')).toBeTruthy();
+    expect(screen.getAllByText('Empty')).toHaveLength(2);
+  });
+
+  it('draws an anonymous held seat for a viewer who may not see the name', () => {
+    render(
+      <TableCard
+        table={table}
+        occupants={[...occupants, { ...heldInvite, profile_id: null, display_name: null }]}
+        youId="p9"
+      />,
+    );
+    expect(screen.getAllByText('Invited')).toHaveLength(1);
+    expect(screen.getAllByText('Empty')).toHaveLength(2);
+  });
+
+  it('lets an organizer withdraw a held seat', () => {
+    const onWithdrawInvite = vi.fn();
+    function Harness() {
+      const [open, setOpen] = useState<string | null>(null);
+      return (
+        <TableCard
+          table={table}
+          occupants={[...occupants, heldInvite]}
+          youId="p9"
+          isOrganizer
+          openBookingId={open}
+          onToggleManage={(id) => setOpen((cur) => (cur === id ? null : id))}
+          onWithdrawInvite={onWithdrawInvite}
+        />
+      );
+    }
+    render(<Harness />);
+    fireEvent.click(screen.getByLabelText('Manage the invite for Owen B.'));
+    fireEvent.click(screen.getByLabelText('Withdraw the invite to Owen B.'));
+    expect(onWithdrawInvite).toHaveBeenCalledWith('b9');
+  });
+
+  it('lets the non-organizer sender withdraw it, but nobody else', () => {
+    const { unmount } = render(
+      <TableCard
+        table={table}
+        occupants={[...occupants, heldInvite]}
+        youId="p1"
+        openBookingId={null}
+        onToggleManage={vi.fn()}
+        onWithdrawInvite={vi.fn()}
+      />,
+    );
+    expect(screen.getByLabelText('Manage the invite for Owen B.')).toBeTruthy();
+    unmount();
+
+    render(
+      <TableCard
+        table={table}
+        occupants={[...occupants, heldInvite]}
+        youId="p9"
+        openBookingId={null}
+        onToggleManage={vi.fn()}
+        onWithdrawInvite={vi.fn()}
+      />,
+    );
+    expect(screen.queryByLabelText('Manage the invite for Owen B.')).toBeNull();
+  });
+});

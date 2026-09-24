@@ -18,7 +18,11 @@ export type OutboxKind =
   | 'need_a_fourth'
   | 'event_reminder'
   | 'broadcast'
-  | 'attendance_declined';
+  | 'attendance_declined'
+  | 'booking_invited'
+  | 'booking_invite_accepted'
+  | 'booking_invite_withdrawn'
+  | 'booking_cancelled_by_member';
 
 export type RenderRow = {
   id: string;

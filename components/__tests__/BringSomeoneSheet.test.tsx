@@ -121,14 +121,14 @@ describe('BringSomeoneSheet', () => {
     });
     renderSheet();
     fireEvent.click(screen.getByLabelText('Add Jane P.'));
-    fireEvent.click(screen.getByText('Confirm'));
+    fireEvent.click(screen.getByText('Send invites'));
 
     expect(await screen.findByText('You → Table 2')).toBeTruthy();
     expect(screen.getByText('Jane P. → Table 1')).toBeTruthy();
     // Nothing is written until the member says yes to the split they saw.
     expect(commit).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByText('Book it this way'));
+    fireEvent.click(screen.getByText('Send invites this way'));
     await waitFor(() => expect(commit).toHaveBeenCalled());
   });
 
@@ -139,22 +139,62 @@ describe('BringSomeoneSheet', () => {
     });
     renderSheet();
     fireEvent.click(screen.getByLabelText('Add Jane P.'));
-    fireEvent.click(screen.getByText('Confirm'));
+    fireEvent.click(screen.getByText('Send invites'));
     await waitFor(() => expect(commit).toHaveBeenCalled());
   });
 
-  it('offers the waitlist when the group does not fit', async () => {
+  it('offers the waitlist when a solo booking does not fit', async () => {
     propose.mockResolvedValue({
       plan: { outcome: 'waitlisted', split: false, placements: [] },
       error: null,
     });
-    renderSheet();
-    fireEvent.click(screen.getByLabelText('Add Jane P.'));
+    renderSheet({ roster: [roster[0]], booked: [] });
     fireEvent.click(screen.getByText('Confirm'));
     expect(
       await screen.findByText('There is no room for all of you right now.'),
     ).toBeTruthy();
     expect(screen.getByText('Wait together')).toBeTruthy();
+  });
+
+  describe('when inviting others into a full game', () => {
+    it('reads "Send invites — they\'d join the waitlist", not "Wait together", on the full-game path', async () => {
+      propose.mockResolvedValue({
+        plan: { outcome: 'waitlisted', split: false, placements: [] },
+        error: null,
+      });
+      renderSheet();
+      fireEvent.click(screen.getByLabelText('Add Jane P.'));
+      fireEvent.click(screen.getByText('Send invites'));
+      expect(
+        await screen.findByText(
+          'The game is full — anyone who accepts joins the waitlist.',
+        ),
+      ).toBeTruthy();
+      expect(screen.queryByText('There is no room for all of you right now.')).toBeNull();
+      expect(screen.getByText("Send invites — they'd join the waitlist")).toBeTruthy();
+      expect(screen.queryByText('Wait together')).toBeNull();
+    });
+
+    it('hides "Wait together instead" on a split proposal', async () => {
+      propose.mockResolvedValue({
+        plan: {
+          outcome: 'seated',
+          split: true,
+          placements: [
+            { profile_id: 'me', event_table_id: 't2', table_label: 'Table 2' },
+            { profile_id: 'p2', event_table_id: 't1', table_label: 'Table 1' },
+          ],
+        },
+        error: null,
+      });
+      renderSheet();
+      fireEvent.click(screen.getByLabelText('Add Jane P.'));
+      fireEvent.click(screen.getByText('Send invites'));
+
+      expect(await screen.findByText('You → Table 2')).toBeTruthy();
+      expect(screen.getByText('Send invites this way')).toBeTruthy();
+      expect(screen.queryByText('Wait together instead')).toBeNull();
+    });
   });
 
   it('hides the split toggle once "any table" is chosen', () => {
@@ -220,7 +260,7 @@ describe('BringSomeoneSheet', () => {
       });
       renderAlreadySeated();
       fireEvent.click(screen.getByLabelText('Add Jane P.'));
-      fireEvent.click(screen.getByText('Confirm'));
+      fireEvent.click(screen.getByText('Send invites'));
       await waitFor(() => expect(propose).toHaveBeenCalled());
       expect(propose).toHaveBeenCalledWith(
         expect.objectContaining({ players: ['p2'] }),
@@ -261,7 +301,7 @@ describe('BringSomeoneSheet', () => {
       screen.getByLabelText('Remove Jane P.').getAttribute('aria-disabled'),
     ).toBeNull();
 
-    fireEvent.click(screen.getByText('Confirm'));
+    fireEvent.click(screen.getByText('Send invites'));
     expect(
       screen.getByLabelText('Remove Jane P.').getAttribute('aria-disabled'),
     ).toBe('true');
@@ -271,5 +311,14 @@ describe('BringSomeoneSheet', () => {
       error: null,
     });
     await waitFor(() => expect(commit).toHaveBeenCalled());
+  });
+
+  it('reads "Send invites" once someone else is picked, and "Confirm" for just you', () => {
+    renderSheet();
+    expect(screen.getByText('Confirm')).toBeTruthy();
+    expect(screen.queryByText('Send invites')).toBeNull();
+    fireEvent.click(screen.getByLabelText('Add Jane P.'));
+    expect(screen.getByText('Send invites')).toBeTruthy();
+    expect(screen.queryByText('Confirm')).toBeNull();
   });
 });

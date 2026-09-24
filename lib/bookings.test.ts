@@ -7,6 +7,7 @@ const rpc = vi.fn();
 vi.mock('./supabase', () => ({ supabase: { rpc: (...args: unknown[]) => rpc(...args) } }));
 
 import {
+  acceptBookingInvite,
   bookingErrorMessage,
   callForAFourth,
   cancelBooking,
@@ -15,8 +16,10 @@ import {
   needsAFourth,
   offerCountdown,
   seatsRemaining,
+  takesSeat,
   tierWarning,
   waitlistLabel,
+  withdrawBookingInvite,
 } from './bookings';
 import { GENERIC_ERROR } from './constants';
 
@@ -295,6 +298,81 @@ describe('cancelBooking', () => {
     expect((await cancelBooking('b1')).error).toBe(
       'This game has already started.',
     );
+  });
+});
+
+describe('takesSeat', () => {
+  it('counts a confirmed booking', () => {
+    expect(takesSeat({ status: 'confirmed' })).toBe(true);
+  });
+
+  it('counts a pending invite that holds a seat', () => {
+    expect(takesSeat({ status: 'invited', invite_holds_seat: true })).toBe(true);
+  });
+
+  it('does not count an invite sent into a full game', () => {
+    expect(takesSeat({ status: 'invited', invite_holds_seat: false })).toBe(false);
+  });
+
+  it('does not count a waitlisted booking', () => {
+    expect(takesSeat({ status: 'waitlisted', invite_holds_seat: null })).toBe(false);
+  });
+});
+
+describe('acceptBookingInvite', () => {
+  it('calls accept_booking_invite with the booking id', async () => {
+    rpc.mockResolvedValue({ data: {}, error: null });
+    expect(await acceptBookingInvite('b1')).toEqual({ error: null });
+    expect(rpc).toHaveBeenCalledWith('accept_booking_invite', { target_booking: 'b1' });
+  });
+
+  it('reports an invite answered elsewhere plainly', async () => {
+    rpc.mockResolvedValue({
+      error: { code: '23514', message: 'invite already accepted' },
+    });
+    expect((await acceptBookingInvite('b1')).error).toBe(
+      'That invite has already been accepted.',
+    );
+  });
+
+  it('reports a started game plainly', async () => {
+    rpc.mockResolvedValue({
+      error: { code: '23514', message: 'event already started' },
+    });
+    expect((await acceptBookingInvite('b1')).error).toBe(
+      'This game has already started.',
+    );
+  });
+});
+
+describe('withdrawBookingInvite', () => {
+  it('calls withdraw_booking_invite with the booking id', async () => {
+    rpc.mockResolvedValue({ data: {}, error: null });
+    expect(await withdrawBookingInvite('b1')).toEqual({ error: null });
+    expect(rpc).toHaveBeenCalledWith('withdraw_booking_invite', { target_booking: 'b1' });
+  });
+
+  it('reports an invite the invitee already accepted plainly', async () => {
+    rpc.mockResolvedValue({
+      error: { code: '23514', message: 'invite already accepted' },
+    });
+    expect((await withdrawBookingInvite('b1')).error).toBe(
+      'That invite has already been accepted.',
+    );
+  });
+});
+
+describe('game invite refusals', () => {
+  it('says someone picked is already invited', () => {
+    expect(
+      bookingErrorMessage({ code: '23514', message: 'already invited' }),
+    ).toBe('You or someone you picked has already been invited to this game.');
+  });
+
+  it('keeps "already booked" distinct from "already invited"', () => {
+    expect(
+      bookingErrorMessage({ code: '23514', message: 'already booked' }),
+    ).toBe('You or someone in your group already has a seat at this game.');
   });
 });
 

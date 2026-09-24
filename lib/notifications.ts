@@ -17,7 +17,11 @@ export type OutboxKind =
   | 'need_a_fourth'
   | 'event_reminder'
   | 'broadcast'
-  | 'attendance_declined';
+  | 'attendance_declined'
+  | 'booking_invited'
+  | 'booking_invite_accepted'
+  | 'booking_invite_withdrawn'
+  | 'booking_cancelled_by_member';
 
 /** One row of fetch_my_notifications() -- the RPC's own returns table (...)
  *  shape, column for column. */
@@ -126,8 +130,8 @@ export function describeNotification(
 
     case 'booking_declined':
       return {
-        headline: 'A seat came free',
-        detail: `${actor(row, 'The person you booked for')} declined the seat you booked for them at ${game(row)}.`,
+        headline: 'Invite declined',
+        detail: `${actor(row, 'The person you invited')} declined your invite to ${game(row)}.`,
         href: href(row),
       };
 
@@ -208,6 +212,38 @@ export function describeNotification(
       return {
         headline: 'Someone is not coming',
         detail: `${actor(row, 'A member')} says they can't make ${game(row)}. Their seat is still theirs.`,
+        href: href(row),
+      };
+
+    case 'booking_invited':
+      return {
+        headline: "You're invited",
+        detail:
+          row.payload.holds_seat === false
+            ? `${actor(row, 'A member')} invited you to ${game(row)}. It's full — accepting puts you on the waitlist.`
+            : `${actor(row, 'A member')} invited you to ${game(row)}${at(row)}. Your seat is held until you answer.`,
+        href: href(row),
+      };
+
+    case 'booking_invite_accepted':
+      return {
+        headline: 'Invite accepted',
+        detail: `${actor(row, 'The person you invited')} is in for ${game(row)}${at(row)}.`,
+        href: href(row),
+      };
+
+    case 'booking_invite_withdrawn':
+      return {
+        headline: 'Invite withdrawn',
+        detail: `${actor(row, 'The organizer')} withdrew your invite to ${game(row)}.`,
+        // The game may no longer be visible to them (invite-only).
+        href: `/clubs/${row.club_id}`,
+      };
+
+    case 'booking_cancelled_by_member':
+      return {
+        headline: 'A seat opened up',
+        detail: `${actor(row, 'The person you invited')} can't make ${game(row)} anymore — their seat is open.`,
         href: href(row),
       };
 

@@ -28,6 +28,14 @@ type Props = {
    */
   tables?: SeatableTable[];
   onSeat?: (bookingId: string, tableId: string) => void;
+  /** Table-less pending invites ('invited' rows with no event_table_id):
+   *  a held "any table" seat (invite_holds_seat true) or an invite into a
+   *  full game (false: accepting joins the waitlist). */
+  invited?: SeatOccupant[];
+  /** Whether this viewer may withdraw a given invite (an organizer, or its
+   *  sender). */
+  canWithdraw?: (occupant: SeatOccupant) => boolean;
+  onWithdrawInvite?: (bookingId: string) => void;
 };
 
 /**
@@ -45,6 +53,10 @@ type Props = {
  * host seat them from this one row via `tables`/`onSeat`, which call the
  * same `placeBooking` RPC HostSeating already used (unchanged; still takes
  * a table id).
+ *
+ * Table-less pending game invites get their own "Invited" card here, with
+ * Withdraw invite for the sender or an organizer — a held seat at a
+ * specific table is drawn on that table's SeatGrid instead.
  */
 export default function WaitlistPanel({
   unseated,
@@ -58,11 +70,14 @@ export default function WaitlistPanel({
   onLeaveWaitlist,
   tables,
   onSeat,
+  invited = [],
+  canWithdraw,
+  onWithdrawInvite,
 }: Props) {
   const canSeat = Boolean(tables?.length && onSeat);
   const yourPlace = waiting.find((w) => w.profile_id === youId);
 
-  if (!unseated.length && !waiting.length && !offer) return null;
+  if (!unseated.length && !waiting.length && !offer && !invited.length) return null;
 
   return (
     <>
@@ -158,6 +173,37 @@ export default function WaitlistPanel({
               Leave the waitlist
             </Button>
           ) : null}
+        </Card>
+      ) : null}
+
+      {invited.length ? (
+        <Card>
+          <Text style={styles.heading}>Invited</Text>
+          {invited.map((person) => (
+            <View key={person.booking_id} style={styles.unseatedRow}>
+              <Text style={styles.person}>
+                {person.profile_id !== null && person.profile_id === youId
+                  ? 'You'
+                  : (person.display_name ?? 'Someone')}
+              </Text>
+              <Text style={styles.help}>
+                {person.invite_holds_seat
+                  ? 'Invited — seat held'
+                  : 'Invited — would join the waitlist'}
+              </Text>
+              {onWithdrawInvite && canWithdraw?.(person) ? (
+                <Button
+                  variant="ghost"
+                  big={false}
+                  disabled={busy}
+                  onPress={() => onWithdrawInvite(person.booking_id)}
+                  accessibilityLabel={`Withdraw the invite to ${person.display_name ?? 'this person'}`}
+                >
+                  Withdraw invite
+                </Button>
+              ) : null}
+            </View>
+          ))}
         </Card>
       ) : null}
     </>

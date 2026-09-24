@@ -45,6 +45,12 @@ type Props = {
   onLeaveSeat?: (bookingId: string) => void;
   openBookingId?: string | null;
   onToggleManage?: (bookingId: string) => void;
+  /** Organizer on this game -- may withdraw any held invite here. */
+  isOrganizer?: boolean;
+  /** Supplied while invites can still be withdrawn (the event screen's
+   *  canBook). A held seat offers it to an organizer, or to the seat's
+   *  own sender (`booked_by`). */
+  onWithdrawInvite?: (bookingId: string) => void;
   /**
    * Round recording -- omitted entirely (not merely gated false) hides the
    * whole section, matching `otherTables`/`onMove`/`onRemove`'s own
@@ -94,6 +100,8 @@ export default function TableCard({
   onLeaveSeat,
   openBookingId,
   onToggleManage,
+  isOrganizer = false,
+  onWithdrawInvite,
   rounds,
   canRecordRound = false,
   canDeleteRound = false,
@@ -102,6 +110,10 @@ export default function TableCard({
   gameLive = true,
 }: Props) {
   const seated = occupants.filter((o) => o.status === 'confirmed');
+  // Held seats draw on the grid too, after the confirmed ones: taken, but
+  // the invitee has not said yes yet. An invite that holds no seat never
+  // has a table, so it never reaches this card.
+  const held = occupants.filter((o) => o.status === 'invited');
   const bookedForYou = seated.find(
     (o) => o.profile_id === youId && o.booked_by !== youId,
   );
@@ -133,17 +145,31 @@ export default function TableCard({
       <SeatGrid
         tableLabel={table.label}
         capacity={table.capacity}
-        seats={seated.map((o) => {
-          const points = totalsByProfile.get(o.profile_id) ?? null;
-          return {
+        seats={[
+          ...seated.map((o) => {
+            const points = o.profile_id
+              ? (totalsByProfile.get(o.profile_id) ?? null)
+              : null;
+            return {
+              bookingId: o.booking_id,
+              profileId: o.profile_id ?? '',
+              name: o.display_name,
+              isYou: o.profile_id === youId,
+              points,
+              isLeader: points !== null && points === maxPoints,
+            };
+          }),
+          ...held.map((o) => ({
             bookingId: o.booking_id,
-            profileId: o.profile_id,
+            profileId: o.profile_id ?? '',
+            // null for an invitee this viewer may not see: "Invited".
             name: o.display_name,
-            isYou: o.profile_id === youId,
-            points,
-            isLeader: points !== null && points === maxPoints,
-          };
-        })}
+            isYou: o.profile_id !== null && o.profile_id === youId,
+            invited: true,
+            canWithdraw:
+              Boolean(onWithdrawInvite) && (isOrganizer || o.booked_by === youId),
+          })),
+        ]}
         onTakeSeat={onTakeSeat}
         busy={busy}
         needsFourth={needsFourth}
@@ -155,6 +181,7 @@ export default function TableCard({
         onToggleManage={onToggleManage}
         canRecordRound={canRecordRound}
         onRecordRound={onRecordRound}
+        onWithdrawInvite={onWithdrawInvite}
       />
 
       {rounds && gameLive ? (

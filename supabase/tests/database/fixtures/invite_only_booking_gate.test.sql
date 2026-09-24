@@ -75,16 +75,19 @@ select lives_ok(
   $$select public.commit_booking('22222222-0000-0000-0000-00000000ec01',
       array['bbbbbbbb-0000-0000-0000-00000000ec02']::uuid[],
       '44444444-0000-0000-0000-00000000ec01', true)$$,
-  'the organizer can invite (book) a member onto an invite-only game'
+  'the organizer can invite a member onto an invite-only game'
 );
 
 select is(
   (select count(*)::int from public.bookings
    where event_id = '22222222-0000-0000-0000-00000000ec01'
      and profile_id = 'bbbbbbbb-0000-0000-0000-00000000ec02'
-     and status = 'confirmed'),
+     and status = 'invited'
+     and invite_holds_seat
+     and event_table_id = '44444444-0000-0000-0000-00000000ec01'),
   1,
-  'the invited member is actually seated'
+  'the member is invited, with their seat at the table held -- not seated '
+  'until they accept'
 );
 
 -- An open_play event is unaffected -- the member can still self-book.

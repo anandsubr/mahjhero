@@ -111,3 +111,78 @@ describe('WaitlistPanel: "Coming, not yet seated"', () => {
     expect(screen.queryByText('Mei L.')).toBeNull();
   });
 });
+
+describe('WaitlistPanel: table-less invites', () => {
+  const INVITED = {
+    ...UNSEATED,
+    booking_id: 'b9',
+    profile_id: 'p9',
+    display_name: 'Jane P.',
+    status: 'invited' as const,
+    booked_by: 'p1',
+    booked_by_name: 'Mei L.',
+    invite_holds_seat: false,
+  };
+
+  it('renders with nothing but a pending invite', () => {
+    render(
+      <WaitlistPanel
+        unseated={[]}
+        waiting={[]}
+        invited={[INVITED]}
+        youId="someone-else"
+        offer={null}
+        now={NOW}
+      />,
+    );
+    expect(screen.getByText('Jane P.')).toBeTruthy();
+    expect(screen.getByText('Invited — would join the waitlist')).toBeTruthy();
+  });
+
+  it('says a held any-table invite holds a seat', () => {
+    render(
+      <WaitlistPanel
+        unseated={[]}
+        waiting={[]}
+        invited={[{ ...INVITED, invite_holds_seat: true }]}
+        youId="someone-else"
+        offer={null}
+        now={NOW}
+      />,
+    );
+    expect(screen.getByText('Invited — seat held')).toBeTruthy();
+  });
+
+  it('names nobody on an anonymous invite', () => {
+    render(
+      <WaitlistPanel
+        unseated={[]}
+        waiting={[]}
+        invited={[{ ...INVITED, profile_id: null, display_name: null }]}
+        youId="someone-else"
+        offer={null}
+        now={NOW}
+      />,
+    );
+    expect(screen.getByText('Someone')).toBeTruthy();
+  });
+
+  it('offers Withdraw invite only where canWithdraw allows it', () => {
+    const onWithdrawInvite = vi.fn();
+    render(
+      <WaitlistPanel
+        unseated={[]}
+        waiting={[]}
+        invited={[INVITED, { ...INVITED, booking_id: 'b10', display_name: 'Kim S.' }]}
+        youId="p1"
+        offer={null}
+        now={NOW}
+        canWithdraw={(o) => o.booking_id === 'b9'}
+        onWithdrawInvite={onWithdrawInvite}
+      />,
+    );
+    expect(screen.queryByLabelText('Withdraw the invite to Kim S.')).toBeNull();
+    fireEvent.click(screen.getByLabelText('Withdraw the invite to Jane P.'));
+    expect(onWithdrawInvite).toHaveBeenCalledWith('b9');
+  });
+});

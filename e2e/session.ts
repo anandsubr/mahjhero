@@ -896,7 +896,7 @@ export async function seedClubWithEvent(profileId: string): Promise<{
   // `clubs-populated`'s "Your games" second row: a seat Owen booked FOR the
   // signed-in member (`bookedBy: owen`, `profileId` the member's own) — the
   // `booked_by !== youId` state that renders "Owen Bradley booked this for
-  // you" and the Decline control, distinct from the member's own
+  // you" and the "Can't make it" control, distinct from the member's own
   // self-booked seat on Riverside's event above.
   await seatBooking(admin, need, {
     eventId: friendEventId,
