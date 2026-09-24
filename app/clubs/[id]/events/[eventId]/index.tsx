@@ -620,15 +620,27 @@ export default function EventScreen() {
   // `bookSeat(null)` (below) rather than a new call. Gated the same way
   // `canBringSomeone` is on `canBook` (published, not yet started) plus
   // `!myHoldsSeat`: a member who already holds a confirmed OR waitlisted
-  // booking has nothing left to do here — their existing booking already
-  // covers "I'm in" (and, for a waitlisted one, "Leave the waitlist" below
-  // is their only other action). Deliberately NOT also gated on `gameFull`
+  // booking has nothing left to REJOIN here (a waitlisted one still has
+  // "Leave the waitlist" below). Deliberately NOT also gated on `gameFull`
   // the way "Join the waitlist" below is: `gameFull` is computed from
   // `tables`, which is always empty for `open_seating` (no tables exist to
   // fill), so it would never be true here — a capped, full open-seating
   // night still needs this button to book AND land on the waitlist, which
   // `commitBooking`/`bookSeat` already handle without any special-casing.
   const canJoinOpenSeating = isOpenSeating && canBook && !myHoldsSeat;
+
+  // The other half of the same gap: a CONFIRMED open-seating booking had no
+  // way to give it up at all, on this screen or the dashboard. Assigned
+  // tables gets this for free by tapping your own occupied seat (SeatGrid's
+  // panel, `onLeaveSeat={canBook ? leaveSeat : undefined}` below) — but
+  // open-seating has no seat grid to tap. `leaveSeat` itself (below) already
+  // does exactly what this needs; it just had no button to call it from
+  // here. Gated on `canBook` for the same reason `onLeaveSeat` is: cancelling
+  // a seat mid-game is the genuinely risky case (a seat freed with nobody
+  // present to claim it), not something to make easier once the game has
+  // already started.
+  const canLeaveOpenSeating =
+    isOpenSeating && canBook && myBooking?.status === 'confirmed';
 
   async function bookSeat(tableId: string | null) {
     setPendingTier(null);
@@ -1314,6 +1326,17 @@ export default function EventScreen() {
           accessibilityLabel="Join"
         >
           Join
+        </Button>
+      ) : null}
+
+      {canLeaveOpenSeating && myBooking ? (
+        <Button
+          variant="secondary"
+          disabled={busy}
+          onPress={() => leaveSeat(myBooking.booking_id)}
+          accessibilityLabel="Leave this game"
+        >
+          Leave this game
         </Button>
       ) : null}
 

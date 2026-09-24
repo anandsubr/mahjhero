@@ -237,10 +237,12 @@ describe('buildDashboardRows', () => {
     expect(rows[0].joinable).toBe(false);
   });
 
-  // One assertion per exclusion path. These were a single test asserting
-  // `rows).toEqual([])` over all three events at once, which any two of them
-  // could regress under without the assertion changing.
-  it('drops an event with no free seat', () => {
+  // A full, not-yet-started table used to drop entirely for a plain
+  // member -- the regression covered below ("still lets a plain member
+  // join the waitlist..."). It stays joinable here precisely so tapping
+  // "Join" reaches commit_booking, which lands an over-capacity join on
+  // the waitlist correctly.
+  it('still adds a full, not-yet-started event as joinable, not dropped', () => {
     const rows = buildDashboardRows({
       bookings: [],
       events: [
@@ -258,7 +260,9 @@ describe('buildDashboardRows', () => {
       userId: 'me',
       now: NOW,
     });
-    expect(rows).toEqual([]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].joinable).toBe(true);
+    expect(rows[0].organizing).toBe(false);
   });
 
   // Finding #1 of the final review: an open-seating event carries zero
@@ -307,7 +311,10 @@ describe('buildDashboardRows', () => {
     expect(rows[0].joinable).toBe(true);
   });
 
-  it('drops a capped open-seating event once its headcount is full', () => {
+  // Item 2 of a real QA pass: a member had no way at all to join the
+  // waitlist for a full, capped open-seating night, because the row
+  // dropped out here before they could ever reach it.
+  it('still adds a full, capped open-seating event as joinable, for the waitlist', () => {
     const rows = buildDashboardRows({
       bookings: [],
       events: [
@@ -326,7 +333,8 @@ describe('buildDashboardRows', () => {
       userId: 'me',
       now: NOW,
     });
-    expect(rows).toEqual([]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].joinable).toBe(true);
   });
 
   it('drops a cancelled event', () => {
@@ -486,7 +494,11 @@ describe('buildDashboardRows', () => {
     expect(rows[0].joinable).toBe(false);
   });
 
-  it('still drops a not-yet-started, full table for a plain member', () => {
+  // The regression this covers: a plain member had zero path to a full,
+  // not-yet-started game at all -- this dashboard is the only place an
+  // upcoming event is listed, so a dropped row here was not a worse "Join"
+  // button, it was no way to reach the event's waitlist whatsoever.
+  it('still lets a plain member join the waitlist for a not-yet-started, full table', () => {
     const rows = buildDashboardRows({
       bookings: [],
       events: [
@@ -502,10 +514,12 @@ describe('buildDashboardRows', () => {
       ],
       clubs: CLUBS,
       userId: 'me',
-      // No organizerClubIds -- a plain member sees nothing to do here.
+      // No organizerClubIds -- a plain member of the club.
       now: NOW,
     });
-    expect(rows).toEqual([]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].joinable).toBe(true);
+    expect(rows[0].organizing).toBe(false);
   });
 
   it('drops an event the viewer is waitlisted on, without a booking row', () => {

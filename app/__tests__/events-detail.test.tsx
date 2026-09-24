@@ -2021,4 +2021,71 @@ describe('open seating', () => {
       expect(screen.queryByRole('button', { name: 'Join' })).toBeNull();
     });
   });
+
+  // The other half of the same gap: a CONFIRMED open-seating booking had no
+  // way to give it up at all -- assigned tables gets this for free by
+  // tapping your own occupied seat (SeatGrid's panel), but open seating has
+  // no seat grid to tap. Routed through the same `leaveSeat`/`cancelBooking`
+  // path that seat grid's own panel already calls.
+  describe('the "Leave this game" button (open seating)', () => {
+    it('shows for a viewer with a confirmed open-seating booking, and cancels it when tapped', async () => {
+      fetchEvent.mockResolvedValue(OPEN_SEATING_EVENT);
+      fetchEventSeating.mockResolvedValue([
+        { ...SIGNED_UP_PRIYA, booking_id: 'b-me', profile_id: 'test-user' },
+      ]);
+      render(<EventScreen />);
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Leave this game' }));
+      await vi.waitFor(() => expect(cancelBooking).toHaveBeenCalledWith('b-me'));
+    });
+
+    it('does not show for a viewer who is only waitlisted (Leave the waitlist covers that)', async () => {
+      fetchEvent.mockResolvedValue(OPEN_SEATING_EVENT);
+      fetchEventSeating.mockResolvedValue([
+        {
+          ...SIGNED_UP_PRIYA,
+          booking_id: 'b-me',
+          profile_id: 'test-user',
+          status: 'waitlisted' as const,
+        },
+      ]);
+      render(<EventScreen />);
+      await screen.findByText('Thursday Mahjong');
+      expect(screen.queryByRole('button', { name: 'Leave this game' })).toBeNull();
+    });
+
+    it('does not show for a viewer with no booking at all', async () => {
+      fetchEvent.mockResolvedValue(OPEN_SEATING_EVENT);
+      fetchEventSeating.mockResolvedValue([SIGNED_UP_PRIYA]);
+      render(<EventScreen />);
+      await screen.findByText('Thursday Mahjong');
+      expect(screen.queryByRole('button', { name: 'Leave this game' })).toBeNull();
+    });
+
+    // Regression guard: assigned-tables events keep their existing
+    // tap-your-seat panel as the only way to leave; this button is
+    // open-seating-only.
+    it('does not show on an assigned-tables event', async () => {
+      fetchEventTables.mockResolvedValue([TABLE_1]);
+      fetchEventSeating.mockResolvedValue([
+        { ...SIGNED_UP_PRIYA, booking_id: 'b-me', profile_id: 'test-user', event_table_id: 'table-1' },
+      ]);
+      render(<EventScreen />);
+      await screen.findByText('Thursday Mahjong');
+      expect(screen.queryByRole('button', { name: 'Leave this game' })).toBeNull();
+    });
+
+    it('does not show once the game has already started', async () => {
+      fetchEvent.mockResolvedValue({
+        ...OPEN_SEATING_EVENT,
+        starts_at: new Date(Date.now() - 60_000).toISOString(),
+      });
+      fetchEventSeating.mockResolvedValue([
+        { ...SIGNED_UP_PRIYA, booking_id: 'b-me', profile_id: 'test-user' },
+      ]);
+      render(<EventScreen />);
+      await screen.findByText('Thursday Mahjong');
+      expect(screen.queryByRole('button', { name: 'Leave this game' })).toBeNull();
+    });
+  });
 });

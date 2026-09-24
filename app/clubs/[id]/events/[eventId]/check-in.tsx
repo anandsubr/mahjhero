@@ -1460,18 +1460,17 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   card: { padding: space[4], gap: space[3] },
+  // Column, not row-with-wrap: a row-with-wrap wrapped or didn't purely off
+  // each name's own pixel width, so two names of similar length could land
+  // on opposite sides of the wrap point -- one sharing a line with its
+  // buttons, the other not -- which read as arbitrary rather than as a
+  // rule. Stacking the name above the actions unconditionally makes every
+  // row read the same regardless of name length; `actions`' own flexWrap
+  // still lets the three controls themselves wrap on a narrow screen.
   personRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: space[3],
-    // A paid chip alongside the two attendance chips is more than a phone
-    // width can hold next to a long name; wrapping keeps every control at
-    // full size rather than squeezing the touch targets this app sizes up
-    // for its older players.
-    flexWrap: 'wrap',
+    gap: space[2],
   },
-  person: { gap: space[1], flexShrink: 1 },
+  person: { gap: space[1] },
   badges: { flexDirection: 'row', alignItems: 'center', gap: space[2], flexWrap: 'wrap' },
   actions: { flexDirection: 'row', alignItems: 'center', gap: space[2], flexWrap: 'wrap' },
   // `colors.textLabel` (5.6:1 on bg), not `textMuted` -- what somebody owes
