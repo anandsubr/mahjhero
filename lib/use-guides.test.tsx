@@ -15,6 +15,16 @@ vi.mock('./session', () => ({ useSession: () => current }));
 
 import { GuidesProvider, useGuides } from './use-guides';
 
+// A promise plus its own resolve(), for tests that need to control exactly
+// when an async call settles relative to other actions.
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
 function Probe() {
   const guides = useGuides();
   return (
@@ -89,5 +99,66 @@ describe('useGuides', () => {
     render(<GuidesProvider><Probe /></GuidesProvider>);
     expect(fetchDismissedGuides).not.toHaveBeenCalled();
     expect(screen.getByTestId('event').textContent).toBe('false');
+  });
+
+  // Regression: reset() awaits a server round trip. Two things can happen
+  // while it's in flight — the signed-in account can change, or the user
+  // can dismiss a guide — and reset's resolution must not clobber either.
+
+  it('does not apply a reset meant for the account that was signed in when it started', async () => {
+    fetchDismissedGuides.mockResolvedValueOnce(Promise.resolve(['g1']));
+    const { rerender } = render(<GuidesProvider><Probe /></GuidesProvider>);
+    await waitFor(() => expect(screen.getByTestId('event').textContent).toBe('true'));
+
+    const resetSave = deferred<boolean>();
+    saveDismissedGuides.mockReturnValueOnce(resetSave.promise);
+    fireEvent.click(screen.getByText('reset'));
+
+    // Account switches to u2 before the reset's save resolves. u2's own
+    // dismissed list hasn't loaded yet, so guides are hidden.
+    const u2Fetch = deferred<string[] | null>();
+    fetchDismissedGuides.mockReturnValueOnce(u2Fetch.promise);
+    current = { session: { user: { id: 'u2' } }, loading: false };
+    rerender(<GuidesProvider><Probe /></GuidesProvider>);
+    expect(screen.getByTestId('event').textContent).toBe('false');
+
+    // u1's reset now resolves. It must not touch u2's (still-loading) state.
+    await act(async () => {
+      resetSave.resolve(true);
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId('event').textContent).toBe('false');
+
+    // u2's own load then completes normally, unaffected by u1's reset.
+    await act(async () => {
+      u2Fetch.resolve(['tip:event']);
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId('event').textContent).toBe('false');
+  });
+
+  it('keeps a dismissal made while a reset is in flight, and re-saves it', async () => {
+    fetchDismissedGuides.mockResolvedValueOnce(Promise.resolve([]));
+    render(<GuidesProvider><Probe /></GuidesProvider>);
+    await waitFor(() => expect(screen.getByTestId('event').textContent).toBe('true'));
+
+    const resetSave = deferred<boolean>();
+    saveDismissedGuides.mockReturnValueOnce(resetSave.promise);
+    fireEvent.click(screen.getByText('reset'));
+
+    // A dismissal lands while the reset's save is still in flight.
+    saveDismissedGuides.mockResolvedValueOnce(true);
+    fireEvent.click(screen.getByText('dismiss'));
+    expect(screen.getByTestId('event').textContent).toBe('false');
+
+    // The reset's save now resolves ok. It must not revive the guide, and
+    // must re-save so the server ends up holding the dismissal too.
+    await act(async () => {
+      resetSave.resolve(true);
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId('event').textContent).toBe('false');
+    const lastCall = saveDismissedGuides.mock.calls[saveDismissedGuides.mock.calls.length - 1];
+    expect(lastCall).toEqual(['u1', ['tip:event']]);
   });
 });

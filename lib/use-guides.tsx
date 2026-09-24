@@ -30,8 +30,18 @@ export function GuidesProvider({ children }: { children: ReactNode }) {
   const [dismissed, setDismissed] = useState<string[] | null>(null);
   // Mirrors `dismissed` synchronously so two dismissals in one tick both land.
   const latest = useRef<string[] | null>(null);
+  // Tracks the account a pending `reset()` was issued for, kept current by
+  // the load effect below (not the `userId` closed over by `reset` itself,
+  // which is frozen at the point `reset` was called). Lets `reset`'s
+  // resolution notice an account switch that happened while its save was
+  // in flight.
+  const userIdRef = useRef<string | null>(null);
+  // Bumped by every `dismiss()`. Lets a pending `reset()` notice, on
+  // resolution, whether a dismissal landed while its save was in flight.
+  const generation = useRef(0);
 
   useEffect(() => {
+    userIdRef.current = userId;
     setDismissed(null);
     latest.current = null;
     if (!userId) return;
@@ -51,6 +61,7 @@ export function GuidesProvider({ children }: { children: ReactNode }) {
       if (!userId || latest.current === null || latest.current.includes(key)) return;
       const next = [...latest.current, key];
       latest.current = next;
+      generation.current += 1;
       setDismissed(next);
       // Fire-and-forget: a failed save leaves it hidden for this session and
       // it may come back next time. No banner — this is not worth one.
@@ -61,10 +72,25 @@ export function GuidesProvider({ children }: { children: ReactNode }) {
 
   const reset = useCallback(async () => {
     if (!userId) return false;
+    const resetUserId = userId;
+    const generationAtStart = generation.current;
     const ok = await saveDismissedGuides(userId, []);
     if (ok) {
-      latest.current = [];
-      setDismissed([]);
+      if (userIdRef.current !== resetUserId) {
+        // The signed-in account changed while this save was in flight — its
+        // result belongs to an account that's no longer current. Leave
+        // whatever the new account has loaded (or not loaded) alone.
+        return ok;
+      }
+      if (generation.current === generationAtStart) {
+        latest.current = [];
+        setDismissed([]);
+      } else {
+        // A dismiss() landed while this reset's save was in flight. Keep it
+        // locally rather than wiping it, and re-save so the server's last
+        // write matches local state instead of racing the two writes.
+        void saveDismissedGuides(resetUserId, latest.current ?? []);
+      }
     }
     return ok;
   }, [userId]);
