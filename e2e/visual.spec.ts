@@ -90,7 +90,12 @@ async function settle(page: Page) {
  * if a screen grows or shrinks, Playwright reports a size mismatch, which is
  * a diff, which is the point.
  */
-async function captureScreen(page: Page, vp: Viewport, name: string) {
+async function captureScreen(
+  page: Page,
+  vp: Viewport,
+  name: string,
+  extraMask: string[] = [],
+) {
   await settle(page);
 
   // Grow-and-resettle can itself introduce a little more overflow (a taller
@@ -137,7 +142,18 @@ async function captureScreen(page: Page, vp: Viewport, name: string) {
     // maxDiffPixels's own comment asks for, rather than a wider tolerance
     // that would blunt this suite everywhere. A no-op on any screen that
     // doesn't render the tile.
-    mask: [page.locator('[data-testid="thread-avatar-club-tile"]')],
+    //
+    // `extraMask` layers in additional per-call CSS selectors (e.g. the
+    // dashboard's club-chip glyphs, components/ClubChips.tsx's
+    // `chip-glyph-<clubId>` tiles) for the same class of sub-pixel SVG
+    // jitter on a screen-specific element, without widening this global
+    // list — a global addition would shift the masked region on every
+    // other baseline that uses captureScreen, forcing a regeneration of
+    // all of them instead of just the one screen that actually needs it.
+    mask: [
+      page.locator('[data-testid="thread-avatar-club-tile"]'),
+      ...extraMask.map((selector) => page.locator(selector)),
+    ],
   });
 }
 
@@ -1353,7 +1369,15 @@ test.describe('signed in', () => {
         await expect(card.getByText('Schedule your first game')).toBeVisible();
         await expect(card.getByText('Invite your players')).toBeVisible();
         await expect(card.getByRole('button', { name: 'Got it: Get Riverside Mah Jongg going' })).toBeVisible();
-        await captureScreen(page, vp, `clubs-guides-${vp.name}.png`);
+        // Same sub-pixel SVG jitter captureScreen's own thread-avatar mask
+        // exists for, on this screen's dashboard club-chip tiles instead
+        // (components/ClubChips.tsx's `chip-glyph-<clubId>` wrapper around
+        // each MahjongTile glyph) — this dashboard renders two clubs'
+        // chips, so the prefix selector masks both rather than naming one
+        // clubId and missing the other.
+        await captureScreen(page, vp, `clubs-guides-${vp.name}.png`, [
+          '[data-testid^="chip-glyph-"]',
+        ]);
       });
 
       // The "Add a game" screen's own tip — not gated by role in the
