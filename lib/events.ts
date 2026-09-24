@@ -206,7 +206,7 @@ export const EVENT_COLUMNS =
   'status, occurrence_date, overrides, check_in_required, fee_cents, ' +
   'min_spend_cents, game_mode, seating_mode, capacity, venues(name), ' +
   'event_tables(id, capacity, label), ' +
-  'bookings(profile_id, status, event_table_id, group_id)';
+  'bookings(profile_id, status, event_table_id, group_id, invite_holds_seat)';
 
 /**
  * Unlike `EVENT_COLUMNS`, this never carried `seating_mode` or `capacity` at
@@ -450,7 +450,7 @@ export function eventStartTimeInZone(startsAt: string, timezone: string): string
 /** One booking row as `EVENT_COLUMNS`'s `bookings(...)` embed returns it. */
 export type EventBookingRow = {
   profile_id: string;
-  status: 'confirmed' | 'waitlisted' | 'cancelled' | 'declined';
+  status: 'confirmed' | 'waitlisted' | 'invited' | 'cancelled' | 'declined';
   event_table_id: string | null;
   /**
    * The booking group this seat was booked as part of (`bookings.group_id`,
@@ -460,6 +460,11 @@ export type EventBookingRow = {
    * with the event, so the badge costs no extra round trip.
    */
   group_id: string;
+  /** Game invites: see SeatOccupant.invite_holds_seat in lib/bookings.ts.
+   *  On an invite-only game RLS hides other people's pending invites from
+   *  a non-organizer, which is harmless here: only an organizer can
+   *  invite anyone onto one. */
+  invite_holds_seat?: boolean | null;
 };
 
 /**

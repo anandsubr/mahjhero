@@ -4,7 +4,7 @@ import type { SkillTier } from './events';
 import type { SkillLevel } from './profile';
 import type { AttendanceState } from './attendance';
 
-export type BookingStatus = 'confirmed' | 'waitlisted' | 'cancelled' | 'declined';
+export type BookingStatus = 'confirmed' | 'waitlisted' | 'invited' | 'cancelled' | 'declined';
 export type BookingGroupStatus = 'confirmed' | 'waitlisted' | 'cancelled';
 
 // SkillTier and SkillLevel already exist — in lib/events.ts and
@@ -19,24 +19,33 @@ export type { SkillLevel } from './profile';
  * One live booking, as `event_seating` returns it.
  *
  * `status` is narrower than `BookingStatus`: `event_seating`'s own
- * `where b.status in ('confirmed', 'waitlisted')` (20260825070000) means a
- * cancelled or declined booking can never appear in this field. Typed to
- * match, so a caller that mishandles 'cancelled'/'declined' here is a
- * compile error rather than dead code nobody notices.
+ * `where b.status in ('confirmed', 'waitlisted', 'invited')`
+ * (20260924104000) means a cancelled or declined booking can never appear
+ * in this field. Typed to match, so a caller that mishandles
+ * 'cancelled'/'declined' here is a compile error rather than dead code.
  */
 export type SeatOccupant = {
   booking_id: string;
   group_id: string;
-  profile_id: string;
-  display_name: string;
+  /** Null only on an 'invited' row of an invite-only game that the viewer
+   *  may not see the name of (event_seating shows invitees only to
+   *  organizers, the sender and the invitee) -- render it as an anonymous
+   *  "Invited" seat. */
+  profile_id: string | null;
+  display_name: string | null;
   skill_level: SkillLevel | null;
   event_table_id: string | null;
-  status: 'confirmed' | 'waitlisted';
+  status: 'confirmed' | 'waitlisted' | 'invited';
   booked_by: string;
   booked_by_name: string;
   group_status: BookingGroupStatus;
   waitlist_position: number | null;
   created_at: string;
+  /** Non-null only for status 'invited': true = a seat is held (at
+   *  event_table_id, or any table when that is null); false = the game was
+   *  full when sent, so accepting joins the waitlist. Optional so existing
+   *  fixtures keep compiling. */
+  invite_holds_seat?: boolean | null;
 };
 
 export type PromotionOffer = {
@@ -75,6 +84,9 @@ export type MyBooking = {
   fee_cents: number;
   /** Integer cents. `0` means "no minimum spend set". */
   min_spend_cents: number;
+  /** See SeatOccupant.invite_holds_seat. Null unless status is 'invited'
+   *  (a pending game invite -- the dashboard's Accept / Decline card). */
+  invite_holds_seat?: boolean | null;
 };
 
 export type BookingOutcome = {
@@ -89,6 +101,9 @@ export type BookingOutcome = {
     profile_id: string;
     event_table_id: string | null;
     table_label: string | null;
+    /** booking_result reports each placement's status since game invites:
+     *  everyone but the sender is 'invited'. */
+    status?: 'confirmed' | 'waitlisted' | 'invited';
   }[];
 };
 
@@ -171,6 +186,23 @@ const BOOKING_REFUSALS: { contains: string; message: string; codes: string[] }[]
     // booking for.
     contains: 'already booked',
     message: 'You or someone in your group already has a seat at this game.',
+    codes: ['23514'],
+  },
+  {
+    // assert_players_bookable (20260924102000): a pending game invite is
+    // the one active row per person per game, so a member who is already
+    // invited cannot be invited (or book) again. Worded like 'already
+    // booked' above, for the same reason: the caller cannot tell whether
+    // it was them or someone they picked.
+    contains: 'already invited',
+    message: 'You or someone you picked has already been invited to this game.',
+    codes: ['23514'],
+  },
+  {
+    // accept_booking_invite / withdraw_booking_invite (20260924103000):
+    // the invitee answered first (accept and withdraw race on the row).
+    contains: 'invite already accepted',
+    message: 'That invite has already been accepted.',
     codes: ['23514'],
   },
   {
@@ -419,6 +451,22 @@ export function seatsFreeLabel(free: number): string {
   return `${free} ${free === 1 ? 'seat' : 'seats'} free`;
 }
 
+/**
+ * Does this booking occupy a seat for capacity purposes? A confirmed seat,
+ * or a pending invite that holds one -- the same rule the database uses
+ * (table_free_seats, event_free_seats, need_a_fourth_stage). An invite
+ * sent into a full game holds nothing.
+ */
+export function takesSeat(b: {
+  status: string;
+  invite_holds_seat?: boolean | null;
+}): boolean {
+  return (
+    b.status === 'confirmed' ||
+    (b.status === 'invited' && b.invite_holds_seat === true)
+  );
+}
+
 export function waitlistLabel(position: number): string {
   const rest = position % 100;
   const last = position % 10;
@@ -637,6 +685,45 @@ export async function declineBooking(
     return { error: null };
   } catch (cause) {
     console.error('declineBooking failed', cause);
+    return { error: GENERIC_ERROR };
+  }
+}
+
+/** The invitee's Accept (accept_booking_invite, 20260924103000). */
+export async function acceptBookingInvite(
+  bookingId: string,
+): Promise<{ error: string | null }> {
+  try {
+    const { error } = await supabase.rpc('accept_booking_invite', {
+      target_booking: bookingId,
+    });
+    if (error) {
+      console.error('acceptBookingInvite failed', error);
+      return { error: bookingErrorMessage(error) };
+    }
+    return { error: null };
+  } catch (cause) {
+    console.error('acceptBookingInvite failed', cause);
+    return { error: GENERIC_ERROR };
+  }
+}
+
+/** The sender's or an organizer's Withdraw invite
+ *  (withdraw_booking_invite, 20260924103000). */
+export async function withdrawBookingInvite(
+  bookingId: string,
+): Promise<{ error: string | null }> {
+  try {
+    const { error } = await supabase.rpc('withdraw_booking_invite', {
+      target_booking: bookingId,
+    });
+    if (error) {
+      console.error('withdrawBookingInvite failed', error);
+      return { error: bookingErrorMessage(error) };
+    }
+    return { error: null };
+  } catch (cause) {
+    console.error('withdrawBookingInvite failed', cause);
     return { error: GENERIC_ERROR };
   }
 }

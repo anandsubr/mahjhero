@@ -7,7 +7,7 @@
  * fourth. That is real logic, and it belongs somewhere it can be tested
  * without rendering a tree or mocking Supabase.
  */
-import { needsAFourth, seatsRemaining } from './bookings';
+import { needsAFourth, seatsRemaining, takesSeat } from './bookings';
 import type { MyBooking } from './bookings';
 import type { Club } from './clubs';
 import { formatEventWhen } from './events';
@@ -159,18 +159,25 @@ export type DashboardRow = {
   minSpendCents: number;
 };
 
-/** Live means it holds or is queued for a seat; declined and cancelled do not. */
+/** Live means it holds, is queued for, or has been invited to a seat;
+ *  declined and cancelled do not. An invitee is not offered "Join"
+ *  (commit_booking would refuse: an invite is their one active row) nor a
+ *  Need-a-4th card for a game they already have an invite to. */
 function viewerIsIn(event: ClubEvent, userId: string): boolean {
   return event.bookings.some(
     (row) =>
       row.profile_id === userId &&
-      (row.status === 'confirmed' || row.status === 'waitlisted'),
+      (row.status === 'confirmed' ||
+        row.status === 'waitlisted' ||
+        row.status === 'invited'),
   );
 }
 
-function confirmedOnTable(event: ClubEvent, tableId: string): number {
+/** Seats taken at one table: confirmed, plus pending invites holding one
+ *  (lib/bookings' takesSeat -- the database's own rule). */
+function takenOnTable(event: ClubEvent, tableId: string): number {
   return event.bookings.filter(
-    (row) => row.status === 'confirmed' && row.event_table_id === tableId,
+    (row) => takesSeat(row) && row.event_table_id === tableId,
   ).length;
 }
 
@@ -183,9 +190,7 @@ function confirmedOnTable(event: ClubEvent, tableId: string): number {
  * full, looked full and was silently dropped from the joinable branch below.
  */
 function hasFreeSeat(event: ClubEvent): boolean {
-  const confirmed = event.bookings.filter(
-    (row) => row.status === 'confirmed',
-  ).length;
+  const confirmed = event.bookings.filter(takesSeat).length;
 
   if (event.seating_mode === 'open_seating') {
     // `null` is a standing invitation, uncapped -- mirrors
@@ -247,22 +252,28 @@ export function buildDashboardRows(input: {
   const clubsById = new Map(input.clubs.map((club) => [club.id, club]));
   const organizerClubIds = input.organizerClubIds ?? new Set<string>();
 
-  const rows: DashboardRow[] = input.bookings.map((booking) => ({
-    eventId: booking.event_id,
-    clubId: booking.club_id,
-    clubName: booking.club_name,
-    title: booking.event_title,
-    startsAt: booking.starts_at,
-    timezone: booking.club_timezone,
-    venueName: booking.venue_name,
-    booking,
-    joinable: false,
-    organizing: false,
-    feeCents: booking.fee_cents,
-    minSpendCents: booking.min_spend_cents,
-  }));
+  // A pending game invite is not one of "Your games" until it is answered
+  // -- the dashboard renders it as its own Accept / Decline card
+  // (pendingGameInvites below) -- but its event still counts as seen, so
+  // it never reappears as a joinable row.
+  const rows: DashboardRow[] = input.bookings
+    .filter((booking) => booking.status !== 'invited')
+    .map((booking) => ({
+      eventId: booking.event_id,
+      clubId: booking.club_id,
+      clubName: booking.club_name,
+      title: booking.event_title,
+      startsAt: booking.starts_at,
+      timezone: booking.club_timezone,
+      venueName: booking.venue_name,
+      booking,
+      joinable: false,
+      organizing: false,
+      feeCents: booking.fee_cents,
+      minSpendCents: booking.min_spend_cents,
+    }));
 
-  const seen = new Set(rows.map((row) => row.eventId));
+  const seen = new Set(input.bookings.map((booking) => booking.event_id));
 
   for (const event of input.events) {
     if (seen.has(event.id)) continue;
@@ -322,6 +333,12 @@ export function buildDashboardRows(input: {
   );
 }
 
+/** Pending game invites for the dashboard's Accept / Decline card, soonest
+ *  first (my_upcoming_bookings already orders by starts_at). */
+export function pendingGameInvites(bookings: MyBooking[]): MyBooking[] {
+  return bookings.filter((booking) => booking.status === 'invited');
+}
+
 export type FourthAlert = {
   eventId: string;
   clubId: string;
@@ -358,7 +375,7 @@ export function needAFourthAlerts(input: {
     for (const table of event.event_tables) {
       const short = needsAFourth(
         table.capacity,
-        confirmedOnTable(event, table.id),
+        takenOnTable(event, table.id),
         new Date(event.starts_at),
         now,
       );
