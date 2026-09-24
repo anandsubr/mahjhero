@@ -284,4 +284,13 @@ describe('dashboard guides', () => {
     await screen.findAllByText('Riverside');
     expect(screen.queryByText('How MahjHero works')).toBeNull();
   });
+
+  it('does not fetch checklist counts for a club whose checklist is dismissed', async () => {
+    isVisible.mockImplementation((key: string) => key !== 'host-checklist:club-1');
+    fetchMyRoles.mockResolvedValue([{ club_id: 'club-1', role: 'host' }]);
+    render(<ClubsScreen />);
+    await waitFor(() => expect(fetchMyRoles).toHaveBeenCalled());
+    await screen.findAllByText('Riverside');
+    expect(fetchHostChecklistCounts).not.toHaveBeenCalled();
+  });
 });

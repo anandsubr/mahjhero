@@ -227,8 +227,16 @@ export default function ClubsScreen() {
 
   // First-run checklist progress for every club this member hosts. Derived
   // from head counts each time roles load; nothing about progress is stored.
+  // Skips a club once its checklist is dismissed — fetching four head counts
+  // forever for a card nobody will see again is pure waste. `guides` is a
+  // dependency because `isVisible` is read here, not just `roles`; its
+  // identity only changes on a load/dismiss/reset (see lib/use-guides.tsx),
+  // so this does not refetch on unrelated renders.
   useEffect(() => {
-    const hosted = roles.filter((r) => r.role === 'host').map((r) => r.club_id);
+    const hosted = roles
+      .filter((r) => r.role === 'host')
+      .map((r) => r.club_id)
+      .filter((id) => guides.isVisible(hostChecklistKey(id)));
     if (hosted.length === 0) return;
     let cancelled = false;
     Promise.all(hosted.map(async (id) => [id, await fetchHostChecklistCounts(id)] as const)).then(
@@ -239,7 +247,7 @@ export default function ClubsScreen() {
     return () => {
       cancelled = true;
     };
-  }, [roles]);
+  }, [roles, guides]);
 
   // Mirrors `scopeClubId`'s own derivation (computed further down, past this
   // component's early returns for loading/no-session/no-clubs) directly off
@@ -757,14 +765,15 @@ export default function ClubsScreen() {
           const { steps, complete } = hostChecklist(counts);
           if (complete) return null;
           const next = steps.find((s) => !s.done);
+          // 'hello' is never reached here: the card hides once complete
+          // (above), and 'hello' is the only optional step, so it's the only
+          // one that can be left once every required step is done.
           const action =
             next?.key === 'game'
               ? { label: 'Add a game', onPress: () => router.push(`/clubs/${club.id}/events/new`) }
               : next?.key === 'invite'
                 ? { label: 'Invite players', onPress: () => router.push(`/clubs/${club.id}`) }
-                : next?.key === 'hello'
-                  ? { label: 'Open the club thread', onPress: () => router.push(`/clubs/${club.id}/broadcast`) }
-                  : undefined;
+                : undefined;
           const title = `Get ${club.name} going`;
           return (
             <TipCard
