@@ -432,7 +432,7 @@ export default function NewEventScreen() {
           <TipText>Open seating: players tap Join, and no tables are set in advance.</TipText>
           <TipText>
             Set Cost to play, and Minimum spend if the venue asks for one. Players see the
-            cost up front, and you mark who's Paid at check-in. No money goes through the app.
+            cost up front, and you mark who's paid at check-in. No money goes through the app.
           </TipText>
         </TipCard>
       ) : null}
