@@ -15,6 +15,7 @@ import Screen from '../../components/Screen';
 import Skeleton from '../../components/Skeleton';
 import TabBar from '../../components/TabBar';
 import Tag from '../../components/Tag';
+import TipCard, { TipText } from '../../components/TipCard';
 import {
   checkInOpen,
   clearAttendance,
@@ -57,8 +58,15 @@ import {
 import type { DashboardRow, FourthAlert } from '../../lib/dashboard';
 import { fetchUpcomingEvents, formatEventTime, formatFeeCents, formatEventWhen } from '../../lib/events';
 import type { ClubEvent } from '../../lib/events';
+import {
+  fetchHostChecklistCounts,
+  hostChecklist,
+  hostChecklistKey,
+  type HostChecklistCounts,
+} from '../../lib/guides';
 import { useSession } from '../../lib/session';
 import { colors, radius, space, type } from '../../lib/theme';
+import { useGuides } from '../../lib/use-guides';
 import { useUnreadCounts } from '../../lib/use-unread';
 
 /**
@@ -107,6 +115,15 @@ export default function ClubsScreen() {
   // "no organizing rows" with no error banner, so there is nothing a
   // separate failed-state would let this screen say differently.
   const [roles, setRoles] = useState<{ club_id: string; role: ClubRole }[]>([]);
+  // Distinguishes "roles say you organize nothing" from "roles never
+  // loaded" — the player card must not appear to a host whose roles read
+  // failed (first-run guidance: unknown ⇒ hidden).
+  const [rolesReady, setRolesReady] = useState(false);
+  // Per host club; a missing or null entry hides that club's checklist.
+  const [checklistCounts, setChecklistCounts] = useState<
+    Record<string, HostChecklistCounts | null>
+  >({});
+  const guides = useGuides();
   // One flag for every booking write — take, join, decline, accept-offer,
   // decline-offer, leave-waitlist — held across the write AND its reload,
   // not just the write. These used to be two independent flags (`takeBusy`
@@ -189,6 +206,7 @@ export default function ClubsScreen() {
     fetchMyRoles(userId).then((result) => {
       if (cancelled) return;
       setRoles(result ?? []);
+      setRolesReady(result !== null);
     });
     fetchProfile(userId).then((result) => {
       if (cancelled) return;
@@ -206,6 +224,22 @@ export default function ClubsScreen() {
       cancelled = true;
     };
   }, [userId]);
+
+  // First-run checklist progress for every club this member hosts. Derived
+  // from head counts each time roles load; nothing about progress is stored.
+  useEffect(() => {
+    const hosted = roles.filter((r) => r.role === 'host').map((r) => r.club_id);
+    if (hosted.length === 0) return;
+    let cancelled = false;
+    Promise.all(hosted.map(async (id) => [id, await fetchHostChecklistCounts(id)] as const)).then(
+      (entries) => {
+        if (!cancelled) setChecklistCounts(Object.fromEntries(entries));
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [roles]);
 
   // Mirrors `scopeClubId`'s own derivation (computed further down, past this
   // component's early returns for loading/no-session/no-clubs) directly off
@@ -574,6 +608,16 @@ export default function ClubsScreen() {
   const organizerClubIds = new Set(
     roles.filter((r) => canInvite(r.role)).map((r) => r.club_id),
   );
+  // Event creation stays host-only for now -- co_organizer already carries
+  // canInvite's broader "can invite/manage venues" powers, but there is no
+  // UI yet to grant that role to anyone, and creating games is reserved for
+  // whoever actually created the club until a real cohost feature exists to
+  // extend it deliberately. Declared here (rather than beside `canAddGames`
+  // below, which is what used it first) so the host checklist below can use
+  // it too.
+  const hostClubIds = new Set(
+    roles.filter((r) => r.role === 'host').map((r) => r.club_id),
+  );
   const rows = buildDashboardRows({
     bookings: bookings ?? [],
     events,
@@ -596,14 +640,6 @@ export default function ClubsScreen() {
   // the header read the all-clubs scope while still pushing a route built
   // from a stale, non-existent id.
   const scopeClubId = list.find((club) => club.id === selected)?.id ?? null;
-  // Event creation stays host-only for now -- co_organizer already carries
-  // canInvite's broader "can invite/manage venues" powers, but there is no
-  // UI yet to grant that role to anyone, and creating games is reserved for
-  // whoever actually created the club until a real cohost feature exists to
-  // extend it deliberately.
-  const hostClubIds = new Set(
-    roles.filter((r) => r.role === 'host').map((r) => r.club_id),
-  );
   const canAddGames = scopeClubId !== null && hostClubIds.has(scopeClubId);
 
   const todaysGreeting = pickDailyGreeting(greetings, new Date());
@@ -711,6 +747,64 @@ export default function ClubsScreen() {
         onAccept={handleAcceptInvite}
         onDecline={handleDeclineInvite}
       />
+
+      {list
+        .filter((club) => hostClubIds.has(club.id) && inScope(club.id, selected))
+        .map((club) => {
+          const counts = checklistCounts[club.id];
+          const key = hostChecklistKey(club.id);
+          if (!counts || !guides.isVisible(key)) return null;
+          const { steps, complete } = hostChecklist(counts);
+          if (complete) return null;
+          const next = steps.find((s) => !s.done);
+          const action =
+            next?.key === 'game'
+              ? { label: 'Add a game', onPress: () => router.push(`/clubs/${club.id}/events/new`) }
+              : next?.key === 'invite'
+                ? { label: 'Invite players', onPress: () => router.push(`/clubs/${club.id}`) }
+                : next?.key === 'hello'
+                  ? { label: 'Open the club thread', onPress: () => router.push(`/clubs/${club.id}/broadcast`) }
+                  : undefined;
+          const title = `Get ${club.name} going`;
+          return (
+            <TipCard
+              key={key}
+              testID={`host-checklist-${club.id}`}
+              tag="Getting started"
+              title={title}
+              action={action}
+              onDismiss={() => guides.dismiss(key)}
+            >
+              {steps.map((s) => (
+                // The checkmark/label are separate text nodes, not one
+                // string, so tests (and any future assistive-tech reading of
+                // this row) can address the label alone -- `TipText` wraps
+                // both in one <Text>, which react-native-web renders as a
+                // single element whose merged textContent an exact-text
+                // query can never match against just the label.
+                <TipText key={s.key}>
+                  {s.done ? '✓ ' : '○ '}
+                  <Text>{s.label}</Text>
+                </TipText>
+              ))}
+            </TipCard>
+          );
+        })}
+
+      {rolesReady &&
+      !roles.some((r) => canInvite(r.role)) &&
+      guides.isVisible('player-intro') ? (
+        <TipCard
+          testID="player-intro"
+          tag="New here?"
+          title="How MahjHero works"
+          onDismiss={() => guides.dismiss('player-intro')}
+        >
+          <TipText>1. Find a game below.</TipText>
+          <TipText>2. Tap Join to take a spot, or Invite to bring someone along.</TipText>
+          <TipText>3. On the day, check the game page for your table and messages.</TipText>
+        </TipCard>
+      ) : null}
 
       {alerts.map((alert) => (
         <NeedAFourthCard
