@@ -289,21 +289,32 @@ export default function BringSomeoneSheet({
           >
             {invitingOthers ? 'Send invites this way' : 'Book it this way'}
           </Button>
-          <Button
-            variant="ghost"
-            big={false}
-            disabled={busy}
-            onPress={() => commit(false)}
-            accessibilityLabel="Wait together instead"
-          >
-            Wait together instead
-          </Button>
+          {invitingOthers ? null : (
+            <Button
+              variant="ghost"
+              big={false}
+              disabled={busy}
+              onPress={() => commit(false)}
+              accessibilityLabel="Wait together instead"
+            >
+              Wait together instead
+            </Button>
+          )}
         </>
       ) : (
         <>
-          <Text style={styles.placement}>There is no room for all of you right now.</Text>
-          <Button block loading={busy} onPress={() => commit(allowSplit)} accessibilityLabel="Wait together">
-            Wait together
+          <Text style={styles.placement}>
+            {invitingOthers
+              ? 'The game is full — anyone who accepts joins the waitlist.'
+              : 'There is no room for all of you right now.'}
+          </Text>
+          <Button
+            block
+            loading={busy}
+            onPress={() => commit(allowSplit)}
+            accessibilityLabel={invitingOthers ? "Send invites — they'd join the waitlist" : 'Wait together'}
+          >
+            {invitingOthers ? "Send invites — they'd join the waitlist" : 'Wait together'}
           </Button>
         </>
       )}
