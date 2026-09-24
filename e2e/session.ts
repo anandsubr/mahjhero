@@ -38,6 +38,34 @@ function adminClient(purpose: string): SupabaseClient {
   });
 }
 
+const STATIC_GUIDE_KEYS = ['player-intro', 'tip:event', 'tip:new-game', 'tip:check-in', 'tip:club'];
+
+/**
+ * Existing baselines predate first-run guidance; every one of them would
+ * otherwise grow a tip. 'all' dismisses everything this user could see so
+ * those baselines stay what they were; guide baselines pass [] instead.
+ *
+ * 'all' also dismisses `host-checklist:<clubId>` for every club this user
+ * hosts, read fresh off `club_members` rather than assumed — so a test that
+ * calls this again after seeding a second club the user hosts (Riverside,
+ * then Thursday Casuals) picks up both keys, not just the first.
+ */
+export async function setDismissedGuides(userId: string, keys: string[] | 'all'): Promise<void> {
+  const admin = adminClient('set dismissed guides');
+  let value = keys;
+  if (keys === 'all') {
+    const { data, error } = await admin
+      .from('club_members')
+      .select('club_id')
+      .eq('profile_id', userId)
+      .eq('role', 'host');
+    if (error) throw new Error(`setDismissedGuides: host clubs read failed: ${error.message}`);
+    value = [...STATIC_GUIDE_KEYS, ...(data ?? []).map((r) => `host-checklist:${r.club_id}`)];
+  }
+  const { error } = await admin.from('profiles').update({ dismissed_guides: value }).eq('id', userId);
+  if (error) throw new Error(`setDismissedGuides: update failed: ${error.message}`);
+}
+
 /**
  * Mints a real session against the LOCAL Supabase stack for visual tests.
  *
