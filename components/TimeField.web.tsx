@@ -1,5 +1,6 @@
 import type { ChangeEvent, CSSProperties } from 'react';
 import { View } from 'react-native';
+import { formatTimeLabel, timeStringToDate } from '../lib/time';
 import { colors, radius, space, type } from '../lib/theme';
 
 type TimeFieldProps = {
@@ -9,66 +10,80 @@ type TimeFieldProps = {
 };
 
 /**
+ * Every quarter-hour slot in a day, "00:00".."23:45" -- 96 options.
+ *
+ * A real <input type="time"> with `step={900}` was tried first, on the
+ * theory that the step attribute would cap the picker to these same four
+ * minutes per hour. It doesn't: `step` only constrains keyboard/arrow-key
+ * increments and form validation, not what the native OS picker itself
+ * displays -- confirmed live on a real phone, whose picker still scrolled
+ * through all 60 minutes regardless. A plain <select> sidesteps the
+ * problem entirely: the browser can only ever offer the options actually
+ * in its list, identically on every platform, with no native-picker quirk
+ * left to work around.
+ */
+const TIME_OPTIONS: string[] = [];
+for (let hour = 0; hour < 24; hour++) {
+  for (const minute of [0, 15, 30, 45]) {
+    TIME_OPTIONS.push(`${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`);
+  }
+}
+
+/**
  * Web counterpart to components/TimeField.tsx. Metro's platform-extension
  * resolution (the .web.tsx suffix) picks this file for web builds instead
  * of the native one, so @react-native-community/datetimepicker — a native
  * module with no web implementation — never enters the web bundle.
  *
- * A real <input type="time"> already speaks the app's native currency:
- * its value getter/setter is "HH:MM" in 24-hour form, the exact shape
- * lib/profile.ts stores and TIME_PATTERN checks. No Date conversion (and
- * so no use of lib/time.ts's helpers) is needed on this path at all — that
- * module exists for the native pickers, which only work in Date objects.
+ * A single <select> keeps the same "HH:MM" value/onChange/label contract
+ * every existing caller and test already uses (a two-control hour+minute
+ * split would need a second aria-label and a second change event to
+ * drive), and "HH:MM" is still the exact shape lib/profile.ts stores and
+ * TIME_PATTERN checks -- no Date conversion, so still no use of
+ * lib/time.ts's Date-based helpers for the value itself (only
+ * `formatTimeLabel` below, for each option's display text).
  *
- * `step={900}` (seconds) caps the native picker's own minute control to
- * :00/:15/:30/:45 — a game's start time has no reason to need finer
- * granularity than that, and the coarser step is one less decision for
- * whoever is filling out the form.
+ * `value` can carry a minute this list doesn't offer -- a quiet-hours
+ * preference saved before this file existed, or one this app never
+ * actually constrained. Rather than silently snapping it to the nearest
+ * quarter-hour (changing what was saved without being asked), that exact
+ * value is added as its own extra option, so it keeps displaying correctly
+ * until the member explicitly picks something else.
  *
  * No visible <label> is rendered, matching the TextInputs this replaces
  * (app/notifications.tsx put the visible structure — "Quiet hours", the
  * "to" between the two fields — around the inputs, not on them); aria-label
  * is what a screen reader announces, same role as the native side's
  * accessibilityLabel.
- *
- * A cleared <input type="time"> reports "" — the one way this control could
- * still hand back a malformed value, unlike the native Date-based pickers,
- * which can't produce one at all. "" would flow straight through to
- * isValidQuietWindow and come back rejected with the same generic message
- * used for equal start/end, telling a member who tapped clear nothing about
- * what went wrong. There's also no meaningful "unset" for one bound alone:
- * the way to stop quiet hours is the enable toggle, which already omits
- * both bounds from the save payload (see app/notifications.tsx's onSave).
- * So an empty value here is simply ignored, keeping the previous value —
- * which makes the invalid state unreachable on web too, not just rejected
- * with a clearer message.
  */
 export default function TimeField({ value, onChange, label }: TimeFieldProps) {
-  function handleChange(event: ChangeEvent<HTMLInputElement>) {
-    if (event.target.value === '') return;
+  function handleChange(event: ChangeEvent<HTMLSelectElement>) {
     onChange(event.target.value);
   }
 
+  const options = TIME_OPTIONS.includes(value)
+    ? TIME_OPTIONS
+    : [...TIME_OPTIONS, value].sort();
+
   return (
     <View style={{ flex: 1 }}>
-      <input
-        type="time"
-        step={900}
-        value={value}
-        onChange={handleChange}
-        aria-label={label}
-        style={webInputStyle}
-      />
+      <select value={value} onChange={handleChange} aria-label={label} style={webSelectStyle}>
+        {options.map((time) => (
+          <option key={time} value={time}>
+            {formatTimeLabel(timeStringToDate(time))}
+          </option>
+        ))}
+      </select>
     </View>
   );
 }
 
 // Plain DOM style object (px units required — unlike React Native's
-// StyleSheet, a raw <input> does not treat bare numbers as pixels), matching
+// StyleSheet, a raw <select> does not treat bare numbers as pixels), matching
 // components/TextField.tsx's "big" pill input treatment (surface
 // background, pill radius, 19px/58px sizing) so this reads as the same
 // control on web as the native picker does on iOS/Android.
-const webInputStyle: CSSProperties = {
+const webSelectStyle: CSSProperties = {
   border: `1px solid ${colors.divider}`,
   borderRadius: radius.pill,
   backgroundColor: colors.surface,
@@ -79,5 +94,4 @@ const webInputStyle: CSSProperties = {
   width: '100%',
   boxSizing: 'border-box',
   fontFamily: 'inherit',
-  caretColor: colors.accentColor,
 };
