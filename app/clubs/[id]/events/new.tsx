@@ -10,6 +10,7 @@ import TabBar from '../../../../components/TabBar';
 import TextField from '../../../../components/TextField';
 import TimeField from '../../../../components/TimeField';
 import Toggle from '../../../../components/Toggle';
+import TipCard, { TipText } from '../../../../components/TipCard';
 import VenuePicker from '../../../../components/VenuePicker';
 import { fetchClub, fetchMyRoles, type Club, type GameMode } from '../../../../lib/clubs';
 import {
@@ -21,6 +22,7 @@ import {
   type SeatingMode,
   type SeriesFrequency,
 } from '../../../../lib/events';
+import { useGuides } from '../../../../lib/use-guides';
 import { useSession } from '../../../../lib/session';
 import { dateToDateString } from '../../../../lib/time';
 import { colors, radius, shadow, space, type } from '../../../../lib/theme';
@@ -189,6 +191,7 @@ const chipStyles = StyleSheet.create({
 export default function NewEventScreen() {
   const { id: clubId } = useLocalSearchParams<{ id: string }>();
   const { session, loading } = useSession();
+  const guides = useGuides();
   const router = useRouter();
 
   const [club, setClub] = useState<Club | null>(null);
@@ -422,6 +425,17 @@ export default function NewEventScreen() {
       <Text style={styles.heading}>Add a game</Text>
 
       {error ? <ErrorBanner message={error} /> : null}
+
+      {guides.isVisible('tip:new-game') ? (
+        <TipCard tag="Tip" title="Setting up a game" onDismiss={() => guides.dismiss('tip:new-game')}>
+          <TipText>Assigned tables: players pick an Empty seat at a table.</TipText>
+          <TipText>Open seating: players tap Join, and no tables are set in advance.</TipText>
+          <TipText>
+            Set Cost to play, and Minimum spend if the venue asks for one. Players see the
+            cost up front, and you mark who's Paid at check-in. No money goes through the app.
+          </TipText>
+        </TipCard>
+      ) : null}
 
       <TextField
         label="What is it called?"
