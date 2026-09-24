@@ -453,8 +453,8 @@ verify_jwt = true
 # .env.
 # ---------------------------------------------------------------------------
 [remotes.prod]
-# Fill in after creating the project (Settings -> General -> Project ID).
-project_id = "REPLACE_WITH_PROD_PROJECT_REF"
+# mahjhero-prod
+project_id = "tnqofwoqivyhvjnntaau"
 
 [remotes.prod.auth]
 site_url = "https://app.mahjhero.com"
