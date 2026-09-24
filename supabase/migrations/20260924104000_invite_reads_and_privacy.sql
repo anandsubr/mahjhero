@@ -103,7 +103,9 @@ create policy bookings_select_member on public.bookings
 -- caller's (invited included -- the invitee sees the game).
 -- Rows: open play and organizers get every row; otherwise the full list
 -- only once the caller is confirmed (event_has_my_placed_seat), plus the
--- caller's own row and any invite the caller sent.
+-- caller's own row and any invite the caller sent that is still pending
+-- ('invited') -- one the invitee has since accepted or declined reads
+-- under the ordinary rules above instead.
 -- Names: an invited row names its invitee only in open play, or to an
 -- organizer, its sender or its invitee; anybody else gets it anonymous.
 -- Invited rows carry no waitlist_position: the group's queue place is not
@@ -179,13 +181,16 @@ as $$
       or public.event_has_my_active_booking(target_event)
     )
     -- Roster privacy, invite-only: the full list once the caller is
-    -- confirmed; otherwise their own row and the invites they sent.
+    -- confirmed; otherwise their own row and the invites they sent that
+    -- are still pending (an invite the invitee has since accepted or
+    -- declined is no longer "theirs to watch" -- it reads under the
+    -- ordinary rules above like any other row).
     and (
       ev.game_mode = 'open_play'
       or public.is_club_organizer(ev.club_id)
       or public.event_has_my_placed_seat(target_event)
       or b.profile_id = auth.uid()
-      or b.booked_by = auth.uid()
+      or (b.status = 'invited' and b.booked_by = auth.uid())
     )
   order by t.position nulls last, b.created_at, b.id;
 $$;

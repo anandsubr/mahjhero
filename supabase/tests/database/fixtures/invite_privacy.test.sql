@@ -1,6 +1,6 @@
 begin;
 set local search_path to extensions, public;
-select plan(21);
+select plan(23);
 
 /*
  * Who sees a pending game invite (P1, 2026-09-24).
@@ -13,6 +13,12 @@ select plan(21);
  *         so "the sender" is tested apart from "an organizer"
  * E2 (open play, Table 2):
  *   Gina  INVITED, seat held at Table 2, sent by Alice
+ * E3 (invite-only, no tables):
+ *   Fred  waitlisted (his own group, distinct from E1's)
+ *   Ivy   waitlisted, in Fred's group -- an invite Fred sent that has
+ *         since been ACCEPTED (status is no longer 'invited'), to prove
+ *         event_seating stops treating it as "his to watch" once it is
+ *         no longer pending.
  * Hank is a member with no booking anywhere.
  */
 insert into auth.users (id, email) values
@@ -23,7 +29,8 @@ insert into auth.users (id, email) values
   ('eeeeeeee-0000-0000-0000-00000000fd05', 'ip-erin@example.com'),
   ('ffffffff-0000-0000-0000-00000000fd06', 'ip-fred@example.com'),
   ('99999999-0000-0000-0000-00000000fd07', 'ip-gina@example.com'),
-  ('88888888-0000-0000-0000-00000000fd08', 'ip-hank@example.com');
+  ('88888888-0000-0000-0000-00000000fd08', 'ip-hank@example.com'),
+  ('77777777-0000-0000-0000-00000000fd09', 'ip-ivy@example.com');
 
 insert into public.clubs (id, name, slug, created_by) values
   ('c1c1c1c1-0000-0000-0000-00000000fd01', 'Invite Privacy Club',
@@ -51,7 +58,11 @@ insert into public.events (
   ('22222222-0000-0000-0000-00000000fd02', 'c1c1c1c1-0000-0000-0000-00000000fd01',
    'Open Game', '11111111-0000-0000-0000-00000000fd01',
    now() + interval '1 day', now() + interval '1 day 3 hours', 'published',
-   'open_play', 'aaaaaaaa-0000-0000-0000-00000000fd01');
+   'open_play', 'aaaaaaaa-0000-0000-0000-00000000fd01'),
+  ('22222222-0000-0000-0000-00000000fd03', 'c1c1c1c1-0000-0000-0000-00000000fd01',
+   'Waitlisted Sender Game', '11111111-0000-0000-0000-00000000fd01',
+   now() + interval '1 day', now() + interval '1 day 3 hours', 'published',
+   'invite_only', 'aaaaaaaa-0000-0000-0000-00000000fd01');
 
 insert into public.event_tables (id, event_id, club_id, label, position) values
   ('44444444-0000-0000-0000-00000000fd01', '22222222-0000-0000-0000-00000000fd01',
@@ -72,7 +83,10 @@ insert into public.booking_groups
    'ffffffff-0000-0000-0000-00000000fd06', 'waitlisted', now()),
   ('55555555-0000-0000-0000-00000000fd04', '22222222-0000-0000-0000-00000000fd02',
    'c1c1c1c1-0000-0000-0000-00000000fd01',
-   'aaaaaaaa-0000-0000-0000-00000000fd01', 'confirmed', null);
+   'aaaaaaaa-0000-0000-0000-00000000fd01', 'confirmed', null),
+  ('55555555-0000-0000-0000-00000000fd05', '22222222-0000-0000-0000-00000000fd03',
+   'c1c1c1c1-0000-0000-0000-00000000fd01',
+   'ffffffff-0000-0000-0000-00000000fd06', 'waitlisted', now());
 
 insert into public.bookings
   (group_id, event_id, club_id, event_table_id, profile_id, booked_by,
@@ -101,7 +115,18 @@ insert into public.bookings
   ('55555555-0000-0000-0000-00000000fd04', '22222222-0000-0000-0000-00000000fd02',
    'c1c1c1c1-0000-0000-0000-00000000fd01', '44444444-0000-0000-0000-00000000fd02',
    '99999999-0000-0000-0000-00000000fd07', 'aaaaaaaa-0000-0000-0000-00000000fd01',
-   'invited', true);
+   'invited', true),
+  -- Fred: waitlisted on E3, in his own group (distinct from E1's).
+  ('55555555-0000-0000-0000-00000000fd05', '22222222-0000-0000-0000-00000000fd03',
+   'c1c1c1c1-0000-0000-0000-00000000fd01', null,
+   'ffffffff-0000-0000-0000-00000000fd06', 'ffffffff-0000-0000-0000-00000000fd06',
+   'waitlisted', null),
+  -- Ivy: an invite Fred sent that has since been ACCEPTED into the same
+  -- waitlisted group -- status is no longer 'invited'.
+  ('55555555-0000-0000-0000-00000000fd05', '22222222-0000-0000-0000-00000000fd03',
+   'c1c1c1c1-0000-0000-0000-00000000fd01', null,
+   '77777777-0000-0000-0000-00000000fd09', 'ffffffff-0000-0000-0000-00000000fd06',
+   'waitlisted', null);
 
 set local role authenticated;
 
@@ -169,6 +194,24 @@ select is(
     where event_id = '22222222-0000-0000-0000-00000000fd01'),
   1,
   'and reads only their own booking');
+
+-- ---------------------------------------------------------------------
+-- Fred again, on E3: waitlisted himself, and the sender of an invite
+-- that has since been ACCEPTED (Ivy, now waitlisted too, not 'invited').
+-- event_seating must not hand him her name/profile just because he sent
+-- the invite -- only a still-pending ('invited') invite is his to watch.
+-- ---------------------------------------------------------------------
+select is(
+  (select count(*)::int from public.event_seating(
+     '22222222-0000-0000-0000-00000000fd03')),
+  1,
+  'a waitlisted sender sees only their own row in event_seating, not '
+  'their invitee''s once it is accepted');
+select ok(
+  not exists (
+    select 1 from public.event_seating('22222222-0000-0000-0000-00000000fd03')
+      where profile_id = '77777777-0000-0000-0000-00000000fd09'),
+  'the accepted invitee''s row does not appear to the sender at all');
 
 -- ---------------------------------------------------------------------
 -- Carol: the invitee. Sees the game and the headcount, and her own row.
