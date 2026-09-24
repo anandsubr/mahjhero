@@ -8,7 +8,9 @@ import { Stack } from 'expo-router';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
+import { Platform } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { Analytics } from '@vercel/analytics/react';
 import InAppBrowserBanner from '../components/InAppBrowserBanner';
 import { useAuthDeepLink } from '../lib/auth-deep-link';
 import { SessionProvider } from '../lib/session';
@@ -68,6 +70,7 @@ export default function RootLayout() {
         <GuidesProvider>
           <InAppBrowserBanner />
           <Stack screenOptions={{ headerShown: false }} />
+          {Platform.OS === 'web' && <Analytics />}
         </GuidesProvider>
       </SessionProvider>
     </SafeAreaProvider>
