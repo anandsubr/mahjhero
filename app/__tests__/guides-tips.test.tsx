@@ -289,11 +289,40 @@ function renderNewGameAsHost() {
 }
 
 describe('event page tip', () => {
-  it('explains Join, Invite and the waitlist to a player', async () => {
+  it('explains Join, Invite and the waitlist to a player on an open_play game', async () => {
     renderEventAsMember();
     expect(await screen.findByText('Getting a seat')).toBeTruthy();
     expect(screen.getByText(/Tap Join, or an Empty seat/)).toBeTruthy();
     expect(screen.getByText(/Invite to bring someone along/)).toBeTruthy();
+    expect(screen.getByText(/Join the waitlist/)).toBeTruthy();
+  });
+
+  it('omits the Invite line for a plain member on an invite_only game', async () => {
+    const INVITE_ONLY_EVENT = { ...EVENT, game_mode: 'invite_only' as const };
+    const UNPLACED_MEMBER = {
+      booking_id: 'booking-unplaced',
+      group_id: 'group-unplaced',
+      profile_id: 'test-user',
+      display_name: 'Ada',
+      skill_level: null,
+      event_table_id: null as string | null,
+      status: 'confirmed' as const,
+      booked_by: 'test-user',
+      booked_by_name: 'Ada',
+      group_status: 'confirmed' as const,
+      waitlist_position: null,
+      created_at: '2026-08-20T10:00:00Z',
+    };
+
+    fetchEvent.mockResolvedValue(INVITE_ONLY_EVENT);
+    fetchEventSeating.mockResolvedValue([UNPLACED_MEMBER]);
+    fetchEventAcceptedCount.mockResolvedValue(5);
+    fetchRoster.mockResolvedValue(MEMBER_ROLE);
+    renderEventAsMember();
+
+    expect(await screen.findByText('Getting a seat')).toBeTruthy();
+    expect(screen.getByText(/Tap Join, or an Empty seat/)).toBeTruthy();
+    expect(screen.queryByText(/Invite to bring someone along/)).toBeNull();
     expect(screen.getByText(/Join the waitlist/)).toBeTruthy();
   });
 

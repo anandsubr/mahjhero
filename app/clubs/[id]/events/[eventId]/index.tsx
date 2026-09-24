@@ -957,7 +957,7 @@ export default function EventScreen() {
       {!isOrganizer && event.status !== 'cancelled' && guides.isVisible('tip:event') ? (
         <TipCard tag="Tip" title="Getting a seat" onDismiss={() => guides.dismiss('tip:event')}>
           <TipText>Tap Join, or an Empty seat at a table, to take a spot.</TipText>
-          <TipText>Tap Invite to bring someone along.</TipText>
+          {canBringSomeone ? <TipText>Tap Invite to bring someone along.</TipText> : null}
           <TipText>Game full? Tap Join the waitlist and you'll move up if a seat opens.</TipText>
         </TipCard>
       ) : null}
