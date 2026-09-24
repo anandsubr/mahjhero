@@ -18,7 +18,7 @@
 - A failed checklist count ⇒ that club's checklist is hidden.
 - Host checklist: shown to a club's `host` only. Player card: shown only when roles loaded successfully and the viewer is neither `host` nor `co_organizer` anywhere.
 - Guide keys (exact strings): `player-intro`, `tip:event`, `tip:new-game`, `tip:check-in`, `tip:club`, `host-checklist:<clubId>`.
-- Tip copy uses only labels verified in source on 2026-09-23: **Join**, **Empty** (seat), **Invite**, **Join the waitlist**, **Assigned tables**, **Open seating**, **Cost to play**, **Minimum spend**, **Here**, **Not coming**, **Paid**, **Search by name**, **Invite by email**, **Send invite**, **Import a roster**, **Open the club thread**. If a label has changed by implementation time, update the copy to match source; never ship a label that isn't on screen.
+- Tip copy uses only labels verified in source on 2026-09-23: **Join**, **Empty** (seat), **Invite**, **Join the waitlist**, **Assigned tables**, **Open seating**, **Cost to play**, **Minimum spend**, **Here**, **Not coming**, **$** (the payment control shows only a "$" glyph — there is no visible "Paid" label), **Search by name**, **Invite by email**, **Send invite**, **Import a roster**, **Open the club thread**. If a label has changed by implementation time, update the copy to match source; never ship a label that isn't on screen.
 - Body text ≥ 16pt (`type.size.helper`); on the `accent2[100]` card ground use `colors.accent2[800]` for body text (the welcome screen's contrast rule).
 - Branch `feat/first-run-guidance` (already created off `origin/main`, spec committed). Merge via PR, never straight to `main`.
 - Commit messages end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
@@ -1294,7 +1294,7 @@ In `app/clubs/[id]/events/new.tsx` add imports (paths one level shallower: `'../
           <TipText>Open seating: players tap Join, and no tables are set in advance.</TipText>
           <TipText>
             Set Cost to play, and Minimum spend if the venue asks for one. Players see the
-            cost up front, and you mark who's Paid at check-in. No money goes through the app.
+            cost up front, and you mark who's paid at check-in. No money goes through the app.
           </TipText>
         </TipCard>
       ) : null}
@@ -1332,11 +1332,11 @@ Extend `app/__tests__/guides-tips.test.tsx` with the render mocks from `app/__te
 
 ```tsx
 describe('check-in tip', () => {
-  it('explains Here, Not coming and Paid', async () => {
+  it('explains Here, Not coming and the $ control', async () => {
     renderCheckInAsHost();
     expect(await screen.findByText('Running the door')).toBeTruthy();
     expect(screen.getByText(/Tap Here when someone arrives, or Not coming/)).toBeTruthy();
-    expect(screen.getByText(/Only organizers see who's Paid/)).toBeTruthy();
+    expect(screen.getByText(/Only organizers see who has paid/)).toBeTruthy();
   });
 
   it('dismisses with its key', async () => {
@@ -1381,14 +1381,14 @@ In `check-in.tsx` add the two imports (`'../../../../../components/TipCard'`, `'
       {guides.isVisible('tip:check-in') ? (
         <TipCard tag="Tip" title="Running the door" onDismiss={() => guides.dismiss('tip:check-in')}>
           <TipText>Tap Here when someone arrives, or Not coming if they've told you.</TipText>
-          <TipText>Tap Paid once they've paid. Only organizers see who's Paid.</TipText>
+          <TipText>Tap $ once they've paid. Only organizers see who has paid.</TipText>
         </TipCard>
       ) : null}
 ```
 
 `before` renders in both the assigned-tables and open-seating layouts (the latter wraps it in `styles.scrollGroup`), so this covers both. The screen already refuses non-organizers before this point.
 
-Before shipping, confirm "Only organizers see who's Paid" against the payment-privacy tests (`supabase/tests/database/fixtures/event_payments_rls.test.sql`) — it is the property those tests prove.
+Before shipping, confirm "Only organizers see who has paid" against the payment-privacy tests (`supabase/tests/database/fixtures/event_payments_rls.test.sql`) — it is the property those tests prove.
 
 - [ ] **Step 4: Implement the club page tip**
 
@@ -1594,7 +1594,7 @@ export default function HowItWorks() {
         <Text style={styles.body}>2. Schedule your first game. Choose Assigned tables or Open seating, and set Cost to play.</Text>
         <Text style={styles.body}>3. Invite your players by email, or import a roster.</Text>
         <Text style={styles.body}>4. Say hello with an announcement in the club thread.</Text>
-        <Text style={styles.body}>On the night, use Check-in to mark who's Here and who's Paid.</Text>
+        <Text style={styles.body}>On the night, use Check-in to mark who's Here and who has paid.</Text>
       </Card>
 
       <View style={styles.resetGroup}>
