@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(77);
+select plan(82);
 
 insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-000000000001', 'alice@example.com'),
@@ -485,6 +485,13 @@ select ok(
       and b.profile_id = 'dddddddd-0000-0000-0000-000000000004'),
   'in a group of their own, not the sender''s');
 select is(
+  (select booked_by from public.bookings
+    where event_id = 'e2e2e2e2-0000-0000-0000-000000000002'
+      and profile_id = 'dddddddd-0000-0000-0000-000000000004'),
+  'dddddddd-0000-0000-0000-000000000004'::uuid,
+  'booked_by becomes the invitee themselves -- they joined the queue, '
+  'not the sender who was already told via booking_invite_accepted');
+select is(
   (select public.booking_result(group_id)->>'waitlist_position'
      from public.bookings
     where event_id = 'e2e2e2e2-0000-0000-0000-000000000002'
@@ -503,6 +510,42 @@ select is(
       and created_by = 'eeeeeeee-0000-0000-0000-000000000005'),
   'waitlisted',
   'the sender''s own group keeps its place');
+
+-- ---------------------------------------------------------------------
+-- Dan (the invitee, now booked_by himself) leaves the queue on his own.
+-- Because booked_by is his own id, cancel_booking's `bk.profile_id = caller
+-- and bk.booked_by <> caller` guard does not fire: no
+-- booking_cancelled_by_member row -- the dashboard would show a plain
+-- "leave the waitlist" control here, not "Can't make it".
+-- ---------------------------------------------------------------------
+select is(
+  (select count(*)::int from public.notification_outbox
+    where kind = 'booking_cancelled_by_member'
+      and event_id = 'e2e2e2e2-0000-0000-0000-000000000002'),
+  0,
+  'no booking_cancelled_by_member row exists yet for this event');
+
+select lives_ok(
+  $$select public.cancel_booking(
+      (select id from public.bookings
+        where event_id = 'e2e2e2e2-0000-0000-0000-000000000002'
+          and profile_id = 'dddddddd-0000-0000-0000-000000000004'))$$,
+  'the invitee cancels the seat they joined the waitlist for themselves');
+
+reset role;
+select is(
+  (select status::text from public.bookings
+    where event_id = 'e2e2e2e2-0000-0000-0000-000000000002'
+      and profile_id = 'dddddddd-0000-0000-0000-000000000004'),
+  'cancelled',
+  'the booking is cancelled');
+select is(
+  (select count(*)::int from public.notification_outbox
+    where kind = 'booking_cancelled_by_member'
+      and event_id = 'e2e2e2e2-0000-0000-0000-000000000002'),
+  0,
+  'still no booking_cancelled_by_member row -- he booked_by himself, '
+  'this was not somebody else''s accepted invite falling through');
 
 -- ---------------------------------------------------------------------
 -- Once the game has started, nobody can answer or withdraw.

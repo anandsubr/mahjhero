@@ -144,6 +144,107 @@ type Props = {
 };
 
 /**
+ * A seat held for a pending game invite. Taken (it counts toward the
+ * grid's filled seats, so no Empty cell is drawn for it), but not by
+ * someone who has said yes: dimmed and dashed, the invitee's name plus an
+ * "Invited" tag -- or, when the viewer may not see who (an invite-only
+ * game's other members), the single word "Invited".
+ *
+ * The only thing anyone can do to it is withdraw it, and only the sender or
+ * an organizer (`seat.canWithdraw`, computed by TableCard) -- so its panel
+ * carries that one action instead of Move / Remove / Leave / Record.
+ */
+function InvitedSeat({
+  seat,
+  busy,
+  open,
+  onToggleManage,
+  onWithdrawInvite,
+}: {
+  seat: Seat;
+  busy: boolean;
+  open: boolean;
+  onToggleManage?: (bookingId: string) => void;
+  onWithdrawInvite?: (bookingId: string) => void;
+}) {
+  const shownName = seat.isYou ? 'You' : seat.name;
+  const nameText = (
+    <Text
+      style={[styles.name, styles.nameInvited]}
+      numberOfLines={1}
+      ellipsizeMode="tail"
+    >
+      {shownName ?? 'Invited'}
+    </Text>
+  );
+  // A named held seat carries its own tag; an anonymous one already reads
+  // "Invited" as its name, so no second copy.
+  const tag = shownName !== null ? <Text style={styles.invitedTag}>Invited</Text> : null;
+  const manageable = Boolean(seat.canWithdraw && onWithdrawInvite && onToggleManage);
+
+  if (!manageable) {
+    return (
+      <View style={[styles.seat, styles.seatInvited, styles.seatRow]}>
+        {nameText}
+        {tag}
+      </View>
+    );
+  }
+
+  const label = `Manage the invite for ${seat.name ?? 'this seat'}`;
+  const toggle = () => onToggleManage!(seat.bookingId);
+
+  if (!open) {
+    return (
+      <Pressable
+        style={[styles.seat, styles.seatInvited]}
+        onPress={busy ? undefined : toggle}
+        disabled={busy}
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        aria-expanded={false}
+      >
+        <View style={styles.nameRow}>
+          {nameText}
+          <Text aria-hidden style={styles.chevron}>▾</Text>
+          {tag}
+        </View>
+      </Pressable>
+    );
+  }
+
+  return (
+    <View style={[styles.seat, styles.seatOpen, styles.seatInvited]}>
+      <Pressable
+        onPress={busy ? undefined : toggle}
+        disabled={busy}
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        aria-expanded
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+      >
+        <View style={styles.nameRow}>
+          {nameText}
+          <Text aria-hidden style={styles.chevron}>▴</Text>
+          {tag}
+        </View>
+      </Pressable>
+      <View style={styles.manageActions}>
+        <Button
+          variant="ghost"
+          big={false}
+          disabled={busy}
+          onPress={() => onWithdrawInvite!(seat.bookingId)}
+          accessibilityLabel={`Withdraw the invite to ${seat.name ?? 'this seat'}`}
+        >
+          Withdraw invite
+        </Button>
+      </View>
+    </View>
+  );
+}
+
+/**
  * One table's seats.
  *
  * Occupied seats are drawn in the order they are given, then the remainder
@@ -275,106 +376,6 @@ type Props = {
  * branches below, so none of Move / Remove / Leave / Record can reach an
  * invited booking.
  */
-/**
- * A seat held for a pending game invite. Taken (it counts toward the
- * grid's filled seats, so no Empty cell is drawn for it), but not by
- * someone who has said yes: dimmed and dashed, the invitee's name plus an
- * "Invited" tag -- or, when the viewer may not see who (an invite-only
- * game's other members), the single word "Invited".
- *
- * The only thing anyone can do to it is withdraw it, and only the sender or
- * an organizer (`seat.canWithdraw`, computed by TableCard) -- so its panel
- * carries that one action instead of Move / Remove / Leave / Record.
- */
-function InvitedSeat({
-  seat,
-  busy,
-  open,
-  onToggleManage,
-  onWithdrawInvite,
-}: {
-  seat: Seat;
-  busy: boolean;
-  open: boolean;
-  onToggleManage?: (bookingId: string) => void;
-  onWithdrawInvite?: (bookingId: string) => void;
-}) {
-  const shownName = seat.isYou ? 'You' : seat.name;
-  const nameText = (
-    <Text
-      style={[styles.name, styles.nameInvited]}
-      numberOfLines={1}
-      ellipsizeMode="tail"
-    >
-      {shownName ?? 'Invited'}
-    </Text>
-  );
-  // A named held seat carries its own tag; an anonymous one already reads
-  // "Invited" as its name, so no second copy.
-  const tag = shownName !== null ? <Text style={styles.invitedTag}>Invited</Text> : null;
-  const manageable = Boolean(seat.canWithdraw && onWithdrawInvite && onToggleManage);
-
-  if (!manageable) {
-    return (
-      <View style={[styles.seat, styles.seatInvited, styles.seatRow]}>
-        {nameText}
-        {tag}
-      </View>
-    );
-  }
-
-  const label = `Manage the invite for ${seat.name ?? 'this seat'}`;
-  const toggle = () => onToggleManage!(seat.bookingId);
-
-  if (!open) {
-    return (
-      <Pressable
-        style={[styles.seat, styles.seatInvited]}
-        onPress={busy ? undefined : toggle}
-        disabled={busy}
-        accessibilityRole="button"
-        accessibilityLabel={label}
-        aria-expanded={false}
-      >
-        <View style={styles.nameRow}>
-          {nameText}
-          <Text aria-hidden style={styles.chevron}>▾</Text>
-          {tag}
-        </View>
-      </Pressable>
-    );
-  }
-
-  return (
-    <View style={[styles.seat, styles.seatOpen, styles.seatInvited]}>
-      <Pressable
-        onPress={busy ? undefined : toggle}
-        disabled={busy}
-        accessibilityRole="button"
-        accessibilityLabel={label}
-        aria-expanded
-        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-      >
-        <View style={styles.nameRow}>
-          {nameText}
-          <Text aria-hidden style={styles.chevron}>▴</Text>
-          {tag}
-        </View>
-      </Pressable>
-      <View style={styles.manageActions}>
-        <Button
-          variant="ghost"
-          big={false}
-          disabled={busy}
-          onPress={() => onWithdrawInvite!(seat.bookingId)}
-          accessibilityLabel={`Withdraw the invite to ${seat.name ?? 'this seat'}`}
-        >
-          Withdraw invite
-        </Button>
-      </View>
-    </View>
-  );
-}
 
 export default function SeatGrid({
   tableLabel,
