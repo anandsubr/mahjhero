@@ -412,6 +412,21 @@ describe('event page tip', () => {
     await screen.findByText('Thursday Mahjong');
     expect(screen.queryByText('Getting a seat')).toBeNull();
   });
+
+  it('is not shown once the game has started, with nothing left for Join to point at', async () => {
+    const STARTED_EVENT = {
+      ...EVENT,
+      starts_at: new Date(Date.now() - 3_600_000).toISOString(),
+      ends_at: new Date(Date.now() + 3_600_000).toISOString(),
+    };
+    fetchEvent.mockResolvedValue(STARTED_EVENT);
+    renderEventAsMember();
+    // Anchors on the event title, proving the screen finished loading,
+    // rather than assuming the tip's own absence means the page never
+    // rendered at all.
+    await screen.findByText('Thursday Mahjong');
+    expect(screen.queryByText('Getting a seat')).toBeNull();
+  });
 });
 
 describe('new game tip', () => {

@@ -954,7 +954,12 @@ export default function EventScreen() {
 
       {error ? <ErrorBanner message={error} /> : null}
 
-      {!isOrganizer && event.status !== 'cancelled' && guides.isVisible('tip:event') ? (
+      {/*
+        Also gated on `canBook`: once a game has started (or isn't
+        published), Join has nothing left to point at, so the tip would be
+        advice about a control that's no longer there.
+      */}
+      {!isOrganizer && event.status !== 'cancelled' && canBook && guides.isVisible('tip:event') ? (
         <TipCard tag="Tip" title="Getting a seat" onDismiss={() => guides.dismiss('tip:event')}>
           <TipText>Tap Join, or an Empty seat at a table, to take a spot.</TipText>
           {canBringSomeone ? <TipText>Tap Invite to bring someone along.</TipText> : null}
