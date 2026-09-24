@@ -48,6 +48,17 @@ const SEAT_FOOTER = (club: string) =>
   `You're getting this because of a seat you hold at ${club}.`;
 
 /**
+ * Game invites. SEAT_FOOTER ("a seat you hold") is false for an invitee,
+ * who holds nothing until they accept, and for a sender, who may not be
+ * playing at all.
+ */
+const INVITE_FOOTER = (club: string) =>
+  `You're getting this because a member of ${club} invited you to a game.`;
+
+const SENDER_FOOTER = (club: string) =>
+  `You're getting this because you invited someone to a game at ${club}.`;
+
+/**
  * `need_a_fourth` is the one member-facing kind with a real, dedicated
  * off switch — app/notifications.tsx's "Mute need a 4th alerts" toggle —
  * so this is the one footer allowed to say settings change what reaches
@@ -75,11 +86,11 @@ const REMINDER_FOOTER =
   "You're getting this because you have a seat at this game. Reminders for games you've booked can't be switched off.";
 
 /**
- * Reached only when `row.kind` isn't one of the eleven cases below. For a
+ * Reached only when `row.kind` isn't one of the sixteen cases below. For a
  * genuine `RenderRow` that's impossible by type, which is the point: the
  * parameter type is `never`, so TypeScript narrows `row.kind` to `never`
  * in the `default:` branch below only when every member of `OutboxKind`
- * has its own `case`. Delete a case, or add a twelfth kind without one,
+ * has its own `case`. Delete a case, or add a seventeenth kind without one,
  * and the call site fails to compile instead of silently falling through
  * — the same guarantee `tsc` gave for free before this function had a
  * `default:` at all, just recovered explicitly.
@@ -100,6 +111,8 @@ export function bodyFor(row: RenderRow, appUrl: string): Body {
   const seatFooter = SEAT_FOOTER(row.club_name);
   const needAFourthFooter = NEED_A_FOURTH_FOOTER(row.club_name);
   const broadcastFooter = BROADCAST_FOOTER(row.club_name);
+  const inviteFooter = INVITE_FOOTER(row.club_name);
+  const senderFooter = SENDER_FOOTER(row.club_name);
 
   switch (row.kind) {
     case 'booked_by_friend':
@@ -117,13 +130,13 @@ export function bodyFor(row: RenderRow, appUrl: string): Body {
     case 'booking_declined':
       return {
         subject: `${actor(row, 'Someone')} can't make ${row.event_title ?? 'the game'}`,
-        headline: 'A seat came free',
+        headline: 'Invite declined',
         paragraphs: [
-          `${actor(row, 'The person you booked for')} declined the seat you booked for them at ${game(row)}.`,
-          'The seat is back in the pool.',
+          `${actor(row, 'The person you invited')} declined your invite to ${game(row)}.`,
+          'Any seat held for them is back in the pool — you can invite someone else.',
         ],
         cta: { label: 'See the game', url },
-        footerNote: seatFooter,
+        footerNote: senderFooter,
       };
 
     case 'booking_cancelled_by_host':
@@ -264,6 +277,72 @@ export function bodyFor(row: RenderRow, appUrl: string): Body {
         // wording every other event-linked cta in this file uses.
         cta: { label: 'See the game', url },
         footerNote: seatFooter,
+      };
+
+    case 'booking_invited': {
+      // holds_seat is written by commit_booking: false means the game was
+      // full when the invite went out, so accepting joins the waitlist.
+      const holdsSeat = row.payload.holds_seat !== false;
+      return {
+        subject: `${actor(row, 'Someone')} invited you to ${row.event_title ?? 'a game'}`,
+        headline: "You're invited",
+        paragraphs: [
+          `${actor(row, 'A member')} invited you to ${game(row)}${at(row)}.`,
+          holdsSeat
+            ? "A seat is held for you until you answer. Accept or decline from the game page — if you can't make it, declining frees the seat for somebody else."
+            : "The game is full right now, so accepting puts you on the waitlist. You'll move up if a seat opens.",
+        ],
+        cta: { label: 'Accept or decline', url },
+        footerNote: inviteFooter,
+      };
+    }
+
+    case 'booking_invite_accepted': {
+      // `waitlisted` is written by accept_booking_invite: true when the
+      // invite held no seat, so accepting queued them.
+      const waitlisted = row.payload.waitlisted === true;
+      return {
+        subject: `${actor(row, 'Someone')} is in for ${row.event_title ?? 'the game'}`,
+        headline: 'Invite accepted',
+        paragraphs: [
+          `${actor(row, 'The person you invited')} accepted your invite to ${game(row)}${at(row)}.`,
+          ...(waitlisted
+            ? ["The game was full, so they're on the waitlist and will move up if a seat opens."]
+            : []),
+        ],
+        cta: { label: 'See the game', url },
+        footerNote: senderFooter,
+      };
+    }
+
+    case 'booking_invite_withdrawn':
+      return {
+        subject: `Your invite to ${row.event_title ?? 'the game'} was withdrawn`,
+        headline: 'Invite withdrawn',
+        paragraphs: [
+          `${actor(row, 'The organizer')} withdrew your invite to ${game(row)}.`,
+          "There's nothing you need to do.",
+        ],
+        // The club, not the event: an invite-only game stops being visible
+        // to someone whose invite was withdrawn, so the event link would
+        // open "That game could not be loaded."
+        cta: {
+          label: `See what else ${row.club_name} has on`,
+          url: `${appUrl}/clubs/${row.club_id}`,
+        },
+        footerNote: inviteFooter,
+      };
+
+    case 'booking_cancelled_by_member':
+      return {
+        subject: `${actor(row, 'Someone')} can't make ${row.event_title ?? 'the game'} anymore`,
+        headline: 'A seat opened up',
+        paragraphs: [
+          `${actor(row, 'The person you invited')} can't make ${game(row)} anymore — their seat is open.`,
+          'You can invite someone else to fill it.',
+        ],
+        cta: { label: 'See the game', url },
+        footerNote: senderFooter,
       };
 
     default:

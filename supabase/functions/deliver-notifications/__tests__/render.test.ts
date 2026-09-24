@@ -45,6 +45,10 @@ const ALL_KINDS: OutboxKind[] = [
   'event_reminder',
   'broadcast',
   'attendance_declined',
+  'booking_invited',
+  'booking_invite_accepted',
+  'booking_invite_withdrawn',
+  'booking_cancelled_by_member',
 ];
 
 describe('renderMessage', () => {
@@ -91,7 +95,7 @@ describe('renderMessage', () => {
   // asserting real content below, but that left six (booking_declined,
   // waitlist_promoted, promotion_offer, promotion_offer_expired, unseated,
   // event_cancelled) with no assertion on their actual words at all. This
-  // table covers all eleven with a phrase unique to that kind, so a
+  // table covers all sixteen with a phrase unique to that kind, so a
   // copy-paste swap between any two `case` bodies in bodies.ts fails here.
   const DISTINGUISHING_CONTENT: Array<{
     kind: OutboxKind;
@@ -99,7 +103,7 @@ describe('renderMessage', () => {
     phrase: string;
   }> = [
     { kind: 'booked_by_friend', field: 'subject', phrase: 'saved you a seat' },
-    { kind: 'booking_declined', field: 'text', phrase: 'declined the seat you booked for them' },
+    { kind: 'booking_declined', field: 'text', phrase: 'declined your invite' },
     { kind: 'booking_cancelled_by_host', field: 'text', phrase: 'cancelled your seat at' },
     { kind: 'waitlist_promoted', field: 'text', phrase: 'next on the waitlist' },
     { kind: 'promotion_offer', field: 'text', phrase: 'held for you for the next two hours' },
@@ -110,6 +114,10 @@ describe('renderMessage', () => {
     { kind: 'event_reminder', field: 'text', phrase: 'cancelling now gives the seat' },
     { kind: 'broadcast', field: 'text', phrase: 'The side entrance is locked' },
     { kind: 'attendance_declined', field: 'text', phrase: 'nothing has been released' },
+    { kind: 'booking_invited', field: 'subject', phrase: 'invited you to' },
+    { kind: 'booking_invite_accepted', field: 'subject', phrase: 'is in for' },
+    { kind: 'booking_invite_withdrawn', field: 'subject', phrase: 'was withdrawn' },
+    { kind: 'booking_cancelled_by_member', field: 'text', phrase: 'their seat is open' },
   ];
 
   it.each(DISTINGUISHING_CONTENT)(
@@ -130,6 +138,56 @@ describe('renderMessage', () => {
       expect(message[field]).toContain(phrase);
     },
   );
+
+  it('tells an invitee to a full game that accepting joins the waitlist', () => {
+    const held = renderMessage(
+      row({ kind: 'booking_invited', payload: { holds_seat: true } }),
+      APP,
+    );
+    const full = renderMessage(
+      row({ kind: 'booking_invited', table_label: null, payload: { holds_seat: false } }),
+      APP,
+    );
+    expect(held.subject).toBe('Alice invited you to Tuesday night');
+    expect(held.text).toContain('at Table 2');
+    expect(held.text).toContain('A seat is held for you');
+    expect(full.text).toContain('accepting puts you on the waitlist');
+    expect(full.text).not.toContain('A seat is held');
+  });
+
+  it('says an accepted invite landed on the waitlist when it did', () => {
+    const seated = renderMessage(
+      row({ kind: 'booking_invite_accepted', payload: { waitlisted: false } }),
+      APP,
+    );
+    const waiting = renderMessage(
+      row({ kind: 'booking_invite_accepted', table_label: null, payload: { waitlisted: true } }),
+      APP,
+    );
+    expect(seated.subject).toBe('Alice is in for Tuesday night');
+    expect(seated.text).not.toContain('waitlist');
+    expect(waiting.text).toContain("they're on the waitlist");
+  });
+
+  it('links a withdrawn invite to the club, not the game it can no longer see', () => {
+    const r = row({ kind: 'booking_invite_withdrawn' });
+    const message = renderMessage(r, APP);
+    expect(message.subject).toBe('Your invite to Tuesday night was withdrawn');
+    expect(message.text).toContain(`${APP}/clubs/${r.club_id}`);
+    expect(message.text).not.toContain(`/events/${r.event_id}`);
+  });
+
+  it('tells the sender when an accepted invitee drops out', () => {
+    const message = renderMessage(row({ kind: 'booking_cancelled_by_member' }), APP);
+    expect(message.subject).toBe("Alice can't make Tuesday night anymore");
+    expect(message.text).toContain("can't make Tuesday night");
+    expect(message.text).toContain('their seat is open');
+  });
+
+  it('does not tell an invitee they hold a seat in the footer', () => {
+    const message = renderMessage(row({ kind: 'booking_invited' }), APP);
+    expect(message.text).not.toContain('a seat you hold');
+  });
 
   it('names the person who acted', () => {
     const message = renderMessage(row({ kind: 'booked_by_friend' }), APP);
