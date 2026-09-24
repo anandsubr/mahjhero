@@ -83,7 +83,7 @@ New projects default to an 8-digit email code; the app expects 6, which
    and to the dev values for **Preview**. Redeploy production. This is the
    cutover: `app.mahjhero.com` now reads and writes the prod database.
 9. **Dev dashboard follow-ups:** add the Vercel preview origin
-   (`https://mahjhero-*-<team-slug>.vercel.app/auth/callback`) to dev's
+   (`https://mahjhero-*-anand-subramanians-projects-e7313e33.vercel.app/auth/callback`) to dev's
    Redirect URLs so sign-in works on PR previews, and drop
    `https://app.mahjhero.com/auth/callback` from dev's list once prod is live.
 
