@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(68);
+select plan(77);
 
 insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-000000000001', 'alice@example.com'),
@@ -34,6 +34,8 @@ insert into public.venues (id, name, added_by_club_id, created_by) values
 -- E4: started an hour ago, with a pending invite the sweep must close.
 -- E5: a future game with a pending invite the sweep must NOT close, and
 --     that cancel_event later closes.
+-- E6: still a draft (never published), with a pending held invite --
+--     accept_booking_invite must refuse it as not bookable.
 insert into public.events
   (id, club_id, title, venue_id, starts_at, ends_at, game_mode,
    created_by) values
@@ -63,6 +65,15 @@ insert into public.events
    now() + interval '30 days', now() + interval '30 days 3 hours',
    'open_play', 'aaaaaaaa-0000-0000-0000-000000000001');
 
+insert into public.events
+  (id, club_id, title, venue_id, starts_at, ends_at, game_mode,
+   status, created_by) values
+  ('e6e6e6e6-0000-0000-0000-000000000006',
+   'c1c1c1c1-0000-0000-0000-000000000001', 'Not published yet',
+   '11111111-0000-0000-0000-000000000001',
+   now() + interval '7 days', now() + interval '7 days 3 hours',
+   'open_play', 'draft', 'aaaaaaaa-0000-0000-0000-000000000001');
+
 insert into public.event_tables
   (id, event_id, club_id, label, capacity, position) values
   ('7ab1e000-0000-0000-0000-000000000001',
@@ -82,7 +93,28 @@ insert into public.event_tables
    'c1c1c1c1-0000-0000-0000-000000000001', 'Table 1', 4, 1),
   ('7ab1e000-0000-0000-0000-000000000006',
    'e5e5e5e5-0000-0000-0000-000000000005',
+   'c1c1c1c1-0000-0000-0000-000000000001', 'Table 1', 4, 1),
+  ('7ab1e000-0000-0000-0000-000000000007',
+   'e6e6e6e6-0000-0000-0000-000000000006',
    'c1c1c1c1-0000-0000-0000-000000000001', 'Table 1', 4, 1);
+
+-- E6 (draft): Bob invited Dan, seat held, never published.
+insert into public.booking_groups
+  (id, event_id, club_id, created_by, preferred_table_id) values
+  ('9909aaaa-0000-0000-0000-000000000006',
+   'e6e6e6e6-0000-0000-0000-000000000006',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   'bbbbbbbb-0000-0000-0000-000000000002',
+   '7ab1e000-0000-0000-0000-000000000007');
+insert into public.bookings
+  (group_id, event_id, club_id, event_table_id, profile_id, booked_by,
+   status, invite_holds_seat) values
+  ('9909aaaa-0000-0000-0000-000000000006',
+   'e6e6e6e6-0000-0000-0000-000000000006',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   '7ab1e000-0000-0000-0000-000000000007',
+   'dddddddd-0000-0000-0000-000000000004',
+   'bbbbbbbb-0000-0000-0000-000000000002', 'invited', true);
 
 -- E2 is full: Fred booked himself and Gina.
 insert into public.booking_groups
@@ -370,6 +402,20 @@ select is(
       and recipient_id = 'bbbbbbbb-0000-0000-0000-000000000002'),
   1,
   'the sender is told');
+select ok(
+  (select payload ?& array['booking_id', 'accepted_by', 'waitlisted']
+     from public.notification_outbox
+    where kind = 'booking_invite_accepted'
+      and recipient_id = 'bbbbbbbb-0000-0000-0000-000000000002'),
+  'the payload carries booking_id, accepted_by and waitlisted');
+select ok(
+  (select (payload->>'accepted_by')::uuid
+            = 'cccccccc-0000-0000-0000-000000000003'
+          and (payload->>'waitlisted')::boolean = false
+     from public.notification_outbox
+    where kind = 'booking_invite_accepted'
+      and recipient_id = 'bbbbbbbb-0000-0000-0000-000000000002'),
+  'accepted_by names the invitee and waitlisted is false for a held accept');
 select is(public.table_free_seats('7ab1e000-0000-0000-0000-000000000001'), 1,
   'accepting a held seat takes no second seat');
 
@@ -385,6 +431,19 @@ select throws_ok(
   '23514',
   'invite already accepted',
   'an invite cannot be accepted twice');
+
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "bbbbbbbb-0000-0000-0000-000000000002", "role": "authenticated"}';
+
+select throws_ok(
+  $$select public.withdraw_booking_invite(
+      (select id from public.bookings
+        where event_id = 'e1e1e1e1-0000-0000-0000-000000000001'
+          and profile_id = 'cccccccc-0000-0000-0000-000000000003'))$$,
+  '23514',
+  'invite already accepted',
+  'withdrawing an invite that has already been accepted is refused');
 
 -- ---------------------------------------------------------------------
 -- Accepting a table-less invite: a new solo group at the back of the
@@ -480,6 +539,19 @@ select throws_ok(
   '23514',
   'event already started',
   'nor withdrawn');
+
+-- A game that has never been published can't be answered either.
+set local request.jwt.claims =
+  '{"sub": "dddddddd-0000-0000-0000-000000000004", "role": "authenticated"}';
+
+select throws_ok(
+  $$select public.accept_booking_invite(
+      (select id from public.bookings
+        where event_id = 'e6e6e6e6-0000-0000-0000-000000000006'
+          and profile_id = 'dddddddd-0000-0000-0000-000000000004'))$$,
+  '23514',
+  'event not bookable',
+  'an invite on a still-draft event cannot be accepted');
 
 -- cancel_booking is not the way out of a pending invite.
 set local request.jwt.claims =
@@ -758,6 +830,72 @@ select is(
       and recipient_id = '99999999-0000-0000-0000-000000000007'),
   1,
   'and the invitee is told the game is off');
+
+-- ---------------------------------------------------------------------
+-- Cancelling the whole group closes its pending invite as a withdrawal,
+-- not a host removal -- the invitee never had the seat.
+-- ---------------------------------------------------------------------
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "bbbbbbbb-0000-0000-0000-000000000002", "role": "authenticated"}';
+
+select lives_ok(
+  $$select public.cancel_booking_group(
+      '9909aaaa-0000-0000-0000-000000000006')$$,
+  'the group creator cancels a group with a pending invite in it');
+
+reset role;
+select ok(
+  (select status = 'cancelled' and invite_holds_seat is null
+          and event_table_id is null
+     from public.bookings
+    where event_id = 'e6e6e6e6-0000-0000-0000-000000000006'
+      and profile_id = 'dddddddd-0000-0000-0000-000000000004'),
+  'the invited row is cancelled, with its hold and table cleared');
+select is(
+  (select count(*)::int from public.notification_outbox
+    where kind = 'booking_invite_withdrawn'
+      and recipient_id = 'dddddddd-0000-0000-0000-000000000004'
+      and event_id = 'e6e6e6e6-0000-0000-0000-000000000006'),
+  1,
+  'the invitee gets exactly one booking_invite_withdrawn row');
+select is(
+  (select count(*)::int from public.notification_outbox
+    where kind = 'booking_cancelled_by_host'
+      and recipient_id = 'dddddddd-0000-0000-0000-000000000004'
+      and event_id = 'e6e6e6e6-0000-0000-0000-000000000006'),
+  0,
+  'and never a booking_cancelled_by_host row -- they were never seated');
+
+-- ---------------------------------------------------------------------
+-- accept_booking_invite refuses a member whose club_members row is no
+-- longer active (P8): nothing cancels a removed member's pending invite,
+-- but accepting it must not seat a non-member. The target id is captured
+-- into a temp table first -- once membership is pulled, RLS's unconditional
+-- is_club_member(club_id) term hides the row from Carol's own subselect,
+-- 'no such booking' rather than the refusal this test is after.
+-- ---------------------------------------------------------------------
+create temporary table target_e3_booking as
+  select id from public.bookings
+   where event_id = 'e3e3e3e3-0000-0000-0000-000000000003'
+     and profile_id = 'cccccccc-0000-0000-0000-000000000003';
+grant select on target_e3_booking to authenticated;
+
+update public.club_members
+   set status = 'removed'
+ where club_id = 'c1c1c1c1-0000-0000-0000-000000000001'
+   and profile_id = 'cccccccc-0000-0000-0000-000000000003';
+
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub": "cccccccc-0000-0000-0000-000000000003", "role": "authenticated"}';
+
+select throws_ok(
+  $$select public.accept_booking_invite(
+      (select id from target_e3_booking))$$,
+  '42501',
+  'not a member of this club',
+  'a member removed from the club cannot accept a pending invite');
 
 select * from finish();
 rollback;

@@ -744,8 +744,10 @@ not by waiting for a schedule. `sweep_promotion_offers()`,
 `announce_need_a_fourth()` and `queue_event_reminders()` each return a
 count, so a fixture can assert what a run did rather than inspecting
 `cron.job_run_details` — which the hosted suite could not read anyway.
+`close_started_invites()` returns `void`; its tests assert the row state it
+leaves behind (status, held seat and table cleared) instead of a count.
 
-The fifth, `deliver-notifications`, is not plpgsql at all — `pg_cron` POSTs
+The sixth, `deliver-notifications`, is not plpgsql at all — `pg_cron` POSTs
 to an Edge Function through `pg_net` rather than calling a function in the
 database, so "call it and assert what it did" doesn't apply the same way.
 It's covered separately, in "The notification drain" below.

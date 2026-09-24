@@ -495,14 +495,21 @@ begin
     from public.bookings b
     join public.events e on e.id = b.event_id
     where b.status = 'invited' and e.starts_at <= now()
+    order by b.event_id
   loop
     perform 1 from public.events where id = ev.event_id for update;
 
+    -- Re-check starts_at after taking the lock: another writer could have
+    -- changed it (a series shift, say) between the scan above and the lock
+    -- being granted, and a game that is no longer started must be skipped.
     for g in
       update public.bookings
          set status = 'cancelled', cancelled_at = now(),
              invite_holds_seat = null, event_table_id = null
        where event_id = ev.event_id and status = 'invited'
+         and exists (
+           select 1 from public.events
+           where id = ev.event_id and starts_at <= now())
       returning group_id
     loop
       perform public.close_group_if_empty(g.group_id);
