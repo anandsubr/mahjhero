@@ -1,5 +1,6 @@
 import type { ChangeEvent, CSSProperties } from 'react';
 import { Text, View } from 'react-native';
+import { ChevronDownIcon } from './icons';
 import { formatTimeLabel, timeStringToDate } from '../lib/time';
 import { colors, radius, space, type } from '../lib/theme';
 
@@ -10,6 +11,9 @@ type TimeFieldProps = {
   /** The game form's chip ("11:30 PM"): the real select laid transparently
    *  over a small pill, so a tap still opens the browser's own list. */
   compact?: boolean;
+  /** Notifications' quiet-hours tile ("From"/"Until" over the time in the
+   *  heading face), the select laid transparently over the whole tile. */
+  tileLabel?: string;
 };
 
 /**
@@ -59,7 +63,7 @@ for (let hour = 0; hour < 24; hour++) {
  * is what a screen reader announces, same role as the native side's
  * accessibilityLabel.
  */
-export default function TimeField({ value, onChange, label, compact = false }: TimeFieldProps) {
+export default function TimeField({ value, onChange, label, compact = false, tileLabel }: TimeFieldProps) {
   function handleChange(event: ChangeEvent<HTMLSelectElement>) {
     onChange(event.target.value);
   }
@@ -67,6 +71,25 @@ export default function TimeField({ value, onChange, label, compact = false }: T
   const options = TIME_OPTIONS.includes(value)
     ? TIME_OPTIONS
     : [...TIME_OPTIONS, value].sort();
+
+  if (tileLabel !== undefined) {
+    return (
+      <View style={tileStyle}>
+        <Text style={tileLabelStyle}>{tileLabel}</Text>
+        <View style={tileValueRowStyle}>
+          <Text style={tileValueStyle}>{formatTimeLabel(timeStringToDate(value))}</Text>
+          <ChevronDownIcon size={16} color={colors.neutral[600]} />
+        </View>
+        <select value={value} onChange={handleChange} aria-label={label} style={overlayStyle}>
+          {options.map((time) => (
+            <option key={time} value={time}>
+              {formatTimeLabel(timeStringToDate(time))}
+            </option>
+          ))}
+        </select>
+      </View>
+    );
+  }
 
   if (compact) {
     return (
@@ -129,6 +152,24 @@ const chipTextStyle = {
   fontSize: 15,
   color: colors.text,
 };
+
+const tileStyle = {
+  position: 'relative' as const,
+  flex: 1,
+  minWidth: 0,
+  gap: 2,
+  paddingTop: 10,
+  paddingHorizontal: 14,
+  paddingBottom: 12,
+  borderRadius: 16,
+  backgroundColor: colors.bg,
+};
+
+const tileLabelStyle = { fontFamily: type.bodySemiBold, fontSize: 12, color: colors.neutral[700] };
+
+const tileValueRowStyle = { flexDirection: 'row' as const, alignItems: 'center' as const, gap: 6 };
+
+const tileValueStyle = { flex: 1, fontFamily: type.heading, fontSize: 22, color: colors.text };
 
 const overlayStyle: CSSProperties = {
   position: 'absolute',

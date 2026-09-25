@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import NotificationSettings from '../notifications';
+import { updatePreferences } from '../../lib/profile';
 
 // Hoisted to module scope so the test can assert on it. A `push` created
 // inside the useRouter factory would be a fresh spy on every render, so
@@ -111,5 +112,69 @@ describe('notifications screen', () => {
       ),
     ).toBe('true');
     expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
+  });
+
+  it('shows each channel with its subtitle', async () => {
+    render(<NotificationSettings />);
+    expect(await screen.findByText('Everything, both ways')).toBeTruthy();
+    expect(screen.getByText('Alerts on this phone')).toBeTruthy();
+    expect(screen.getByText('Nothing on your phone')).toBeTruthy();
+  });
+
+  it('shows From and Until tiles while quiet hours are on, and hides them when off', async () => {
+    render(<NotificationSettings />);
+    expect(await screen.findByText('From')).toBeTruthy();
+    expect(screen.getByText('Until')).toBeTruthy();
+    fireEvent.click(screen.getByRole('switch', { name: 'Enable quiet hours' }));
+    expect(screen.queryByText('From')).toBeNull();
+  });
+
+  it('changes the need-a-4th help text with the switch', async () => {
+    render(<NotificationSettings />);
+    expect(await screen.findByText('Get a nudge when a table is one player short.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('switch', { name: 'Mute need a fourth alerts' }));
+    expect(screen.getByText("You won't hear when a table is one player short.")).toBeTruthy();
+  });
+
+  it('shows the save bar only once something changes, and Discard puts it back', async () => {
+    render(<NotificationSettings />);
+    await screen.findByText('Push and email');
+    expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Push only' }));
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull();
+    expect(screen.getByRole('radio', { name: 'Push and email' }).getAttribute('aria-selected')).toBe('true');
+    expect(updatePreferences).not.toHaveBeenCalled();
+  });
+
+  it('saves the change, hides the bar and says Saved', async () => {
+    render(<NotificationSettings />);
+    await screen.findByText('Push and email');
+    fireEvent.click(screen.getByRole('radio', { name: 'Email only' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() =>
+      expect(updatePreferences).toHaveBeenCalledWith(
+        'test-user',
+        expect.objectContaining({ notify_channel: 'email' }),
+      ),
+    );
+    expect(await screen.findByText('Saved')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull();
+  });
+
+  it('keeps the bar and shows the error when a save fails', async () => {
+    vi.mocked(updatePreferences).mockResolvedValueOnce({ error: 'Quiet hours need both a start and an end.' });
+    render(<NotificationSettings />);
+    await screen.findByText('Push and email');
+    fireEvent.click(screen.getByRole('radio', { name: 'Email only' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    expect(await screen.findByText('Quiet hours need both a start and an end.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeTruthy();
+    expect(screen.queryByText('Saved')).toBeNull();
   });
 });

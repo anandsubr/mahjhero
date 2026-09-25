@@ -61,6 +61,7 @@ vi.mock('../../lib/friends', async () => {
   );
   return {
     sharedClubsLabel: actual.sharedClubsLabel,
+    avatarColorFor: actual.avatarColorFor,
     fetchFriends: (...a: unknown[]) => fetchFriends(...a),
     fetchAddablePeople: (...a: unknown[]) => fetchAddablePeople(...a),
     addFriend: (...a: unknown[]) => addFriend(...a),
@@ -165,6 +166,40 @@ describe('friends screen', () => {
 
     resolveAdd({ error: null });
     await waitFor(() => expect(fetchFriends).toHaveBeenCalledTimes(2));
+  });
+
+  it('counts friends beside the section label', async () => {
+    fetchFriends.mockResolvedValueOnce([BOB, { ...BOB, profile_id: 'p9', display_name: 'Dee Park' }]);
+    render(<FriendsScreen />);
+    await screen.findByText('Bob Reyes');
+    expect(screen.getByText('Your friends')).toBeTruthy();
+    expect(screen.getByText('2')).toBeTruthy();
+  });
+
+  it('filters people in your clubs by name as you type, in any case', async () => {
+    const DAN = { profile_id: 'p3', display_name: 'Dan Wu', club_name: 'Oakfield' };
+    fetchAddablePeople.mockResolvedValueOnce([CAROL, DAN]);
+    render(<FriendsScreen />);
+    await screen.findByText('Carol Diaz');
+    fireEvent.change(screen.getByLabelText('Search people'), { target: { value: 'car' } });
+    expect(screen.getByText('Carol Diaz')).toBeTruthy();
+    expect(screen.queryByText('Dan Wu')).toBeNull();
+
+    fireEvent.change(screen.getByLabelText('Search people'), { target: { value: 'zed' } });
+    expect(screen.getByText('No one matches \u201czed\u201d.')).toBeTruthy();
+  });
+
+  it('says everyone is added once there is no one left but you have friends', async () => {
+    fetchFriends.mockResolvedValueOnce([BOB]);
+    render(<FriendsScreen />);
+    expect(await screen.findByText("You've added everyone in your clubs.")).toBeTruthy();
+    expect(screen.queryByLabelText('Search people')).toBeNull();
+  });
+
+  it('hides the club-mates section when there are no friends and no one to add', async () => {
+    render(<FriendsScreen />);
+    await screen.findByText(/No friends yet/);
+    expect(screen.queryByText('People in your clubs')).toBeNull();
   });
 
   it('removes a friend and reloads', async () => {
