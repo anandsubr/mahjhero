@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import RoundTimer from '../RoundTimer';
 
@@ -11,39 +11,51 @@ describe('RoundTimer', () => {
     vi.useRealTimers();
   });
 
-  it('offers a duration picker before it is started', () => {
-    render(<RoundTimer tableLabel="Table 1" />);
+  it('offers the four durations, 15 minutes preselected, and a Start button', () => {
+    render(<RoundTimer roundNumber={3} />);
+    for (const minutes of [10, 15, 20, 30]) {
+      expect(screen.getByRole('radio', { name: `${minutes} minutes` })).toBeTruthy();
+    }
     expect(
-      screen.getByRole('button', {
-        name: 'Start a 15-minute timer for Table 1',
-      }),
-    ).toBeTruthy();
+      screen.getByRole('radio', { name: '15 minutes' }).getAttribute('aria-checked'),
+    ).toBe('true');
+    expect(screen.getByText('Start round 3 · 15 min')).toBeTruthy();
   });
 
-  it('goes straight to a full-screen overlay once started, and counts down', () => {
-    render(<RoundTimer tableLabel="Table 1" />);
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Start a 15-minute timer for Table 1' }),
-    );
+  it('drops the round number when it has none', () => {
+    render(<RoundTimer />);
+    expect(screen.getByText('Start round · 15 min')).toBeTruthy();
+  });
 
-    const overlay = screen.getByTestId('timer-overlay');
-    expect(within(overlay).getByText('15:00')).toBeTruthy();
-    // No smaller inline state left behind -- the duration picker is gone.
-    expect(
-      screen.queryByRole('button', { name: 'Start a 15-minute timer for Table 1' }),
-    ).toBeNull();
+  it('starts the picked duration inline and counts down', () => {
+    render(<RoundTimer roundNumber={3} />);
+    fireEvent.click(screen.getByRole('radio', { name: '20 minutes' }));
+    expect(screen.getByText('Start round 3 · 20 min')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Start round 3, 20-minute timer' }));
+
+    expect(screen.getByText('Round 3 in progress')).toBeTruthy();
+    expect(screen.getByText('20:00')).toBeTruthy();
+    // The idle controls are gone while it runs.
+    expect(screen.queryByRole('radio', { name: '20 minutes' })).toBeNull();
 
     act(() => {
       vi.advanceTimersByTime(60_000);
     });
-    expect(within(overlay).getByText('14:00')).toBeTruthy();
+    expect(screen.getByText('19:00')).toBeTruthy();
+  });
+
+  it('shows the record hint only when asked to', () => {
+    const { rerender } = render(<RoundTimer roundNumber={1} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Start round 1, 15-minute timer' }));
+    expect(screen.queryByText("Tap the winner's seat to record the win.")).toBeNull();
+    rerender(<RoundTimer roundNumber={1} showRecordHint />);
+    expect(screen.getByText("Tap the winner's seat to record the win.")).toBeTruthy();
   });
 
   it('says time is up at zero, not a negative number', () => {
-    render(<RoundTimer tableLabel="Table 1" />);
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Start a 10-minute timer for Table 1' }),
-    );
+    render(<RoundTimer />);
+    fireEvent.click(screen.getByRole('radio', { name: '10 minutes' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Start round, 10-minute timer' }));
 
     act(() => {
       vi.advanceTimersByTime(10 * 60_000);
@@ -58,17 +70,14 @@ describe('RoundTimer', () => {
     expect(screen.getByText("Time's up")).toBeTruthy();
   });
 
-  it('stops and returns to the duration picker, with the timer gone entirely', () => {
-    render(<RoundTimer tableLabel="Table 1" />);
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Start a 10-minute timer for Table 1' }),
-    );
-    fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+  it('End round returns to the idle bar, with the timer gone entirely', () => {
+    render(<RoundTimer roundNumber={2} />);
+    fireEvent.click(screen.getByRole('radio', { name: '10 minutes' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Start round 2, 10-minute timer' }));
+    fireEvent.click(screen.getByRole('button', { name: 'End round' }));
 
-    expect(screen.queryByTestId('timer-overlay')).toBeNull();
-    expect(
-      screen.getByRole('button', { name: 'Start a 10-minute timer for Table 1' }),
-    ).toBeTruthy();
+    expect(screen.queryByText('Round 2 in progress')).toBeNull();
+    expect(screen.getByText('Start round 2 · 10 min')).toBeTruthy();
 
     // Genuinely gone, not just hidden -- letting time pass raises nothing.
     act(() => {
@@ -78,10 +87,8 @@ describe('RoundTimer', () => {
   });
 
   it('pauses the countdown, then resumes it from where it left off', () => {
-    render(<RoundTimer tableLabel="Table 1" />);
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Start a 15-minute timer for Table 1' }),
-    );
+    render(<RoundTimer roundNumber={1} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Start round 1, 15-minute timer' }));
     act(() => {
       vi.advanceTimersByTime(60_000);
     });
@@ -93,6 +100,7 @@ describe('RoundTimer', () => {
     });
     // Frozen -- time passing while paused does not decrement it.
     expect(screen.getByText('14:00')).toBeTruthy();
+    expect(screen.getByText('Round 1 paused')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Resume' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Pause' })).toBeNull();
 
@@ -104,23 +112,16 @@ describe('RoundTimer', () => {
     expect(screen.getByRole('button', { name: 'Pause' })).toBeTruthy();
   });
 
-  it('offers no Pause once time is up -- only Stop', () => {
-    render(<RoundTimer tableLabel="Table 1" />);
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Start a 10-minute timer for Table 1' }),
-    );
+  it('offers no Pause once time is up -- only End round', () => {
+    render(<RoundTimer />);
+    fireEvent.click(screen.getByRole('radio', { name: '10 minutes' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Start round, 10-minute timer' }));
     act(() => {
       vi.advanceTimersByTime(10 * 60_000);
     });
 
     expect(screen.queryByRole('button', { name: 'Pause' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Resume' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Stop' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'End round' })).toBeTruthy();
   });
-
-  // `onRequestClose` (Escape / Android back) is wired to `stop`, same as the
-  // Stop button -- not exercised here because react-native-web's Modal only
-  // engages that listener once a real CSS `animationend` event fires marking
-  // it "active", which jsdom never dispatches on its own; verified live in
-  // a real browser instead (fires correctly on Escape, matches Stop).
 });

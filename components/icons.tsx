@@ -181,3 +181,81 @@ export function MoreVerticalIcon({ size = 22, color = colors.text }: { size?: nu
     </Svg>
   );
 }
+
+/** Game screen: the round-winner badge, the rounds log and the record
+ *  button (components/SeatGrid.tsx, components/RoundLog.tsx). */
+export function TrophyIcon({ size = 16, color = colors.text }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.75} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" />
+      <Path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" />
+      <Path d="M4 22h16" />
+      <Path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" />
+      <Path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" />
+      <Path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" />
+    </Svg>
+  );
+}
+
+/** Game screen meta row: the venue. */
+export function MapPinIcon({ size = 16, color = colors.text }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.75} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
+      <Circle cx={12} cy={10} r={3} />
+    </Svg>
+  );
+}
+
+/** A seat that opens a sheet (components/SeatGrid.tsx). */
+export function ChevronDownIcon({ size = 16, color = colors.text }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.75} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="m6 9 6 6 6-6" />
+    </Svg>
+  );
+}
+
+/** The round timer's Start button (components/RoundTimer.tsx). Filled. */
+export function PlayIcon({ size = 16, color = colors.bg }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill={color} stroke={color} strokeWidth={2.75} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M6 3l14 9-14 9V3z" />
+    </Svg>
+  );
+}
+
+/** Game screen option tile: the game thread. */
+export function MessageCircleIcon({ size = 18, color = colors.text }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.75} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" />
+    </Svg>
+  );
+}
+
+/** Game screen option tile: the door list. */
+export function ClipboardListIcon({ size = 18, color = colors.text }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.75} strokeLinecap="round" strokeLinejoin="round">
+      <Rect x={8} y={2} width={8} height={4} rx={1} />
+      <Path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+      <Path d="M12 11h4" />
+      <Path d="M12 16h4" />
+      <Path d="M8 11h.01" />
+      <Path d="M8 16h.01" />
+    </Svg>
+  );
+}
+
+/** Game screen option tile: inviting a guest by email. */
+export function UserPlusIcon({ size = 18, color = colors.text }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.75} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <Circle cx={9} cy={7} r={4} />
+      <Path d="M19 8v6" />
+      <Path d="M22 11h-6" />
+    </Svg>
+  );
+}

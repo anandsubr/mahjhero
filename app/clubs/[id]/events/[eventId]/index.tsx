@@ -1,18 +1,21 @@
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Pressable,
   StyleSheet,
   Text,
   View,
+  type StyleProp,
+  type ViewStyle,
 } from 'react-native';
 import BringSomeoneSheet from '../../../../../components/BringSomeoneSheet';
 import Button from '../../../../../components/Button';
 import Card from '../../../../../components/Card';
 import CheckInControl from '../../../../../components/CheckInControl';
-import DashboardHeader from '../../../../../components/DashboardHeader';
+import CompactHeader from '../../../../../components/CompactHeader';
 import ErrorBanner from '../../../../../components/ErrorBanner';
+import RoundTimer from '../../../../../components/RoundTimer';
 import Screen from '../../../../../components/Screen';
 import Tag from '../../../../../components/Tag';
 import TabBar from '../../../../../components/TabBar';
@@ -20,7 +23,16 @@ import TableCard from '../../../../../components/TableCard';
 import TextField from '../../../../../components/TextField';
 import TipCard, { TipText } from '../../../../../components/TipCard';
 import WaitlistPanel from '../../../../../components/WaitlistPanel';
-import { PencilIcon } from '../../../../../components/icons';
+import {
+  CalendarIcon,
+  ClipboardListIcon,
+  MapPinIcon,
+  MessageCircleIcon,
+  PencilIcon,
+  PeopleIcon,
+  PlusIcon,
+  UserPlusIcon,
+} from '../../../../../components/icons';
 import {
   checkInOpen,
   clearAttendance,
@@ -85,7 +97,7 @@ import {
 import { useGuides } from '../../../../../lib/use-guides';
 import { useSession } from '../../../../../lib/session';
 import { addHours } from '../../../../../lib/time';
-import { colors, space, type } from '../../../../../lib/theme';
+import { colors, radius, space, type } from '../../../../../lib/theme';
 
 /**
  * The member-facing view of one game. What a member sees: the time and
@@ -231,6 +243,9 @@ export default function EventScreen() {
   const [guestEmail, setGuestEmail] = useState('');
   const [invitingGuest, setInvitingGuest] = useState(false);
   const [guestInviteSent, setGuestInviteSent] = useState(false);
+  // The 2a design folds the guest form behind its "Invite a guest by email"
+  // tile; this is whether that tile has been opened.
+  const [guestFormOpen, setGuestFormOpen] = useState(false);
 
   // A promotion offer currently held open for this member's group, read via
   // `fetchOpenOffer`. RLS (`promotion_offers_select_group`) already scopes
@@ -965,8 +980,39 @@ export default function EventScreen() {
     void load();
   }
 
+  // The 2a pinned round bar: one per screen, above the tab bar, while the
+  // game is live -- it used to be a row of timer buttons on every table
+  // card, so it shows under the same conditions those did (a live game
+  // with tables this viewer can see). Its "round N" is the viewer's own
+  // table's next round, or the only table's; a viewer at none of several
+  // tables gets the plain "Start round".
+  const showRoundBar =
+    gameLive && canSeeFullRoster && !isOpenSeating && !tablesFailed && tables.length > 0;
+  const myTableId =
+    myBooking?.status === 'confirmed' ? myBooking.event_table_id : null;
+  const barTableId =
+    myTableId ?? (tables.length === 1 ? tables[0].id : null);
+  const barRoundNumber =
+    barTableId !== null && !roundsFailed
+      ? rounds.filter((r) => r.event_table_id === barTableId).length + 1
+      : undefined;
+
   return (
-    <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="club" />}>
+    <Screen
+      scroll
+      contentStyle={styles.container}
+      tabBar={
+        <>
+          {showRoundBar ? (
+            <RoundTimer
+              roundNumber={barRoundNumber}
+              showRecordHint={isOrganizer || myTableId !== null}
+            />
+          ) : null}
+          <TabBar active="club" />
+        </>
+      }
+    >
       {/*
         Goes to /clubs, not /clubs/${clubId}: the club management page no
         longer lists games (2026-09-02-club-page-games-and-back-links-
@@ -977,32 +1023,80 @@ export default function EventScreen() {
         still earns its place — same reasoning every other back link on
         this branch documents.
       */}
-      <DashboardHeader
-        kicker="Your club"
-        name={club.name}
-        meta=""
-        clubId={clubId}
-        onPressBack={() => router.push('/clubs')}
+      <CompactHeader
+        variant="inset"
+        divider={false}
+        onBack={() => router.push('/clubs')}
         backLabel="Back to your clubs"
+        kind="club"
+        clubId={clubId}
+        avatarTestID="thread-avatar-club-tile"
+        title={club.name}
       />
-      <View style={styles.row}>
-        <View style={styles.titleRow}>
-          <Text style={styles.heading}>{event.title}</Text>
-          {isOrganizer && event.status !== 'cancelled' ? (
-            <Pressable
-              onPress={() => router.push(`/clubs/${clubId}/events/${eventId}/edit`)}
-              accessibilityRole="button"
-              accessibilityLabel={`Edit ${event.title}`}
-            >
-              <PencilIcon size={14} color={colors.accentColor} />
-            </Pressable>
-          ) : null}
+      <View style={styles.titleBlock}>
+        <View style={styles.row}>
+          <View style={styles.titleRow}>
+            <Text style={styles.heading}>{event.title}</Text>
+            {isOrganizer && event.status !== 'cancelled' ? (
+              <Pressable
+                onPress={() => router.push(`/clubs/${clubId}/events/${eventId}/edit`)}
+                accessibilityRole="button"
+                accessibilityLabel={`Edit ${event.title}`}
+                style={({ pressed }) => [styles.editButton, pressed ? styles.editPressed : null]}
+              >
+                <PencilIcon size={18} color={colors.accent[700]} />
+              </Pressable>
+            ) : null}
+          </View>
+          {event.status === 'cancelled' ? <Tag>Cancelled</Tag> : null}
         </View>
-        {event.status === 'cancelled' ? <Tag>Cancelled</Tag> : null}
+        {overridden('title') ? (
+          <Text style={styles.help}>Renamed for this week</Text>
+        ) : null}
+
+        {/*
+          The 2a meta row: when and where on one wrapping line, each with its
+          icon, instead of the old info card. Everything that card also said
+          -- the per-week override notes, the fee, the series -- follows as
+          helper lines, unchanged.
+        */}
+        <View style={styles.metaRow}>
+          <View style={styles.metaItem}>
+            <CalendarIcon size={16} color={colors.accent2[700]} />
+            <Text style={styles.when}>
+              {formatEventWhen(event.starts_at, club.timezone)}
+            </Text>
+          </View>
+          <View style={styles.metaItem}>
+            <MapPinIcon size={16} color={colors.accent2[700]} />
+            <Text style={styles.where}>{event.venue_name}</Text>
+          </View>
+        </View>
+        {overridden('starts_at') ? (
+          <Text style={styles.help}>Moved from the usual time</Text>
+        ) : null}
+        {overridden('venue_id') ? (
+          <Text style={styles.help}>Moved from the usual venue</Text>
+        ) : null}
+        {event.fee_cents > 0 || event.min_spend_cents > 0 ? (
+          <Text style={styles.fee}>
+            {[
+              event.fee_cents > 0 ? `${formatFeeCents(event.fee_cents)} to play` : null,
+              event.min_spend_cents > 0
+                ? `${formatFeeCents(event.min_spend_cents)} min spend`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+          </Text>
+        ) : null}
+        {series ? (
+          <Text style={styles.help}>
+            Part of a series —{' '}
+            {frequencyLabel(series.frequency, series.weekday, series.nth_week)}
+          </Text>
+        ) : null}
       </View>
-      {overridden('title') ? (
-        <Text style={styles.help}>Renamed for this week</Text>
-      ) : null}
 
       {error ? <ErrorBanner message={error} /> : null}
       {myInvite && canBook ? (
@@ -1051,40 +1145,6 @@ export default function EventScreen() {
         </TipCard>
       ) : null}
 
-      <Card>
-        <Text style={styles.when}>
-          {formatEventWhen(event.starts_at, club.timezone)}
-        </Text>
-        {overridden('starts_at') ? (
-          <Text style={styles.help}>Moved from the usual time</Text>
-        ) : null}
-
-        <Text style={styles.where}>{event.venue_name}</Text>
-        {overridden('venue_id') ? (
-          <Text style={styles.help}>Moved from the usual venue</Text>
-        ) : null}
-
-        {event.fee_cents > 0 || event.min_spend_cents > 0 ? (
-          <Text style={styles.fee}>
-            {[
-              event.fee_cents > 0 ? `${formatFeeCents(event.fee_cents)} to play` : null,
-              event.min_spend_cents > 0
-                ? `${formatFeeCents(event.min_spend_cents)} min spend`
-                : null,
-            ]
-              .filter(Boolean)
-              .join(' · ')}
-          </Text>
-        ) : null}
-
-        {series ? (
-          <Text style={styles.help}>
-            Part of a series —{' '}
-            {frequencyLabel(series.frequency, series.weekday, series.nth_week)}
-          </Text>
-        ) : null}
-      </Card>
-
       {/*
         A host who cleared this week's notes has customised them just as
         much as one who added some — `event.notes.length > 0` alone would
@@ -1103,26 +1163,52 @@ export default function EventScreen() {
         </Card>
       ) : null}
 
-      <Text style={styles.sectionTitle}>
-        {tablesFailed
-          ? 'Tables'
-          : isOpenSeating
-            ? (() => {
-                const capSuffix =
-                  event.capacity !== null && event.capacity !== undefined
-                    ? ` · ${event.capacity} spots`
-                    : '';
-                return openSeatingSignedUpCount !== null
-                  ? `${openSeatingSignedUpCount} signed up${capSuffix}`
-                  : capSuffix
-                    ? capSuffix.replace(' · ', '')
-                    : 'Open seating';
-              })()
-            : `${tables.length} ${tables.length === 1 ? 'table' : 'tables'} · ${(() => {
-                const seats = tables.reduce((sum, t) => sum + t.capacity, 0);
-                return `${seats} ${seats === 1 ? 'seat' : 'seats'}`;
-              })()}`}
-      </Text>
+      {/*
+        The 2a tables heading: "Tables" with the count beside it, and the
+        organizer's "Add table" on the right (formerly a full-width "Add a
+        table" button at the foot of the screen). An open-seating night has
+        no tables, so its heading is just the signed-up count, as before.
+      */}
+      <View style={styles.sectionHeader}>
+        <View style={styles.sectionTitleRow}>
+          {!isOpenSeating || tablesFailed ? (
+            <Text style={styles.sectionTitle}>Tables</Text>
+          ) : null}
+          {tablesFailed ? null : (
+            <Text
+              style={isOpenSeating ? styles.sectionTitle : styles.sectionMeta}
+              numberOfLines={1}
+            >
+              {isOpenSeating
+                ? (() => {
+                    const capSuffix =
+                      event.capacity !== null && event.capacity !== undefined
+                        ? ` · ${event.capacity} spots`
+                        : '';
+                    return openSeatingSignedUpCount !== null
+                      ? `${openSeatingSignedUpCount} signed up${capSuffix}`
+                      : capSuffix
+                        ? capSuffix.replace(' · ', '')
+                        : 'Open seating';
+                  })()
+                : `${tables.length} ${tables.length === 1 ? 'table' : 'tables'} · ${(() => {
+                    const seats = tables.reduce((sum, t) => sum + t.capacity, 0);
+                    return `${seats} ${seats === 1 ? 'seat' : 'seats'}`;
+                  })()}`}
+            </Text>
+          )}
+        </View>
+        {isOrganizer && event.status !== 'cancelled' ? (
+          <GhostPill
+            label="Add table"
+            accessibilityLabel="Add a table"
+            icon={<PlusIcon size={14} color={colors.accent[700]} />}
+            disabled={busy}
+            onPress={() => run(() => addEventTable(event.id))}
+            style={styles.addTable}
+          />
+        ) : null}
+      </View>
       {canSeeFullRoster && invitedRows.length > 0 ? (
         <Text style={styles.help}>
           {`${seating.filter((o) => o.status === 'confirmed').length} playing · ${invitedRows.length} invited`}
@@ -1280,15 +1366,12 @@ export default function EventScreen() {
                       {isOrganizer ? (
                         <>
                           {tables.length > 1 ? (
-                            <Button
-                              variant="ghost"
-                              big={false}
+                            <GhostPill
+                              label="Remove this table"
+                              accessibilityLabel={`Remove ${table.label}`}
                               disabled={busy}
                               onPress={() => run(() => removeEventTable(table.id))}
-                              accessibilityLabel={`Remove ${table.label}`}
-                            >
-                              Remove this table
-                            </Button>
+                            />
                           ) : null}
 
                           {/*
@@ -1410,18 +1493,6 @@ export default function EventScreen() {
       ) : null}
 
       {/*
-        The only entry point to BringSomeoneSheet. Reachable whenever
-        `canBringSomeone` is true, regardless of table occupancy — bringing
-        someone when every table is full just means waitlisting the group
-        together, which the sheet's own "Any table" + waitlist flow already
-        handles (see proposeBooking/commitBooking). There used to also be a
-        "Bring someone" button on every TableCard; the human decided to
-        remove it, since the sheet already asks "Where?" with every table
-        plus "Any table" — a per-table button only pre-selected a chip the
-        member could change in the next breath, and those buttons vanished
-        one by one, unexplained, as tables filled.
-      */}
-      {/*
         The self-serve "I'm in" action `canJoinOpenSeating` gates above --
         rendered ahead of "Invite" below (kept, unchanged, for bringing
         OTHERS): this one is the primary way a member says they themselves
@@ -1447,74 +1518,6 @@ export default function EventScreen() {
         >
           Leave this game
         </Button>
-      ) : null}
-
-      {canBringSomeone ? (
-        <Button
-          variant="secondary"
-          disabled={busy}
-          onPress={openBringSomeone}
-          accessibilityLabel="Invite"
-        >
-          Invite
-        </Button>
-      ) : null}
-
-      {/*
-        Rendered right under "Invite", ahead of the organizer's guest form
-        below, so the sheet opens where it was asked for rather than under
-        an unrelated email field.
-      */}
-      {isBringingSomeone ? (
-        <BringSomeoneSheet
-          roster={roster}
-          booked={seating
-            .map((o) => o.profile_id)
-            .filter((id): id is string => id !== null)}
-          youId={me}
-          tables={tables}
-          initialTableId={null}
-          onPropose={(input) => proposeBooking({ eventId, ...input })}
-          onCommit={(input) => commitBooking({ eventId, ...input })}
-          onClose={closeBringSomeone}
-        />
-      ) : null}
-
-      {/*
-        The organizer's own guest-invite form -- always visible to them
-        regardless of game mode (unlike "Invite" above, which an invite-only
-        game hides from everyone else). Mirrors the club page's
-        "Invite by email" form exactly, just scoped to this event via
-        `onInviteGuest`'s `createInvite(clubId, guestEmail, undefined,
-        eventId)` call.
-      */}
-      {isOrganizer ? (
-        <>
-          <TextField
-            label="Invite a guest by email"
-            value={guestEmail}
-            onChangeText={setGuestEmail}
-            placeholder="guest@example.com"
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="email-address"
-            accessibilityLabel="Guest's email address"
-          />
-          <Button
-            variant="secondary"
-            disabled={busy || invitingGuest}
-            loading={invitingGuest}
-            onPress={onInviteGuest}
-            accessibilityLabel="Invite a guest"
-          >
-            Invite a guest
-          </Button>
-          {guestInviteSent ? (
-            <Text style={styles.help}>
-              Invited. They'll see it on their dashboard once they sign in, and it'll seat them at this game.
-            </Text>
-          ) : null}
-        </>
       ) : null}
 
       {canBook && gameFull && !myHoldsSeat && !myInvite ? (
@@ -1581,107 +1584,244 @@ export default function EventScreen() {
         onSeat={isOrganizer ? hostPlace : undefined}
       />
 
-      {isOrganizer && event.status !== 'cancelled' ? (
-        <>
-          <Button
-            variant="secondary"
-            disabled={busy}
-            onPress={() => run(() => addEventTable(event.id))}
-            accessibilityLabel="Add a table"
-          >
-            Add a table
-          </Button>
-
-          {/*
-            "Message everyone booked" -- this button's label before it
-            stopped pushing to a compose screen that emailed the confirmed
-            bookings -- is muscle-memory copy for an action that no longer
-            emails anybody. Ordinary messages never email; only the thread
-            screen's own "Also email everyone" toggle does, and it defaults
-            off. Naming the destination rather than the old verb keeps the
-            label honest. See the identical fix on app/clubs/[id]/index.tsx's
-            "Message members" button.
-          */}
-          <Button
-            variant="secondary"
-            onPress={onMessageEveryoneBooked}
-            accessibilityLabel="Open the game thread"
-          >
-            Open the game thread
-          </Button>
-
-          {/*
-            The organizer's entry point to the door screen (Task 11) --
-            gated on check_in_required ALONE, not on the organizer window.
-            event_attendance's reads are deliberately not window-bound (its
-            own comment: "an organizer can open the list months later and
-            still see the record") and this link is the only in-app route
-            to it -- gating it on the window too made that read path
-            unreachable from the UI: a host wanting to see who turned up at
-            last Tuesday's game found this button greyed out. The door
-            screen already disables its own controls correctly once the
-            window closes (see check-in.tsx), which is the only place that
-            needs to be inert.
-          */}
-          {event.check_in_required ? (
-            <>
-              <Button
-                variant="secondary"
-                onPress={() =>
-                  router.push(`/clubs/${clubId}/events/${eventId}/check-in`)
-                }
-                accessibilityLabel="Door list"
+      {/*
+        The 2a options grid: the screen's secondary actions as compact
+        tiles, two to a row, instead of a stack of full-width buttons. Each
+        tile keeps its old gate and its old accessible name:
+        - "Game thread" / "Door list": organizer only, not on a cancelled
+          game; Door list additionally only when the event asks for
+          check-in. The door list is deliberately NOT window-gated -- it is a
+          read, and an organizer must be able to open last Tuesday's game and
+          still see who turned up (only the door screen's own controls are
+          gated). Do not add a window check here.
+        - "Invite": `canBringSomeone`, the only entry point to
+          BringSomeoneSheet (there used to be one per table; the human kept
+          only this one, since the sheet already asks "Where?").
+        - "Reset to the series": `canReset`, on its own -- see that
+          constant's comment for why it is not folded into the organizer
+          gate.
+        - "Invite a guest by email": organizer only, any game mode; opens the
+          email form in place (it used to be always visible).
+        The guest tile always takes a full row, as in the design; any other
+        odd tile out stretches across the row too.
+      */}
+      {(() => {
+        const organizerOpen = isOrganizer && event.status !== 'cancelled';
+        const tiles: {
+          key: string;
+          label: string;
+          accessibilityLabel: string;
+          icon: ReactNode;
+          onPress: () => void;
+          disabled?: boolean;
+          expanded?: boolean;
+          wide?: boolean;
+        }[] = [];
+        if (organizerOpen) {
+          // "Message everyone booked" was this action's label back when it
+          // emailed the confirmed bookings; ordinary messages never email
+          // now, so the tile names the destination instead of the old verb.
+          tiles.push({
+            key: 'thread',
+            label: 'Game thread',
+            accessibilityLabel: 'Open the game thread',
+            icon: <MessageCircleIcon size={18} color={colors.accent[700]} />,
+            onPress: onMessageEveryoneBooked,
+          });
+          if (event.check_in_required) {
+            tiles.push({
+              key: 'door',
+              label: 'Door list',
+              accessibilityLabel: 'Door list',
+              icon: <ClipboardListIcon size={18} color={colors.accent[700]} />,
+              onPress: () => router.push(`/clubs/${clubId}/events/${eventId}/check-in`),
+            });
+          }
+        }
+        if (canBringSomeone) {
+          tiles.push({
+            key: 'invite',
+            label: 'Invite',
+            accessibilityLabel: 'Invite',
+            icon: <PeopleIcon size={18} color={colors.accent[700]} />,
+            onPress: openBringSomeone,
+            disabled: busy,
+          });
+        }
+        if (canReset) {
+          tiles.push({
+            key: 'reset',
+            label: 'Reset to the series',
+            accessibilityLabel: 'Reset to the series',
+            icon: <CalendarIcon size={18} color={colors.accent[700]} />,
+            onPress: () => void run(() => resetEventToSeries(event.id)),
+            disabled: busy,
+          });
+        }
+        if (isOrganizer) {
+          tiles.push({
+            key: 'guest',
+            label: 'Invite a guest by email',
+            accessibilityLabel: 'Invite a guest by email',
+            icon: <UserPlusIcon size={18} color={colors.accent[700]} />,
+            onPress: () => setGuestFormOpen((open) => !open),
+            expanded: guestFormOpen,
+            wide: true,
+          });
+        }
+        if (tiles.length === 0) return null;
+        return (
+          <View style={styles.optionsGrid}>
+            {tiles.map((tile) => (
+              <Pressable
+                key={tile.key}
+                onPress={tile.onPress}
+                disabled={tile.disabled}
+                accessibilityRole="button"
+                accessibilityLabel={tile.accessibilityLabel}
+                aria-expanded={tile.expanded}
+                style={({ pressed, hovered }: { pressed: boolean; hovered?: boolean }) => [
+                  styles.optionTile,
+                  tile.wide ? styles.optionTileWide : null,
+                  pressed || hovered ? styles.optionTilePressed : null,
+                  tile.disabled ? styles.optionTileDisabled : null,
+                ]}
               >
-                Door list
-              </Button>
-            </>
-          ) : null}
-        </>
+                {tile.icon}
+                <Text style={styles.optionTileText} numberOfLines={2}>
+                  {tile.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        );
+      })()}
+
+      {isBringingSomeone ? (
+        <BringSomeoneSheet
+          roster={roster}
+          booked={seating
+            .map((o) => o.profile_id)
+            .filter((id): id is string => id !== null)}
+          youId={me}
+          tables={tables}
+          initialTableId={null}
+          onPropose={(input) => proposeBooking({ eventId, ...input })}
+          onCommit={(input) => commitBooking({ eventId, ...input })}
+          onClose={closeBringSomeone}
+        />
       ) : null}
 
       {/*
-        Deliberately NOT nested inside the block above, even though every
-        current `canReset` case also satisfies `isOrganizer && event.status
-        !== 'cancelled'`. `canReset` already carries its own status and
-        isOrganizer checks (see its definition above) -- nesting it under an
-        outer block gated on the same condition would make that condition
-        untestable in isolation: removing it from `canReset` would have no
-        observable effect, since the surrounding block hides the whole
-        section anyway. Keeping this independent means each condition inside
-        `canReset` is the one thing standing between a customised occurrence
-        and the button rendering.
+        The organizer's own guest-invite form, opened from its tile above --
+        always available to them regardless of game mode (unlike "Invite",
+        which an invite-only game hides from everyone else). Scoped to this
+        event via `onInviteGuest`'s `createInvite(clubId, guestEmail,
+        undefined, eventId)` call.
       */}
-      {canReset ? (
-        <Button
-          variant="secondary"
-          disabled={busy}
-          onPress={() => run(() => resetEventToSeries(event.id))}
-          accessibilityLabel="Reset to the series"
-        >
-          Reset to the series
-        </Button>
+      {isOrganizer && guestFormOpen ? (
+        <View style={styles.guestForm}>
+          <TextField
+            label="Invite a guest by email"
+            value={guestEmail}
+            onChangeText={setGuestEmail}
+            placeholder="guest@example.com"
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="email-address"
+            accessibilityLabel="Guest's email address"
+          />
+          <Button
+            variant="secondary"
+            disabled={busy || invitingGuest}
+            loading={invitingGuest}
+            onPress={onInviteGuest}
+            accessibilityLabel="Invite a guest"
+          >
+            Invite a guest
+          </Button>
+        </View>
+      ) : null}
+      {isOrganizer && guestInviteSent ? (
+        <Text style={styles.help}>
+          Invited. They'll see it on their dashboard once they sign in, and it'll seat them at this game.
+        </Text>
       ) : null}
 
+
       {isOrganizer && event.status !== 'cancelled' ? (
-        <Button
-          variant="ghost"
-          disabled={busy}
-          onPress={() => run(() => cancelEvent(event.id))}
-          accessibilityLabel="Cancel this game"
-        >
-          Cancel this game
-        </Button>
+        <View style={styles.cancelGame}>
+          <GhostPill
+            label="Cancel this game"
+            accessibilityLabel="Cancel this game"
+            disabled={busy}
+            onPress={() => run(() => cancelEvent(event.id))}
+            large
+          />
+        </View>
       ) : null}
     </Screen>
   );
 }
 
+/**
+ * The 2a handoff's ghost pill: accent-700 Figtree text on no fill, tinted on
+ * press -- "Add table", "Remove this table", "Cancel this game". The shared
+ * ghost Button sets its label in the display face, which the design keeps
+ * for titles only.
+ */
+function GhostPill({
+  label,
+  accessibilityLabel,
+  onPress,
+  disabled = false,
+  icon,
+  large = false,
+  style,
+}: {
+  label: string;
+  accessibilityLabel: string;
+  onPress: () => void;
+  disabled?: boolean;
+  icon?: ReactNode;
+  large?: boolean;
+  style?: StyleProp<ViewStyle>;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      style={({ pressed }) => [
+        styles.ghostPill,
+        pressed && !disabled ? styles.ghostPillPressed : null,
+        disabled ? styles.ghostPillDisabled : null,
+        style,
+      ]}
+    >
+      {icon}
+      <Text style={[styles.ghostPillText, large ? styles.ghostPillTextLarge : null]}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
-  container: { padding: space[6], gap: space[4] },
+  // The 2a scroll body: 20 at the sides, 22 between sections.
+  container: {
+    paddingTop: 6,
+    paddingHorizontal: 20,
+    paddingBottom: 28,
+    gap: 22,
+  },
   centered: { alignItems: 'center' },
+  titleBlock: { gap: 8 },
   heading: {
     fontFamily: type.heading,
-    fontSize: type.size.h2,
+    fontSize: 32,
+    lineHeight: 35,
     color: colors.text,
     flexShrink: 1,
   },
@@ -1694,25 +1834,38 @@ const styles = StyleSheet.create({
   titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: space[2],
+    gap: 4,
     flexShrink: 1,
   },
+  editButton: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  editPressed: { backgroundColor: colors.accent[100] },
+  metaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    rowGap: 6,
+    columnGap: 16,
+  },
+  metaItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   when: {
-    fontFamily: type.bodyBold,
-    fontSize: type.size.bodyLarge,
-    color: colors.text,
+    fontFamily: type.bodyRegular,
+    fontSize: 15,
+    color: colors.neutral[800],
   },
   where: {
     fontFamily: type.bodyRegular,
-    fontSize: type.size.body,
-    color: colors.text,
-    marginTop: space[2],
+    fontSize: 15,
+    color: colors.neutral[800],
   },
   fee: {
     fontFamily: type.bodyRegular,
-    fontSize: type.size.body,
-    color: colors.text,
-    marginTop: space[2],
+    fontSize: 15,
+    color: colors.neutral[800],
   },
   notes: {
     fontFamily: type.bodyRegular,
@@ -1720,12 +1873,79 @@ const styles = StyleSheet.create({
     color: colors.text,
     lineHeight: 26,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginBottom: -8,
+  },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 8,
+    flexShrink: 1,
+  },
   sectionTitle: {
     fontFamily: type.bodyBold,
-    fontSize: type.size.body,
+    fontSize: 17,
     color: colors.text,
-    marginTop: space[4],
   },
+  sectionMeta: {
+    fontFamily: type.bodyRegular,
+    fontSize: 13,
+    color: colors.neutral[700],
+    flexShrink: 1,
+  },
+  ghostPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 4,
+    minHeight: 44,
+    paddingHorizontal: 12,
+    borderRadius: radius.pill,
+  },
+  ghostPillPressed: { backgroundColor: colors.accent[100] },
+  ghostPillDisabled: { opacity: 0.5 },
+  ghostPillText: {
+    fontFamily: type.bodyBold,
+    fontSize: 14,
+    color: colors.accent[700],
+  },
+  ghostPillTextLarge: { fontSize: 15 },
+  // The pill's own side padding would push "Add table" in from the column
+  // edge the heading aligns to.
+  addTable: { marginRight: -12 },
+  optionsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  optionTile: {
+    flexGrow: 1,
+    flexBasis: '45%',
+    minWidth: 0,
+    height: 56,
+    borderRadius: 18,
+    backgroundColor: colors.surface,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 14,
+  },
+  optionTileWide: { flexBasis: '100%' },
+  optionTilePressed: { backgroundColor: colors.neutral[300] },
+  optionTileDisabled: { opacity: 0.5 },
+  optionTileText: {
+    fontFamily: type.bodySemiBold,
+    fontSize: 14,
+    lineHeight: 17,
+    color: colors.text,
+    flexShrink: 1,
+  },
+  guestForm: { gap: space[3] },
+  cancelGame: { alignSelf: 'center' },
   chips: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1753,10 +1973,5 @@ const styles = StyleSheet.create({
     fontFamily: type.bodyRegular,
     fontSize: type.size.body,
     color: colors.text,
-  },
-  inviteUrl: {
-    fontFamily: type.bodyRegular,
-    fontSize: type.size.helper,
-    color: colors.accentColor,
   },
 });

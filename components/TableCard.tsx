@@ -1,14 +1,11 @@
 import type { ReactNode } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import Card from './Card';
 import RoundLog, { type DisplayRound } from './RoundLog';
-import RoundTimer from './RoundTimer';
-import SeatGrid from './SeatGrid';
-import SkillTierPips from './SkillTierPips';
+import SeatGrid, { seatColor } from './SeatGrid';
 import Tag from './Tag';
 import type { SeatOccupant, SkillTier } from '../lib/bookings';
 import { roundTotals } from '../lib/rounds';
-import { colors, space, type } from '../lib/theme';
+import { colors, type } from '../lib/theme';
 
 /** Only what SeatGrid's "Move to {table}" buttons need — not the full EventTable. */
 type SeatableTable = { id: string; label: string };
@@ -63,16 +60,20 @@ type Props = {
   canDeleteRound?: boolean;
   onRecordRound?: (winnerProfileId: string, points: number) => void;
   onDeleteRound?: (roundId: string) => void;
-  /** Gates the round log and the round timer to the game's actual
-   *  start/end window — both disappear entirely before kickoff and after
-   *  the game ends, rather than staying visible the whole time. Defaults
-   *  to `true` so every caller that doesn't pass it (in particular this
-   *  component's own existing tests) keeps today's behavior unchanged. */
+  /** Gates the round log (and the seats' points lines) to the game's
+   *  actual start/end window — gone before kickoff and after the game
+   *  ends. Defaults to `true` so every caller that doesn't pass it (in
+   *  particular this component's own existing tests) keeps today's
+   *  behavior unchanged. The round timer no longer lives on the card: it
+   *  is the event screen's pinned round bar (components/RoundTimer.tsx). */
   gameLive?: boolean;
 };
 
 /**
- * One table: who is at it, how many seats are left, and the one way in.
+ * One table: who is at it, how many seats are left, and the one way in --
+ * drawn as the game-screen 2a handoff's table card: "Table 1" with its level
+ * tag and "3/4 seated", the two-column seat grid, and the table's rounds
+ * under a hairline.
  *
  * Tapping an empty seat books YOU, immediately — the common case is one
  * tap. Everything else on this card is read-only.
@@ -120,45 +121,50 @@ export default function TableCard({
 
   const totals = rounds ? roundTotals(rounds) : [];
   const totalsByProfile = new Map(totals.map((t) => [t.profileId, t.points]));
-  const maxPoints = totals.length > 0 ? Math.max(...totals.map((t) => t.points)) : null;
+  // Rounds arrive newest first, so the head is the last round played.
+  const lastWinner = rounds && rounds.length > 0 ? rounds[0].winner_profile_id : null;
+  // Points lines only while scoring is in play, the same window RoundLog
+  // itself renders in.
+  const showPoints = Boolean(rounds) && gameLive;
+  const seatedCount = seated.length + held.length;
+
+  // The seat's own colour follows its position in the grid (confirmed
+  // first, as SeatGrid draws them), so a round's winner is drawn in the
+  // same colour in the log below.
+  const colorByProfile = new Map(
+    seated.map((o, index) => [o.profile_id ?? '', seatColor(index)]),
+  );
 
   return (
-    <Card>
+    <View style={styles.card}>
       <View style={styles.row}>
         <View style={styles.labelRow}>
           <Text style={styles.label}>{table.label}</Text>
           {/*
-            Pips plus the word, deliberately -- the human's design left this
-            choice to judgement, and the safe default was kept: this is a
-            member's read-only view of a table's tier, not the host's four-row
-            control that pips exist to compact, so there is no height pressure
-            here to justify dropping the word. `SkillTierPips` itself is
-            `aria-hidden` (see its docstring), so the word is what actually
-            carries the meaning for a screen reader.
+            The tier as a tag -- the word alone, which is what a screen
+            reader has always read here (SkillTierPips was aria-hidden).
           */}
-          <SkillTierPips tier={table.skill_tier} />
-          <Text style={styles.tier}>{TIER_LABELS[table.skill_tier]}</Text>
+          <Tag variant="accent2" size="small">{TIER_LABELS[table.skill_tier]}</Tag>
+          {needsFourth ? <Tag size="small">Needs a 4th</Tag> : null}
         </View>
-        {needsFourth ? <Tag>Needs a 4th</Tag> : null}
+        <Text style={styles.count}>{`${seatedCount}/${table.capacity} seated`}</Text>
       </View>
 
       <SeatGrid
         tableLabel={table.label}
         capacity={table.capacity}
         seats={[
-          ...seated.map((o) => {
-            const points = o.profile_id
-              ? (totalsByProfile.get(o.profile_id) ?? null)
-              : null;
-            return {
-              bookingId: o.booking_id,
-              profileId: o.profile_id ?? '',
-              name: o.display_name,
-              isYou: o.profile_id === youId,
-              points,
-              isLeader: points !== null && points === maxPoints,
-            };
-          }),
+          ...seated.map((o) => ({
+            bookingId: o.booking_id,
+            profileId: o.profile_id ?? '',
+            name: o.display_name,
+            isYou: o.profile_id === youId,
+            points: showPoints
+              ? (o.profile_id ? (totalsByProfile.get(o.profile_id) ?? 0) : 0)
+              : null,
+            wonLastRound:
+              showPoints && lastWinner !== null && o.profile_id === lastWinner,
+          })),
           ...held.map((o) => ({
             bookingId: o.booking_id,
             profileId: o.profile_id ?? '',
@@ -181,27 +187,22 @@ export default function TableCard({
         onToggleManage={onToggleManage}
         canRecordRound={canRecordRound}
         onRecordRound={onRecordRound}
+        nextRoundNumber={(rounds?.length ?? 0) + 1}
         onWithdrawInvite={onWithdrawInvite}
       />
 
       {rounds && gameLive ? (
-        <RoundLog
-          rounds={rounds}
-          canDelete={canDeleteRound}
-          busy={busy}
-          onDelete={(roundId) => onDeleteRound?.(roundId)}
-        />
+        <>
+          <View style={styles.divider} />
+          <RoundLog
+            rounds={rounds}
+            colorFor={(profileId) => colorByProfile.get(profileId) ?? colors.neutral[800]}
+            canDelete={canDeleteRound}
+            busy={busy}
+            onDelete={(roundId) => onDeleteRound?.(roundId)}
+          />
+        </>
       ) : null}
-
-      {/*
-        RoundTimer is pure local UI state with no dependence on whether the
-        rounds fetch succeeded -- it stays available even when `rounds` is
-        undefined (a transient fetch failure), unlike RoundLog above which
-        genuinely needs `rounds` data to render. It IS gated on `gameLive`
-        though -- a pacing clock has no reason to exist before the game
-        starts or after it ends.
-      */}
-      {gameLive ? <RoundTimer tableLabel={table.label} /> : null}
 
       {bookedForYou ? (
         <Text style={styles.help}>
@@ -209,39 +210,54 @@ export default function TableCard({
         </Text>
       ) : null}
 
-      {children}
-    </Card>
+      {children ? <View style={styles.children}>{children}</View> : null}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  card: {
+    backgroundColor: colors.surface,
+    borderRadius: 24,
+    padding: 16,
+    gap: 14,
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: space[2],
+    gap: 8,
   },
   labelRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
-    gap: space[2],
+    gap: 8,
     flexShrink: 1,
   },
   label: {
-    fontFamily: type.bodySemiBold,
-    fontSize: type.size.bodyLarge,
+    fontFamily: type.heading,
+    fontSize: 20,
+    lineHeight: 24,
     color: colors.text,
   },
-  // 16 is the ONLY sanctioned size below 18, and only for helper text.
-  tier: {
+  count: {
     fontFamily: type.bodyRegular,
-    fontSize: type.size.helper,
-    color: colors.textMuted,
+    fontSize: 13,
+    color: colors.neutral[700],
+  },
+  divider: {
+    height: 1,
+    backgroundColor: colors.divider,
   },
   help: {
     fontFamily: type.bodyRegular,
-    fontSize: type.size.helper,
+    fontSize: 14,
     color: colors.textMuted,
-    marginTop: space[1],
+  },
+  children: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
   },
 });

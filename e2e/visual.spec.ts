@@ -1006,26 +1006,17 @@ test.describe('signed in', () => {
         // the winner and runner-up fill two of this table's four seats, so
         // exactly two tiles render SeatGrid's own "Empty" label.
         await expect(page.getByText('Empty')).toHaveCount(2);
-        // RoundLog's own read-only row format, "<name> · <points> pts"
-        // (components/RoundLog.tsx) -- proof the seeded round reached the
-        // screen, not just the fixture. The running-totals line this used to
-        // also assert here ("<name>: <points>") was removed by Task 5;
-        // totals moved to the winner's own seat tile badge instead, which is
-        // what the second assertion below checks.
-        await expect(page.getByText(`${winnerName} · ${points} pts`)).toBeVisible();
-        // The winner's seat tile badge (components/SeatGrid.tsx) -- the
-        // running total's new home. Sole winner so far, so this is the star
-        // variant, but the visible text is just the point value either way.
-        await expect(page.getByText(`${points}`, { exact: true })).toBeVisible();
-        // RoundTimer's own duration pills -- the other half of this
-        // screen's rounds section, and the one thing on this baseline that
-        // needs no seeded data at all, only a live game (RoundLog/
-        // RoundTimer both render whenever `rounds` is not undefined, i.e.
-        // once the table_rounds fetch has landed -- see TableCard's own
-        // docstring on that prop).
-        await expect(
-          page.getByRole('button', { name: 'Start a 10-minute timer for Table 1' }),
-        ).toBeVisible();
+        // RoundLog's 2a row (components/RoundLog.tsx), announced as one
+        // "<name> won <points> points" -- proof the seeded round reached the
+        // screen, not just the fixture.
+        await expect(page.getByLabel(`${winnerName} won ${points} points`)).toBeVisible();
+        await expect(page.getByText(`+${points}`, { exact: true })).toBeVisible();
+        // The winner's seat tile (components/SeatGrid.tsx): the running
+        // total on its second line, and the last-round trophy badge.
+        await expect(page.getByText(new RegExp(`${points} pts$`))).toBeVisible();
+        // The pinned round bar (components/RoundTimer.tsx) -- needs no seeded
+        // data at all, only a live game.
+        await expect(page.getByText('Start round 2 · 15 min')).toBeVisible();
         await captureScreen(page, vp, `event-detail-round-${vp.name}.png`);
       });
 

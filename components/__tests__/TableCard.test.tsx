@@ -39,6 +39,7 @@ describe('TableCard', () => {
     );
     expect(screen.getByText('Table 2')).toBeTruthy();
     expect(screen.getByText('Advanced')).toBeTruthy();
+    expect(screen.getByText('1/4 seated')).toBeTruthy();
     // Assert that seats-free text is no longer rendered
     expect(screen.queryByText(/seats? free/)).toBeNull();
   });
@@ -52,8 +53,9 @@ describe('TableCard', () => {
         onTakeSeat={vi.fn()}
       />,
     );
+    // Your own name, with "You" on the seat's second line.
+    expect(screen.getByText('Ravi K.')).toBeTruthy();
     expect(screen.getByText('You')).toBeTruthy();
-    expect(screen.queryByText('Ravi K.')).toBeNull();
   });
 
   it('says who booked a seat for somebody else', () => {
@@ -96,25 +98,6 @@ describe('TableCard', () => {
     expect(screen.queryByText('No rounds recorded yet.')).toBeNull();
   });
 
-  it('still offers a round timer when rounds is not supplied', () => {
-    // RoundTimer is pure local UI state, independent of whether the rounds
-    // fetch succeeded -- a transient fetch failure (rounds undefined)
-    // should not take away an otherwise-workable, unrelated control.
-    render(
-      <TableCard
-        table={table}
-        occupants={occupants}
-        youId="p9"
-        onTakeSeat={vi.fn()}
-      />,
-    );
-    expect(
-      screen.getByRole('button', {
-        name: 'Start a 15-minute timer for Table 2',
-      }),
-    ).toBeTruthy();
-  });
-
   it('shows the round log when rounds is supplied', () => {
     render(
       <TableCard
@@ -131,18 +114,26 @@ describe('TableCard', () => {
         onDeleteRound={vi.fn()}
       />,
     );
-    expect(screen.getByText('Ravi K. · 8 pts')).toBeTruthy();
+    expect(screen.getByText('Rounds')).toBeTruthy();
+    expect(screen.getByText('1 played')).toBeTruthy();
+    expect(screen.getByLabelText('Ravi K. won 8 points')).toBeTruthy();
   });
 
-  it('shows a round badge for a seated player with recorded points, and a star for the leader', () => {
+  it("shows each seated player's points, and badges the last round's winner", () => {
     render(
       <TableCard
         table={table}
-        occupants={occupants}
         youId="p9"
         onTakeSeat={vi.fn()}
+        occupants={[
+          occupants[0],
+          { ...occupants[0], booking_id: 'b2', profile_id: 'p2', display_name: 'Dot M.' },
+        ]}
         rounds={[
-          { id: 'r1', winner_profile_id: 'p1', winner_name: 'Ravi K.', points: 30 },
+          // Newest first: Dot won the latest round, Ravi both earlier ones.
+          { id: 'r3', winner_profile_id: 'p2', winner_name: 'Dot M.', points: 25 },
+          { id: 'r2', winner_profile_id: 'p1', winner_name: 'Ravi K.', points: 30 },
+          { id: 'r1', winner_profile_id: 'p1', winner_name: 'Ravi K.', points: 40 },
         ]}
         canRecordRound={false}
         canDeleteRound={false}
@@ -150,8 +141,13 @@ describe('TableCard', () => {
         onDeleteRound={vi.fn()}
       />,
     );
-    expect(screen.getByTestId('badge-star-b1')).toBeTruthy();
-    expect(screen.getByText('30')).toBeTruthy();
+    expect(screen.getByText('70 pts')).toBeTruthy();
+    expect(screen.getByText('25 pts')).toBeTruthy();
+    expect(screen.getByTestId('badge-winner-b2')).toBeTruthy();
+    expect(screen.queryByTestId('badge-winner-b1')).toBeNull();
+    // Round numbers count up from the oldest.
+    expect(screen.getByText('Round 3')).toBeTruthy();
+    expect(screen.getByText('Round 1')).toBeTruthy();
   });
 
   // canRecordRound alone never opens a panel that wasn't already
@@ -162,7 +158,7 @@ describe('TableCard', () => {
   // onToggleManage), matching how the event screen actually calls this --
   // canRecordRound is only ever true for an organizer or for your own seat,
   // both of which are already manageable seats by then.
-  it('offers "Record a win" on an occupied seat once canRecordRound is true', () => {
+  it('offers the win recorder on an occupied seat once canRecordRound is true', () => {
     function Harness() {
       const [openBookingId, setOpenBookingId] = useState<string | null>(null);
       return (
@@ -188,31 +184,11 @@ describe('TableCard', () => {
     }
     render(<Harness />);
     fireEvent.click(screen.getByLabelText("Manage Ravi K.'s seat"));
-    expect(screen.getByLabelText('Record a win for Ravi K.')).toBeTruthy();
+    expect(screen.getByText('Winner of round 1')).toBeTruthy();
+    expect(screen.getByLabelText('25 points')).toBeTruthy();
   });
 
-  it('offers a round timer', () => {
-    render(
-      <TableCard
-        table={table}
-        occupants={occupants}
-        youId="p9"
-        onTakeSeat={vi.fn()}
-        rounds={[]}
-        canRecordRound={false}
-        canDeleteRound={false}
-        onRecordRound={vi.fn()}
-        onDeleteRound={vi.fn()}
-      />,
-    );
-    expect(
-      screen.getByRole('button', {
-        name: 'Start a 15-minute timer for Table 2',
-      }),
-    ).toBeTruthy();
-  });
-
-  it('hides the round log and the timer once the game is not live', () => {
+  it('hides the round log and the points once the game is not live', () => {
     render(
       <TableCard
         table={table}
@@ -229,12 +205,9 @@ describe('TableCard', () => {
         gameLive={false}
       />,
     );
-    expect(screen.queryByText('Ravi K. · 8 pts')).toBeNull();
-    expect(
-      screen.queryByRole('button', {
-        name: 'Start a 15-minute timer for Table 2',
-      }),
-    ).toBeNull();
+    expect(screen.queryByText('Rounds')).toBeNull();
+    expect(screen.queryByLabelText('Ravi K. won 8 points')).toBeNull();
+    expect(screen.queryByText(/pts$/)).toBeNull();
   });
 });
 

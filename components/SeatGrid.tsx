@@ -1,36 +1,44 @@
-import { useState } from 'react';
+import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import Button from './Button';
-import { StarIcon } from './icons';
+import SeatSheet from './SeatSheet';
+import { ChevronDownIcon, PlusIcon, TrophyIcon } from './icons';
 import { seatsRemaining } from '../lib/bookings';
-import { colors, radius, space, type } from '../lib/theme';
+import { colors, radius, type } from '../lib/theme';
 
-/** The plan's hard rule: these seven values, everywhere, no others. */
-const POINT_VALUES = [25, 30, 35, 40, 45, 50, 75] as const;
+/**
+ * Per-seat avatar colours from the game-screen 2a handoff, in seat order.
+ * Exported so TableCard can colour a round's winner the same as their seat.
+ */
+export const SEAT_COLORS = [
+  colors.accent2[700],
+  colors.accent[700],
+  colors.neutral[800],
+  colors.accent2[800],
+] as const;
+
+export function seatColor(index: number): string {
+  return SEAT_COLORS[((index % SEAT_COLORS.length) + SEAT_COLORS.length) % SEAT_COLORS.length];
+}
 
 export type Seat = {
   bookingId: string;
-  /** Needed for `onRecordRound` (Task 4) -- record_round takes a winner's
-   *  profile id, not a booking id. */
+  /** Needed for `onRecordRound` -- record_round takes a winner's profile
+   *  id, not a booking id. */
   profileId: string;
   /** Null only for an invited seat the viewer may not see the name of
    *  (event_seating hides invite-only invitees from everyone but
    *  organizers, the sender and the invitee). */
   name: string | null;
   isYou: boolean;
-  /** This seat's running point total at this table, or null/omitted if
-   *  they have never won a round here -- no badge renders in that case.
-   *  Optional (not just nullable) so every existing test fixture that
-   *  predates scoring keeps compiling unchanged -- TableCard's own
-   *  mapping (Step 6 below) always sets this explicitly. */
+  /** This seat's running point total at this table. `null`/omitted draws no
+   *  points line at all (scoring not in play); 0 draws "0 pts". TableCard
+   *  decides which. */
   points?: number | null;
-  /** True if tied for (or alone in) the current lead among this table's
-   *  occupants who have won at least one round. Ties: everyone tied for
-   *  the lead gets the star, not just whoever reached it first. Optional,
-   *  same reasoning as `points` -- defaults to false when omitted. */
-  isLeader?: boolean;
+  /** Won the table's most recent round: draws the trophy badge on the
+   *  avatar. Optional, defaulting to false. */
+  wonLastRound?: boolean;
   /** A pending game invite holding this seat ('invited' booking). Drawn
-   *  dimmed with an "Invited" tag; never offered Move / Remove / Leave /
+   *  dashed with an "Invited" tag; never offered Move / Remove / Leave /
    *  Record -- none of those apply until the invitee accepts, and
    *  place_booking refuses invited rows. */
   invited?: boolean;
@@ -39,25 +47,7 @@ export type Seat = {
   canWithdraw?: boolean;
 };
 
-function SeatBadge({ seat }: { seat: Seat }) {
-  const points = seat.points ?? null;
-  if (points === null) return null;
-  if (seat.isLeader) {
-    return (
-      <View style={styles.badge} testID={`badge-star-${seat.bookingId}`}>
-        <StarIcon size={40} color={colors.accent[400]} style={styles.badgeStarIcon} />
-        <Text style={[styles.badgeText, styles.badgeTextStar]}>{points}</Text>
-      </View>
-    );
-  }
-  return (
-    <View style={[styles.badge, styles.badgeRound]} testID={`badge-round-${seat.bookingId}`}>
-      <Text style={styles.badgeText}>{points}</Text>
-    </View>
-  );
-}
-
-/** Only what a "Move to {table}" button needs — not the full EventTable. */
+/** Only what a "Move to {table}" action needs — not the full EventTable. */
 type SeatableTable = { id: string; label: string };
 
 type Props = {
@@ -77,306 +67,94 @@ type Props = {
    * separate `isOrganizer` boolean: a caller that forgot one of these three
    * would otherwise produce a half-wired control (a tappable seat with
    * nothing to move to, say) rather than cleanly falling back to the
-   * read-only render. `otherTables` in particular only ever makes sense
-   * alongside `onMove` — a Move-to list with no move handler behind it is
-   * exactly the shape this gate exists to prevent.
+   * read-only render.
    */
   otherTables?: SeatableTable[];
   onMove?: (bookingId: string, tableId: string) => void;
   onRemove?: (bookingId: string) => void;
   /**
-   * The member's own give-up-this-seat action. Unlike the organizer bundle
-   * above, this is a SINGLE prop guarding a SINGLE action — there is no
-   * second prop it could disagree with, so there is no "half-wired" shape
-   * for it to fall into: either a caller supplies it (that seat's own
-   * occupant may open the panel and leave) or it doesn't (that action alone
-   * doesn't render -- the panel itself may still open via `canRecordRound`/
-   * `onRecordRound` below, since either of the seat's own two actions is
-   * enough to make it worth opening; see `selfManageable`). A boolean flag
-   * alongside it would only restate what its own presence already says, so
-   * there isn't one.
-   *
-   * Gated per-seat on `seat.isYou`, not on any role — an organizer's own
-   * seat still goes through `organizerManageable` instead (see below),
-   * since Move/Remove already cover "give up your own seat" for them via
-   * Remove; this prop only ever ends up driving render for a NON-organizer
-   * caller's occupied seat. `onLeaveSeat` and the organizer bundle may both
-   * be supplied on the same call (the event screen does, since the same
-   * person can be an organizer on one game and not another) — precedence
-   * between them is resolved once, per seat, by `organizerManageable ||
-   * selfManageable` below.
+   * The member's own give-up-this-seat action. A SINGLE prop guarding a
+   * SINGLE action: either a caller supplies it (that seat's own occupant may
+   * open the sheet and leave) or it doesn't (that action alone doesn't
+   * render -- the sheet itself may still open via `canRecordRound`/
+   * `onRecordRound`; see `selfManageable`).
    */
   onLeaveSeat?: (bookingId: string) => void;
   /**
-   * Shared open/close plumbing for BOTH the organizer panel and the
-   * member's own give-up panel above — not part of either bundle, because
-   * both features need exactly the same "which one panel is open" toggle
-   * and there is nothing to half-wire about sharing it: a caller missing
-   * either of these gets no panel of any kind (both `organizerManageable`
-   * and `selfManageable` require it), never a half-open one.
-   *
-   * `openBookingId` is NOT local state in this component. Only one person's
-   * panel may be open across the WHOLE screen, and a screen can render many
-   * tables — each its own SeatGrid instance — so that exclusivity has to be
-   * owned one level up (the event screen) and handed down as a controlled
-   * value, the same way `busy` already is. If this component tracked its
-   * own "which seat is open" state, two different tables' SeatGrids could
-   * each have a panel open at once.
+   * Shared open/close plumbing for every kind of seat sheet. NOT local
+   * state: only one person's sheet may be open across the WHOLE screen, and
+   * a screen renders one SeatGrid per table, so that exclusivity is owned
+   * one level up (the event screen) and handed down as a controlled value.
    */
   openBookingId?: string | null;
   onToggleManage?: (bookingId: string) => void;
   /** Eligibility to record a round -- computed once per table by the
-   *  caller (the same `canRecordRound` the event screen already computes:
-   *  `gameLive && (isOrganizer || iAmSeatedHere)`), not per-seat: whichever
-   *  panel a caller can already open (their own, or -- for an organizer --
-   *  anyone's) is exactly who they may record a win for. Together with
-   *  `onRecordRound`, this is also (as of the whole-branch review's Critical
-   *  #1 fix) one of the two things that can make a NON-organizer's own seat
-   *  `selfManageable` -- `canBook` (which gates `onLeaveSeat`) and
-   *  `gameLive` (which gates this) are mutually exclusive on the event
-   *  screen, so the panel has to open on either one alone. */
+   *  caller (`gameLive && (isOrganizer || iAmSeatedHere)`). `canBook`
+   *  (which gates `onLeaveSeat`) and `gameLive` (which gates this) are
+   *  mutually exclusive on the event screen, so the sheet has to open on
+   *  either one alone. */
   canRecordRound?: boolean;
   onRecordRound?: (profileId: string, points: number) => void;
-  /** Withdraw a held invite. An invited seat opens a panel only when it
-   *  has `canWithdraw`, this handler, and `onToggleManage` -- and that
-   *  panel's one action is this, in place of Move / Remove. */
+  /** The round a win recorded now would be -- "Winner of round 3". */
+  nextRoundNumber?: number;
+  /** Withdraw a held invite. An invited seat opens a sheet only when it
+   *  has `canWithdraw`, this handler, and `onToggleManage`. */
   onWithdrawInvite?: (bookingId: string) => void;
 };
 
 /**
- * A seat held for a pending game invite. Taken (it counts toward the
- * grid's filled seats, so no Empty cell is drawn for it), but not by
- * someone who has said yes: dimmed and dashed, the invitee's name plus an
- * "Invited" tag -- or, when the viewer may not see who (an invite-only
- * game's other members), the single word "Invited".
- *
- * The only thing anyone can do to it is withdraw it, and only the sender or
- * an organizer (`seat.canWithdraw`, computed by TableCard) -- so its panel
- * carries that one action instead of Move / Remove / Leave / Record.
- */
-function InvitedSeat({
-  seat,
-  busy,
-  open,
-  onToggleManage,
-  onWithdrawInvite,
-}: {
-  seat: Seat;
-  busy: boolean;
-  open: boolean;
-  onToggleManage?: (bookingId: string) => void;
-  onWithdrawInvite?: (bookingId: string) => void;
-}) {
-  const shownName = seat.isYou ? 'You' : seat.name;
-  const nameText = (
-    <Text
-      style={[styles.name, styles.nameInvited]}
-      numberOfLines={1}
-      ellipsizeMode="tail"
-    >
-      {shownName ?? 'Invited'}
-    </Text>
-  );
-  // A named held seat carries its own tag; an anonymous one already reads
-  // "Invited" as its name, so no second copy.
-  const tag = shownName !== null ? <Text style={styles.invitedTag}>Invited</Text> : null;
-  const manageable = Boolean(seat.canWithdraw && onWithdrawInvite && onToggleManage);
-
-  if (!manageable) {
-    return (
-      <View style={[styles.seat, styles.seatInvited, styles.seatRow]}>
-        {nameText}
-        {tag}
-      </View>
-    );
-  }
-
-  const label = `Manage the invite for ${seat.name ?? 'this seat'}`;
-  const toggle = () => onToggleManage!(seat.bookingId);
-
-  if (!open) {
-    return (
-      <Pressable
-        style={[styles.seat, styles.seatInvited]}
-        onPress={busy ? undefined : toggle}
-        disabled={busy}
-        accessibilityRole="button"
-        accessibilityLabel={label}
-        aria-expanded={false}
-      >
-        <View style={styles.nameRow}>
-          {nameText}
-          <Text aria-hidden style={styles.chevron}>▾</Text>
-          {tag}
-        </View>
-      </Pressable>
-    );
-  }
-
-  return (
-    <View style={[styles.seat, styles.seatOpen, styles.seatInvited]}>
-      <Pressable
-        onPress={busy ? undefined : toggle}
-        disabled={busy}
-        accessibilityRole="button"
-        accessibilityLabel={label}
-        aria-expanded
-        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-      >
-        <View style={styles.nameRow}>
-          {nameText}
-          <Text aria-hidden style={styles.chevron}>▴</Text>
-          {tag}
-        </View>
-      </Pressable>
-      <View style={styles.manageActions}>
-        <Button
-          variant="ghost"
-          big={false}
-          disabled={busy}
-          onPress={() => onWithdrawInvite!(seat.bookingId)}
-          accessibilityLabel={`Withdraw the invite to ${seat.name ?? 'this seat'}`}
-        >
-          Withdraw invite
-        </Button>
-      </View>
-    </View>
-  );
-}
-
-/**
- * One table's seats.
+ * One table's seats, as the game-screen 2a handoff draws them: a two-column
+ * grid of 56pt tiles, each a filled seat (avatar, name, points line) or an
+ * empty dashed one.
  *
  * Occupied seats are drawn in the order they are given, then the remainder
- * are drawn empty. Nothing here numbers a seat, and nothing may: the schema
- * COUNTS seats, and a UI that implies Table 2 seat 3 is a durable place
- * teaches members to expect something the data cannot promise.
+ * are drawn empty. Nothing here numbers a seat, and nothing may -- the 2a
+ * design's "+ Seat 4" included: the schema COUNTS seats, and a UI that
+ * implies Table 2 seat 3 is a durable place teaches members to expect
+ * something the data cannot promise. Empty seats keep their "Empty" / "Last
+ * seat" wording.
  *
- * Empty count floors at zero (via lib/bookings' `seatsRemaining`, the same
- * helper TableCard uses for its own count). A table can hold more people
- * than it seats after a host removes another table, and rendering a
- * negative number of empty chairs is not a state anybody needs to see.
+ * Empty count floors at zero (via lib/bookings' `seatsRemaining`). A table
+ * can hold more people than it seats after a host removes another table.
  *
- * ## Organizer seat management (formerly HostSeating's per-person list)
+ * ## Tapping a seat
  *
- * This used to be exactly what it still is today for a plain member: a grid
- * that names who is seated and lets an empty seat be tapped. An organizer
- * additionally got a whole separate component, `HostSeating`, rendered
- * BELOW this grid — one row per occupant, each row carrying a "Move to
- * Table N" button per OTHER table plus "Remove from game". This grid
- * already named everyone; that list was a second copy of the same people
- * with buttons attached, and on a multi-table game with several people it
- * ran to more rows than the grid itself. `HostSeating` is now deleted
- * entirely (see .superpowers/sdd/seat-tap-host-controls.md) and its
- * capability lives here instead: an organizer taps an occupied seat to
- * reveal that ONE person's actions, in place, instead of everyone's at
- * once.
+ * A filled seat is tappable only when there is something the viewer can do
+ * to it; it then opens components/SeatSheet.tsx, a bottom sheet, carrying
+ * THAT person's actions. Two kinds of "manageable":
  *
- * A seat is only ever tappable this way when `onToggleManage`/`onMove`/
- * `onRemove`/`otherTables` are all supplied (see `organizerManageable`
- * below) — a plain member gets back exactly the read-only `<View>` this
- * component always rendered for an occupied seat, with no Pressable, no
- * aria-* attributes, and no visible hint. That last part matters as much as
- * the access control itself: a chevron or any other affordance rendered
- * unconditionally would tell a member "this is tappable" about a seat that
- * refuses their tap, which is worse than no hint at all.
+ * - `organizerManageable`: the full organizer bundle was supplied. Any seat
+ *   opens the sheet with Move to … per other table, Remove from game, and --
+ *   during a live game -- the win recorder.
+ * - `selfManageable`: the viewer's own seat, when the organizer bundle was
+ *   not supplied, and either `onLeaveSeat` or `canRecordRound`+
+ *   `onRecordRound` was. Leaving is legal only before kickoff and recording
+ *   only during a live game, so the sheet opens on either alone and each
+ *   action renders independently inside it. "Leave this game", never "Leave
+ *   the club" or "Cancel this game": `cancel_booking` ends one booking, for
+ *   one game.
  *
- * ## A member's own seat: giving it up
+ * An organizer looking at their OWN seat gets the organizer sheet (Remove,
+ * not Leave), matching the standing decision that an organizer's seat
+ * behaves like anybody else's from their seat
+ * (.superpowers/sdd/seat-tap-host-controls.md, Decision 2).
  *
- * A member who holds a confirmed seat has to be able to give it up without
- * a host's help — `cancel_booking` has always accepted the seat's own
- * occupant, the database was never the gap, only the UI was (see
- * .superpowers/sdd/member-leave-seat.md). So a SECOND, narrower kind of
- * "manageable" exists alongside the organizer one: `selfManageable`, true
- * for the one seat where `seat.isYou` and the caller supplied
- * `onToggleManage` (the shared open/close plumbing above) plus EITHER of
- * that seat's own two actions — `onLeaveSeat`, or `canRecordRound` together
- * with `onRecordRound`. Those two actions are legal at mutually exclusive
- * times (leaving only before kickoff, recording only during a live game),
- * so gating the panel on `onLeaveSeat` alone would make a plain member's own
- * seat unreachable for the entire window recording is legal — the panel has
- * to open whenever ANY of the seat's own actions is available, and each
- * action then renders (or doesn't) independently inside, exactly as it
- * always has.
+ * A seat with nothing on offer renders as a plain View -- no Pressable, no
+ * aria-*, no chevron. A chevron on a seat that refuses the tap would be
+ * worse than no hint at all.
  *
- * When the panel opens via `onLeaveSeat`, it renders the exact same panel
- * shape as the organizer one — same closed Pressable, same header, same
- * `aria-expanded` — with a single action, "Leave this game", instead of
- * Move-to-… plus Remove. Wording deliberately NOT "Leave the club"
- * (WaitlistPanel's "Leave the waitlist" and this screen's own "Cancel this
- * game" are both already-established, and DIFFERENT, pieces of vocabulary
- * this needed to stay clearly apart from): `cancel_booking` ends this one
- * booking, for this one game, nothing more. That button itself only renders
- * when `onLeaveSeat` is actually present — the panel can now open on the
- * recording path alone, with `onLeaveSeat` undefined.
- *
- * `organizerManageable || selfManageable` is checked in that order — an
- * organizer looking at their OWN seat gets the organizer panel (Move +
- * Remove), never the member one, matching the standing decision that an
- * organizer's own seat behaves exactly like anybody else's from their seat
- * (.superpowers/sdd/seat-tap-host-controls.md, Decision 2). `onLeaveSeat`
- * being supplied on the same call as the organizer bundle is expected, not
- * a conflict: the event screen passes it whenever this member could leave
- * (mirroring `onTakeSeat`'s own `canBook` gate) regardless of whether they
- * also happen to organize; it simply never wins the branch for someone who
- * does.
- *
- * For the organizer case, the closed and open renders are deliberately
- * different shapes rather than one Pressable that grows:
- * - Closed: the WHOLE seat cell is the Pressable (matching the empty seat's
- *   own pattern below), so the touch target is the entire card, comfortably
- *   over the 44px floor.
- * - Open: the cell becomes a plain `View` containing a smaller "header"
- *   Pressable (name + collapse chevron, widened with `hitSlop` rather than
- *   padding so the touch target still clears 44px without growing the
- *   visible header) plus the action buttons as ITS SIBLINGS, not its
- *   children. Nesting a `Button` (itself a `Pressable`) inside another
- *   `Pressable` would let a tap on "Move to Table 2" bubble up and also
- *   fire the outer seat's own onPress, toggling the panel shut on the same
- *   tap that was supposed to act on it. Keeping the header and the actions
- *   as siblings under one shared `View` avoids that entirely.
- *
- * `aria-expanded`, not `accessibilityState={{ expanded }}` — matching every
- * other flat `aria-*` prop already in this codebase. See Toggle.tsx's
- * docstring for why in general: react-native-web's `createDOMProps` has no
- * handling for `accessibilityState` at all. Unlike `aria-disabled`
- * (SeatGrid's own empty-seat Pressable, see the note further down),
- * react-native-web's `Pressable` does NOT compute or override
- * `aria-expanded` itself — it is one of the many aria-* props
- * `createDOMProps` simply passes through — so the flat prop here is
- * actually load-bearing on its own, with no `disabled`-prop-shaped
- * workaround needed.
- *
- * The empty seat's disabled state is sent as the flat `aria-disabled` prop,
- * not `accessibilityState={{ disabled }}` (which this used to send). See
- * components/Toggle.tsx's docstring for why in general: react-native-web's
- * createDOMProps has no handling for `accessibilityState` at all.
- *
- * One wrinkle specific to `Pressable` (unlike Toggle's plain `aria-checked`
- * case): RN Web's own `Pressable` computes `aria-disabled` itself from its
- * `disabled` prop and unconditionally overwrites whatever `aria-disabled` a
- * caller passes in (node_modules/react-native-web/dist/exports/Pressable/
- * index.js, ~line 125 — the trailing `{"aria-disabled": disabled}` in its
- * object spread wins over anything already in `rest`). So on THIS control it
- * is the `disabled` prop below, not the explicit `aria-disabled` prop, that
- * is actually load-bearing for the DOM attribute; `aria-disabled` is kept
- * here to match the flat-prop pattern this codebase now standardizes on, but
- * a caller relying on it alone (e.g. a plain `View`, or if this ever became
- * a bare `Pressable`-less element) would need it to do real work.
- * components/__tests__/SeatGrid.test.tsx asserts the rendered attribute;
- * neutralizing the `disabled` prop turns it red. (Reverting only to
- * `accessibilityState` does NOT turn it red here — the `disabled` prop's
- * own effect on `Pressable` already covers it, which is the mutation-tested
- * evidence for this note.)
+ * `aria-expanded`/`aria-disabled` are sent as flat props, not via
+ * `accessibilityState` -- react-native-web's createDOMProps ignores the
+ * latter (see Toggle.tsx). On the empty seat's Pressable it is the
+ * `disabled` prop that is actually load-bearing for `aria-disabled`: RN
+ * Web's Pressable overwrites a caller's own value from it.
  *
  * ## Held seats (game invites)
  *
- * A seat with `invited: true` is a pending invite holding it. It renders
- * through `InvitedSeat` (above) and never through the occupied-seat
- * branches below, so none of Move / Remove / Leave / Record can reach an
- * invited booking.
+ * A seat with `invited: true` is a pending invite holding it. Its only
+ * possible action is Withdraw invite, so it never reaches Move / Remove /
+ * Leave / Record.
  */
-
 export default function SeatGrid({
   tableLabel,
   capacity,
@@ -392,232 +170,146 @@ export default function SeatGrid({
   onToggleManage,
   canRecordRound,
   onRecordRound,
+  nextRoundNumber = 1,
   onWithdrawInvite,
 }: Props) {
-  const [recordingBookingId, setRecordingBookingId] = useState<string | null>(null);
   const empties = seatsRemaining(capacity, seats.length);
   const lastSeatCall = needsFourth && empties === 1;
   const organizerManageable = Boolean(
     onToggleManage && onMove && onRemove && otherTables,
   );
 
+  let sheet: ReactNode = null;
+
+  const tiles = seats.map((seat, index) => {
+    const avatarColor = seatColor(index);
+    const isOpen = seat.bookingId === openBookingId;
+    const close = () => onToggleManage?.(seat.bookingId);
+
+    if (seat.invited) {
+      const manageable = Boolean(seat.canWithdraw && onWithdrawInvite && onToggleManage);
+      if (manageable && isOpen) {
+        sheet = (
+          <SeatSheet
+            name={seat.isYou ? seat.name ?? 'You' : seat.name}
+            labelName={seat.name ?? 'this seat'}
+            avatarColor={colors.neutral[600]}
+            detail={`Invited · ${tableLabel}`}
+            busy={busy}
+            onClose={close}
+            onWithdraw={() => onWithdrawInvite!(seat.bookingId)}
+          />
+        );
+      }
+      return (
+        <InvitedSeat
+          key={seat.bookingId}
+          seat={seat}
+          busy={busy}
+          open={isOpen}
+          onPress={manageable ? close : undefined}
+        />
+      );
+    }
+
+    const selfManageable = Boolean(
+      !organizerManageable &&
+        seat.isYou &&
+        onToggleManage &&
+        (onLeaveSeat || (canRecordRound && onRecordRound)),
+    );
+    const manageable = organizerManageable || selfManageable;
+
+    if (manageable && isOpen) {
+      const points = seat.points ?? null;
+      sheet = (
+        <SeatSheet
+          name={seat.name}
+          labelName={seat.name ?? 'this player'}
+          avatarColor={avatarColor}
+          detail={[points !== null ? `${points} pts` : null, tableLabel]
+            .filter(Boolean)
+            .join(' · ')}
+          busy={busy}
+          onClose={close}
+          record={
+            canRecordRound && onRecordRound
+              ? {
+                  roundNumber: nextRoundNumber,
+                  onRecord: (value) => onRecordRound(seat.profileId, value),
+                }
+              : undefined
+          }
+          moves={
+            organizerManageable
+              ? otherTables!.map((t) => ({
+                  id: t.id,
+                  label: t.label,
+                  onPress: () => onMove!(seat.bookingId, t.id),
+                }))
+              : undefined
+          }
+          onRemove={organizerManageable ? () => onRemove!(seat.bookingId) : undefined}
+          onLeave={
+            !organizerManageable && onLeaveSeat
+              ? () => onLeaveSeat(seat.bookingId)
+              : undefined
+          }
+        />
+      );
+    }
+
+    const body = (
+      <>
+        <Avatar name={seat.name} color={avatarColor} trophy={seat.wonLastRound} bookingId={seat.bookingId} />
+        <View style={styles.seatText}>
+          <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">
+            {seat.name ?? (seat.isYou ? 'You' : '')}
+          </Text>
+          <SecondaryLine seat={seat} />
+        </View>
+      </>
+    );
+
+    if (!manageable) {
+      return (
+        <View key={seat.bookingId} style={[styles.seat, styles.filled]}>
+          {body}
+        </View>
+      );
+    }
+
+    return (
+      <Pressable
+        key={seat.bookingId}
+        style={[styles.seat, styles.filled, isOpen ? styles.selected : null]}
+        onPress={busy ? undefined : () => onToggleManage!(seat.bookingId)}
+        disabled={busy}
+        accessibilityRole="button"
+        accessibilityLabel={`Manage ${seat.name}'s seat`}
+        aria-expanded={isOpen}
+      >
+        {body}
+        {/* Decorative -- the label and aria-expanded carry the meaning. */}
+        <View aria-hidden>
+          <ChevronDownIcon size={16} color={colors.neutral[600]} />
+        </View>
+      </Pressable>
+    );
+  });
+
   return (
     <View style={styles.grid}>
-      {seats.map((seat) => {
-        if (seat.invited) {
-          return (
-            <InvitedSeat
-              key={seat.bookingId}
-              seat={seat}
-              busy={busy}
-              open={seat.bookingId === openBookingId}
-              onToggleManage={onToggleManage}
-              onWithdrawInvite={onWithdrawInvite}
-            />
-          );
-        }
-
-        const displayName = seat.isYou ? 'You' : seat.name;
-        // See the "A member's own seat" section of this component's
-        // docstring for why these two are separate booleans rather than one
-        // shared flag, and why the organizer one wins when both are true.
-        // The panel opens for EITHER of the seat's own two independently
-        // gated actions -- leaving (`onLeaveSeat`) or recording a win
-        // (`canRecordRound`/`onRecordRound`) -- since the two are legal at
-        // mutually exclusive times (before vs. during a live game): during
-        // the window recording is allowed, `onLeaveSeat` is never supplied,
-        // so gating the panel on `onLeaveSeat` alone would make a plain
-        // member's own seat unreachable for the entire time recording is
-        // legal. Each action inside still renders conditionally on its own
-        // prop, exactly as before.
-        const selfManageable = Boolean(
-          !organizerManageable &&
-            seat.isYou &&
-            onToggleManage &&
-            (onLeaveSeat || (canRecordRound && onRecordRound)),
-        );
-        const manageable = organizerManageable || selfManageable;
-
-        if (!manageable) {
-          return (
-            <View
-              key={seat.bookingId}
-              style={[styles.seat, seat.isYou && styles.seatYou, styles.seatRow]}
-            >
-              <Text
-                style={[styles.name, seat.isYou && styles.nameYou]}
-                numberOfLines={1}
-                ellipsizeMode="tail"
-              >
-                {displayName}
-              </Text>
-              <SeatBadge seat={seat} />
-            </View>
-          );
-        }
-
-        const isOpen = seat.bookingId === openBookingId;
-        const toggle = () => {
-          onToggleManage!(seat.bookingId);
-          setRecordingBookingId(null);
-        };
-        const label = `Manage ${seat.name}'s seat`;
-
-        if (!isOpen) {
-          return (
-            <Pressable
-              key={seat.bookingId}
-              style={[styles.seat, seat.isYou && styles.seatYou]}
-              onPress={busy ? undefined : toggle}
-              disabled={busy}
-              accessibilityRole="button"
-              accessibilityLabel={label}
-              aria-expanded={false}
-            >
-              {/*
-                The chevron is a SIBLING of the name Text, not nested inside
-                it. Nesting it (`<Text>{name}<Text>▾</Text></Text>`) was
-                tried first and reverted: react-native-web renders a nested
-                Text as an inline element sharing the outer Text's own DOM
-                node's text content, which makes that node's full text read
-                "You ▾" instead of "You" — breaking
-                `getByText('You', { exact: true })` in
-                e2e/visual.spec.ts (a real, caught regression, not a
-                hypothetical one) and any other exact-text query against a
-                manageable seat's name. Keeping them as siblings under one
-                row means the NAME element's own text is still exactly the
-                name, with the decorative glyph entirely outside it.
-              */}
-              <View style={styles.nameRow}>
-                <Text
-                  style={[styles.name, seat.isYou && styles.nameYou]}
-                  numberOfLines={1}
-                  ellipsizeMode="tail"
-                >
-                  {displayName}
-                </Text>
-                {/* Decorative only — the Pressable's own accessibilityLabel
-                    and aria-expanded already say everything a screen reader
-                    needs; this glyph is purely the sighted hint. */}
-                <Text aria-hidden style={[styles.chevron, seat.isYou && styles.chevronYou]}>▾</Text>
-                <SeatBadge seat={seat} />
-              </View>
-            </Pressable>
-          );
-        }
-
-        return (
-          <View
-            key={seat.bookingId}
-            style={[styles.seat, styles.seatOpen, seat.isYou && styles.seatYou]}
-          >
-            <Pressable
-              onPress={busy ? undefined : toggle}
-              disabled={busy}
-              accessibilityRole="button"
-              accessibilityLabel={label}
-              aria-expanded
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <View style={styles.nameRow}>
-                <Text
-                  style={[styles.name, seat.isYou && styles.nameYou]}
-                  numberOfLines={1}
-                  ellipsizeMode="tail"
-                >
-                  {displayName}
-                </Text>
-                <Text aria-hidden style={[styles.chevron, seat.isYou && styles.chevronYou]}>▴</Text>
-                <SeatBadge seat={seat} />
-              </View>
-            </Pressable>
-
-            <View style={styles.manageActions}>
-              {organizerManageable ? (
-                <>
-                  {otherTables!.map((t) => (
-                    <Button
-                      key={t.id}
-                      variant="secondary"
-                      big={false}
-                      disabled={busy}
-                      onPress={() => onMove!(seat.bookingId, t.id)}
-                      accessibilityLabel={`Move ${seat.name} to ${t.label}`}
-                    >
-                      {`Move to ${t.label}`}
-                    </Button>
-                  ))}
-                  <Button
-                    variant="ghost"
-                    big={false}
-                    disabled={busy}
-                    onPress={() => onRemove!(seat.bookingId)}
-                    accessibilityLabel={`Remove ${seat.name} from this game`}
-                  >
-                    Remove from game
-                  </Button>
-                </>
-              ) : onLeaveSeat ? (
-                // The member's own single action — see the "A member's own
-                // seat" section of this component's docstring. "Leave this
-                // game" and NOT "Leave the club" or "Cancel this game":
-                // this ends one booking, for this one game, nothing wider.
-                // Guarded on `onLeaveSeat` itself (not just `!organizerManageable`)
-                // because `selfManageable` can now be true from the recording
-                // path alone, with `onLeaveSeat` undefined (e.g. during a live
-                // game, when leaving isn't offered) -- rendering this
-                // unconditionally would call an undefined handler.
-                <Button
-                  variant="ghost"
-                  big={false}
-                  disabled={busy}
-                  onPress={() => onLeaveSeat(seat.bookingId)}
-                  accessibilityLabel="Leave this game"
-                >
-                  Leave this game
-                </Button>
-              ) : null}
-
-              {canRecordRound && onRecordRound ? (
-                recordingBookingId === seat.bookingId ? (
-                  <View style={styles.pointsRow}>
-                    {POINT_VALUES.map((value) => (
-                      <Pressable
-                        key={value}
-                        onPress={() => {
-                          onRecordRound(seat.profileId, value);
-                          setRecordingBookingId(null);
-                        }}
-                        disabled={busy}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Record ${seat.name}'s win for ${value} points`}
-                        style={styles.pointChip}
-                      >
-                        <Text style={styles.pointChipText}>{value}</Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                ) : (
-                  <Button
-                    variant="secondary"
-                    big={false}
-                    disabled={busy}
-                    onPress={() => setRecordingBookingId(seat.bookingId)}
-                    accessibilityLabel={`Record a win for ${seat.name}`}
-                  >
-                    Record a win
-                  </Button>
-                )
-              ) : null}
-            </View>
-          </View>
-        );
-      })}
+      {tiles}
 
       {Array.from({ length: empties }, (_, index) => (
         <Pressable
           key={`empty-${index}`}
-          style={[styles.seat, styles.empty, lastSeatCall && styles.calling]}
+          style={({ pressed, hovered }: { pressed: boolean; hovered?: boolean }) => [
+            styles.seat,
+            styles.empty,
+            lastSeatCall || ((hovered || pressed) && onTakeSeat && !busy) ? styles.calling : null,
+          ]}
           onPress={busy ? undefined : onTakeSeat}
           disabled={busy || !onTakeSeat}
           accessibilityRole="button"
@@ -628,21 +320,117 @@ export default function SeatGrid({
           }
           aria-disabled={busy || !onTakeSeat}
         >
+          {onTakeSeat ? (
+            <PlusIcon size={14} color={lastSeatCall ? colors.accent[700] : colors.neutral[700]} />
+          ) : null}
           {/*
            * Deliberately NOT the string "Needs a 4th" — TableCard already
            * shows that exact text once, as a Tag next to the table label.
-           * Repeating it here would give `screen.getByText('Needs a 4th')`
-           * two matches and throw, and a screen reader two elements with
-           * identical text and no way to tell them apart. This cell's own
-           * accessibilityLabel ("Take the last seat at …") is what actually
-           * distinguishes it; the visible word here just echoes that call.
+           * Repeating it here would give `getByText('Needs a 4th')` two
+           * matches, and a screen reader two identical elements.
            */}
           <Text style={[styles.emptyText, lastSeatCall && styles.callingText]}>
             {lastSeatCall ? 'Last seat' : 'Empty'}
           </Text>
         </Pressable>
       ))}
+
+      {sheet}
     </View>
+  );
+}
+
+function Avatar({
+  name,
+  color,
+  trophy,
+  bookingId,
+}: {
+  name: string | null;
+  color: string;
+  trophy?: boolean;
+  bookingId: string;
+}) {
+  const initial = (name ?? '?').trim().charAt(0).toUpperCase() || '?';
+  return (
+    <View style={[styles.avatar, { backgroundColor: color }]}>
+      <Text style={styles.avatarText}>{initial}</Text>
+      {trophy ? (
+        <View
+          style={styles.trophyBadge}
+          testID={`badge-winner-${bookingId}`}
+          accessibilityLabel="Won the last round"
+        >
+          <TrophyIcon size={10} color="#ffffff" />
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function SecondaryLine({ seat }: { seat: Seat }) {
+  const points = seat.points ?? null;
+  const parts = [seat.isYou ? 'You' : null, points !== null ? `${points} pts` : null].filter(
+    Boolean,
+  );
+  if (parts.length === 0) return null;
+  return (
+    <Text style={styles.secondary} numberOfLines={1}>
+      {parts.join(' · ')}
+    </Text>
+  );
+}
+
+/**
+ * A seat held for a pending game invite: taken (it counts toward the grid's
+ * filled seats), but not by someone who has said yes. Dashed, the invitee's
+ * name plus an "Invited" tag -- or, when the viewer may not see who, the
+ * single word "Invited".
+ */
+function InvitedSeat({
+  seat,
+  busy,
+  open,
+  onPress,
+}: {
+  seat: Seat;
+  busy: boolean;
+  open: boolean;
+  onPress?: () => void;
+}) {
+  const shownName = seat.isYou ? 'You' : seat.name;
+  const content = (
+    <>
+      <View style={styles.seatText}>
+        <Text style={[styles.name, styles.nameInvited]} numberOfLines={1} ellipsizeMode="tail">
+          {shownName ?? 'Invited'}
+        </Text>
+        {/* A named held seat carries its own tag; an anonymous one already
+            reads "Invited" as its name, so no second copy. */}
+        {shownName !== null ? <Text style={styles.secondary}>Invited</Text> : null}
+      </View>
+      {onPress ? (
+        <View aria-hidden>
+          <ChevronDownIcon size={16} color={colors.neutral[600]} />
+        </View>
+      ) : null}
+    </>
+  );
+
+  if (!onPress) {
+    return <View style={[styles.seat, styles.invited]}>{content}</View>;
+  }
+  return (
+    <Pressable
+      style={[styles.seat, styles.invited, open ? styles.selected : null]}
+      onPress={busy ? undefined : onPress}
+      disabled={busy}
+      accessibilityRole="button"
+      accessibilityLabel={`Manage the invite for ${seat.name ?? 'this seat'}`}
+      aria-expanded={open}
+    >
+      {content}
+    </Pressable>
   );
 }
 
@@ -650,187 +438,86 @@ const styles = StyleSheet.create({
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: space[2],
-    marginTop: space[3],
+    gap: 8,
   },
   seat: {
     flexGrow: 1,
     flexBasis: '44%',
-    borderRadius: radius.sm,
-    paddingVertical: space[3],
-    paddingHorizontal: space[3],
-    backgroundColor: colors.neutral[300],
-    justifyContent: 'center',
-  },
-  // An open panel needs room for a row of "Move to …" buttons plus
-  // "Remove from game" — the 44%-ish column an occupied seat normally gets
-  // is nowhere near enough, so the open cell claims the full row width
-  // instead of sharing it. flexWrap on the parent `grid` handles the rest:
-  // whatever else was going to share this row simply drops to the next one.
-  seatOpen: {
-    flexBasis: '100%',
-    gap: space[2],
-  },
-  seatYou: { backgroundColor: colors.accent2Color },
-  // A held seat (pending game invite): taken, but not by someone who has
-  // said yes yet -- lighter fill and a dashed edge so it reads between
-  // "Empty" and a filled seat. textMuted on surface is already pinned AA
-  // in lib/theme.test.ts.
-  seatInvited: {
-    backgroundColor: colors.surface,
-    borderWidth: 2,
-    borderStyle: 'dashed',
-    borderColor: colors.neutral[600],
-  },
-  nameInvited: {
-    color: colors.textMuted,
-    fontStyle: 'italic',
-  },
-  invitedTag: {
-    fontFamily: type.bodySemiBold,
-    fontSize: type.size.helper,
-    color: colors.textMuted,
-    marginLeft: 'auto',
-  },
-  // Read-only occupied seats have no nameRow of their own (that wrapper is
-  // only used by the manageable Pressable/open-panel branches) -- this puts
-  // the name and the trailing badge on the same row for that plain case.
-  seatRow: {
+    // Two to a row: never let one long name widen its column.
+    maxWidth: '50%',
+    minWidth: 0,
+    height: 56,
+    borderRadius: radius.md,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: 8,
   },
-  // marginLeft: 'auto' pushes the badge to the row's trailing edge without
-  // disturbing the name/chevron pair's own adjacency in `nameRow` (a plain
-  // `justifyContent: 'space-between'` on `nameRow` would instead space all
-  // three children apart evenly, dragging the chevron away from the name it
-  // decorates). In `seatRow` (the read-only render, which already sets its
-  // own `justifyContent: 'space-between'` with just two children: name and
-  // badge) this is redundant but harmless -- the badge is already the
-  // trailing child there.
-  badge: {
-    width: 40,
-    height: 40,
+  filled: {
+    backgroundColor: colors.bg,
+    paddingHorizontal: 6,
+    paddingRight: 10,
+  },
+  selected: {
+    borderWidth: 2,
+    borderColor: colors.accent[500],
+  },
+  invited: {
+    paddingHorizontal: 12,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: colors.neutral[600],
+    backgroundColor: 'transparent',
+  },
+  avatar: {
+    width: 32,
+    height: 32,
     borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
-    marginLeft: 'auto',
   },
-  // colors.accent[700], NOT colors.accentColor -- lib/theme.test.ts pins a
-  // regression proving colors.bg text on colors.accentColor fails WCAG AA at
-  // this weight/size (~3.03:1); accent[700] is the established fix
-  // (~5.72:1). See that file's contrast-pin table, which this call site is
-  // also registered in.
-  badgeRound: {
-    backgroundColor: colors.accent[700],
-  },
-  badgeStarIcon: {
+  avatarText: { fontFamily: type.bodyBold, fontSize: 13, color: '#ffffff' },
+  trophyBadge: {
     position: 'absolute',
+    top: -5,
+    right: -5,
+    width: 18,
+    height: 18,
+    borderRadius: radius.pill,
+    backgroundColor: colors.accent[500],
+    borderWidth: 2,
+    borderColor: colors.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  badgeText: {
-    fontFamily: type.bodyBold,
-    fontSize: type.size.helper,
-    color: colors.bg,
+  // flexShrink/minWidth so a long name ellipsizes instead of pushing the
+  // chevron past the tile's rounded edge (Yoga's flexShrink defaults to 0).
+  seatText: { flex: 1, minWidth: 0 },
+  name: {
+    fontFamily: type.bodySemiBold,
+    fontSize: 15,
+    lineHeight: 19,
+    color: colors.text,
   },
-  badgeTextStar: {
-    color: colors.accent[900],
+  nameInvited: { color: colors.textMuted, fontStyle: 'italic' },
+  secondary: {
+    fontFamily: type.bodyRegular,
+    fontSize: 12,
+    lineHeight: 15,
+    color: colors.neutral[700],
   },
   empty: {
     backgroundColor: 'transparent',
-    borderWidth: 2,
+    borderWidth: 1.5,
     borderStyle: 'dashed',
     borderColor: colors.neutral[400],
-    alignItems: 'center',
-  },
-  calling: { borderColor: colors.accentColor },
-  // lib/theme's `type` is a token bag — font FAMILIES plus a `size` map —
-  // not a set of ready-made style objects. There is no `type.body` to
-  // spread; every text style is written out from the tokens.
-  // Wraps a manageable seat's name and its decorative chevron as SIBLINGS
-  // (not one nested inside the other's Text) — see the long comment at the
-  // chevron's render site for why that distinction is load-bearing.
-  nameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space[1],
-  },
-  // flexShrink: 1 (Yoga's own default is 0, unlike CSS flexbox) so a long
-  // name shrinks to make room for the fixed-size badge/chevron that share
-  // its row (nameRow, seatRow) instead of pushing them past the seat's
-  // rounded background. Paired with numberOfLines/ellipsizeMode at every
-  // render site below so the shrunk name truncates rather than wrapping or
-  // clipping mid-glyph.
-  name: {
-    fontFamily: type.bodyRegular,
-    fontSize: type.size.body,
-    color: colors.text,
-    flexShrink: 1,
-  },
-  nameYou: {
-    fontFamily: type.bodySemiBold,
-    fontSize: type.size.body,
-    color: colors.neutral[100],
-  },
-  // Same size as the name it trails — this is a sighted-only disclosure
-  // hint (aria-hidden), not helper text, so the 16pt "helper only" floor
-  // doesn't apply, but there's no reason to shrink it below the name either.
-  chevron: {
-    fontFamily: type.bodyRegular,
-    fontSize: type.size.body,
-    color: colors.textMuted,
-  },
-  // seatYou's background is the darker accent2Color, where textMuted's
-  // low-contrast brown would be nearly unreadable — matches nameYou's own
-  // switch to a light neutral for the same reason.
-  chevronYou: {
-    color: colors.neutral[100],
-  },
-  manageActions: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: space[2],
-    backgroundColor: colors.surface,
-    borderRadius: radius.sm,
-    padding: space[2],
-  },
-  pointsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: space[2],
-    // `manageActions` is itself a flex-wrap row, so without a width of its
-    // own this row of 7 chips has no bound to wrap against -- Yoga sizes it
-    // to its unwrapped max-content width by default (flexShrink defaults to
-    // 0, unlike CSS), and the trailing chips get clipped past the panel's
-    // edge instead of wrapping onto a second line. Forcing it onto its own
-    // full-width line first is what lets its own `flexWrap` actually do
-    // anything.
-    flexBasis: '100%',
-  },
-  // colors.accent[700], NOT colors.accentColor -- same WCAG AA regression
-  // this codebase already pins a test against; see badgeRound's comment
-  // above.
-  pointChip: {
-    minWidth: 44,
-    minHeight: 44,
-    borderRadius: radius.pill,
-    backgroundColor: colors.accent[700],
-    alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: space[3],
+    gap: 6,
   },
-  pointChipText: {
-    fontFamily: type.bodySemiBold,
-    fontSize: type.size.body,
-    color: colors.bg,
-  },
+  calling: { borderColor: colors.accent[500] },
   emptyText: {
-    fontFamily: type.bodyRegular,
-    fontSize: type.size.body,
-    color: colors.textMuted,
-  },
-  callingText: {
     fontFamily: type.bodySemiBold,
-    fontSize: type.size.body,
-    color: colors.accent[700],
+    fontSize: 14,
+    color: colors.neutral[700],
   },
+  callingText: { color: colors.accent[700] },
 });
