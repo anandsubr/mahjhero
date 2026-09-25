@@ -1308,24 +1308,18 @@ describe('organizer view', () => {
   // app/__tests__/clubs.test.tsx's own tests for the club-level form this
   // one is scoped down from.
   describe('the guest-invite email form', () => {
-    // The Invite sheet opens where the organizer tapped, not below this
-    // form -- otherwise "Who's coming?" lands under an unrelated email
-    // field and reads as part of it.
-    it('opens the Invite sheet directly under Invite, above the guest form', async () => {
+    // The Invite sheet is a bottom sheet over a scrim (SeatSheet's shell),
+    // not an inline card, so it can't read as part of the guest form.
+    it('opens the Invite sheet as a bottom sheet', async () => {
       render(<EventScreen />);
       await screen.findByText('Thursday Mahjong');
 
-      // The guest form now sits behind its own "Invite a guest by email"
-      // tile (the 2a options grid); opened alongside the sheet, the sheet
-      // still comes first.
       fireEvent.click(screen.getByRole('button', { name: 'Invite a guest by email' }));
       fireEvent.click(screen.getByRole('button', { name: 'Invite' }));
-      const sheet = await screen.findByText("Who's coming?");
-      const guestField = screen.getByLabelText("Guest's email address");
+      const sheet = await screen.findByTestId('bring-someone-sheet');
 
-      expect(
-        sheet.compareDocumentPosition(guestField) & Node.DOCUMENT_POSITION_FOLLOWING,
-      ).toBeTruthy();
+      expect(sheet.textContent).toContain("Who's coming?");
+      expect(screen.getByTestId('bring-someone-scrim')).toBeTruthy();
     });
 
     it('creates the invite scoped to this event, then sends the email', async () => {
