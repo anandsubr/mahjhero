@@ -223,7 +223,7 @@ describe('DashboardHeader', () => {
       expect(screen.queryByText('Thursdays, 7pm')).toBeNull();
     });
 
-    it('opens the club’s management screen when the name pill is pressed', () => {
+    it('opens the club’s management screen when the name is pressed', () => {
       const onPressScope = vi.fn();
       render(
         <DashboardHeader

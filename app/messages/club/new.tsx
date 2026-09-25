@@ -1,15 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import Button from '../../../components/Button';
 import Card from '../../../components/Card';
+import CompactHeader from '../../../components/CompactHeader';
 import ErrorBanner from '../../../components/ErrorBanner';
 import Screen from '../../../components/Screen';
 import TabBar from '../../../components/TabBar';
 import TextField from '../../../components/TextField';
-import ThreadAvatar from '../../../components/ThreadAvatar';
 import Toggle from '../../../components/Toggle';
-import { ChevronLeftIcon } from '../../../components/icons';
 import AttachmentPicker from '../../../components/messages/AttachmentPicker';
 import { countBroadcastRecipients } from '../../../lib/broadcasts';
 import { canAnnounce, fetchClub, fetchRoster } from '../../../lib/clubs';
@@ -21,7 +20,7 @@ import {
   type MessageAttachmentInput,
 } from '../../../lib/messages';
 import { useSession } from '../../../lib/session';
-import { colors, radius, space, type } from '../../../lib/theme';
+import { colors, space, type } from '../../../lib/theme';
 
 /**
  * Start a post on a club's board.
@@ -308,49 +307,20 @@ export default function NewPostScreen() {
   return (
     <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="messages" />}>
       {/*
-        The same header the board and post screens use (commit 2e39173,
-        app/messages/club/[threadId]/index.tsx): chevron top-left, the
-        club's avatar and name pill centred beneath it. Style entries
-        (header/backButton/headerCenter/namePill/namePillText) copied from
-        that screen rather than re-derived -- see this screen's own
-        docstring for why. `kind` is the literal 'club', not derived
-        through threadKindFor -- this route only ever composes onto a
-        club's board, so there is no second kind to distinguish.
+        The compact one-row header the board and post screens use
+        (components/CompactHeader.tsx): chevron and the club's tile and
+        name, with no right-hand control. The name is plain, not tappable
+        -- see this screen's own docstring. `kind` is the literal 'club':
+        this route only ever composes onto a club's board.
       */}
-      <View style={styles.header}>
-        <Pressable
-          onPress={handleBack}
-          accessibilityRole="button"
-          accessibilityLabel={confirmingCancel ? 'Discard post and go back to board' : 'Back to board'}
-          style={styles.backButton}
-        >
-          <ChevronLeftIcon color={colors.text} size={22} />
-        </Pressable>
-
-        {clubName ? (
-          <View style={styles.headerCenter}>
-            <ThreadAvatar
-              kind="club"
-              name={clubName}
-              size={72}
-              testID="thread-header-avatar-club"
-              asTile
-              clubId={clubId}
-            />
-
-            {/*
-              A plain View, not a Pressable -- see this screen's own
-              docstring for why the pill here must not look tappable the
-              way the board's own pill does. No button role, no chevron.
-            */}
-            <View style={styles.namePill}>
-              <Text numberOfLines={1} style={styles.namePillText}>
-                {clubName}
-              </Text>
-            </View>
-          </View>
-        ) : null}
-      </View>
+      <CompactHeader
+        variant="inset"
+        onBack={handleBack}
+        backLabel={confirmingCancel ? 'Discard post and go back to board' : 'Back to board'}
+        kind={clubName ? 'club' : null}
+        clubId={clubId}
+        title={clubName ?? ''}
+      />
 
       <Text style={styles.heading}>New post</Text>
 
@@ -425,45 +395,6 @@ export default function NewPostScreen() {
 const styles = StyleSheet.create({
   container: { padding: space[6], gap: space[4] },
   centered: { alignItems: 'center' },
-  // Copied from the board and post screens' own `header`/`backButton`
-  // (app/messages/club/[threadId]/index.tsx, .../[postId].tsx), themselves
-  // copied from app/messages/[threadId].tsx -- see any of those for the
-  // reasoning behind the absolute positioning and the 44x44 target.
-  header: {
-    position: 'relative',
-    alignItems: 'center',
-    paddingBottom: space[2],
-  },
-  backButton: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  // Also copied from the board screen's own `headerCenter`/`namePill`/
-  // `namePillText` -- see this screen's own docstring for why the pill
-  // itself is a plain View here rather than that screen's Pressable.
-  headerCenter: { alignItems: 'center', gap: space[2] },
-  namePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space[1],
-    maxWidth: 240,
-    backgroundColor: colors.surface,
-    borderRadius: radius.pill,
-    paddingHorizontal: space[3],
-    paddingVertical: space[1],
-  },
-  namePillText: {
-    flexShrink: 1,
-    minWidth: 0,
-    fontFamily: type.bodySemiBold,
-    fontSize: type.size.helper,
-    color: colors.text,
-  },
   heading: {
     fontFamily: type.heading,
     fontSize: type.size.h2,

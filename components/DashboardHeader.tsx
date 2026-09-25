@@ -1,9 +1,7 @@
 import type { ReactNode } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { ChevronLeftIcon, PencilIcon } from './icons';
-import PlusButton from './PlusButton';
-import ThreadAvatar from './ThreadAvatar';
-import { colors, radius, space, type } from '../lib/theme';
+import { StyleSheet, Text, View } from 'react-native';
+import CompactHeader from './CompactHeader';
+import { colors, space, type } from '../lib/theme';
 
 /**
  * The artboard's dashboard header.
@@ -14,17 +12,14 @@ import { colors, radius, space, type } from '../lib/theme';
  * trailing "New club" tile), not here. The single-club scope —
  * `kicker === 'Your club'`, the one value lib/dashboard.ts's `headerScope`
  * and app/clubs/[id]/index.tsx ever pass for it — instead draws the club's
- * own identity: its mahjong tile sits in the top row (`clubTopRow`),
- * flanked by the back chevron and the ⊕, the same chevron-tile-plus
- * shape the messages board header uses for a club thread
- * (app/messages/club/[threadId]/index.tsx -- its own ⊕ opens a new post,
- * not a new game, but the layout is the same); a centred name pill and
- * meta line (`clubCenter`) sit below that row. venues.tsx
+ * own identity in the compact one-row header (components/CompactHeader.tsx)
+ * the conversation screens and the club board use: chevron, the club's
+ * tile, its name over its rhythm, and the ⊕. venues.tsx
  * passes the club's own name as its kicker, never the literal string 'Your
  * club', so it always draws the flat shape.
  *
- * `onPressScope`, only meaningful in the "Your club" shape, draws a pencil
- * beside the name and opens the club's roster, invites, venues and import —
+ * `onPressScope`, only meaningful in the "Your club" shape, makes the name
+ * tappable, with a pencil beside it, and opens the club's roster, invites, venues and import —
  * management, not a form, hence "Manage", not "Edit". Omitted wherever there
  * is no destination for it: the all-clubs scope, and the two screens that
  * already render this same header for one particular club
@@ -54,7 +49,7 @@ import { colors, radius, space, type } from '../lib/theme';
  * clubs dashboard's own small decorative tile-before-the-title, matching
  * every other tab-root screen's inline treatment). The "Your club" shape
  * ignores it entirely -- that shape draws its own tile itself, in
- * `clubTopRow` above, so there is nothing left for a second, inline
+ * its compact header, so there is nothing left for a second, inline
  * accessory to add. app/clubs/index.tsx's empty-clubs-list branch is the
  * only current caller. Optional and defaulting to nothing rendered, so
  * app/clubs/[id]/index.tsx and venues.tsx -- which never pass it -- are
@@ -90,68 +85,31 @@ export default function DashboardHeader({
   backLabel?: string;
 }) {
   if (kicker === 'Your club') {
+    // The compact one-row header the conversation screens use: chevron,
+    // the club's tile, its name (tap to manage, with a pencil) over its
+    // rhythm, and the ⊕ on the right.
     return (
-      <View style={styles.clubHeader}>
-        <View style={styles.clubTopRow}>
-          {/* Fixed 44x44 footprint whether or not the chevron itself
-              draws, so the tile stays perfectly centred either way --
-              same reasoning the ⊕'s own flanking box already used before
-              this task, now applied symmetrically on both sides. */}
-          <View style={styles.clubBack}>
-            {onPressBack ? (
-              <Pressable
-                onPress={onPressBack}
-                accessibilityRole="button"
-                accessibilityLabel={backLabel}
-                style={styles.clubBack}
-              >
-                <ChevronLeftIcon color={colors.text} size={22} />
-              </Pressable>
-            ) : null}
-          </View>
-          {clubId ? (
-            // `size={72}` is ignored by ThreadAvatar's `asTile` branch, which
-            // always renders its fixed 48x60 chip regardless of `size` --
-            // left here as a harmless no-op rather than a functional bug, so
-            // changing this number does nothing.
-            <ThreadAvatar kind="club" name={name} clubId={clubId} asTile size={72} />
-          ) : null}
-          <View style={styles.clubBack}>
-            {onPressAddGame ? (
-              <PlusButton onPress={onPressAddGame} accessibilityLabel="Add a game" />
-            ) : null}
-          </View>
-        </View>
-        <View style={styles.clubCenter}>
-          {onPressScope ? (
-            <Pressable
-              onPress={onPressScope}
-              accessibilityRole="button"
-              // See this file's header comment for why the label composes
-              // `meta` -- accessibilityLabel replaces the accessible name
-              // react-native-web would otherwise compute from this
-              // Pressable's children, so the rhythm visible in the meta
-              // line below goes unheard unless it rides along here too.
-              accessibilityLabel={
-                meta.length > 0 ? `Manage ${name}, ${meta}` : `Manage ${name}`
-              }
-              style={styles.clubNamePill}
-            >
-              <Text numberOfLines={1} style={styles.clubNamePillText}>
-                {name}
-              </Text>
-              <PencilIcon size={14} color={colors.accentColor} />
-            </Pressable>
-          ) : (
-            <View style={styles.clubNamePill}>
-              <Text numberOfLines={1} style={styles.clubNamePillText}>
-                {name}
-              </Text>
-            </View>
-          )}
-          {meta.length > 0 ? <Text style={styles.clubMeta}>{meta}</Text> : null}
-        </View>
-      </View>
+      <CompactHeader
+        variant="inset"
+        onBack={onPressBack}
+        backLabel={backLabel}
+        kind="club"
+        clubId={clubId}
+        avatarTestID={clubId ? 'thread-avatar-club-tile' : undefined}
+        title={name}
+        subtitle={meta.length > 0 ? meta : null}
+        onOpenDetails={onPressScope}
+        // accessibilityLabel replaces the accessible name react-native-web
+        // would otherwise compute from the children, so the rhythm in the
+        // subtitle goes unheard unless it rides along here too.
+        detailsLabel={meta.length > 0 ? `Manage ${name}, ${meta}` : `Manage ${name}`}
+        detailsHint="pencil"
+        action={
+          onPressAddGame
+            ? { icon: 'plus', label: 'Add a game', onPress: onPressAddGame }
+            : undefined
+        }
+      />
     );
   }
 
@@ -213,43 +171,5 @@ const styles = StyleSheet.create({
     fontSize: type.size.helper,
     color: colors.textMuted,
     marginTop: 3,
-  },
-  clubHeader: { gap: space[3] },
-  clubTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  clubBack: {
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  clubCenter: { alignItems: 'center', gap: space[2] },
-  // Same pill treatment as the messages board header's own name pill
-  // (app/messages/club/new.tsx) — maxWidth, radius and padding copied
-  // rather than re-derived.
-  clubNamePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space[1],
-    maxWidth: 240,
-    backgroundColor: colors.surface,
-    borderRadius: radius.pill,
-    paddingHorizontal: space[3],
-    paddingVertical: space[1],
-  },
-  clubNamePillText: {
-    fontFamily: type.bodySemiBold,
-    fontSize: type.size.body,
-    color: colors.text,
-    flexShrink: 1,
-    minWidth: 0,
-  },
-  clubMeta: {
-    fontFamily: type.bodyRegular,
-    fontSize: type.size.helper,
-    color: colors.textMuted,
   },
 });

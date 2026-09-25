@@ -171,7 +171,7 @@ export function ReplyIcon({ size = 14, color = colors.neutral[700] }: { size?: n
   );
 }
 
-/** The conversation header's overflow control (components/messages/ConversationHeader.tsx). */
+/** The conversation header's overflow control (components/CompactHeader.tsx). */
 export function MoreVerticalIcon({ size = 22, color = colors.text }: { size?: number; color?: string }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.75} strokeLinecap="round">
