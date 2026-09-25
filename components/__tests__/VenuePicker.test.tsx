@@ -276,17 +276,16 @@ describe('VenuePicker', () => {
     expect(within(row).getByText('Mary')).toBeTruthy();
   });
 
-  it('says how often the club has played there, else where it is', async () => {
+  it('shows the address under the name when there is one', async () => {
     vi.mocked(searchVenues).mockResolvedValue([
-      { ...MATCHES[1], game_count: 6 },
-      { ...MATCHES[0], id: 'v4', name: 'St Anne’s', game_count: 1 },
-      { ...MATCHES[0], game_count: 0 },
+      { ...MATCHES[1], address_line: '1 High St' },
+      { ...MATCHES[0], locality: null },
     ]);
     render(<VenuePicker clubId="c1" value={null} valueName="" onChange={() => {}} />);
     fireEvent.change(screen.getByLabelText('Venue'), { target: { value: 'St' } });
-    expect(await screen.findByText('Used for 6 games')).toBeTruthy();
-    expect(screen.getByText('Used for 1 game')).toBeTruthy();
-    expect(screen.getByText('Newton')).toBeTruthy();
+    expect(await screen.findByText('1 High St, Newton')).toBeTruthy();
+    const bare = screen.getByRole('button', { name: 'St Mary’s Hall' });
+    expect(bare.textContent).toBe('St Mary’s Hall');
   });
 
   it('clears the typed text with the ✕', async () => {

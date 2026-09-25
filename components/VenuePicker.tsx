@@ -247,12 +247,9 @@ export default function VenuePicker({
   );
 }
 
-/** "Used for 3 games", else where it is, else nothing to say yet. */
+/** Where the venue is, when it has an address on file. */
 function venueMeta(match: VenueMatch): string {
-  const count = match.game_count ?? 0;
-  if (count > 0) return `Used for ${count} ${count === 1 ? 'game' : 'games'}`;
-  const place = [match.address_line, match.locality].filter(Boolean).join(', ');
-  return place || 'No games here yet';
+  return [match.address_line, match.locality].filter(Boolean).join(', ');
 }
 
 /** A match, with the typed text picked out in the name. */
@@ -266,6 +263,7 @@ function VenueRow({
   onPress: () => void;
 }) {
   const at = match.name.toLowerCase().indexOf(query.toLowerCase());
+  const meta = venueMeta(match);
   return (
     <Pressable
       onPress={onPress}
@@ -288,9 +286,11 @@ function VenueRow({
             </>
           )}
         </Text>
-        <Text numberOfLines={1} style={styles.resultMeta}>
-          {venueMeta(match)}
-        </Text>
+        {meta ? (
+          <Text numberOfLines={1} style={styles.resultMeta}>
+            {meta}
+          </Text>
+        ) : null}
       </View>
     </Pressable>
   );
