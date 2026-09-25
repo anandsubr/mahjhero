@@ -455,7 +455,7 @@ describe('check-in tip', () => {
   it('explains Here, Not coming and the $ control', async () => {
     renderCheckInAsHost();
     expect(await screen.findByText('Running the door')).toBeTruthy();
-    expect(screen.getByText(/Tap Here when someone arrives, or Not coming/)).toBeTruthy();
+    expect(screen.getByText(/Tap ✓ when someone arrives, or ✕ if/)).toBeTruthy();
     expect(screen.getByText(/Only organizers see who has paid/)).toBeTruthy();
   });
 

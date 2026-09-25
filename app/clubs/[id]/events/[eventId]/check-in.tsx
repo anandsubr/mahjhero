@@ -1,17 +1,28 @@
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
-import Button from '../../../../../components/Button';
-import Card from '../../../../../components/Card';
-import CheckInControl from '../../../../../components/CheckInControl';
+import {
+  ActivityIndicator,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import DoorStatusControl from '../../../../../components/DoorStatusControl';
 import ErrorBanner from '../../../../../components/ErrorBanner';
 import PaidControl from '../../../../../components/PaidControl';
 import Screen from '../../../../../components/Screen';
 import TabBar from '../../../../../components/TabBar';
-import Tag from '../../../../../components/Tag';
-import TextField from '../../../../../components/TextField';
 import TipCard, { TipText } from '../../../../../components/TipCard';
-import { ChevronLeftIcon } from '../../../../../components/icons';
+import {
+  CheckIcon,
+  ChevronLeftIcon,
+  SearchIcon,
+  UserPlusIcon,
+} from '../../../../../components/icons';
 import {
   attendanceSummary,
   checkInOpen,
@@ -21,13 +32,18 @@ import {
   type AttendanceRow,
   type AttendanceState,
 } from '../../../../../lib/attendance';
-import { canInvite, fetchRoster, type ClubMember } from '../../../../../lib/clubs';
-import { fetchEvent, formatFeeCents, type SeatingMode } from '../../../../../lib/events';
+import { canInvite, fetchClub, fetchRoster, type ClubMember } from '../../../../../lib/clubs';
+import {
+  fetchEvent,
+  formatEventWhen,
+  formatFeeCents,
+  type SeatingMode,
+} from '../../../../../lib/events';
 import { fetchEventPayments, setPaymentStatus } from '../../../../../lib/payments';
 import { useSession } from '../../../../../lib/session';
 import { addHours } from '../../../../../lib/time';
 import { useGuides } from '../../../../../lib/use-guides';
-import { colors, layout, radius, space, type } from '../../../../../lib/theme';
+import { colors, layout, radius, shadow, space, type } from '../../../../../lib/theme';
 
 /**
  * How long a row stays put after it is touched, before it re-buckets into
@@ -68,56 +84,41 @@ const UNDO_MS = 10_000;
 type TableGroup = { id: string; label: string; rows: AttendanceRow[] };
 
 /**
- * The four buckets an open-seating door list shows. `walkIns` is the same
- * bucket the table grouping already had; the other three replace "which
- * table" with "where does this person stand", which is the only question an
- * event with no tables can answer.
+ * The filter chips above the list (check-in redesign 1a). They replaced the
+ * open-seating door list's status sections -- "Still to arrive", "Here",
+ * "Not coming" -- and now apply to both seating modes. `unpaid` follows the
+ * design's rule: anyone not marked "not coming" who has not paid.
  */
-type StatusSection = 'toArrive' | 'here' | 'notComing' | 'walkIns';
+type Filter = 'all' | 'toCheck' | 'here' | 'notComing' | 'unpaid';
 
-/**
- * A row's TRUE section, from its own data alone. A walk-in is checked
- * first, exactly as `groupRows` checks it first and for the same reason:
- * an organizer-added walk-in is definitionally already at the door, so it
- * belongs under "Walk-ins" whatever its attendance state says.
- */
-function sectionOf(r: AttendanceRow): StatusSection {
-  if (r.booking_status === null) return 'walkIns';
-  if (r.state === 'arrived') return 'here';
-  if (r.state === 'no_show') return 'notComing';
-  return 'toArrive';
+function matchesFilter(r: AttendanceRow, filter: Filter, isPaid: boolean): boolean {
+  switch (filter) {
+    case 'all':
+      return true;
+    case 'toCheck':
+      return r.state === null;
+    case 'here':
+      return r.state === 'arrived';
+    case 'notComing':
+      return r.state === 'no_show';
+    case 'unpaid':
+      return r.state !== 'no_show' && !isPaid;
+  }
 }
 
-/**
- * The open-seating counterpart to `groupRows` below — NOT its replacement.
- * An assigned-tables event still groups by table (that is what its door list
- * has always shown, and it is the only way to find the person you are
- * looking at in a room of numbered tables); an open-seating event has no
- * tables to group by at all.
- *
- * `held` pins a recently-touched row to the section it was in when the
- * organizer first touched it — see SETTLE_MS above. It is a section, not a
- * boolean: once a row's state has changed, its pre-tap section cannot be
- * recovered from the row itself, and "hold it where it was" is precisely
- * what the settle window promises.
- *
- * Like `groupRows`, this preserves the server's own ordering within each
- * bucket rather than re-sorting.
- */
-function groupByStatus(
-  rows: AttendanceRow[],
-  held: Record<string, StatusSection>,
-): Record<StatusSection, AttendanceRow[]> {
-  const groups: Record<StatusSection, AttendanceRow[]> = {
-    toArrive: [],
-    here: [],
-    notComing: [],
-    walkIns: [],
-  };
-  for (const r of rows) {
-    groups[held[r.profile_id] ?? sectionOf(r)].push(r);
-  }
-  return groups;
+/** The design's avatar colours, cycled by row. */
+const AVATAR_COLORS = [
+  colors.accent2[700],
+  colors.accent[700],
+  colors.neutral[800],
+  colors.accent2[800],
+  colors.accent[600],
+];
+
+function avatarColorFor(profileId: string): string {
+  let hash = 0;
+  for (let k = 0; k < profileId.length; k++) hash = (hash * 31 + profileId.charCodeAt(k)) | 0;
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
 }
 
 /**
@@ -239,6 +240,7 @@ export default function CheckInScreen() {
     eventId: string;
   }>();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { session, loading } = useSession();
   const guides = useGuides();
 
@@ -291,6 +293,20 @@ export default function CheckInScreen() {
   // together.
   const [groupSizes, setGroupSizes] = useState<Record<string, number>>({});
   const [query, setQuery] = useState('');
+  const [filter, setFilterState] = useState<Filter>('all');
+  // Mirrors `filter` for the settle timer's callback, which runs seconds
+  // after the render that scheduled it -- the same reason `rowsRef` exists.
+  const filterRef = useRef<Filter>('all');
+  function setFilter(next: Filter) {
+    filterRef.current = next;
+    setFilterState(next);
+  }
+  // The header's context line ("Thu 24 Sept, 8:30 pm · Venue"). Written
+  // only from successful reads, like everything else on this screen.
+  const [eventTitle, setEventTitle] = useState('');
+  const [startsAt, setStartsAt] = useState<string | null>(null);
+  const [venueName, setVenueName] = useState('');
+  const [timezone, setTimezone] = useState<string | null>(null);
   // profile_id -> true iff marked paid. Deliberately its own map rather
   // than a field folded into `rows`: `mergeAttendance` is tuned for the
   // exact question "whose `state` is contested", and widening it to carry a
@@ -299,6 +315,11 @@ export default function CheckInScreen() {
   // in `load()` below, so an in-flight payment write survives a refetch the
   // same way an in-flight attendance write does.
   const [paid, setPaidMap] = useState<Record<string, boolean>>({});
+  // For the settle timer's callback, like `rowsRef` below.
+  const paidRef = useRef<Record<string, boolean>>({});
+  useEffect(() => {
+    paidRef.current = paid;
+  }, [paid]);
   // `fetchEventPayments` returns null on failure and [] on "nobody has
   // paid" -- the same distinction `attendanceFailed` draws, and the same
   // reason: rendering a failed read as "nobody has paid" is a false
@@ -308,7 +329,7 @@ export default function CheckInScreen() {
   // their pending timers. The timers live in a ref, not state: they are not
   // rendered, and re-rendering on every timer swap would be pointless work
   // at the exact moment a host is tapping fastest.
-  const [held, setHeld] = useState<Record<string, StatusSection>>({});
+  const [held, setHeld] = useState<Record<string, true>>({});
   const settlingRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   // The one row that has just moved, offered back. Only ever one: at a door
   // the undo that matters is the tap you regret THIS second.
@@ -482,10 +503,11 @@ export default function CheckInScreen() {
       return contested;
     }
 
-    const [rosterRows, attendanceRows, event] = await Promise.all([
+    const [rosterRows, attendanceRows, event, club] = await Promise.all([
       fetchRoster(clubId),
       fetchEventAttendance(eventId),
       fetchEvent(eventId),
+      fetchClub(clubId),
     ]);
 
     // A newer load() has started since this one did (see loadSeqRef above)
@@ -536,6 +558,7 @@ export default function CheckInScreen() {
     }
 
     setEventFailed(event === null);
+    if (club) setTimezone(club.timezone);
     // The organizer tail: starts_at - 1h to ends_at + 24h
     // (attendance_window_open, 20260827030000). Only an organizer ever
     // reaches this screen, so the tail is unconditional here -- there is no
@@ -569,6 +592,9 @@ export default function CheckInScreen() {
       // client contract still lands on the behaviour this screen has always
       // had.
       setSeatingMode(event.seating_mode ?? 'assigned_tables');
+      setEventTitle(event.title ?? '');
+      setStartsAt(event.starts_at);
+      setVenueName(event.venue_name ?? '');
       setFeeCents(event.fee_cents ?? 0);
       // Live bookings only: a cancelled or declined seat is not somebody
       // who arrived with anyone. `bookings` is already embedded in the
@@ -711,21 +737,60 @@ export default function CheckInScreen() {
   const bookedHere = rows.filter(
     (r) => r.booking_status !== null && r.state === 'arrived',
   ).length;
-  const grouped = groupRows(rows);
+  // The big number, the bar and the legend count everyone on the list,
+  // walk-ins included -- they are the room as it stands. The booked
+  // fraction beside the big number keeps its stable denominator (see the
+  // comment where it renders).
+  const hereCount = rows.filter((r) => r.state === 'arrived').length;
+  const notComingCount = rows.filter((r) => r.state === 'no_show').length;
+  const toCheckCount = rows.filter((r) => r.state === null).length;
+  const unpaidCount = rows.filter((r) => matchesFilter(r, 'unpaid', !!paid[r.profile_id])).length;
   const openSeating = seatingMode === 'open_seating';
-  // Case-insensitive substring on the name, over the SAME `rows` array the
-  // groups are built from, so search narrows the list without disturbing
-  // the server's ordering or any of the state above. Matched against
-  // `safeDisplayName`, so an unnamed member is findable by the words the
-  // screen actually shows for them. Only the open-seating path draws the
-  // field, so an assigned-tables door list is untouched by it.
+  // Case-insensitive substring on the name, combined with the active filter
+  // chip, over the SAME `rows` array the groups are built from, so neither
+  // disturbs the server's ordering. Matched against `safeDisplayName`, so an
+  // unnamed member is findable by the words the screen actually shows for
+  // them. A row inside its settle window (`held`) stays visible whatever the
+  // filter says -- see SETTLE_MS.
   const needle = query.trim().toLowerCase();
-  const visibleRows = needle
-    ? rows.filter((r) =>
-        safeDisplayName(r.display_name).toLowerCase().includes(needle),
-      )
-    : rows;
-  const statusGroups = groupByStatus(visibleRows, held);
+  const visible = (r: AttendanceRow) =>
+    (!needle || safeDisplayName(r.display_name).toLowerCase().includes(needle)) &&
+    (!!held[r.profile_id] || matchesFilter(r, filter, !!paid[r.profile_id]));
+  const grouped = groupRows(rows);
+  // Open seating has no tables: every booked person shares one card.
+  const cardGroups: { key: string; testID: string; title: string; all: AttendanceRow[] }[] =
+    openSeating
+      ? [
+          {
+            key: 'everyone',
+            testID: 'door-everyone',
+            title: 'Everyone',
+            all: rows.filter((r) => r.booking_status !== null),
+          },
+        ]
+      : [
+          ...grouped.tables.map((g) => ({
+            key: g.id,
+            testID: `door-table-${g.id}`,
+            title: g.label,
+            all: g.rows,
+          })),
+          { key: 'any', testID: 'door-any-table', title: 'No table yet', all: grouped.anyTable },
+        ];
+  cardGroups.push({ key: 'walkins', testID: 'door-walkins', title: 'Walk-ins', all: grouped.walkIns });
+  const shownGroups = cardGroups
+    .map((g) => ({ ...g, shown: g.all.filter(visible) }))
+    .filter((g) => g.shown.length > 0);
+  // The Unpaid chip is only offered when the game charges: on a free game
+  // everyone would be "unpaid". The $ toggle itself stays on every row
+  // regardless (finding #4 -- see `renderPerson`).
+  const chips: { key: Filter; label: string; count: number }[] = [
+    { key: 'all', label: 'All', count: rows.length },
+    { key: 'toCheck', label: 'To check', count: toCheckCount },
+    { key: 'here', label: 'Here', count: hereCount },
+    { key: 'notComing', label: 'Not coming', count: notComingCount },
+    ...(feeCents > 0 ? [{ key: 'unpaid' as const, label: 'Unpaid', count: unpaidCount }] : []),
+  ];
   // Anyone already on the door list -- a confirmed booking or an existing
   // check-in row -- is excluded from the walk-in picker. `record_attendance`
   // would not refuse a double-add (`on conflict (event_id, profile_id) do
@@ -855,9 +920,10 @@ export default function CheckInScreen() {
    * the one write that means the opposite (undo, below, which exists to
    * move the row back immediately).
    *
-   * The section is captured on the FIRST tap of a window and kept for the
-   * whole of it, so a second tap that changes the state again (here, then
-   * not coming) still cannot move the row mid-gesture.
+   * A held row stays in the list whatever the active filter chip says, so
+   * a second tap that changes the state again (here, then not coming)
+   * still cannot make the row vanish mid-gesture. Applies to both seating
+   * modes now that both have filters.
    *
    * `preTapStateRef` is captured the same way, on the same first tap, for
    * Fix 1's guard below: `PaidControl` is not window-gated (see its
@@ -866,19 +932,12 @@ export default function CheckInScreen() {
    * tap that put them there.
    */
   function holdRow(person: AttendanceRow) {
-    // Only the status sections move rows around. An assigned-tables door
-    // list groups by table, and a check-in never changes anybody's table --
-    // there is nothing to hold still, so that path keeps behaving exactly
-    // as it did before this window existed.
-    if (!openSeating) return;
     const profileId = person.profile_id;
     const pending = settlingRef.current[profileId];
     if (pending) clearTimeout(pending);
 
     setHeld((current) =>
-      profileId in current
-        ? current
-        : { ...current, [profileId]: sectionOf(person) },
+      profileId in current ? current : { ...current, [profileId]: true },
     );
     if (!(profileId in preTapStateRef.current)) {
       preTapStateRef.current[profileId] = person.state;
@@ -910,11 +969,16 @@ export default function CheckInScreen() {
       // undo reading "marked here" that the host never did this gesture,
       // and whose one tap (`clearAttendance`) would destroy a correct
       // check-in without touching the payment it claimed to be about.
+      //
+      // And only when the row actually LEAVES the list: under a filter it no
+      // longer matches. Under "All" nothing moves, so there is nothing to
+      // put back.
       if (
         settled &&
         settled.booking_status !== null &&
         settled.state !== null &&
-        settled.state !== preTapState
+        settled.state !== preTapState &&
+        !matchesFilter(settled, filterRef.current, !!paidRef.current[profileId])
       ) {
         offerUndo({
           profileId,
@@ -963,6 +1027,9 @@ export default function CheckInScreen() {
    */
   async function addWalkIn(member: ClubMember) {
     setPickerOpen(false);
+    // Back to the whole list, so the person just added is on screen.
+    setFilter('all');
+    setQuery('');
     const newRow: AttendanceRow = {
       profile_id: member.profile_id,
       display_name: member.display_name,
@@ -1029,487 +1096,602 @@ export default function CheckInScreen() {
     return name.trim() ? name : 'Unnamed member';
   }
 
-  function renderPerson(r: AttendanceRow) {
+  function renderPerson(r: AttendanceRow, index: number) {
     const displayName = safeDisplayName(r.display_name);
     const groupSize = groupSizes[r.profile_id] ?? 1;
     const isPaid = !!paid[r.profile_id];
+    const here = r.state === 'arrived';
+    const notComing = r.state === 'no_show';
+    // What this person still owes comes from the event's own `fee_cents`
+    // through `formatFeeCents` -- the one place in this app that turns
+    // integer cents into a dollar string. A free game shows no money line
+    // unless someone was marked paid anyway.
+    const sub = notComing
+      ? { text: 'Not coming', style: styles.subNo }
+      : isPaid
+        ? { text: 'Paid', style: styles.subPaid }
+        : feeCents > 0
+          ? { text: `${formatFeeCents(feeCents)} owed`, style: styles.subOwed }
+          : null;
     return (
-      <View key={r.profile_id} style={styles.personRow}>
+      <View
+        key={r.profile_id}
+        style={[styles.personRow, index > 0 ? styles.personRowDivided : null]}
+      >
+        <View style={[styles.avatar, { backgroundColor: avatarColorFor(r.profile_id) }, notComing && styles.faded]}>
+          <Text style={styles.avatarText}>{displayName.trim().charAt(0).toUpperCase() || '?'}</Text>
+          {here ? (
+            <View style={styles.hereBadge}>
+              <CheckIcon size={10} color="#ffffff" />
+            </View>
+          ) : null}
+        </View>
         <View style={styles.person}>
-          <Text style={styles.name}>{displayName}</Text>
-          {groupSize > 1 || (feeCents > 0 && !isPaid) ? (
-            <View style={styles.badges}>
-              {/* Who arrived together. The spec keeps booking groups
-                  visible on an open-seating night precisely because an
-                  organizer placing people on the day has to seat a pair or
-                  a foursome at the same table -- the group is the only
-                  record of that, since nothing was pre-assigned. */}
-              {groupSize > 1 ? <Tag variant="accent2">{`Group of ${groupSize}`}</Tag> : null}
-              {/* What this person still owes, from the event's own
-                  `fee_cents` through `formatFeeCents` -- the one place in
-                  this app that turns integer cents into a dollar string.
-                  No new price plumbing, and no float arithmetic anywhere
-                  near money. */}
-              {feeCents > 0 && !isPaid ? (
-                <Text style={styles.owed}>{formatFeeCents(feeCents)} owed</Text>
+          <Text style={[styles.name, notComing && styles.nameNo]} numberOfLines={1}>
+            {displayName}
+          </Text>
+          {sub || r.booking_status === null || groupSize > 1 ? (
+            <View style={styles.subRow}>
+              {sub ? <Text style={[styles.sub, sub.style]}>{sub.text}</Text> : null}
+              {r.booking_status === null ? <Text style={styles.tag}>Walk-in</Text> : null}
+              {/* Who arrived together. Kept because an organizer placing
+                  people on the day has to seat a pair or a foursome at the
+                  same table -- the booking group is the only record of that
+                  on an open-seating night. */}
+              {groupSize > 1 ? <Text style={styles.tag}>{`Group of ${groupSize}`}</Text> : null}
+            </View>
+          ) : null}
+        </View>
+        {/* Every organizer, every event -- finding #4 of the final review
+            dropped the `feeCents > 0` gate this control used to carry.
+            Not gated on the check-in window either -- see PaidControl's
+            docstring: `set_payment_status` has no window, deliberately. */}
+        <PaidControl
+          label={displayName}
+          paid={isPaid}
+          busy={!!busy[r.profile_id]}
+          onChange={(next) => {
+            holdRow(r);
+            void setPaid(r, next);
+          }}
+        />
+        <DoorStatusControl
+          label={displayName}
+          state={r.state}
+          busy={!!busy[r.profile_id]}
+          disabled={!windowOpen}
+          onChange={(next) => {
+            holdRow(r);
+            void setState(r, next);
+          }}
+        />
+      </View>
+    );
+  }
+
+  const when = startsAt && timezone ? formatEventWhen(startsAt, timezone) : null;
+  const context = [when, venueName].filter(Boolean).join(' · ');
+  const total = rows.length;
+
+  const top = (
+    <View style={styles.top}>
+      <View style={styles.header}>
+        <Pressable
+          onPress={() => router.push(`/clubs/${clubId}/events/${eventId}`)}
+          accessibilityRole="button"
+          accessibilityLabel="Back to the game"
+          style={styles.iconButton}
+        >
+          <ChevronLeftIcon size={22} color={colors.text} />
+        </Pressable>
+        <View style={styles.headerText}>
+          {eventTitle ? (
+            <Text style={styles.eventTitle} numberOfLines={1}>
+              {eventTitle}
+            </Text>
+          ) : null}
+          {context ? (
+            <Text style={styles.eventContext} numberOfLines={1}>
+              {context}
+            </Text>
+          ) : null}
+        </View>
+      </View>
+
+      <View style={styles.summaryBlock}>
+        <Text style={styles.heading}>Check-in</Text>
+
+        {attendanceFailed && rows.length === 0 ? (
+          // `fetchEventAttendance` returns null on failure the same way it
+          // returns `[]` on a genuinely empty list -- without this branch a
+          // dropped network read rendered as "0 here" plus an empty list,
+          // telling a host nobody is booked when the truth is the read never
+          // happened. `rows.length === 0` (rather than `attendanceFailed`
+          // alone) is what keeps a stale-but-real list on screen, with its
+          // own note below, if a LATER refetch fails after a good load.
+          <Text style={styles.help}>Could not load who is booked for this game.</Text>
+        ) : (
+          <>
+            <View style={styles.countRow}>
+              <Text style={styles.count}>{hereCount}</Text>
+              <Text style={styles.countLabel}>here</Text>
+              {/* Denominator is `summary.booked`, not `rows.length`: a
+                  denominator of every known row grows every time a walk-in
+                  shows up, so it never converged on a number the host set
+                  out to reach. Walk-ins are counted on their own. */}
+              <Text style={styles.countDetail}>
+                {bookedHere} of {summary.booked} booked · {summary.walkIns} walk-in
+                {summary.walkIns === 1 ? '' : 's'}
+              </Text>
+            </View>
+            <View style={styles.bar}>
+              {hereCount > 0 ? (
+                <View style={[styles.barHere, { width: `${(hereCount / total) * 100}%` }]} />
+              ) : null}
+              {notComingCount > 0 ? (
+                <View style={[styles.barNo, { width: `${(notComingCount / total) * 100}%` }]} />
               ) : null}
             </View>
-          ) : null}
-        </View>
-        <View style={styles.actions}>
-          {/* Every organizer, every event -- finding #4 of the final review
-              dropped the `feeCents > 0` gate this control used to carry.
-              Payment tracking applies to every event, not only ones that
-              charge a fee (the spec's own words), and gating the control on
-              a fee made a $15 game's payment marks unreachable the moment
-              the host dropped its fee to $0. Not gated on the check-in
-              window either -- see PaidControl's docstring:
-              `set_payment_status` has no window, deliberately. */}
-          <PaidControl
-            label={displayName}
-            paid={isPaid}
-            busy={!!busy[r.profile_id]}
-            onChange={(next) => {
-              holdRow(r);
-              void setPaid(r, next);
-            }}
-          />
-          <CheckInControl
-            label={displayName}
-            state={r.state}
-            busy={!!busy[r.profile_id]}
-            disabled={!windowOpen}
-            onChange={(next) => {
-              holdRow(r);
-              void setState(r, next);
-            }}
-          />
-        </View>
-      </View>
-    );
-  }
-
-  /**
-   * One status section, with the count of what is actually under it -- so a
-   * heading never claims a number the list below it does not show, which is
-   * what a search would otherwise make it do.
-   */
-  function renderStatusSection(
-    label: string,
-    testID: string,
-    group: AttendanceRow[],
-    empty: string,
-  ) {
-    return (
-      <View testID={testID} style={styles.group}>
-        <Text style={styles.groupHeading}>
-          {label} ({group.length})
-        </Text>
-        {group.length > 0 ? (
-          <Card style={styles.card}>{group.map(renderPerson)}</Card>
-        ) : (
-          <Text style={styles.help}>{needle ? 'Nobody here matches.' : empty}</Text>
+            <View style={styles.legend}>
+              <LegendItem color={colors.accent2[600]} text={`${hereCount} here`} />
+              <LegendItem color={colors.neutral[500]} text={`${notComingCount} not coming`} />
+              <LegendItem color={colors.neutral[300]} text={`${toCheckCount} to check`} />
+            </View>
+            {attendanceFailed ? (
+              <Text style={styles.help}>Could not refresh the list. Showing the last known state.</Text>
+            ) : null}
+          </>
         )}
+
+        {guides.isVisible('tip:check-in') ? (
+          <TipCard tag="Tip" title="Running the door" onDismiss={() => guides.dismiss('tip:check-in')}>
+            <TipText>Tap ✓ when someone arrives, or ✕ if they've told you they're not coming.</TipText>
+            <TipText>Tap $ once they've paid. Only organizers see who has paid.</TipText>
+          </TipCard>
+        ) : null}
+
+        {error ? <ErrorBanner message={error} /> : null}
+
+        {!windowOpen ? (
+          <Text style={styles.help}>
+            {eventFailed
+              ? // `fetchEvent` returning null means either the read failed or
+                // the event does not exist -- either way, "closed" is not
+                // known to be true, only that the window could not be
+                // confirmed.
+                'Could not confirm whether check-in is open for this game. You can still see who was recorded.'
+              : checkInRequired === false
+                ? // Distinct from "closed": this game never asked for
+                  // check-in at all, so there is no window that could open.
+                  'This game does not use check-in.'
+                : 'Check-in is closed for this game. You can still see who was recorded.'}
+          </Text>
+        ) : null}
+
+        {paymentsFailed ? (
+          // Distinct from "nobody has paid" -- a false statement about
+          // people's money.
+          <Text style={styles.help}>Could not load who has paid.</Text>
+        ) : null}
       </View>
-    );
-  }
+    </View>
+  );
 
-  // Everything above the search field, and everything below the list --
-  // identical in both seating modes, so each is built once and reused by
-  // both `return`s below rather than kept as two copies that could drift.
-  const before = (
-    <>
-      <Button
-        variant="ghost"
-        big={false}
-        icon={<ChevronLeftIcon color={colors.accentColor} />}
-        onPress={() => router.push(`/clubs/${clubId}/events/${eventId}`)}
-        accessibilityLabel="Back to the game"
-        style={styles.backButton}
+  // Pinned while the list scrolls under it: once a host has scrolled down
+  // to find someone, having to scroll back up before looking up the next
+  // arrival is exactly the failure that matters at a door with a queue.
+  // Opaque `colors.bg` is load-bearing -- the rows would otherwise show
+  // through as they pass underneath.
+  const pinned = (
+    <View style={styles.pinned}>
+      <View style={styles.search}>
+        <SearchIcon size={18} color={colors.neutral[700]} />
+        <TextInput
+          style={styles.searchInput}
+          accessibilityLabel="Search players"
+          placeholder="Search players"
+          placeholderTextColor={colors.neutral[600]}
+          value={query}
+          onChangeText={setQuery}
+          autoCorrect={false}
+          autoCapitalize="none"
+        />
+      </View>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.chipsScroller}
+        contentContainerStyle={styles.chips}
       >
-        Game
-      </Button>
+        {chips.map((chip) => {
+          const on = filter === chip.key;
+          return (
+            <Pressable
+              key={chip.key}
+              onPress={() => setFilter(chip.key)}
+              accessibilityRole="button"
+              accessibilityLabel={`Show ${chip.label.toLowerCase()}`}
+              aria-pressed={on}
+              style={[styles.chip, on && styles.chipOn]}
+            >
+              <Text style={[styles.chipText, on && styles.chipTextOn]}>{chip.label}</Text>
+              <Text style={[styles.chipCount, on && styles.chipTextOn]}>{chip.count}</Text>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+    </View>
+  );
 
-      <Text style={styles.heading}>Check-in</Text>
-
-      {guides.isVisible('tip:check-in') ? (
-        <TipCard tag="Tip" title="Running the door" onDismiss={() => guides.dismiss('tip:check-in')}>
-          <TipText>Tap Here when someone arrives, or Not coming if they've told you.</TipText>
-          <TipText>Tap $ once they've paid. Only organizers see who has paid.</TipText>
-        </TipCard>
+  const list = (
+    <View style={styles.list}>
+      {undoFor ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Undo: ${undoFor.name}`}
+          onPress={() => undoMove(undoFor)}
+          style={styles.undoRow}
+        >
+          <Text style={styles.undoText}>
+            {undoFor.name} marked {undoFor.state === 'arrived' ? 'here' : 'not coming'} · Undo
+          </Text>
+        </Pressable>
       ) : null}
 
-      {error ? <ErrorBanner message={error} /> : null}
-
-      {attendanceFailed && rows.length === 0 ? (
-        // `fetchEventAttendance` returns null on failure the same way it
-        // returns `[]` on a genuinely empty list -- without this branch a
-        // dropped network read rendered as "0 of 0 here" plus empty tables,
-        // telling a host nobody is booked when the truth is the read never
-        // happened. `rows.length === 0` (rather than `attendanceFailed`
-        // alone) is what keeps a stale-but-real list on screen, with its own
-        // note below, if a LATER refetch fails after a good load already
-        // populated it -- losing an in-progress door list to one transient
-        // refetch failure would be worse than the bug this fixes.
-        <Text style={styles.help}>
-          Could not load who is booked for this game.
-        </Text>
-      ) : (
-        <>
-          {/* Grouped in one tightly-spaced block (rather than left at the
-              screen's normal space[4] rhythm) so the two secondary counts
-              read as part of THIS summary rather than as leftover help
-              text floating underneath it -- see the two Text styles below
-              for why their color changed too. */}
-          <View style={styles.summaryGroup}>
-            <Text style={styles.summary}>
-              {/* Denominator is `summary.booked`, not `rows.length`. A
-                  denominator of every known row grows every time a walk-in
-                  shows up, so "12 of 16 here" never converged on a number the
-                  host actually set out to reach -- and its remainder was
-                  notComing+unaccounted, not "still to come". `summary.booked`
-                  only changes when a booking is made or cancelled, so it stays
-                  a stable target through the night. Walk-ins are real
-                  arrivals too, so they are still shown -- just as their own
-                  count, not folded into a fraction whose denominator they'd
-                  keep moving. */}
-              {bookedHere} of {summary.booked} booked here ·{' '}
-              {summary.walkIns} walk-in{summary.walkIns === 1 ? '' : 's'}
-            </Text>
-            {/* `summaryDetail`, not `help`: these two counts are what a
-                host standing at a badly-lit door acts on -- collapse a
-                table, go find a substitute -- so they need to actually be
-                legible, not just present. `colors.textMuted` on
-                `colors.bg` measures ~3.6:1, under the 4.5:1 AA floor for
-                body text; `colors.textLabel` measures ~5.6:1 and is what
-                the rest of this screen's genuine help/status text (below)
-                keeps using `colors.textMuted` for -- that text is
-                dispensable in a way these two counts are not. */}
-            <Text style={styles.summaryDetail}>
-              {summary.notComing} not coming
-            </Text>
-            <Text style={styles.summaryDetail}>
-              {summary.unaccounted} unaccounted
+      {shownGroups.map((g) => (
+        <View key={g.key} testID={g.testID} style={styles.group}>
+          <View style={styles.groupHeader}>
+            <Text style={styles.groupTitle}>{g.title}</Text>
+            <Text style={styles.groupMeta}>
+              {g.all.filter((r) => r.state === 'arrived').length}/{g.all.length} here
             </Text>
           </View>
-          {attendanceFailed ? (
-            <Text style={styles.help}>
-              Could not refresh the list. Showing the last known state.
-            </Text>
-          ) : null}
-        </>
-      )}
-
-      {!windowOpen ? (
-        <Text style={styles.help}>
-          {eventFailed
-            ? // `fetchEvent` returning null means either the read failed or
-              // the event does not exist -- either way, "closed" is not
-              // known to be true, only that the window could not be
-              // confirmed. Saying "closed" here was a false statement about
-              // the EVENT when the actual problem was the fetch.
-              'Could not confirm whether check-in is open for this game. You can still see who was recorded.'
-            : checkInRequired === false
-              ? // Distinct from "closed": this game never asked for
-                // check-in at all, so there is no window that could open.
-                // Without this branch the screen said "closed" about a
-                // game that was never live in the first place, which is a
-                // different, false claim.
-                'This game does not use check-in.'
-              : 'Check-in is closed for this game. You can still see who was recorded.'}
-        </Text>
-      ) : null}
-
-      {paymentsFailed ? (
-        // Distinct from "nobody has paid", which is what `?? []` would have
-        // rendered this as -- and a false statement about people's money.
-        // No longer gated on `feeCents > 0` (finding #4 of the final
-        // review): `load()` now fetches payments for every organizer on
-        // every event, and this screen now draws payment UI for one
-        // regardless of fee, so this error line is reachable, and coherent,
-        // whenever that read fails.
-        <Text style={styles.help}>Could not load who has paid.</Text>
-      ) : null}
-    </>
-  );
-
-  const trailing = (
-    <>
-      <Button
-        variant="secondary"
-        disabled={!windowOpen}
-        onPress={() => setPickerOpen(true)}
-        accessibilityLabel="Add a walk-in"
-      >
-        Add a walk-in
-      </Button>
-
-      {pickerOpen ? (
-        <View testID="walkin-picker">
-          <Card style={styles.card}>
-            {walkInCandidates.length === 0 ? (
-              <Text style={styles.help}>
-                Everyone on the roster is already on this list.
-              </Text>
-            ) : (
-              walkInCandidates.map((m) => {
-                const name = safeDisplayName(m.display_name);
-                return (
-                  <Pressable
-                    key={m.profile_id}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Add ${name}`}
-                    onPress={() => void addWalkIn(m)}
-                    style={styles.candidateRow}
-                  >
-                    <Text style={styles.name}>{name}</Text>
-                  </Pressable>
-                );
-              })
-            )}
-            <Button
-              variant="ghost"
-              onPress={() => setPickerOpen(false)}
-              accessibilityLabel="Never mind"
-            >
-              Never mind
-            </Button>
-          </Card>
-        </View>
-      ) : null}
-    </>
-  );
-
-  if (openSeating) {
-    // An open-seating night has no tables to group by, so the list is
-    // organised by where each person stands instead, with a search field to
-    // find one name in a 60-70 person crowd. That field needs to STAY put
-    // while the sections below it scroll -- once a host has scrolled down to
-    // find someone, the search box being off-screen would mean scrolling
-    // back up before looking up the next arrival, exactly the failure mode
-    // that matters at a door with a queue. `Screen`'s `stickyHeaderIndices`
-    // (see components/Screen.tsx) pins ScrollView's direct children by
-    // index, so `before`/the search field/the rest are passed as three
-    // separate top-level children here -- each carrying its own width and
-    // padding styling below, since Screen does not wrap them for us in this
-    // mode (see that prop's docstring for why).
-    return (
-      <Screen
-        scroll
-        stickyHeaderIndices={[1]}
-        tabBar={<TabBar active="club" />}
-      >
-        <View style={[styles.scrollGroup, styles.scrollGroupTop]}>{before}</View>
-
-        <View style={styles.stickySearch}>
-          <TextField
-            accessibilityLabel="Search by name"
-            placeholder="Search by name"
-            value={query}
-            onChangeText={setQuery}
-            autoCorrect={false}
-            autoCapitalize="none"
-          />
-        </View>
-
-        <View style={[styles.scrollGroup, styles.scrollGroupBottom]}>
-          {undoFor ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`Undo: ${undoFor.name}`}
-              onPress={() => undoMove(undoFor)}
-              style={styles.undoRow}
-            >
-              <Text style={styles.undoText}>
-                {undoFor.name} marked{' '}
-                {undoFor.state === 'arrived' ? 'here' : 'not coming'} · Undo
-              </Text>
-            </Pressable>
-          ) : null}
-
-          {renderStatusSection(
-            'Still to arrive',
-            'door-status-to-arrive',
-            statusGroups.toArrive,
-            'Everyone booked is accounted for.',
-          )}
-          {renderStatusSection(
-            'Here',
-            'door-status-here',
-            statusGroups.here,
-            'Nobody has arrived yet.',
-          )}
-          {renderStatusSection(
-            'Not coming',
-            'door-status-not-coming',
-            statusGroups.notComing,
-            'Nobody has been marked as not coming.',
-          )}
-          {/* Walk-ins keep the same "only when there are any" rule the
-              table grouping gives them: an empty section here would be
-              noise on the majority of nights. */}
-          {statusGroups.walkIns.length > 0 ? (
-            <View testID="door-walkins" style={styles.group}>
-              <Text style={styles.groupHeading}>
-                Walk-ins ({statusGroups.walkIns.length})
-              </Text>
-              <Card style={styles.card}>
-                {statusGroups.walkIns.map(renderPerson)}
-              </Card>
-            </View>
-          ) : null}
-
-          {trailing}
-        </View>
-      </Screen>
-    );
-  }
-
-  return (
-    <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="club" />}>
-      {before}
-      {/* The per-table grouping below is what an assigned-tables event's
-          door list still shows -- untouched by search or the status
-          sections above, which are open-seating only. No search field here,
-          so this path never needs `stickyHeaderIndices`; it renders through
-          `Screen`'s default (unwrapped-prop) behaviour exactly as before. */}
-      {grouped.tables.map((g) => (
-        <View key={g.id} testID={`door-table-${g.id}`} style={styles.group}>
-          <Text style={styles.groupHeading}>{g.label}</Text>
-          <Card style={styles.card}>{g.rows.map(renderPerson)}</Card>
+          <View style={styles.card}>{g.shown.map(renderPerson)}</View>
         </View>
       ))}
 
-      {grouped.anyTable.length > 0 ? (
-        <View testID="door-any-table" style={styles.group}>
-          <Text style={styles.groupHeading}>Any table</Text>
-          <Card style={styles.card}>{grouped.anyTable.map(renderPerson)}</Card>
-        </View>
+      {shownGroups.length === 0 && rows.length > 0 ? (
+        <Text style={styles.empty}>No one matches.</Text>
       ) : null}
+    </View>
+  );
 
-      {grouped.walkIns.length > 0 ? (
-        <View testID="door-walkins" style={styles.group}>
-          <Text style={styles.groupHeading}>Walk-ins</Text>
-          <Card style={styles.card}>{grouped.walkIns.map(renderPerson)}</Card>
-        </View>
+  const footer = (
+    <View style={[styles.footer, { paddingBottom: Math.max(space[4], insets.bottom + space[2]) }]}>
+      <Pressable
+        disabled={!windowOpen}
+        onPress={() => setPickerOpen(true)}
+        accessibilityRole="button"
+        accessibilityLabel="Add a walk-in"
+        aria-disabled={!windowOpen}
+        style={({ pressed }) => [
+          styles.walkInButton,
+          pressed && styles.walkInButtonPressed,
+          !windowOpen && styles.faded,
+        ]}
+      >
+        <UserPlusIcon size={18} color="#ffffff" />
+        <Text style={styles.walkInText}>Add a walk-in</Text>
+      </Pressable>
+    </View>
+  );
+
+  return (
+    <>
+      {/* The bottom tab bar is hidden here, per the design: the header's
+          back arrow is always on screen, so a host is never stranded, and
+          the pinned "Add a walk-in" takes the bar's place. `tabBar` is just
+          Screen's slot for a fixed bottom strip. */}
+      <Screen scroll stickyHeaderIndices={[1]} tabBar={footer}>
+        {top}
+        {pinned}
+        {list}
+      </Screen>
+
+      {pickerOpen ? (
+        <Modal visible transparent animationType="slide" onRequestClose={() => setPickerOpen(false)}>
+          <View style={styles.sheetRoot}>
+            <Pressable
+              style={styles.scrim}
+              onPress={() => setPickerOpen(false)}
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss"
+            />
+            <View style={styles.sheet} testID="walkin-picker">
+              <View style={styles.grabber} />
+              <Text style={styles.sheetTitle}>Add a walk-in</Text>
+              <ScrollView style={styles.sheetList}>
+                {walkInCandidates.length === 0 ? (
+                  <Text style={styles.help}>Everyone on the roster is already on this list.</Text>
+                ) : (
+                  walkInCandidates.map((m) => {
+                    const name = safeDisplayName(m.display_name);
+                    return (
+                      <Pressable
+                        key={m.profile_id}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Add ${name}`}
+                        onPress={() => void addWalkIn(m)}
+                        style={({ pressed }) => [styles.candidateRow, pressed && styles.candidatePressed]}
+                      >
+                        <View style={[styles.avatar, { backgroundColor: avatarColorFor(m.profile_id) }]}>
+                          <Text style={styles.avatarText}>{name.charAt(0).toUpperCase()}</Text>
+                        </View>
+                        <Text style={styles.name}>{name}</Text>
+                      </Pressable>
+                    );
+                  })
+                )}
+              </ScrollView>
+              <Pressable
+                onPress={() => setPickerOpen(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Never mind"
+                style={styles.cancel}
+              >
+                <Text style={styles.cancelText}>Never mind</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
       ) : null}
+    </>
+  );
+}
 
-      {trailing}
-    </Screen>
+function LegendItem({ color, text }: { color: string; text: string }) {
+  return (
+    <View style={styles.legendItem}>
+      <View style={[styles.legendDot, { backgroundColor: color }]} />
+      <Text style={styles.legendText}>{text}</Text>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { padding: space[6], gap: space[4] },
-  // Screen's `stickyHeaderIndices` mode passes `children` straight through
-  // to the ScrollView unwrapped (see components/Screen.tsx), so each
-  // top-level piece here has to carry the width/centering constraint
-  // `styles.content` normally provides for us -- and the horizontal padding
-  // `container` normally provides, split so it applies once per edge rather
-  // than doubling up where two of these Views sit back to back.
-  scrollGroup: {
-    width: '100%',
-    maxWidth: layout.contentMaxWidth,
-    alignSelf: 'center',
-    paddingHorizontal: space[6],
-    gap: space[4],
-  },
-  scrollGroupTop: { paddingTop: space[6] },
-  scrollGroupBottom: { paddingBottom: space[6], marginTop: space[4] },
-  // The pinned search field. Opaque `colors.bg` (not transparent) is load-
-  // bearing: once this sticks to the top of the ScrollView, the sections
-  // scrolling underneath would otherwise show through its text. The
-  // hairline bottom border (the same `colors.divider` token every other
-  // hairline in this app uses) is what tells a host it is a fixed panel and
-  // not just another row -- without a visible edge, a pinned bar with the
-  // same background as the page can be hard to notice as "stuck" at all.
-  stickySearch: {
-    width: '100%',
-    maxWidth: layout.contentMaxWidth,
-    alignSelf: 'center',
-    paddingHorizontal: space[6],
-    paddingVertical: space[3],
-    marginTop: space[4],
-    backgroundColor: colors.bg,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.divider,
-  },
   centered: { alignItems: 'center' },
-  backButton: { alignSelf: 'flex-start' },
-  heading: {
-    fontFamily: type.heading,
-    fontSize: type.size.h2,
-    color: colors.text,
+  // Screen's `stickyHeaderIndices` mode passes children straight through to
+  // the ScrollView unwrapped (see components/Screen.tsx), so each top-level
+  // piece carries the content column's width cap itself.
+  top: { width: '100%', maxWidth: layout.contentMaxWidth, alignSelf: 'center' },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingTop: 2,
+    paddingRight: 12,
+    paddingBottom: 4,
+    paddingLeft: 8,
   },
-  summaryGroup: { gap: space[1] },
-  summary: {
-    fontFamily: type.bodyBold,
-    fontSize: type.size.bodyLarge,
-    color: colors.text,
+  iconButton: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  // The two decision-driving counts under the summary line. Same size as
-  // `help` (16pt is this app's one sanctioned exception below the 18pt
-  // body minimum), but `colors.textLabel` in place of `colors.textMuted`
-  // -- see the comment where this style is used for the contrast numbers.
-  summaryDetail: {
+  headerText: { flex: 1, minWidth: 0 },
+  eventTitle: { fontFamily: type.bodyBold, fontSize: 15, lineHeight: 18, color: colors.text },
+  eventContext: { fontFamily: type.bodyRegular, fontSize: 12, lineHeight: 15, color: colors.neutral[700] },
+  summaryBlock: { paddingTop: 8, paddingHorizontal: 20, paddingBottom: 14, gap: 12 },
+  heading: { fontFamily: type.heading, fontSize: 32, lineHeight: 35, color: colors.text },
+  countRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
+  count: { fontFamily: type.heading, fontSize: 28, lineHeight: 30, color: colors.text },
+  countLabel: { fontFamily: type.bodySemiBold, fontSize: 15, color: colors.text },
+  countDetail: {
+    marginLeft: 'auto',
     fontFamily: type.bodyRegular,
-    fontSize: type.size.helper,
-    color: colors.textLabel,
-    lineHeight: 22,
+    fontSize: 13,
+    color: colors.neutral[700],
   },
+  bar: {
+    flexDirection: 'row',
+    height: 10,
+    gap: 2,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    overflow: 'hidden',
+  },
+  barHere: { backgroundColor: colors.accent2[600], borderRadius: radius.pill },
+  barNo: { backgroundColor: colors.neutral[500], borderRadius: radius.pill },
+  legend: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 14, rowGap: 4 },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  legendDot: { width: 8, height: 8, borderRadius: radius.pill },
+  legendText: { fontFamily: type.bodyRegular, fontSize: 13, color: colors.neutral[800] },
   help: {
     fontFamily: type.bodyRegular,
-    fontSize: type.size.helper,
-    color: colors.textMuted,
-    lineHeight: 24,
-  },
-  group: { gap: space[2] },
-  groupHeading: {
-    fontFamily: type.bodyBold,
-    fontSize: type.size.body,
-    color: colors.text,
-  },
-  card: { padding: space[4], gap: space[3] },
-  // Column, not row-with-wrap: a row-with-wrap wrapped or didn't purely off
-  // each name's own pixel width, so two names of similar length could land
-  // on opposite sides of the wrap point -- one sharing a line with its
-  // buttons, the other not -- which read as arbitrary rather than as a
-  // rule. Stacking the name above the actions unconditionally makes every
-  // row read the same regardless of name length; `actions`' own flexWrap
-  // still lets the three controls themselves wrap on a narrow screen.
-  personRow: {
-    gap: space[2],
-  },
-  person: { gap: space[1] },
-  badges: { flexDirection: 'row', alignItems: 'center', gap: space[2], flexWrap: 'wrap' },
-  actions: { flexDirection: 'row', alignItems: 'center', gap: space[2], flexWrap: 'wrap' },
-  // `colors.textLabel` (5.6:1 on bg), not `textMuted` -- what somebody owes
-  // is a number the host acts on, in the same class as the two counts under
-  // the summary line, not dispensable help text.
-  owed: {
-    fontFamily: type.bodyBold,
-    fontSize: type.size.helper,
+    fontSize: 14,
+    lineHeight: 20,
     color: colors.textLabel,
   },
+  pinned: {
+    width: '100%',
+    maxWidth: layout.contentMaxWidth,
+    alignSelf: 'center',
+    backgroundColor: colors.bg,
+    paddingTop: 6,
+    paddingHorizontal: 20,
+    paddingBottom: 12,
+    gap: 10,
+  },
+  search: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    minHeight: 46,
+    paddingHorizontal: 16,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+  },
+  searchInput: {
+    flex: 1,
+    minWidth: 0,
+    alignSelf: 'stretch',
+    fontFamily: type.bodyRegular,
+    fontSize: 16,
+    color: colors.text,
+    backgroundColor: 'transparent',
+    outlineStyle: 'none' as never,
+  },
+  // Bleeds to the column's edges so chips scroll off-screen rather than
+  // being clipped at the page padding.
+  chipsScroller: { marginHorizontal: -20 },
+  chips: { gap: 6, paddingHorizontal: 20 },
+  chip: {
+    height: 36,
+    paddingHorizontal: 12,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  chipOn: { backgroundColor: colors.accent[700] },
+  chipText: { fontFamily: type.bodySemiBold, fontSize: 14, color: colors.text },
+  chipCount: { fontFamily: type.bodyBold, fontSize: 12, color: colors.text, opacity: 0.75 },
+  chipTextOn: { color: '#ffffff' },
+  list: {
+    width: '100%',
+    maxWidth: layout.contentMaxWidth,
+    alignSelf: 'center',
+    paddingTop: 4,
+    paddingHorizontal: 16,
+    paddingBottom: 24,
+    gap: 18,
+  },
   undoRow: {
-    paddingVertical: space[2],
-    paddingHorizontal: space[3],
+    paddingVertical: 8,
+    paddingHorizontal: 14,
     borderRadius: radius.pill,
     backgroundColor: colors.accent2[200],
     alignSelf: 'flex-start',
   },
-  undoText: {
+  undoText: { fontFamily: type.bodyBold, fontSize: 14, color: colors.accent2[800] },
+  group: { gap: 8 },
+  groupHeader: { flexDirection: 'row', alignItems: 'baseline', gap: 8, paddingHorizontal: 6 },
+  groupTitle: { fontFamily: type.heading, fontSize: 18, color: colors.text },
+  groupMeta: { marginLeft: 'auto', fontFamily: type.bodyRegular, fontSize: 13, color: colors.neutral[700] },
+  card: { backgroundColor: colors.surface, borderRadius: 20 },
+  personRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingTop: 8,
+    paddingRight: 8,
+    paddingBottom: 8,
+    paddingLeft: 12,
+  },
+  personRowDivided: { borderTopWidth: 1, borderTopColor: colors.divider },
+  avatar: {
+    width: 38,
+    height: 38,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  avatarText: { fontFamily: type.bodyBold, fontSize: 14, color: '#ffffff' },
+  hereBadge: {
+    position: 'absolute',
+    right: -3,
+    bottom: -3,
+    width: 18,
+    height: 18,
+    borderRadius: radius.pill,
+    backgroundColor: colors.accent2[600],
+    borderWidth: 2,
+    borderColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  faded: { opacity: 0.4 },
+  person: { flex: 1, minWidth: 0, gap: 1 },
+  name: { fontFamily: type.bodySemiBold, fontSize: 15, lineHeight: 19, color: colors.text, flexShrink: 1 },
+  nameNo: { color: colors.neutral[600] },
+  subRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
+  sub: { fontFamily: type.bodyBold, fontSize: 12, lineHeight: 15 },
+  subPaid: { color: colors.accent2[700] },
+  subOwed: { color: colors.accent[700] },
+  subNo: { color: colors.neutral[600] },
+  tag: {
     fontFamily: type.bodyBold,
-    fontSize: type.size.body,
+    fontSize: 11,
     color: colors.accent2[800],
+    backgroundColor: colors.accent2[200],
+    paddingHorizontal: 7,
+    paddingVertical: 1,
+    borderRadius: radius.pill,
+    overflow: 'hidden',
   },
-  name: {
+  empty: {
+    paddingVertical: 32,
+    textAlign: 'center',
     fontFamily: type.bodyRegular,
-    fontSize: type.size.body,
-    color: colors.text,
-    flexShrink: 1,
+    fontSize: 15,
+    color: colors.neutral[700],
   },
+  footer: {
+    paddingTop: 12,
+    paddingHorizontal: 16,
+    borderTopWidth: 1,
+    borderTopColor: colors.divider,
+    backgroundColor: colors.bg,
+  },
+  walkInButton: {
+    height: 50,
+    borderRadius: radius.pill,
+    backgroundColor: colors.accent[700],
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  walkInButtonPressed: { backgroundColor: colors.accent[800] },
+  walkInText: { fontFamily: type.bodyBold, fontSize: 16, color: '#ffffff' },
+  // The walk-in picker: SeatSheet's bottom-sheet shell.
+  sheetRoot: { flex: 1, justifyContent: 'flex-end' },
+  scrim: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: 'rgba(46, 43, 37, 0.4)',
+  },
+  sheet: {
+    width: '100%',
+    maxWidth: layout.contentMaxWidth,
+    maxHeight: '80%',
+    alignSelf: 'center',
+    backgroundColor: colors.bg,
+    borderTopLeftRadius: radius.card,
+    borderTopRightRadius: radius.card,
+    paddingTop: 10,
+    paddingHorizontal: 20,
+    paddingBottom: 34,
+    gap: 10,
+    ...shadow.lg,
+  },
+  grabber: {
+    alignSelf: 'center',
+    width: 40,
+    height: 5,
+    borderRadius: radius.pill,
+    backgroundColor: colors.neutral[400],
+    marginBottom: 6,
+  },
+  sheetTitle: { fontFamily: type.bodyBold, fontSize: 14, color: colors.text },
+  sheetList: { flexGrow: 0 },
   candidateRow: {
-    paddingVertical: space[2],
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    borderRadius: 12,
   },
+  candidatePressed: { backgroundColor: colors.surface },
+  cancel: { height: 44, alignItems: 'center', justifyContent: 'center' },
+  cancelText: { fontFamily: type.bodyBold, fontSize: 15, color: colors.neutral[700] },
 });

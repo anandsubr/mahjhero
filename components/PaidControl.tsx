@@ -1,5 +1,5 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { colors, control, radius, space, type } from '../lib/theme';
+import { colors, radius, space, type } from '../lib/theme';
 
 type Props = {
   /** Whether this person has been marked paid for this event. */
@@ -39,20 +39,11 @@ type Props = {
  * the collision the brief thought it was avoiding, and a host scanning a
  * 60-70 name door list at a glance would misread one for the other.
  *
- * Fixed by changing both the HUE and the FORM, not just the colour: a
- * circular `$` badge — a hairline `colors.neutral[900]` ring around the
- * page background when unpaid, filled solid `colors.neutral[900]` with a
- * `colors.bg` glyph when paid. `neutral[900]` is a desaturated near-black,
- * nowhere near terracotta or sage on the wheel, and a circle badge is not a
- * pill, so the two visual signals (colour AND shape) both separate it from
- * `CheckInControl`'s two chips even at a glance or in peripheral vision.
- * Contrast: `colors.bg` (#f5ead8) on `colors.neutral[900]` (#2e2b25) is
- * 11.85:1 (WCAG relative-luminance formula, same method CheckInControl's
- * docstring uses) — miles past the 4.5:1 AA floor — and the identical pair
- * reversed (the unpaid glyph on the page background) measures the same
- * 11.85:1. The badge is `control.circleSize` (50px) square, the same fixed
- * circular touch target `PlusButton` uses elsewhere in this app, comfortably
- * over the 44px minimum this screen's door-list controls all target.
+ * The check-in redesign (1a) settled the form: a 40pt circular `$` badge,
+ * a dashed `neutral[400]` ring when unpaid and a pale sage `accent2[200]`
+ * fill when paid. It no longer collides with Here, which is now a solid
+ * `accent2[600]` icon circle inside DoorStatusControl's pill — different
+ * shape, different weight, and a glyph rather than a tick.
  *
  * NOT gated on the check-in window. `set_payment_status` has no window at
  * all (unlike `record_attendance`), on purpose: money is settled whenever
@@ -97,32 +88,28 @@ export default function PaidControl({
 
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', gap: space[2] },
-  // A circle, not a pill — see the docstring above for why the shape change
-  // (not just the colour) is what actually separates this from
-  // CheckInControl's two pill chips at a glance. `control.circleSize` is the
-  // same fixed 50px touch target `PlusButton` uses for its own circular
-  // control elsewhere in this app.
   badge: {
-    width: control.circleSize,
-    height: control.circleSize,
+    width: 40,
+    height: 40,
     flexShrink: 0,
     borderRadius: radius.pill,
-    borderWidth: control.hairline,
-    borderColor: colors.neutral[900],
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: colors.neutral[400],
     backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
   },
   badgeOn: {
-    backgroundColor: colors.neutral[900],
+    borderStyle: 'solid',
+    borderColor: colors.accent2[200],
+    backgroundColor: colors.accent2[200],
   },
   dim: { opacity: 0.4 },
   glyph: {
     fontFamily: type.bodyBold,
-    fontSize: type.size.body,
-    color: colors.neutral[900],
+    fontSize: 16,
+    color: colors.neutral[600],
   },
-  // `colors.bg`, not `colors.text` -- the docstring's contrast measurement
-  // (11.85:1) is for this exact pair against the filled `neutral[900]`.
-  glyphOn: { color: colors.bg },
+  glyphOn: { color: colors.accent2[800] },
 });

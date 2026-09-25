@@ -1205,7 +1205,7 @@ test.describe('signed in', () => {
         );
         await expect(page.getByText('Wei Chen')).toBeVisible();
         await expect(page.getByText('Leo Fitzgerald')).toBeVisible();
-        await expect(page.getByText(/booked here/)).toBeVisible();
+        await expect(page.getByText(/ booked · /)).toBeVisible();
         await captureScreen(page, vp, `check-in-${vp.name}.png`);
       });
 
@@ -1315,16 +1315,13 @@ test.describe('signed in', () => {
         await page.goto(
           `/clubs/${seeded.clubId}/events/${seating.eventId}/check-in`,
         );
-        // The search field itself -- only the open-seating branch draws one.
-        await expect(page.getByLabel('Search by name')).toBeVisible();
-        // The three status-section headings, WITH their counts read off the
-        // row -- "pixels cannot catch a one-glyph regression"
-        // (docs/testing.md), the same reason every other test in this file
-        // asserts a count as text rather than trusting the screenshot alone
-        // to catch a miscount.
-        await expect(page.getByText('Still to arrive (2)')).toBeVisible();
-        await expect(page.getByText('Here (2)')).toBeVisible();
-        await expect(page.getByText('Not coming (1)')).toBeVisible();
+        await expect(page.getByLabel('Search players')).toBeVisible();
+        // The legend's counts, read as text -- "pixels cannot catch a
+        // one-glyph regression" (docs/testing.md). The legend counts
+        // everyone on the list, walk-ins included.
+        await expect(page.getByText('2 to check')).toBeVisible();
+        await expect(page.getByText('1 not coming')).toBeVisible();
+        await expect(page.getByTestId('door-everyone')).toBeVisible();
         await expect(page.getByText(seating.longName)).toBeVisible();
         await expect(page.getByText(seating.partnerName)).toBeVisible();
         await expect(page.getByText(seating.hereName)).toBeVisible();
