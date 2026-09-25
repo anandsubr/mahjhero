@@ -149,3 +149,35 @@ export function StarIcon({
     </Svg>
   );
 }
+
+/** The conversation composer's attach control -- a camera, the only
+ *  attachment action on that screen (components/messages/AttachmentPicker.tsx). */
+export function CameraIcon({ size = 21, color = colors.neutral[700] }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.75} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
+      <Circle cx={12} cy={13} r={3} />
+    </Svg>
+  );
+}
+
+/** The Reply chip under someone else's message (components/messages/MessageGroup.tsx). */
+export function ReplyIcon({ size = 14, color = colors.neutral[700] }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.75} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M9 17 4 12l5-5" />
+      <Path d="M20 18v-2a4 4 0 0 0-4-4H4" />
+    </Svg>
+  );
+}
+
+/** The conversation header's overflow control (components/messages/ConversationHeader.tsx). */
+export function MoreVerticalIcon({ size = 22, color = colors.text }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.75} strokeLinecap="round">
+      <Circle cx={12} cy={5} r={1} />
+      <Circle cx={12} cy={12} r={1} />
+      <Circle cx={12} cy={19} r={1} />
+    </Svg>
+  );
+}

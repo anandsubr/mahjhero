@@ -471,8 +471,23 @@ export function startsNewGroup(
  * the same contract `relativeTimestamp` already carries.
  */
 export function groupSeparatorLabel(iso: string, now: Date = new Date()): string {
+  const parts = groupSeparatorParts(iso, now);
+  return parts ? `${parts.day}${parts.rest}` : '';
+}
+
+/**
+ * `groupSeparatorLabel`, split in two so the conversation screen can set
+ * the day in bold and the time in regular weight ("**Today** 7:26 pm", the
+ * Messages 2a handoff). `day + rest` is always exactly the label above --
+ * `rest` carries its own leading space or comma -- so the two can never
+ * drift. Null for an unparseable instant, where the label is empty.
+ */
+export function groupSeparatorParts(
+  iso: string,
+  now: Date = new Date(),
+): { day: string; rest: string } | null {
   const when = new Date(iso);
-  if (Number.isNaN(when.getTime())) return '';
+  if (Number.isNaN(when.getTime())) return null;
 
   const time = new Intl.DateTimeFormat('en-GB', {
     hour: 'numeric',
@@ -483,11 +498,11 @@ export function groupSeparatorLabel(iso: string, now: Date = new Date()): string
   const dayStart = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
   const diffDays = Math.round((dayStart(now) - dayStart(when)) / 86_400_000);
 
-  if (diffDays === 0) return `Today ${time}`;
-  if (diffDays === 1) return `Yesterday ${time}`;
+  if (diffDays === 0) return { day: 'Today', rest: ` ${time}` };
+  if (diffDays === 1) return { day: 'Yesterday', rest: ` ${time}` };
   if (diffDays > 1 && diffDays < 7) {
     const weekday = new Intl.DateTimeFormat('en-GB', { weekday: 'short' }).format(when);
-    return `${weekday} ${time}`;
+    return { day: weekday, rest: ` ${time}` };
   }
 
   const dateOptions: Intl.DateTimeFormatOptions = {
@@ -497,7 +512,78 @@ export function groupSeparatorLabel(iso: string, now: Date = new Date()): string
   };
   if (when.getFullYear() !== now.getFullYear()) dateOptions.year = 'numeric';
   const datePart = new Intl.DateTimeFormat('en-GB', dateOptions).format(when);
-  return `${datePart}, ${time}`;
+  return { day: datePart, rest: `, ${time}` };
+}
+
+/**
+ * How close together two messages from the same person must be to share one
+ * name and avatar on the conversation screen -- the Messages 2a handoff's
+ * "within ~5 min". Deliberately much tighter than `GROUP_GAP_MS`, which
+ * decides where a time separator goes: a separator crossing always breaks a
+ * sender group too, but a sender group can also break with no separator.
+ */
+export const SENDER_GROUP_GAP_MS = 5 * 60 * 1000;
+
+/** One row of the conversation screen's message list -- see `groupMessages`. */
+export type ConversationItem =
+  | { kind: 'separator'; key: string; createdAt: string }
+  | { kind: 'announcement'; key: string; message: ThreadMessage }
+  | {
+      kind: 'group';
+      key: string;
+      mine: boolean;
+      authorName: string;
+      messages: ThreadMessage[];
+    };
+
+/**
+ * Folds a thread's messages (oldest first) into what the conversation
+ * screen draws: a time separator wherever `startsNewGroup` says one goes,
+ * runs of consecutive messages from one person (one name and avatar per
+ * run, not per message), and announcements standing alone -- an
+ * announcement is addressed to everyone, so it never joins a person's run.
+ *
+ * A run breaks on a separator, a different author, an announcement in
+ * between, or a gap of `SENDER_GROUP_GAP_MS` or more.
+ */
+export function groupMessages(messages: ThreadMessage[], viewerId: string): ConversationItem[] {
+  const items: ConversationItem[] = [];
+  let run: Extract<ConversationItem, { kind: 'group' }> | null = null;
+  let previous: ThreadMessage | null = null;
+
+  for (const m of messages) {
+    if (startsNewGroup(m.created_at, previous?.created_at ?? null)) {
+      items.push({ kind: 'separator', key: `sep-${m.id}`, createdAt: m.created_at });
+      run = null;
+    }
+
+    if (m.is_announcement) {
+      items.push({ kind: 'announcement', key: m.id, message: m });
+      run = null;
+    } else {
+      const last = run ? run.messages[run.messages.length - 1] : null;
+      const joins =
+        run !== null &&
+        last !== null &&
+        last.author_id === m.author_id &&
+        new Date(m.created_at).getTime() - new Date(last.created_at).getTime() <
+          SENDER_GROUP_GAP_MS;
+      if (joins && run) {
+        run.messages.push(m);
+      } else {
+        run = {
+          kind: 'group',
+          key: `group-${m.id}`,
+          mine: m.author_id === viewerId,
+          authorName: m.profiles?.display_name ?? '',
+          messages: [m],
+        };
+        items.push(run);
+      }
+    }
+    previous = m;
+  }
+  return items;
 }
 
 export function unreadLabel(n: number): string {

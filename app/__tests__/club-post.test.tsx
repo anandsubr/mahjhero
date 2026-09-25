@@ -343,23 +343,27 @@ describe('a club post', () => {
       expect(within(tile).getByTestId(`glyph-${glyphForClub('c1')}`)).toBeTruthy();
     });
 
-    it('shows a back chevron, distinct from the Messages tab, that returns to the board', async () => {
+    // No tab bar inside a conversation (Messages 2a) -- the chevron is the
+    // way out, and it pushes the board outright rather than relying on
+    // history.
+    it('hides the tab bar and shows a back chevron that returns to the board', async () => {
       render(<PostScreen />);
       await screen.findByText('Cedar Falls Mah Jongg');
-      expect(screen.getAllByRole('button', { name: 'Messages' })).toHaveLength(1);
+      expect(screen.queryByRole('button', { name: 'Messages' })).toBeNull();
       fireEvent.click(screen.getByLabelText('Back to board'));
       expect(push).toHaveBeenCalledWith('/messages/club/t1');
     });
 
-    // The pill no longer navigates -- matching app/messages/club/new.tsx's
+    // The name doesn't navigate -- matching app/messages/club/new.tsx's
     // own inert pill (a control that looks tappable and does nothing is
     // worse than one that plainly isn't interactive).
-    it('renders the club pill as a plain label, not a button that could navigate away', async () => {
+    it('renders the club name as a plain label, with no overflow button', async () => {
       render(<PostScreen />);
       await screen.findByText('Cedar Falls Mah Jongg');
       expect(
         screen.queryByRole('button', { name: /Cedar Falls Mah Jongg/ }),
       ).toBeNull();
+      expect(screen.queryByLabelText('Conversation options')).toBeNull();
     });
 
     // A half-built header -- a pill with no name in it -- would tell a

@@ -30,6 +30,10 @@ import {
   fetchThreadMessages,
   fetchMyThreads,
   groupSeparatorLabel,
+  groupSeparatorParts,
+  groupMessages,
+  SENDER_GROUP_GAP_MS,
+  type ThreadMessage,
   kindLabel,
   leaveGroupThread,
   markPostRead,
@@ -1312,5 +1316,81 @@ describe('postMessage with a root', () => {
       p_root: null,
       p_attachments: null,
     });
+  });
+});
+
+describe('groupSeparatorParts', () => {
+  const now = new Date(2026, 8, 24, 20, 0);
+
+  it('splits today into a bold day and a regular time that rejoin to the label', () => {
+    const iso = new Date(2026, 8, 24, 19, 26).toISOString();
+    expect(groupSeparatorParts(iso, now)).toEqual({ day: 'Today', rest: ' 7:26 pm' });
+    const p = groupSeparatorParts(iso, now)!;
+    expect(p.day + p.rest).toBe(groupSeparatorLabel(iso, now));
+  });
+
+  it('keeps the comma with the time for a date beyond the week', () => {
+    const iso = new Date(2026, 7, 27, 9, 5).toISOString();
+    const p = groupSeparatorParts(iso, now)!;
+    expect(p.rest.startsWith(', ')).toBe(true);
+    expect(p.day + p.rest).toBe(groupSeparatorLabel(iso, now));
+  });
+
+  it('is null for an unparseable instant', () => {
+    expect(groupSeparatorParts('nope', now)).toBeNull();
+  });
+});
+
+describe('groupMessages', () => {
+  const base = new Date(2026, 8, 24, 19, 0).getTime();
+  function msg(id: string, author: string, minutes: number, extra: Partial<ThreadMessage> = {}): ThreadMessage {
+    return {
+      id,
+      author_id: author,
+      body: id,
+      subject: null,
+      is_announcement: false,
+      created_at: new Date(base + minutes * 60_000).toISOString(),
+      profiles: { display_name: author.toUpperCase() },
+      reply_to_id: null,
+      reply_to: null,
+      attachments: [],
+      ...extra,
+    };
+  }
+
+  it('puts one separator first and folds consecutive same-author messages into one group', () => {
+    const items = groupMessages([msg('a', 'ann', 0), msg('b', 'ann', 1), msg('c', 'me', 2)], 'me');
+    expect(items.map((i) => i.kind)).toEqual(['separator', 'group', 'group']);
+    const [, first, second] = items;
+    expect(first.kind === 'group' && first.messages.map((m) => m.id)).toEqual(['a', 'b']);
+    expect(first.kind === 'group' && first.mine).toBe(false);
+    expect(first.kind === 'group' && first.authorName).toBe('ANN');
+    expect(second.kind === 'group' && second.mine).toBe(true);
+  });
+
+  it('breaks a run once the same author pauses for the sender-group gap', () => {
+    const gapMinutes = SENDER_GROUP_GAP_MS / 60_000;
+    const items = groupMessages([msg('a', 'ann', 0), msg('b', 'ann', gapMinutes)], 'me');
+    expect(items.filter((i) => i.kind === 'group')).toHaveLength(2);
+    // Still inside the hour, so no second separator.
+    expect(items.filter((i) => i.kind === 'separator')).toHaveLength(1);
+  });
+
+  it('breaks a run at a separator', () => {
+    const items = groupMessages([msg('a', 'ann', 0), msg('b', 'ann', 61)], 'me');
+    expect(items.map((i) => i.kind)).toEqual(['separator', 'group', 'separator', 'group']);
+  });
+
+  it('stands an announcement alone and never lets a run continue across it', () => {
+    const items = groupMessages(
+      [msg('a', 'ann', 0), msg('n', 'ann', 1, { is_announcement: true }), msg('b', 'ann', 2)],
+      'me',
+    );
+    expect(items.map((i) => i.kind)).toEqual(['separator', 'group', 'announcement', 'group']);
+  });
+
+  it('returns nothing for an empty thread', () => {
+    expect(groupMessages([], 'me')).toEqual([]);
   });
 });

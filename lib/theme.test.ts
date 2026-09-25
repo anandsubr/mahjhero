@@ -224,3 +224,20 @@ describe('selected tab tile clears AA on its fill', () => {
     expect(contrast(colors.bg, colors.accent[700])).toBeGreaterThanOrEqual(AA);
   });
 });
+
+// The conversation screen (Messages 2a handoff): its small text all sits on
+// colors.bg -- the "**Today** 7:26 pm" separator and Reply chip in
+// neutral[700], the sender name and a group's member count in accent2[700],
+// and the camera glyph in neutral[700]. At 12-15px none of it qualifies for
+// the large-text allowance, so each needs the full 4.5:1.
+describe('conversation screen text clears AA on the page background', () => {
+  it('neutral[700] (separator, Reply chip, camera) on bg', () => {
+    expect(contrast(colors.neutral[700], colors.bg)).toBeGreaterThanOrEqual(AA);
+  });
+  it('neutral[700] (camera glyph) on the composer pill (surface)', () => {
+    expect(contrast(colors.neutral[700], colors.surface)).toBeGreaterThanOrEqual(3);
+  });
+  it('accent2[700] (sender name, member count) on bg', () => {
+    expect(contrast(colors.accent2[700], colors.bg)).toBeGreaterThanOrEqual(AA);
+  });
+});

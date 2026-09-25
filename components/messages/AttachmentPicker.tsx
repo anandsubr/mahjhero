@@ -1,7 +1,7 @@
 // components/messages/AttachmentPicker.tsx
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Image, Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
-import { PlusIcon, TrashIcon } from '../icons';
+import { CameraIcon, PlusIcon, TrashIcon } from '../icons';
 import {
   compressImage,
   pickImages,
@@ -24,6 +24,23 @@ type Item = {
 type Props = {
   threadId: string;
   onAttachmentsChange: (ready: MessageAttachmentInput[], pending: boolean) => void;
+  /**
+   * Places the thumbnail strip and the attach button separately, for a
+   * caller whose button lives somewhere other than directly under the strip
+   * -- the conversation composer puts the button inside its message pill
+   * and the strip above the whole row. Given this, the button is drawn as
+   * the composer's bare camera glyph rather than the default plus-in-a-
+   * circle. Omitted, the strip sits above the plus button in one column
+   * (app/messages/club/new.tsx).
+   */
+  layout?: (parts: { strip: ReactNode; trigger: ReactNode }) => ReactNode;
+  /**
+   * Bumped by the caller to clear every picked image, for a caller that
+   * can't remount this component with `key` -- the composer's text field
+   * lives inside `layout`, so a remount would also drop the field and its
+   * keyboard focus after every send.
+   */
+  resetKey?: number;
 };
 
 let nextLocalId = 0;
@@ -36,13 +53,24 @@ let nextLocalId = 0;
  * compressing -> uploading -> done/error, per image) and only reports the
  * finished, ready-to-send attachment list upward via `onAttachmentsChange`.
  *
- * `key`-remountable, not imperatively resettable: the caller bumps this
- * component's `key` prop to reset it after a successful send, the same
- * reset shape a controlled form input would need.
+ * Reset after a successful send either by remounting it with `key`, or --
+ * when `layout` puts other controls inside it -- by bumping `resetKey`.
  */
-export default function AttachmentPicker({ threadId, onAttachmentsChange }: Props) {
+export default function AttachmentPicker({
+  threadId,
+  onAttachmentsChange,
+  layout,
+  resetKey,
+}: Props) {
   const [items, setItems] = useState<Item[]>([]);
   const [sourceMenuOpen, setSourceMenuOpen] = useState(false);
+
+  const lastResetKey = useRef(resetKey);
+  useEffect(() => {
+    if (lastResetKey.current === resetKey) return;
+    lastResetKey.current = resetKey;
+    setItems([]);
+  }, [resetKey]);
 
   // Reports upward whenever the item list changes -- the caller derives
   // Send's disabled state from `pending` and the final payload from `ready`.
@@ -110,45 +138,69 @@ export default function AttachmentPicker({ threadId, onAttachmentsChange }: Prop
 
   const atLimit = items.length >= MAX_ATTACHMENTS;
 
-  return (
-    <View style={styles.container}>
-      {items.length > 0 ? (
-        <View style={styles.strip} testID="attachment-strip">
-          {items.map((item) => (
-            <View key={item.localId} style={styles.thumbWrap}>
-              <Image source={{ uri: item.uri }} style={styles.thumb} />
-              {item.status === 'uploading' ? (
-                <View style={styles.overlay}>
-                  <Text style={styles.overlayText}>…</Text>
-                </View>
-              ) : null}
-              {item.status === 'error' ? (
-                <View style={[styles.overlay, styles.overlayError]}>
-                  <Text style={styles.overlayText}>!</Text>
-                </View>
-              ) : null}
-              <Pressable
-                onPress={() => remove(item.localId)}
-                accessibilityRole="button"
-                accessibilityLabel="Remove image"
-                style={styles.removeButton}
-              >
-                <TrashIcon size={14} color={colors.bg} />
-              </Pressable>
-            </View>
-          ))}
-        </View>
-      ) : null}
+  const strip =
+    items.length > 0 ? (
+      <View style={styles.strip} testID="attachment-strip">
+        {items.map((item) => (
+          <View key={item.localId} style={styles.thumbWrap}>
+            <Image source={{ uri: item.uri }} style={styles.thumb} />
+            {item.status === 'uploading' ? (
+              <View style={styles.overlay}>
+                <Text style={styles.overlayText}>…</Text>
+              </View>
+            ) : null}
+            {item.status === 'error' ? (
+              <View style={[styles.overlay, styles.overlayError]}>
+                <Text style={styles.overlayText}>!</Text>
+              </View>
+            ) : null}
+            <Pressable
+              onPress={() => remove(item.localId)}
+              accessibilityRole="button"
+              accessibilityLabel="Remove image"
+              style={styles.removeButton}
+            >
+              <TrashIcon size={14} color={colors.bg} />
+            </Pressable>
+          </View>
+        ))}
+      </View>
+    ) : null;
 
-      <Pressable
-        onPress={() => setSourceMenuOpen(true)}
-        accessibilityRole="button"
-        accessibilityLabel="Attach an image"
-        disabled={atLimit}
-        style={[styles.attachButton, atLimit ? styles.attachButtonDisabled : null]}
-      >
-        <PlusIcon size={18} color={colors.text} />
-      </Pressable>
+  const trigger = layout ? (
+    <Pressable
+      onPress={() => setSourceMenuOpen(true)}
+      accessibilityRole="button"
+      accessibilityLabel="Attach an image"
+      disabled={atLimit}
+      style={[styles.cameraButton, atLimit ? styles.attachButtonDisabled : null]}
+    >
+      {({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) => (
+        <CameraIcon size={21} color={hovered || pressed ? colors.text : colors.neutral[700]} />
+      )}
+    </Pressable>
+  ) : (
+    <Pressable
+      onPress={() => setSourceMenuOpen(true)}
+      accessibilityRole="button"
+      accessibilityLabel="Attach an image"
+      disabled={atLimit}
+      style={[styles.attachButton, atLimit ? styles.attachButtonDisabled : null]}
+    >
+      <PlusIcon size={18} color={colors.text} />
+    </Pressable>
+  );
+
+  return (
+    <>
+      {layout ? (
+        layout({ strip, trigger })
+      ) : (
+        <View style={styles.container}>
+          {strip}
+          {trigger}
+        </View>
+      )}
 
       {/*
         A hand-rolled action sheet, not Alert.alert: react-native-web's
@@ -198,7 +250,7 @@ export default function AttachmentPicker({ threadId, onAttachmentsChange }: Prop
           </View>
         </Pressable>
       </Modal>
-    </View>
+    </>
   );
 }
 
@@ -240,6 +292,13 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   attachButtonDisabled: { opacity: 0.4 },
+  cameraButton: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   sheetBackdrop: {
     flex: 1,
     justifyContent: 'flex-end',

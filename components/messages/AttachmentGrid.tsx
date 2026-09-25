@@ -30,8 +30,8 @@ type Props = {
 
 /**
  * 1-4 images as a grid: one full width, two side by side, three or four as
- * a 2x2. Sized from the stored width/height so the bubble doesn't reflow
- * once the signed URL resolves and the real image loads.
+ * a 2x2. Fixed crops (4:3 for one image, square cells for more) so the row
+ * doesn't reflow once the signed URL resolves and the real image loads.
  */
 export default function AttachmentGrid({ attachments, urls }: Props) {
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
@@ -49,7 +49,10 @@ export default function AttachmentGrid({ attachments, urls }: Props) {
           style={[
             styles.cell,
             attachments.length === 1 ? styles.cellSingle : styles.cellGrid,
-            { aspectRatio: attachments.length === 1 ? a.width / a.height : 1 },
+            // One image: the Messages 2a handoff's fixed 4:3 crop (the
+            // Image's default `cover` fill does the cropping), not the
+            // stored ratio, so a tall photo can't take over the screen.
+            { aspectRatio: attachments.length === 1 ? 4 / 3 : 1 },
           ]}
         >
           {urls[a.storage_path] ? (
@@ -143,17 +146,19 @@ function AttachmentViewer({
  * number to wrap around. A percentage width here is a percentage of a box
  * whose own size depends on this percentage resolving first: a circular
  * reference browsers resolve by computing it as 0, collapsing the whole
- * bubble to an invisible point. A fixed width breaks the cycle -- the grid
+ * bubble to an invisible point. (The conversation screen draws someone
+ * else's images with no bubble at all now, but your own still sit in a
+ * shrink-wrapped column, so the same cycle applies.) A fixed width breaks the cycle -- the grid
  * always has a real size, so the bubble always has something to shrink-wrap.
  * Reproduced and confirmed via a real Chromium layout pass (jsdom has no
  * layout engine and cannot exercise this at all); a captioned image message
  * never hit it because the caption text was already giving the bubble a
  * width before the grid needed one.
  */
-const GRID_WIDTH = 240;
+const GRID_WIDTH = 280;
 
 const styles = StyleSheet.create({
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: space[1], marginBottom: space[2], width: GRID_WIDTH },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: space[1], width: GRID_WIDTH },
   cell: { borderRadius: radius.md, overflow: 'hidden', backgroundColor: 'transparent' },
   cellSingle: { width: GRID_WIDTH },
   cellGrid: { width: (GRID_WIDTH - space[1]) / 2 },
