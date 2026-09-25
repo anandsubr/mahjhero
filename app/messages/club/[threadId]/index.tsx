@@ -1,13 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Redirect, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import CompactHeader from '../../../../components/CompactHeader';
 import ErrorBanner from '../../../../components/ErrorBanner';
 import PostRow from '../../../../components/messages/PostRow';
-import PlusButton from '../../../../components/PlusButton';
 import Screen from '../../../../components/Screen';
 import TabBar from '../../../../components/TabBar';
-import ThreadAvatar from '../../../../components/ThreadAvatar';
-import { ChevronLeftIcon } from '../../../../components/icons';
 import { GENERIC_ERROR } from '../../../../lib/constants';
 import {
   fetchClubPosts,
@@ -161,75 +159,31 @@ export default function ClubBoardScreen() {
   return (
     <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="messages" />}>
       {/*
-        The same iOS Messages header app/messages/[threadId].tsx built:
-        a compact back chevron top-left, the club's avatar centred beneath
-        it, and its name in a rounded pill under that. The chevron always
-        renders (it doesn't need `thread` to navigate away); the avatar and
-        pill wait for a loaded thread, the same gate the flat screen's own
-        header uses -- there is no partial state where a pill shows without
-        a name to put in it.
+        The compact one-row header (components/CompactHeader.tsx): chevron,
+        the club's tile and name, and ⊕ New post on the right. The chevron
+        and ⊕ always render -- neither needs `thread` loaded, and the
+        board's own load failing must not also take away the one way to
+        start a post; the tile and name wait for a loaded thread. `clubId`
+        falls back to '' before `thread` resolves: the compose screen still
+        works without it, just without an Announcement toggle or recipient
+        preview.
       */}
-      <View style={styles.header}>
-        <Pressable
-          onPress={() => router.push('/messages')}
-          accessibilityRole="button"
-          accessibilityLabel="Back to Messages"
-          style={styles.backButton}
-        >
-          <ChevronLeftIcon color={colors.text} size={22} />
-        </Pressable>
-
-        {/*
-          Top-right, symmetric with the back chevron's own absolute
-          top-left placement -- the same fixed-size-control-in-one-corner
-          idea components/DashboardHeader.tsx's clubTopRow uses via flex-row
-          instead. Deliberately not gated on `thread`/`ready` the way the
-          centred avatar+pill below is: a member composing does not need
-          the existing posts (or even the thread's own name) loaded first,
-          and the board's own load failing must not also take away the one
-          way to start a post. `clubId` falls back to '' when `thread`
-          hasn't resolved yet (or failed) -- the compose screen still works
-          without it, just without an Announcement toggle or recipient
-          preview to show a plain member who couldn't see either anyway.
-          Replaces the old full-width "New post" Button that used to sit
-          between this header and the post list.
-        */}
-        <View style={styles.newPostButton}>
-          <PlusButton
-            onPress={() =>
-              router.push(
-                `/messages/club/new?threadId=${threadId}&clubId=${thread?.club_id ?? ''}`,
-              )
-            }
-            accessibilityLabel="New post"
-          />
-        </View>
-
-        {thread && kind ? (
-          <View style={styles.headerCenter}>
-            <ThreadAvatar
-              kind={kind}
-              name={title}
-              size={72}
-              testID={`thread-header-avatar-${kind}`}
-              asTile={kind === 'club'}
-              clubId={kind === 'club' ? (thread.club_id ?? undefined) : undefined}
-            />
-
-            {/*
-              A plain View, not a Pressable -- there is nowhere useful left
-              for a tap here to go (matching app/messages/club/new.tsx's own
-              inert pill, and its docstring's reasoning: no button role, no
-              chevron).
-            */}
-            <View style={styles.namePill}>
-              <Text numberOfLines={1} style={styles.namePillText}>
-                {title}
-              </Text>
-            </View>
-          </View>
-        ) : null}
-      </View>
+      <CompactHeader
+        variant="inset"
+        onBack={() => router.push('/messages')}
+        backLabel="Back to Messages"
+        kind={thread ? kind : null}
+        clubId={kind === 'club' ? thread?.club_id : null}
+        title={title}
+        action={{
+          icon: 'plus',
+          label: 'New post',
+          onPress: () =>
+            router.push(
+              `/messages/club/new?threadId=${threadId}&clubId=${thread?.club_id ?? ''}`,
+            ),
+        }}
+      />
 
       {/* The alert role lives inside ErrorBanner now -- see its docstring. */}
       {error ? <ErrorBanner message={error} /> : null}
@@ -260,63 +214,6 @@ export default function ClubBoardScreen() {
 const styles = StyleSheet.create({
   container: { padding: space[6], gap: space[3] },
   centered: { alignItems: 'center' },
-  // Copied from app/messages/[threadId].tsx's own `header`: back chevron
-  // pinned top-left via absolute positioning against this `relative`
-  // container, avatar + name pill centred beneath it. Absolute positioning
-  // (rather than a mirrored spacer View the same width as the chevron)
-  // keeps the centred column exactly centred on the screen's own width
-  // regardless of the chevron's size.
-  header: {
-    position: 'relative',
-    alignItems: 'center',
-    paddingBottom: space[2],
-  },
-  // 44x44: below this screen's usual 58px "big" targets (this is a compact
-  // header control, not a primary action), but still at the common minimum
-  // touch-target size rather than a bare icon-sized hit area.
-  backButton: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  // Mirrors `backButton`'s own top-left absolute placement -- PlusButton is
-  // already a fixed 50x50-ish circle (components/PlusButton.tsx), so there
-  // is no matching width/height pair to set here the way `backButton` needs
-  // for its bare-icon hit area.
-  newPostButton: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-  },
-  headerCenter: { alignItems: 'center', gap: space[2] },
-  // colors.surface, the same pill/panel ground the flat screen's own
-  // `namePill` reuses -- not a fresh token. Capped so `namePillText`'s
-  // `numberOfLines={1}` has a width to actually truncate against for a
-  // long club name.
-  namePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space[1],
-    maxWidth: 240,
-    backgroundColor: colors.surface,
-    borderRadius: radius.pill,
-    paddingHorizontal: space[3],
-    paddingVertical: space[1],
-  },
-  // colors.text on colors.surface reads 12.40:1 -- comfortably past AA's
-  // 4.5:1 for this 16px text, the same pairing app/messages/[threadId].tsx's
-  // own `namePillText` already uses on this exact ground.
-  namePillText: {
-    flexShrink: 1,
-    minWidth: 0,
-    fontFamily: type.bodySemiBold,
-    fontSize: type.size.helper,
-    color: colors.text,
-  },
   list: { gap: space[3] },
   // The same dashed-border empty card app/messages/index.tsx and
   // app/messages/[threadId].tsx already use, reused rather than a third

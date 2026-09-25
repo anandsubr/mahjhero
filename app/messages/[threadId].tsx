@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Composer from '../../components/messages/Composer';
-import ConversationHeader from '../../components/messages/ConversationHeader';
+import CompactHeader from '../../components/CompactHeader';
 import ConversationMessages from '../../components/messages/ConversationMessages';
 import ErrorBanner from '../../components/ErrorBanner';
 import MembersPanel from '../../components/messages/MembersPanel';
@@ -36,7 +36,7 @@ import { useThreadRealtime } from '../../lib/use-thread-realtime';
  * hardest thing in the plan to test; the list refetches on focus instead.
  *
  * Laid out to the Messages 2a handoff: a compact one-row header
- * (components/messages/ConversationHeader.tsx), runs of messages grouped by
+ * (components/CompactHeader.tsx), runs of messages grouped by
  * sender (components/messages/ConversationMessages.tsx), and a pill
  * composer. The tab bar is hidden while inside a conversation, on the
  * handoff's call -- the header's back chevron is the way out.
@@ -270,7 +270,7 @@ export default function ThreadScreen() {
         data the app doesn't have; a direct thread's count is always two
         and says nothing.
       */}
-      <ConversationHeader
+      <CompactHeader
         onBack={() => router.push('/messages')}
         backLabel="Back to Messages"
         kind={thread ? kind : null}
@@ -278,6 +278,7 @@ export default function ThreadScreen() {
         subtitle={kind === 'group' ? memberCountText : null}
         onOpenDetails={canManageMembers ? () => setMembersOpen((v) => !v) : undefined}
         detailsLabel={membersLabel}
+        overflowLabel="Conversation options"
       />
 
       {error ? (

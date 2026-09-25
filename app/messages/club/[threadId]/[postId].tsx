@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
 import Composer from '../../../../components/messages/Composer';
-import ConversationHeader from '../../../../components/messages/ConversationHeader';
+import CompactHeader from '../../../../components/CompactHeader';
 import ConversationMessages from '../../../../components/messages/ConversationMessages';
 import ErrorBanner from '../../../../components/ErrorBanner';
 import Screen from '../../../../components/Screen';
@@ -260,7 +260,7 @@ export default function PostScreen() {
         level below the board, not two below the list. A post has no members
         view, so the name is plain and there is no overflow button.
       */}
-      <ConversationHeader
+      <CompactHeader
         onBack={() => router.push(`/messages/club/${threadId}`)}
         backLabel="Back to board"
         kind={thread ? kind : null}
