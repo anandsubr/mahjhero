@@ -31,7 +31,6 @@ import {
   PencilIcon,
   PeopleIcon,
   PlusIcon,
-  UserPlusIcon,
 } from '../../../../../components/icons';
 import {
   checkInOpen,
@@ -243,9 +242,6 @@ export default function EventScreen() {
   const [guestEmail, setGuestEmail] = useState('');
   const [invitingGuest, setInvitingGuest] = useState(false);
   const [guestInviteSent, setGuestInviteSent] = useState(false);
-  // The 2a design folds the guest form behind its "Invite a guest by email"
-  // tile; this is whether that tile has been opened.
-  const [guestFormOpen, setGuestFormOpen] = useState(false);
 
   // A promotion offer currently held open for this member's group, read via
   // `fetchOpenOffer`. RLS (`promotion_offers_select_group`) already scopes
@@ -1600,10 +1596,9 @@ export default function EventScreen() {
         - "Reset to the series": `canReset`, on its own -- see that
           constant's comment for why it is not folded into the organizer
           gate.
-        - "Invite a guest by email": organizer only, any game mode; opens the
-          email form in place (it used to be always visible).
-        The guest tile always takes a full row, as in the design; any other
-        odd tile out stretches across the row too.
+        The guest-invite email field used to sit behind a tile here too; it
+        is one compact row now, so it renders directly below this grid.
+        An odd tile out stretches across the row.
       */}
       {(() => {
         const organizerOpen = isOrganizer && event.status !== 'cancelled';
@@ -1614,8 +1609,6 @@ export default function EventScreen() {
           icon: ReactNode;
           onPress: () => void;
           disabled?: boolean;
-          expanded?: boolean;
-          wide?: boolean;
         }[] = [];
         if (organizerOpen) {
           // "Message everyone booked" was this action's label back when it
@@ -1658,17 +1651,6 @@ export default function EventScreen() {
             disabled: busy,
           });
         }
-        if (isOrganizer) {
-          tiles.push({
-            key: 'guest',
-            label: 'Invite a guest by email',
-            accessibilityLabel: 'Invite a guest by email',
-            icon: <UserPlusIcon size={18} color={colors.accent[700]} />,
-            onPress: () => setGuestFormOpen((open) => !open),
-            expanded: guestFormOpen,
-            wide: true,
-          });
-        }
         if (tiles.length === 0) return null;
         return (
           <View style={styles.optionsGrid}>
@@ -1679,10 +1661,8 @@ export default function EventScreen() {
                 disabled={tile.disabled}
                 accessibilityRole="button"
                 accessibilityLabel={tile.accessibilityLabel}
-                aria-expanded={tile.expanded}
                 style={({ pressed, hovered }: { pressed: boolean; hovered?: boolean }) => [
                   styles.optionTile,
-                  tile.wide ? styles.optionTileWide : null,
                   pressed || hovered ? styles.optionTilePressed : null,
                   tile.disabled ? styles.optionTileDisabled : null,
                 ]}
@@ -1713,23 +1693,23 @@ export default function EventScreen() {
       ) : null}
 
       {/*
-        The organizer's own guest-invite form, opened from its tile above --
+        The organizer's own guest-invite form, always shown to them --
         always available to them regardless of game mode (unlike "Invite",
         which an invite-only game hides from everyone else). Scoped to this
         event via `onInviteGuest`'s `createInvite(clubId, guestEmail,
         undefined, eventId)` call.
       */}
-      {isOrganizer && guestFormOpen ? (
+      {isOrganizer ? (
         // One pill: the email field with a compact "Invite" button inside
-        // its right end (the Messages composer's shape). The tile above
-        // already reads "Invite a guest by email", so no separate label.
+        // its right end (the Messages composer's shape). The placeholder
+        // doubles as its label.
         <View style={styles.guestForm}>
           <TextInput
             style={styles.guestInput}
             value={guestEmail}
             onChangeText={setGuestEmail}
             onSubmitEditing={onInviteGuest}
-            placeholder="guest@example.com"
+            placeholder="Invite a guest by email"
             placeholderTextColor={colors.neutral[600]}
             autoCapitalize="none"
             autoCorrect={false}
@@ -1948,7 +1928,6 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingHorizontal: 14,
   },
-  optionTileWide: { flexBasis: '100%' },
   optionTilePressed: { backgroundColor: colors.neutral[300] },
   optionTileDisabled: { opacity: 0.5 },
   optionTileText: {

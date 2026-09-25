@@ -481,6 +481,12 @@ describe('a section that fails does not blank the rest of the screen', () => {
 });
 
 describe('member view: what is shown, and what is not', () => {
+  it('does not offer the guest-invite email field', async () => {
+    render(<EventScreen />);
+    await screen.findByText('Thursday Mahjong');
+    expect(screen.queryByLabelText("Guest's email address")).toBeNull();
+  });
+
   it('shows the club name for context', async () => {
     render(<EventScreen />);
     expect(await screen.findByText(CLUB.name)).toBeTruthy();
@@ -1308,13 +1314,20 @@ describe('organizer view', () => {
   // app/__tests__/clubs.test.tsx's own tests for the club-level form this
   // one is scoped down from.
   describe('the guest-invite email form', () => {
+    // One compact row, so it no longer hides behind its own tile.
+    it('shows the email field straight away, with no tile to open it', async () => {
+      render(<EventScreen />);
+      await screen.findByText('Thursday Mahjong');
+      expect(screen.getByLabelText("Guest's email address")).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Invite a guest by email' })).toBeNull();
+    });
+
     // The Invite sheet is a bottom sheet over a scrim (SeatSheet's shell),
     // not an inline card, so it can't read as part of the guest form.
     it('opens the Invite sheet as a bottom sheet', async () => {
       render(<EventScreen />);
       await screen.findByText('Thursday Mahjong');
 
-      fireEvent.click(screen.getByRole('button', { name: 'Invite a guest by email' }));
       fireEvent.click(screen.getByRole('button', { name: 'Invite' }));
       const sheet = await screen.findByTestId('bring-someone-sheet');
 
@@ -1326,7 +1339,6 @@ describe('organizer view', () => {
       render(<EventScreen />);
       await screen.findByText('Thursday Mahjong');
 
-      fireEvent.click(screen.getByRole('button', { name: 'Invite a guest by email' }));
       fireEvent.change(screen.getByLabelText("Guest's email address"), {
         target: { value: 'guest@example.com' },
       });
@@ -1366,7 +1378,6 @@ describe('organizer view', () => {
       render(<EventScreen />);
       await screen.findByText('Thursday Mahjong');
 
-      fireEvent.click(screen.getByRole('button', { name: 'Invite a guest by email' }));
       fireEvent.change(screen.getByLabelText("Guest's email address"), {
         target: { value: 'guest@example.com' },
       });
@@ -1383,7 +1394,6 @@ describe('organizer view', () => {
       render(<EventScreen />);
       await screen.findByText('Thursday Mahjong');
 
-      fireEvent.click(screen.getByRole('button', { name: 'Invite a guest by email' }));
       fireEvent.change(screen.getByLabelText("Guest's email address"), {
         target: { value: 'guest@example.com' },
       });
@@ -1398,7 +1408,6 @@ describe('organizer view', () => {
       render(<EventScreen />);
       await screen.findByText('Thursday Mahjong');
 
-      fireEvent.click(screen.getByRole('button', { name: 'Invite a guest by email' }));
       fireEvent.change(screen.getByLabelText("Guest's email address"), {
         target: { value: 'not-an-email' },
       });
