@@ -1,14 +1,13 @@
 import { useEffect } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ProfileScreen from '../profile';
+
+const { push } = vi.hoisted(() => ({ push: vi.fn() }));
 
 vi.mock('expo-router', () => ({
   Redirect: () => null,
-  Link: ({ href, children }: { href: string; children: React.ReactNode }) => (
-    <a data-href={href}>{children}</a>
-  ),
-  useRouter: () => ({ push: vi.fn(), back: vi.fn() }),
+  useRouter: () => ({ push, back: vi.fn() }),
   // TabBar's own Profile tab route: this screen IS /profile, so its
   // highlighted Profile button stays the documented no-op.
   usePathname: () => '/profile',
@@ -34,10 +33,11 @@ vi.mock('../../lib/session', () => ({
 }));
 
 const fetchProfile = vi.fn();
+const updateProfile = vi.fn(async () => ({ error: null as string | null }));
 
 vi.mock('../../lib/profile', () => ({
   fetchProfile: (...args: unknown[]) => fetchProfile(...args),
-  updateProfile: vi.fn(async () => ({ error: null })),
+  updateProfile: (...args: unknown[]) => updateProfile(...(args as [])),
   isCompleteProfile: (p: { display_name: string; skill_level: string | null }) =>
     p.display_name.trim().length > 0 && p.skill_level !== null,
 }));
@@ -69,7 +69,7 @@ describe('profile screen', () => {
     fetchProfile.mockResolvedValueOnce(null);
     render(<ProfileScreen />);
     expect(await screen.findByText(/Could not reach MahjHero/)).toBeTruthy();
-    expect(screen.queryByText('Save')).toBeNull();
+    expect(screen.queryByText('Save changes')).toBeNull();
   });
 
   it('explains why Save is unavailable when the profile is incomplete', async () => {
@@ -87,7 +87,7 @@ describe('profile screen', () => {
   });
 
   // Guards against `accessibilityState={{ selected }}` creeping back into
-  // SkillLevelPicker: react-native-web's createDOMProps has no handling for
+  // the skill control: react-native-web's createDOMProps has no handling for
   // `accessibilityState` at all (components/Toggle.tsx's docstring has the
   // full account), so that prop renders `role="radio"` with no state at all
   // -- a screen reader could not tell a member's saved skill level from the
@@ -155,14 +155,85 @@ describe('profile screen', () => {
       timezone: 'America/New_York',
     });
     render(<ProfileScreen />);
-    expect(await screen.findByText('Save')).toBeTruthy();
+    expect(await screen.findByText('About you')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Back to your clubs' })).toBeNull();
   });
 
-  // Sign out was a left-aligned ghost text button — the design system's own
-  // treatment, and it read as a stray link rather than the control that ends
-  // the session.
-  it('renders sign out as a full-width destructive button', async () => {
+  it('shows the saved name and level in the identity row', async () => {
+    fetchProfile.mockResolvedValueOnce({
+      id: 'test-user',
+      display_name: 'Pat',
+      skill_level: 'intermediate',
+      avatar_url: null,
+      timezone: 'America/New_York',
+    });
+    render(<ProfileScreen />);
+    const identity = await screen.findByTestId('profile-identity');
+    expect(identity.textContent).toContain('P');
+    expect(identity.textContent).toContain('Pat');
+    expect(identity.textContent).toContain('Intermediate');
+  });
+
+  // Save changes exists only while the form differs from what was saved.
+  it('offers Save changes only once something changes, then confirms Saved', async () => {
+    fetchProfile.mockResolvedValueOnce({
+      id: 'test-user',
+      display_name: 'Pat',
+      skill_level: 'intermediate',
+      avatar_url: null,
+      timezone: 'America/New_York',
+    });
+    render(<ProfileScreen />);
+    await screen.findByText('About you');
+    expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Advanced' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => expect(screen.getByText('Saved')).toBeTruthy());
+    expect(updateProfile).toHaveBeenCalledWith('test-user', {
+      display_name: 'Pat',
+      skill_level: 'advanced',
+    });
+    expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull();
+    // The identity row follows the saved level, not the draft.
+    expect(screen.getByTestId('profile-identity').textContent).toContain('Advanced');
+  });
+
+  it('hides Save changes again when an edit is undone', async () => {
+    fetchProfile.mockResolvedValueOnce({
+      id: 'test-user',
+      display_name: 'Pat',
+      skill_level: 'intermediate',
+      avatar_url: null,
+      timezone: 'America/New_York',
+    });
+    render(<ProfileScreen />);
+    const name = await screen.findByLabelText('Display name');
+    fireEvent.change(name, { target: { value: 'Patricia' } });
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeTruthy();
+    fireEvent.change(name, { target: { value: 'Pat' } });
+    expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull();
+  });
+
+  it('does not show Saved after a failed write', async () => {
+    fetchProfile.mockResolvedValueOnce({
+      id: 'test-user',
+      display_name: 'Pat',
+      skill_level: 'intermediate',
+      avatar_url: null,
+      timezone: 'America/New_York',
+    });
+    updateProfile.mockResolvedValueOnce({ error: 'Nope' });
+    render(<ProfileScreen />);
+    fireEvent.click(await screen.findByRole('radio', { name: 'Beginner' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    expect(await screen.findByText('Nope')).toBeTruthy();
+    expect(screen.queryByText('Saved')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeTruthy();
+  });
+
+  it('renders sign out on a surface button', async () => {
     fetchProfile.mockResolvedValueOnce({
       id: 'test-user',
       display_name: 'Pat',
@@ -172,52 +243,18 @@ describe('profile screen', () => {
     });
     render(<ProfileScreen />);
     const signOut = await screen.findByRole('button', { name: 'Sign out' });
-    // `getComputedStyle`, not `.style`: this repo's react-native-web emits
-    // atomic CSS classes into an injected stylesheet rather than flattening
-    // StyleSheet values onto the node's inline style, so `.style.*` reads
-    // empty for every variant — an assertion that would pass whether or not
-    // the variant were applied. Task 6 established this.
-    expect(getComputedStyle(signOut).backgroundColor).toBe('rgb(255, 225, 208)');
-    // `block` sets `width: '100%'` via StyleSheet, so it atomizes the same
-    // way — assert the resolved value, not merely that something is set.
-    expect(getComputedStyle(signOut).width).toBe('100%');
+    // `getComputedStyle`, not `.style`: react-native-web emits atomic CSS
+    // classes rather than inline styles.
+    expect(getComputedStyle(signOut).backgroundColor).toBe('rgb(235, 221, 197)');
   });
 
-  // The only way to /friends. app/friends.tsx has no tab and nothing else
-  // links to it, so this assertion is what keeps the screen reachable.
-  it('links to the friends screen', async () => {
-    fetchProfile.mockResolvedValueOnce({
-      id: 'test-user',
-      display_name: 'Alice Ng',
-      skill_level: 'intermediate',
-      avatar_url: null,
-      timezone: 'America/New_York',
-    });
-    render(<ProfileScreen />);
-    expect(await screen.findByText('Friends')).toBeTruthy();
-  });
-
-  // The only way to /how-it-works — nothing else in the app links there.
-  it('links to How it works', async () => {
-    fetchProfile.mockResolvedValueOnce({
-      id: 'test-user',
-      display_name: 'Alice Ng',
-      skill_level: 'intermediate',
-      avatar_url: null,
-      timezone: 'America/New_York',
-    });
-    render(<ProfileScreen />);
-    await screen.findByText('How it works');
-    expect(screen.getByText('Open').closest('a')?.getAttribute('data-href')).toBe(
-      '/how-it-works',
-    );
-  });
-
-  // The tile is purely decorative -- scoped to a wrapping testID rather than
-  // a bare `[aria-hidden="true"]` query, since TabBar (carried by every
-  // screen) renders its own four `aria-hidden` tiles too, which would let a
-  // bare query pass whether or not this screen's own section tile exists.
-  it('shows a decorative red-dragon tile before the heading', async () => {
+  // The only way to /friends and /how-it-works -- nothing else in the app
+  // links to either, so these keep the screens reachable.
+  it.each([
+    ['Notifications', '/notifications'],
+    ['Friends', '/friends'],
+    ['How it works', '/how-it-works'],
+  ])('the %s row opens %s', async (title, href) => {
     fetchProfile.mockResolvedValueOnce({
       id: 'test-user',
       display_name: 'Pat',
@@ -226,10 +263,8 @@ describe('profile screen', () => {
       timezone: 'America/New_York',
     });
     render(<ProfileScreen />);
-    await screen.findByText('Your profile');
-    expect(
-      screen.getByTestId('section-tile').querySelector('[aria-hidden="true"]'),
-    ).toBeTruthy();
+    fireEvent.click(await screen.findByRole('button', { name: title }));
+    expect(push).toHaveBeenCalledWith(href);
   });
 
   it('does not show a Greetings admin card for an ordinary member', async () => {
@@ -256,6 +291,7 @@ describe('profile screen', () => {
       is_admin: true,
     });
     render(<ProfileScreen />);
-    expect(await screen.findByText('Greetings')).toBeTruthy();
+    fireEvent.click(await screen.findByRole('button', { name: 'Greetings' }));
+    expect(push).toHaveBeenCalledWith('/admin/greetings');
   });
 });

@@ -319,3 +319,35 @@ export function LockIcon({ size = 18, color = colors.text }: { size?: number; co
     </Svg>
   );
 }
+
+/** Profile settings row: Notifications. */
+export function BellIcon({ size = 18, color = colors.text }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.75} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M10.268 21a2 2 0 0 0 3.464 0" />
+      <Path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326" />
+    </Svg>
+  );
+}
+
+/** Profile settings row: How it works. */
+export function CircleHelpIcon({ size = 18, color = colors.text }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.75} strokeLinecap="round" strokeLinejoin="round">
+      <Circle cx={12} cy={12} r={10} />
+      <Path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+      <Path d="M12 17h.01" />
+    </Svg>
+  );
+}
+
+/** Profile: Sign out. */
+export function LogOutIcon({ size = 18, color = colors.text }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.75} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <Path d="m16 17 5-5-5-5" />
+      <Path d="M21 12H9" />
+    </Svg>
+  );
+}

@@ -1,29 +1,34 @@
 import { Redirect, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text } from 'react-native';
-import Button from '../../components/Button';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import ErrorBanner from '../../components/ErrorBanner';
+import {
+  ActionBar,
+  FormCard,
+  FormHeader,
+  FormTitle,
+  TextRow,
+  formStyles,
+} from '../../components/GameForm';
 import Screen from '../../components/Screen';
 import TabBar from '../../components/TabBar';
-import TextField from '../../components/TextField';
-import { ChevronLeftIcon } from '../../components/icons';
 import { createClub } from '../../lib/clubs';
 import { useSession } from '../../lib/session';
-import { colors, space, type } from '../../lib/theme';
+import { colors, type } from '../../lib/theme';
 
 /**
- * The `newclub` artboard.
+ * Start a club (profile & club handoff, 1b): a flow screen in the game
+ * form's shape — ✕ + "Clubs" header, a live preview of the club's tile and
+ * name, one card of fields, and "Create the club" pinned where the tab bar
+ * would be.
  *
- * Carries the tab bar with `active="club"`, the same as every other
- * signed-in screen: the design source renders the bar as a sibling of every
- * `appScreens` entry, `newclub` included — it is not gated to the four tabs
- * themselves.
+ * "Description (optional)" is the club's `rhythm` column under a new label —
+ * the design binds it to the same state — so it keeps showing as the line
+ * under the club's name in its header, one line with an ellipsis.
  *
- * Also carries an explicit `← Clubs` back link
- * (2026-09-01-back-links-design.md): the Club tab reaches the identical
- * `/clubs` route, but renders as *already active* on this screen — which
- * reads as "you are here", not "go back" — so the way out the tab bar
- * offers is technically present but invisible.
+ * The ✕ goes to `/clubs` rather than `back()`: TabBar navigates with
+ * `replace` off an entry route that is itself a Redirect, so the history
+ * stack here is typically one deep (2026-09-01-back-links-design.md).
  */
 export default function NewClubScreen() {
   const { session, loading } = useSession();
@@ -43,8 +48,12 @@ export default function NewClubScreen() {
 
   if (!session) return <Redirect href="/sign-in" />;
 
+  const trimmedName = name.trim();
+  const trimmedRhythm = rhythm.trim();
+  const canCreate = trimmedName.length > 0;
+
   async function onCreate() {
-    if (!session || saving) return;
+    if (!session || saving || !canCreate) return;
     setError(null);
     setSaving(true);
     const { clubId, error: createError } = await createClub(name, rhythm);
@@ -57,73 +66,120 @@ export default function NewClubScreen() {
   }
 
   return (
-    <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="club" />}>
-      <Button
-        variant="ghost"
-        big={false}
-        icon={<ChevronLeftIcon color={colors.accentColor} />}
-        onPress={() => router.push('/clubs')}
-        accessibilityLabel="Back to your clubs"
-        style={styles.backButton}
-      >
-        Clubs
-      </Button>
-
-      <Text style={styles.heading}>Start a club</Text>
-      <Text style={styles.help}>
-        A club is just a name and a rhythm. Invite people once it exists.
-      </Text>
-
-      <TextField
-        label="Club name"
-        value={name}
-        onChangeText={(value) => {
-          setName(value);
-          setError(null);
-        }}
-        placeholder="Oakfield Tiles"
-        accessibilityLabel="Club name"
+    <Screen
+      scroll
+      contentStyle={formStyles.body}
+      tabBar={
+        <ActionBar
+          primaryLabel="Create the club"
+          primaryAccessibilityLabel="Create the club"
+          onPrimary={onCreate}
+          busy={saving}
+          disabled={!canCreate}
+        />
+      }
+    >
+      <FormHeader
+        clubName="Clubs"
+        closeLabel="Back to your clubs"
+        onClose={() => router.push('/clubs')}
       />
 
-      <TextField
-        label="When you usually play"
-        value={rhythm}
-        onChangeText={setRhythm}
-        placeholder="Thursday evenings"
-        accessibilityLabel="When you usually play"
-      />
+      <View style={styles.intro}>
+        <FormTitle>Start a club</FormTitle>
+        <Text style={styles.introText}>
+          A club is just a name and a rhythm. Invite people once it exists.
+        </Text>
+      </View>
+
+      <View style={styles.preview} testID="club-preview">
+        <View style={styles.previewTile}>
+          <Text style={styles.previewInitial}>
+            {(trimmedName[0] ?? '?').toUpperCase()}
+          </Text>
+        </View>
+        <View style={styles.previewText}>
+          <Text
+            numberOfLines={1}
+            style={[styles.previewName, !canCreate && styles.previewPlaceholder]}
+          >
+            {trimmedName || 'Your club'}
+          </Text>
+          <Text numberOfLines={1} style={styles.previewRhythm}>
+            {trimmedRhythm || 'Add a short description'}
+          </Text>
+        </View>
+      </View>
 
       {error ? <ErrorBanner message={error} /> : null}
 
-      <Button
-        onPress={onCreate}
-        disabled={saving || name.trim().length === 0}
-        accessibilityLabel="Create the club"
-      >
-        {saving ? 'Creating…' : 'Create the club'}
-      </Button>
+      <FormCard>
+        <TextRow
+          label="Club name"
+          value={name}
+          onChangeText={(value) => {
+            setName(value);
+            setError(null);
+          }}
+          placeholder="Oakfield Tiles"
+          accessibilityLabel="Club name"
+        />
+        <TextRow
+          label="Description (optional)"
+          value={rhythm}
+          onChangeText={setRhythm}
+          placeholder="Who it's for, when you play, where you meet…"
+          accessibilityLabel="Description"
+          multiline
+          numberOfLines={3}
+          inputStyle={styles.description}
+        />
+      </FormCard>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    padding: space[6],
-    gap: space[4],
-  },
   centered: {
     alignItems: 'center',
   },
-  backButton: { alignSelf: 'flex-start' },
-  heading: {
-    fontFamily: type.heading,
-    fontSize: type.size.h2,
-    color: colors.text,
-  },
-  help: {
+  intro: { gap: 8 },
+  introText: {
     fontFamily: type.bodyRegular,
-    fontSize: type.size.helper,
-    color: colors.textMuted,
-    lineHeight: 24,
+    fontSize: 15,
+    lineHeight: 22,
+    color: colors.neutral[700],
+    paddingHorizontal: 4,
+  },
+  preview: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    paddingHorizontal: 4,
+  },
+  previewTile: {
+    width: 56,
+    height: 56,
+    borderRadius: 18,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  previewInitial: { fontFamily: type.heading, fontSize: 24, color: colors.accent[700] },
+  previewText: { flex: 1, minWidth: 0 },
+  previewName: { fontFamily: type.bodyBold, fontSize: 17, lineHeight: 21, color: colors.text },
+  previewPlaceholder: { color: colors.neutral[600] },
+  previewRhythm: {
+    fontFamily: type.bodyRegular,
+    fontSize: 13,
+    lineHeight: 16,
+    color: colors.neutral[700],
+  },
+  description: {
+    fontFamily: type.bodyRegular,
+    lineHeight: 22,
+    minHeight: 66,
+    // Web only: a textarea's drag handle. Not in RN's style types.
+    ...({ resize: 'none' } as object),
   },
 });

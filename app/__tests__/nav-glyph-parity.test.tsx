@@ -7,7 +7,6 @@ import { fetchMyClubs } from '../../lib/clubs';
 import { glyphForClub } from '../../lib/dashboard';
 import ClubsScreen from '../clubs/index';
 import MessagesScreen from '../messages/index';
-import ProfileScreen from '../profile';
 import AlertsScreen from '../alerts';
 
 /**
@@ -122,7 +121,9 @@ beforeEach(() => {
 const SECTIONS: { key: TabKey; expectedSuit: MahjongSuit; Screen: ComponentType }[] = [
   { key: 'club', expectedSuit: 'dots', Screen: ClubsScreen },
   { key: 'messages', expectedSuit: 'bamboo', Screen: MessagesScreen },
-  { key: 'profile', expectedSuit: 'red-dragon', Screen: ProfileScreen },
+  // No 'profile' row: the Profile redesign (profile & club handoff, 1a)
+  // replaced its section tile with the member's own avatar, so there is no
+  // landing-screen tile left to agree with suitFor('profile').
   { key: 'alerts', expectedSuit: 'green-dragon', Screen: AlertsScreen },
 ];
 
