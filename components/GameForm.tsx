@@ -8,6 +8,7 @@ import {
   TextInput,
   View,
   type StyleProp,
+  type TextStyle,
   type ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -25,27 +26,33 @@ import { colors, layout, radius, shadow, type } from '../lib/theme';
  * so the two screens cannot drift apart.
  */
 
-/** Close ✕, the club's own tile, and its name. */
+/** Close ✕, the club's own tile, and its name. With no `clubId` (Start a
+ *  club, where there is no club yet) the tile is left out and `clubName` is
+ *  just the header's label. */
 export function FormHeader({
   clubId,
   clubName,
   onClose,
+  closeLabel = 'Close',
 }: {
-  clubId: string;
+  clubId?: string;
   clubName: string;
   onClose: () => void;
+  closeLabel?: string;
 }) {
   return (
     <View style={styles.header}>
       <Pressable
         onPress={onClose}
         accessibilityRole="button"
-        accessibilityLabel="Close"
+        accessibilityLabel={closeLabel}
         style={({ pressed }) => [styles.iconButton, pressed && styles.iconButtonPressed]}
       >
         <XIcon size={22} color={colors.text} />
       </Pressable>
-      <ThreadAvatar kind="club" name={clubName} size={32} asTile clubId={clubId} tileSize="section" />
+      {clubId ? (
+        <ThreadAvatar kind="club" name={clubName} size={32} asTile clubId={clubId} tileSize="section" />
+      ) : null}
       <Text style={styles.clubName} numberOfLines={1}>
         {clubName}
       </Text>
@@ -98,6 +105,8 @@ export function TextRow({
   onChangeText,
   placeholder,
   multiline = false,
+  numberOfLines,
+  inputStyle,
   accessibilityLabel,
   keyboardType,
 }: {
@@ -108,6 +117,9 @@ export function TextRow({
   onChangeText: (next: string) => void;
   placeholder?: string;
   multiline?: boolean;
+  /** Visible rows for a multiline input; defaults to 2. */
+  numberOfLines?: number;
+  inputStyle?: StyleProp<TextStyle>;
   accessibilityLabel: string;
 }) {
   return (
@@ -123,8 +135,8 @@ export function TextRow({
           accessibilityLabel={accessibilityLabel}
           multiline={multiline}
           keyboardType={keyboardType}
-          numberOfLines={multiline ? 2 : undefined}
-          style={[styles.input, multiline && styles.inputMultiline]}
+          numberOfLines={multiline ? (numberOfLines ?? 2) : undefined}
+          style={[styles.input, multiline && styles.inputMultiline, inputStyle]}
         />
       </View>
     </View>
@@ -422,43 +434,56 @@ export function GhostLink({
   );
 }
 
-/** Cancel + the primary action, pinned under the scroller. */
+/** Cancel + the primary action, pinned under the scroller. Without
+ *  `onCancel` the primary action fills the bar alone (Start a club); with
+ *  `disabled` it is drawn in the pale not-yet-ready treatment. */
 export function ActionBar({
   onCancel,
   primaryLabel,
   primaryAccessibilityLabel,
   onPrimary,
   busy,
+  disabled = false,
 }: {
-  onCancel: () => void;
+  onCancel?: () => void;
   primaryLabel: string;
   primaryAccessibilityLabel: string;
   onPrimary: () => void;
   busy: boolean;
+  disabled?: boolean;
 }) {
   const insets = useSafeAreaInsets();
   return (
     <View style={[styles.actionBar, { paddingBottom: Math.max(16, insets.bottom + 8) }]}>
-      <Pressable
-        onPress={onCancel}
-        accessibilityRole="button"
-        accessibilityLabel="Cancel"
-        style={({ pressed }) => [styles.cancelButton, pressed && styles.cancelButtonPressed]}
-      >
-        <Text style={styles.cancelText}>Cancel</Text>
-      </Pressable>
+      {onCancel ? (
+        <Pressable
+          onPress={onCancel}
+          accessibilityRole="button"
+          accessibilityLabel="Cancel"
+          style={({ pressed }) => [styles.cancelButton, pressed && styles.cancelButtonPressed]}
+        >
+          <Text style={styles.cancelText}>Cancel</Text>
+        </Pressable>
+      ) : null}
       <Pressable
         onPress={onPrimary}
-        disabled={busy}
+        disabled={busy || disabled}
         accessibilityRole="button"
         accessibilityLabel={primaryAccessibilityLabel}
         aria-busy={busy}
-        style={({ pressed }) => [styles.primaryButton, pressed && styles.primaryButtonPressed]}
+        aria-disabled={disabled}
+        style={({ pressed }) => [
+          styles.primaryButton,
+          pressed && !disabled && styles.primaryButtonPressed,
+          disabled && styles.primaryButtonDisabled,
+        ]}
       >
         {busy ? (
           <ActivityIndicator color="#ffffff" />
         ) : (
-          <Text style={styles.primaryText}>{primaryLabel}</Text>
+          <Text style={[styles.primaryText, disabled && styles.primaryTextDisabled]}>
+            {primaryLabel}
+          </Text>
         )}
       </Pressable>
     </View>
@@ -720,7 +745,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   primaryButtonPressed: { backgroundColor: colors.accent[800] },
+  primaryButtonDisabled: { backgroundColor: colors.accent[300] },
   primaryText: { fontFamily: type.bodyBold, fontSize: 16, color: '#ffffff' },
+  primaryTextDisabled: { color: colors.accent[100] },
   sheetRoot: { flex: 1, justifyContent: 'flex-end' },
   scrim: {
     position: 'absolute',

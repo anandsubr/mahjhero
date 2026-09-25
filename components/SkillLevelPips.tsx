@@ -23,7 +23,7 @@ type Props = {
  * `profiles.skill_level` is nullable, and null means "not set", which is
  * NOT the same thing `mixed` means for a table ("all levels welcome"). This
  * component takes a `SkillLevel`, not `SkillLevel | null`, on purpose: a
- * caller with a possibly-null level (SkillLevelPicker.tsx,
+ * caller with a possibly-null level (e.g.
  * app/clubs/[id]/index.tsx's roster) must check for null itself and render
  * nothing at all in that case, rather than this component inventing a
  * fourth visual state nobody asked for.

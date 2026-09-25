@@ -370,8 +370,15 @@ test.describe('signed in', () => {
     test(`profile at ${vp.name}`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/profile');
-      await expect(page.getByText('Your profile')).toBeVisible();
+      await expect(page.getByText('About you')).toBeVisible();
       await captureScreen(page, vp, `profile-${vp.name}.png`);
+    });
+
+    test(`new club at ${vp.name}`, async ({ page }) => {
+      await page.setViewportSize({ width: vp.width, height: vp.height });
+      await page.goto('/clubs/new');
+      await expect(page.getByText('Add a short description')).toBeVisible();
+      await captureScreen(page, vp, `new-club-${vp.name}.png`);
     });
 
     test(`notifications at ${vp.name}`, async ({ page }) => {

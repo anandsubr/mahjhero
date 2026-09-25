@@ -73,16 +73,61 @@ describe('new club screen', () => {
     await waitFor(() => expect(replace).toHaveBeenCalledWith('/clubs/club-9'));
   });
 
-  // TabBar navigates with router.replace off an entry route that is itself a
-  // Redirect, so the history stack is typically one deep. A signed-in member
-  // reaching this screen with no bar and (below) no back link would be a
-  // dead end short of relaunching the app.
-  it('carries the tab bar with Club marked', async () => {
+  it('keeps Create the club disabled until the name has more than spaces', async () => {
+    render(<NewClubScreen />);
+    const create = screen.getByRole('button', { name: 'Create the club' });
+    expect(create.getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(create);
+    expect(createClub).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText('Club name'), { target: { value: '   ' } });
+    expect(create.getAttribute('aria-disabled')).toBe('true');
+
+    fireEvent.change(screen.getByLabelText('Club name'), { target: { value: 'Oak' } });
+    expect(create.getAttribute('aria-disabled')).not.toBe('true');
+  });
+
+  it('sends the description as the club rhythm', async () => {
+    render(<NewClubScreen />);
+    fireEvent.change(screen.getByLabelText('Club name'), { target: { value: 'Oakfield Tiles' } });
+    fireEvent.change(screen.getByLabelText('Description'), {
+      target: { value: 'Thursday evenings at the library' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Create the club' }));
+    await waitFor(() =>
+      expect(createClub).toHaveBeenCalledWith('Oakfield Tiles', 'Thursday evenings at the library'),
+    );
+  });
+
+  it('previews the club as it is typed', () => {
+    render(<NewClubScreen />);
+    const preview = screen.getByTestId('club-preview');
+    expect(preview.textContent).toContain('?');
+    expect(preview.textContent).toContain('Your club');
+    expect(preview.textContent).toContain('Add a short description');
+
+    fireEvent.change(screen.getByLabelText('Club name'), { target: { value: 'oakfield' } });
+    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'Tuesdays' } });
+    expect(preview.textContent).toContain('O');
+    expect(preview.textContent).toContain('oakfield');
+    expect(preview.textContent).toContain('Tuesdays');
+  });
+
+  it('shows the error when creating fails', async () => {
+    createClub.mockResolvedValueOnce({ clubId: null, error: 'That name is taken.' });
+    render(<NewClubScreen />);
+    fireEvent.change(screen.getByLabelText('Club name'), { target: { value: 'Oak' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create the club' }));
+    expect(await screen.findByText('That name is taken.')).toBeTruthy();
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  // A flow screen: the pinned Create button takes the tab bar's place once
+  // the screen has loaded.
+  it('hides the tab bar once loaded', async () => {
     render(<NewClubScreen />);
     expect(await screen.findByText('Start a club')).toBeTruthy();
-    expect(
-      screen.getByRole('button', { name: 'Club' }).getAttribute('aria-selected'),
-    ).toBe('true');
+    expect(screen.queryByRole('button', { name: 'Club' })).toBeNull();
   });
 
   it('carries the tab bar while the session is still loading', () => {
@@ -91,10 +136,10 @@ describe('new club screen', () => {
     expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
   });
 
-  // Same reasoning as the club detail screen's own back-link test
-  // (2026-09-01-back-links-design.md): the Club tab renders active here
-  // too, so it reads as "you are here" rather than a way out.
-  it('draws a back link to the dashboard', async () => {
+  // TabBar navigates with router.replace off an entry route that is itself
+  // a Redirect, so the history stack is typically one deep: the ✕ goes to
+  // the dashboard rather than back().
+  it('closes to the dashboard', async () => {
     render(<NewClubScreen />);
     await screen.findByText('Start a club');
     fireEvent.click(screen.getByRole('button', { name: 'Back to your clubs' }));

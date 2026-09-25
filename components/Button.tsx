@@ -43,7 +43,7 @@ type ButtonProps = {
    * in 1C-variant.html. The design overrides back to the body font only on
    * bespoke option-style controls (the skill-level tiles, the
    * notification-channel rows) that are NOT built from this component —
-   * see components/SkillLevelPicker.tsx and app/notifications.tsx's inline
+   * see app/profile.tsx's SkillSegmented and app/notifications.tsx's inline
    * channel rows, which set Figtree 700 / 600 directly. This prop exists so
    * a future Button-based option control can opt into that body face
    * instead of duplicating Button's layout by hand; no current call site
