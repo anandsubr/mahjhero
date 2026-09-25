@@ -39,6 +39,8 @@ vi.mock('../../lib/session', () => ({
 }));
 
 const fetchRoster = vi.fn();
+// The header's date line needs the club's timezone.
+const fetchClub = vi.fn();
 
 // `canInvite` stays real -- it is pure, and it is the exact host-or-
 // co-organizer test this screen is supposed to reuse rather than
@@ -50,6 +52,7 @@ vi.mock('../../lib/clubs', async (importOriginal) => {
   return {
     ...actual,
     fetchRoster: (...args: unknown[]) => fetchRoster(...args),
+    fetchClub: (...args: unknown[]) => fetchClub(...args),
   };
 });
 
@@ -175,6 +178,7 @@ beforeEach(() => {
     loading: false,
   });
   fetchRoster.mockResolvedValue([HOST]);
+  fetchClub.mockResolvedValue({ id: 'club-1', name: 'Club', timezone: 'America/New_York' });
   fetchEvent.mockResolvedValue(EVENT);
   fetchEventAttendance.mockResolvedValue([]);
   recordAttendance.mockResolvedValue({ error: null });
@@ -198,10 +202,20 @@ afterEach(() => {
 // for (2026-09-01-back-links-design.md) -- unlike the club/messages
 // screens, nothing in the tab bar reaches that destination at all.
 describe('screen chrome', () => {
-  it('carries the tab bar once ready', async () => {
+  // The redesign hides the tab bar once the door list is up: the header's
+  // back arrow is always there, and "Add a walk-in" is pinned in its place.
+  it('pins Add a walk-in where the tab bar was, once ready', async () => {
     render(<CheckInScreen />);
-    expect(await screen.findByRole('button', { name: 'Club' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Messages' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Add a walk-in' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Back to the game' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Club' })).toBeNull();
+  });
+
+  it('names the game, its date and venue in the header', async () => {
+    fetchEvent.mockResolvedValue({ ...EVENT, title: 'Thursday Mahjong', venue_name: 'The Hall' });
+    render(<CheckInScreen />);
+    expect(await screen.findByText('Thursday Mahjong')).toBeTruthy();
+    expect(screen.getByText(/ · The Hall$/)).toBeTruthy();
   });
 
   it('draws a back link to the game', async () => {
@@ -238,10 +252,10 @@ it('summarises the room above the tables', async () => {
   render(<CheckInScreen />);
   // All three rows are booked (no walk-ins), so the denominator is 3 and
   // there are 0 walk-ins to call out separately.
-  expect(await screen.findByText(/1 of 3 booked here/i)).toBeTruthy();
+  expect(await screen.findByText(/1 of 3 booked/i)).toBeTruthy();
   expect(screen.getByText(/0 walk-ins/i)).toBeTruthy();
   expect(screen.getByText(/1 not coming/i)).toBeTruthy();
-  expect(screen.getByText(/1 unaccounted/i)).toBeTruthy();
+  expect(screen.getByText(/1 to check/i)).toBeTruthy();
 });
 
 it('keeps a stable booked denominator as walk-ins arrive, and counts walk-ins separately', async () => {
@@ -263,10 +277,10 @@ it('keeps a stable booked denominator as walk-ins arrive, and counts walk-ins se
   // bookings, or (the old bug) grow the denominator every time somebody
   // walked in, so the fraction never converged on the number the host set
   // out to reach. Walker is surfaced instead as his own count.
-  expect(await screen.findByText(/1 of 2 booked here/i)).toBeTruthy();
+  expect(await screen.findByText(/1 of 2 booked/i)).toBeTruthy();
   expect(screen.getByText(/1 walk-in\b/i)).toBeTruthy();
   expect(screen.getByText(/0 not coming/i)).toBeTruthy();
-  expect(screen.getByText(/1 unaccounted/i)).toBeTruthy();
+  expect(screen.getByText(/1 to check/i)).toBeTruthy();
 });
 
 it('groups people under their table', async () => {
@@ -899,8 +913,8 @@ it('keeps a write that both starts AND finishes inside the read window, not just
   // the merge had wrongly let the stale server row win, Bob would count
   // as unaccounted (2) instead of arrived, alongside Ann.
   expect(bobButton.getAttribute('aria-pressed')).toBe('true');
-  expect(screen.getByText(/1 unaccounted/i)).toBeTruthy();
-  expect(screen.queryByText(/2 unaccounted/i)).toBeNull();
+  expect(screen.getByText(/1 to check/i)).toBeTruthy();
+  expect(screen.queryByText(/2 to check/i)).toBeNull();
 });
 
 it('does not let a walk-in vanish when its write starts after the refetch begins and finishes before it lands', async () => {
@@ -1086,7 +1100,7 @@ describe('payment tracking applies regardless of fee (finding #4)', () => {
 // tables to group by and the organizer works a status list instead.
 // ---------------------------------------------------------------------------
 describe('the open-seating door list', () => {
-  it('buckets people into status sections with their counts', async () => {
+  it('puts everyone booked in one card, walk-ins apart, with a chip per status', async () => {
     fetchEvent.mockResolvedValue(OPEN_EVENT);
     fetchEventAttendance.mockResolvedValue([
       row({ profile_id: 'a', display_name: 'Ann', state: 'arrived' }),
@@ -1102,29 +1116,39 @@ describe('the open-seating door list', () => {
     ]);
     render(<CheckInScreen />);
 
-    const toArrive = await screen.findByTestId('door-status-to-arrive');
-    const here = screen.getByTestId('door-status-here');
-    const notComing = screen.getByTestId('door-status-not-coming');
+    const everyone = await screen.findByTestId('door-everyone');
     const walkIns = screen.getByTestId('door-walkins');
-
-    expect(within(toArrive).getByText('Still to arrive (2)')).toBeTruthy();
-    expect(within(toArrive).getByText('Bob')).toBeTruthy();
-    expect(within(toArrive).getByText('Dee')).toBeTruthy();
-    expect(within(here).getByText('Here (1)')).toBeTruthy();
-    expect(within(here).getByText('Ann')).toBeTruthy();
-    expect(within(notComing).getByText('Not coming (1)')).toBeTruthy();
-    expect(within(notComing).getByText('Cal')).toBeTruthy();
-    // A walk-in stays a walk-in whatever their state -- the same bucket the
-    // table grouping already gives them.
-    expect(within(walkIns).getByText('Walk-ins (1)')).toBeTruthy();
+    for (const name of ['Ann', 'Bob', 'Dee', 'Cal']) {
+      expect(within(everyone).getByText(name)).toBeTruthy();
+    }
+    // A walk-in stays a walk-in whatever their state.
     expect(within(walkIns).getByText('Walker')).toBeTruthy();
-    expect(within(here).queryByText('Walker')).toBeNull();
-
+    expect(within(everyone).queryByText('Walker')).toBeNull();
     // No table grouping on this path: there are no tables.
     expect(screen.queryByTestId('door-any-table')).toBeNull();
+
+    // The chips do what the status sections used to.
+    fireEvent.click(screen.getByRole('button', { name: 'Show to check' }));
+    expect(screen.getByText('Bob')).toBeTruthy();
+    expect(screen.getByText('Dee')).toBeTruthy();
+    expect(screen.queryByText('Ann')).toBeNull();
+    expect(screen.queryByText('Cal')).toBeNull();
+    expect(screen.queryByTestId('door-walkins')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show not coming' }));
+    expect(screen.getByText('Cal')).toBeTruthy();
+    expect(screen.queryByText('Bob')).toBeNull();
+
+    // A fee is charged, so Unpaid is offered: everyone not marked "not
+    // coming" who has not paid.
+    fireEvent.click(screen.getByRole('button', { name: 'Show unpaid' }));
+    for (const name of ['Ann', 'Bob', 'Dee', 'Walker']) {
+      expect(screen.getByText(name)).toBeTruthy();
+    }
+    expect(screen.queryByText('Cal')).toBeNull();
   });
 
-  it('leaves an assigned-tables event on its per-table grouping, with no search field', async () => {
+  it('keeps an assigned-tables event on its per-table grouping, with search too', async () => {
     fetchEvent.mockResolvedValue(EVENT);
     fetchEventAttendance.mockResolvedValue([
       row({
@@ -1138,10 +1162,12 @@ describe('the open-seating door list', () => {
     ]);
     render(<CheckInScreen />);
 
-    expect(await screen.findByTestId('door-table-table-1')).toBeTruthy();
-    expect(screen.queryByTestId('door-status-here')).toBeNull();
-    expect(screen.queryByTestId('door-status-to-arrive')).toBeNull();
-    expect(screen.queryByLabelText('Search by name')).toBeNull();
+    const table = await screen.findByTestId('door-table-table-1');
+    expect(within(table).getByText('1/1 here')).toBeTruthy();
+    expect(screen.queryByTestId('door-everyone')).toBeNull();
+    expect(screen.getByLabelText('Search players')).toBeTruthy();
+    // A free game offers no Unpaid chip -- everyone would be in it.
+    expect(screen.queryByRole('button', { name: 'Show unpaid' })).toBeNull();
   });
 
   it('narrows the list to the name the organizer types, whatever the case', async () => {
@@ -1153,15 +1179,17 @@ describe('the open-seating door list', () => {
     render(<CheckInScreen />);
     await screen.findByText('Ann Chen');
 
-    fireEvent.change(screen.getByLabelText('Search by name'), {
+    fireEvent.change(screen.getByLabelText('Search players'), {
       target: { value: 'aNN' },
     });
 
     expect(screen.getByText('Ann Chen')).toBeTruthy();
     expect(screen.queryByText('Bob Diaz')).toBeNull();
-    // The heading counts describe what is under them, so they follow the
-    // filter rather than claiming a number the list does not show.
-    expect(screen.getByText('Still to arrive (1)')).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Search players'), {
+      target: { value: 'nobody' },
+    });
+    expect(screen.getByText('No one matches.')).toBeTruthy();
   });
 
   it('badges the people who booked as a group, counting only live bookings', async () => {
@@ -1217,7 +1245,10 @@ describe('the open-seating door list', () => {
     await vi.waitFor(() => expect(screen.queryByText('$15 owed')).toBeNull());
   });
 
-  it('holds a row in place when Here is tapped, and moves it only once the settle window closes', async () => {
+  // Filtered to "To check", a row marked Here no longer belongs in the
+  // list -- but it must not leave from under the organizer's finger before
+  // the settle window closes.
+  it('holds a row in the filtered list when Here is tapped, and drops it only once the settle window closes', async () => {
     fetchEvent.mockResolvedValue(OPEN_EVENT);
     fetchEventAttendance.mockResolvedValue([
       row({ profile_id: 'a', display_name: 'Ann' }),
@@ -1225,33 +1256,21 @@ describe('the open-seating door list', () => {
     ]);
     render(<CheckInScreen />);
     const hereAnn = await screen.findByRole('button', { name: /^here: ann$/i });
+    fireEvent.click(screen.getByRole('button', { name: 'Show to check' }));
 
     vi.useFakeTimers();
     fireEvent.click(hereAnn);
     await act(async () => {});
 
-    // Marked, but NOT moved: the organizer's next tap (paid) has to land on a
-    // row that is still where their finger already is.
     expect(hereAnn.getAttribute('aria-pressed')).toBe('true');
-    expect(
-      within(screen.getByTestId('door-status-to-arrive')).getByText('Ann'),
-    ).toBeTruthy();
-    expect(
-      within(screen.getByTestId('door-status-here')).queryByText('Ann'),
-    ).toBeNull();
+    expect(screen.getByText('Ann')).toBeTruthy();
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(SETTLE_MS);
     });
 
-    expect(
-      within(screen.getByTestId('door-status-here')).getByText('Ann'),
-    ).toBeTruthy();
-    expect(
-      within(screen.getByTestId('door-status-to-arrive')).queryByText('Ann'),
-    ).toBeNull();
-    expect(screen.getByText('Here (1)')).toBeTruthy();
-    expect(screen.getByText('Still to arrive (1)')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^here: ann$/i })).toBeNull();
+    expect(screen.getByText('Bob')).toBeTruthy();
     vi.useRealTimers();
   });
 
@@ -1263,6 +1282,7 @@ describe('the open-seating door list', () => {
     render(<CheckInScreen />);
     const hereAnn = await screen.findByRole('button', { name: /^here: ann$/i });
     const paidAnn = screen.getByRole('button', { name: /^paid: ann$/i });
+    fireEvent.click(screen.getByRole('button', { name: 'Show to check' }));
 
     vi.useFakeTimers();
     fireEvent.click(hereAnn);
@@ -1276,16 +1296,12 @@ describe('the open-seating door list', () => {
 
     // 6s of wall clock, well past a 4s window -- but the paid tap restarted
     // it, so Ann has not moved out from under the organizer's finger.
-    expect(
-      within(screen.getByTestId('door-status-to-arrive')).getByText('Ann'),
-    ).toBeTruthy();
+    expect(screen.getByText('Ann')).toBeTruthy();
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000);
     });
-    expect(
-      within(screen.getByTestId('door-status-here')).getByText('Ann'),
-    ).toBeTruthy();
+    expect(screen.queryByText('Ann')).toBeNull();
     vi.useRealTimers();
   });
 
@@ -1297,6 +1313,7 @@ describe('the open-seating door list', () => {
     ]);
     render(<CheckInScreen />);
     const hereAnn = await screen.findByRole('button', { name: /^here: ann$/i });
+    fireEvent.click(screen.getByRole('button', { name: 'Show to check' }));
 
     vi.useFakeTimers();
     fireEvent.click(hereAnn);
@@ -1315,11 +1332,28 @@ describe('the open-seating door list', () => {
         profileId: 'a',
       }),
     );
-    expect(
-      within(screen.getByTestId('door-status-to-arrive')).getByText('Ann'),
-    ).toBeTruthy();
-    expect(screen.getByText('Still to arrive (2)')).toBeTruthy();
-    expect(screen.getByText('Here (0)')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^here: ann$/i }).getAttribute('aria-pressed')).toBe(
+      'false',
+    );
+    expect(screen.queryByText(/Ann marked here/)).toBeNull();
+  });
+
+  // Under "All" nothing moves when a row is marked, so there is nothing to
+  // put back and no undo to offer.
+  it('offers no undo when the row stays in view', async () => {
+    fetchEvent.mockResolvedValue(OPEN_EVENT);
+    fetchEventAttendance.mockResolvedValue([row({ profile_id: 'a', display_name: 'Ann' })]);
+    render(<CheckInScreen />);
+    const hereAnn = await screen.findByRole('button', { name: /^here: ann$/i });
+
+    vi.useFakeTimers();
+    fireEvent.click(hereAnn);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(SETTLE_MS);
+    });
+    vi.useRealTimers();
+
+    expect(hereAnn.getAttribute('aria-pressed')).toBe('true');
     expect(screen.queryByText(/Ann marked here/)).toBeNull();
   });
 
@@ -1335,6 +1369,7 @@ describe('the open-seating door list', () => {
     ]);
     render(<CheckInScreen />);
     const hereAnn = await screen.findByRole('button', { name: /^here: ann$/i });
+    fireEvent.click(screen.getByRole('button', { name: 'Show to check' }));
 
     vi.useFakeTimers();
     fireEvent.click(hereAnn);
@@ -1372,6 +1407,9 @@ describe('the open-seating door list', () => {
     ]);
     render(<CheckInScreen />);
     const paidAnn = await screen.findByRole('button', { name: /^paid: ann$/i });
+    // Under "Unpaid", the $ tap makes Ann leave the list -- the case where
+    // an undo WOULD be raised if only row movement were checked.
+    fireEvent.click(screen.getByRole('button', { name: 'Show unpaid' }));
 
     vi.useFakeTimers();
     fireEvent.click(paidAnn);
@@ -1380,6 +1418,7 @@ describe('the open-seating door list', () => {
     });
     vi.useRealTimers();
 
+    expect(screen.queryByText('Ann')).toBeNull();
     expect(screen.queryByText(/Undo/)).toBeNull();
     expect(
       screen.queryByRole('button', { name: /^undo: ann$/i }),

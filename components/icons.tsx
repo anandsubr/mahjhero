@@ -259,3 +259,23 @@ export function UserPlusIcon({ size = 18, color = colors.text }: { size?: number
     </Svg>
   );
 }
+
+/** Door list (check-in.tsx): "Not coming", beside CheckIcon's "Here". */
+export function XIcon({ size = 17, color = colors.text }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={3} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M18 6 6 18" />
+      <Path d="m6 6 12 12" />
+    </Svg>
+  );
+}
+
+/** Door list (check-in.tsx): the pinned search field. */
+export function SearchIcon({ size = 18, color = colors.neutral[700] }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.75} strokeLinecap="round" strokeLinejoin="round">
+      <Circle cx={11} cy={11} r={8} />
+      <Path d="m21 21-4.3-4.3" />
+    </Svg>
+  );
+}
