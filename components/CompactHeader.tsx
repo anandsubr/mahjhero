@@ -38,6 +38,9 @@ type Props = {
    * column already supplies the side margins.
    */
   variant?: 'edge' | 'inset';
+  /** The hairline under the header. On by default; the game screen's 2a
+   *  handoff draws its header without one. */
+  divider?: boolean;
 };
 
 /**
@@ -64,6 +67,7 @@ export default function CompactHeader({
   overflowLabel,
   action,
   variant = 'edge',
+  divider = true,
 }: Props) {
   const identity =
     kind !== null ? (
@@ -97,7 +101,13 @@ export default function CompactHeader({
     ) : null;
 
   return (
-    <View style={[styles.header, variant === 'inset' ? styles.inset : styles.edge]}>
+    <View
+      style={[
+        styles.header,
+        variant === 'inset' ? styles.inset : styles.edge,
+        divider ? null : styles.noDivider,
+      ]}
+    >
       {onBack ? (
         <Pressable
           onPress={onBack}
@@ -163,6 +173,7 @@ const styles = StyleSheet.create({
   // The chevron's own 40pt box already centres its glyph, so it can sit
   // right on the column's edge.
   inset: { paddingBottom: 10 },
+  noDivider: { borderBottomWidth: 0 },
   back: {
     width: 40,
     height: 44,

@@ -231,7 +231,7 @@ describe('SeatGrid: organizer seat management', () => {
   // `onLeaveSeat` is gated only on `canBook`, not on `!isOrganizer`). See
   // SeatGrid.tsx's "A member's own seat" docstring section for why
   // `organizerManageable || selfManageable` checks in that order.
-  it('reveals the seven fixed point chips after tapping "Record a win", and records the tapped value', () => {
+  it('offers the seven fixed point values in the seat sheet, and records the picked one on confirm', () => {
     const onRecordRound = vi.fn();
     function RecordingHarness() {
       const [openBookingId, setOpenBookingId] = useState<string | null>(null);
@@ -255,17 +255,29 @@ describe('SeatGrid: organizer seat management', () => {
     render(<RecordingHarness />);
 
     fireEvent.click(screen.getByLabelText("Manage Jane P.'s seat"));
-    fireEvent.click(screen.getByLabelText('Record a win for Jane P.'));
+    expect(screen.getByText('Winner of round 1')).toBeTruthy();
 
     for (const value of [25, 30, 35, 40, 45, 50, 75]) {
-      expect(screen.getByLabelText(`Record Jane P.'s win for ${value} points`)).toBeTruthy();
+      expect(screen.getByLabelText(`${value} points`)).toBeTruthy();
     }
+
+    // Nothing is recorded until a value is picked and confirmed: the
+    // primary button reads "Choose points" and is disabled until then.
+    const choose = screen.getByRole('button', { name: 'Choose points' });
+    expect(choose.getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(choose);
+    expect(onRecordRound).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByLabelText('40 points'));
+    expect(screen.getByLabelText('40 points').getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByText('Record 40 pts for round 1')).toBeTruthy();
+    expect(onRecordRound).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByLabelText("Record Jane P.'s win for 40 points"));
     expect(onRecordRound).toHaveBeenCalledWith('p1', 40);
   });
 
-  it('offers no "Record a win" control when canRecordRound is false', () => {
+  it('offers no win recorder when canRecordRound is false', () => {
     function Harness2() {
       const [openBookingId, setOpenBookingId] = useState<string | null>(null);
       return (
@@ -285,7 +297,9 @@ describe('SeatGrid: organizer seat management', () => {
     }
     render(<Harness2 />);
     fireEvent.click(screen.getByLabelText("Manage Jane P.'s seat"));
-    expect(screen.queryByLabelText('Record a win for Jane P.')).toBeNull();
+    expect(screen.getByLabelText('Remove Jane P. from this game')).toBeTruthy();
+    expect(screen.queryByText('Choose points')).toBeNull();
+    expect(screen.queryByLabelText('40 points')).toBeNull();
   });
 
   it("keeps the organizer's own seat on the organizer panel even when onLeaveSeat is also supplied", () => {
@@ -446,10 +460,10 @@ describe('SeatGrid: member self-service (leave own seat)', () => {
     // Without the fix, this seat is a plain read-only <View> and this label
     // does not exist at all.
     fireEvent.click(screen.getByLabelText("Manage Ada's seat"));
-    expect(screen.getByLabelText('Record a win for Ada')).toBeTruthy();
+    expect(screen.getByText('Choose points')).toBeTruthy();
     expect(screen.queryByLabelText('Leave this game')).toBeNull();
 
-    fireEvent.click(screen.getByLabelText('Record a win for Ada'));
+    fireEvent.click(screen.getByLabelText('50 points'));
     fireEvent.click(screen.getByLabelText("Record Ada's win for 50 points"));
     expect(onRecordRound).toHaveBeenCalledWith('p3', 50);
   });
@@ -459,50 +473,63 @@ describe('SeatGrid: member self-service (leave own seat)', () => {
     render(<Harness onLeaveSeat={vi.fn()} />);
     fireEvent.click(screen.getByLabelText("Manage Ada's seat"));
     expect(screen.getByLabelText('Leave this game')).toBeTruthy();
-    expect(screen.queryByLabelText('Record a win for Ada')).toBeNull();
+    expect(screen.queryByText('Choose points')).toBeNull();
   });
 });
 
-// Each occupied seat's own running point total, plus a star badge for
-// whoever is currently tied for the lead. Display-only -- see TableCard's
-// own tests for how the totals/leader are actually computed from rounds.
-describe('SeatGrid: the point badge', () => {
-  it('shows no badge for a seat with no recorded points', () => {
-    render(
-      <SeatGrid
-        tableLabel="Table 1"
-        capacity={4}
-        seats={[{ bookingId: 'b1', profileId: 'p1', name: 'Jane P.', isYou: false, points: null, isLeader: false }]}
-      />,
-    );
-    // No badge means no point number is rendered at all.
-    expect(screen.queryByText('0')).toBeNull();
+// Each occupied seat's own running point total, on the seat's second line,
+// plus the trophy badge on whoever won the table's last round. Display-only
+// -- see TableCard's own tests for how both are computed from rounds.
+describe('SeatGrid: points and the last-round winner', () => {
+  const jane = { bookingId: 'b1', profileId: 'p1', name: 'Jane P.', isYou: false };
+
+  it('draws no points line when scoring is not in play', () => {
+    render(<SeatGrid tableLabel="Table 1" capacity={4} seats={[{ ...jane, points: null }]} />);
+    expect(screen.queryByText(/pts$/)).toBeNull();
   });
 
-  it('shows a plain round badge with the point total for a non-leading winner', () => {
-    render(
-      <SeatGrid
-        tableLabel="Table 1"
-        capacity={4}
-        seats={[{ bookingId: 'b1', profileId: 'p1', name: 'Jane P.', isYou: false, points: 30, isLeader: false }]}
-      />,
+  it("draws the seat's point total, including zero", () => {
+    const { rerender } = render(
+      <SeatGrid tableLabel="Table 1" capacity={4} seats={[{ ...jane, points: 30 }]} />,
     );
-    expect(screen.getByText('30')).toBeTruthy();
+    expect(screen.getByText('30 pts')).toBeTruthy();
+    rerender(<SeatGrid tableLabel="Table 1" capacity={4} seats={[{ ...jane, points: 0 }]} />);
+    expect(screen.getByText('0 pts')).toBeTruthy();
   });
 
-  it('shows a star badge for the current leader', () => {
+  it('prefixes your own seat with "You"', () => {
+    const { rerender } = render(
+      <SeatGrid
+        tableLabel="Table 1"
+        capacity={4}
+        seats={[{ ...jane, name: 'Ada', isYou: true, points: 25 }]}
+      />,
+    );
+    expect(screen.getByText('Ada')).toBeTruthy();
+    expect(screen.getByText('You · 25 pts')).toBeTruthy();
+    rerender(
+      <SeatGrid
+        tableLabel="Table 1"
+        capacity={4}
+        seats={[{ ...jane, name: 'Ada', isYou: true, points: null }]}
+      />,
+    );
+    expect(screen.getByText('You')).toBeTruthy();
+  });
+
+  it('badges only the last-round winner', () => {
     render(
       <SeatGrid
         tableLabel="Table 1"
         capacity={4}
-        seats={[{ bookingId: 'b1', profileId: 'p1', name: 'Jane P.', isYou: false, points: 75, isLeader: true }]}
+        seats={[
+          { ...jane, points: 75, wonLastRound: true },
+          { bookingId: 'b2', profileId: 'p2', name: 'Mei L.', isYou: false, points: 30 },
+        ]}
       />,
     );
-    expect(screen.getByText('75')).toBeTruthy();
-    // The star and plain-round badges are distinct testIDs -- this fails if
-    // the star path were ever removed or collapsed into the round one.
-    expect(screen.getByTestId('badge-star-b1')).toBeTruthy();
-    expect(screen.queryByTestId('badge-round-b1')).toBeNull();
+    expect(screen.getByTestId('badge-winner-b1')).toBeTruthy();
+    expect(screen.queryByTestId('badge-winner-b2')).toBeNull();
   });
 });
 

@@ -4,11 +4,19 @@ import { colors, radius, space, type } from '../lib/theme';
 type TagProps = {
   children: string;
   variant?: 'accent' | 'accent2';
+  /** `small`: the game screen's 12pt table tags (game-screen 2a handoff). */
+  size?: 'regular' | 'small';
 };
 
-export default function Tag({ children, variant = 'accent' }: TagProps) {
+export default function Tag({ children, variant = 'accent', size = 'regular' }: TagProps) {
   return (
-    <Text style={[styles.base, variant === 'accent' ? styles.accent : styles.accent2]}>
+    <Text
+      style={[
+        styles.base,
+        variant === 'accent' ? styles.accent : styles.accent2,
+        size === 'small' ? styles.small : null,
+      ]}
+    >
       {children}
     </Text>
   );
@@ -23,6 +31,11 @@ const styles = StyleSheet.create({
     fontFamily: type.bodyBold,
     fontSize: type.size.helper,
     overflow: 'hidden',
+  },
+  small: {
+    fontSize: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
   },
   accent: {
     backgroundColor: colors.accent[200],

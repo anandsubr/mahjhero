@@ -13,10 +13,17 @@ describe('RoundLog', () => {
     expect(screen.getByText('No rounds recorded yet.')).toBeTruthy();
   });
 
-  it('lists rounds newest first with the winner and points', () => {
+  it('lists rounds newest first with the winner, round number and points', () => {
     render(<RoundLog rounds={rounds} canDelete={false} onDelete={vi.fn()} />);
-    expect(screen.getByText('You · 25 pts')).toBeTruthy();
-    expect(screen.getByText('Ann · 30 pts')).toBeTruthy();
+    expect(screen.getByText('2 played')).toBeTruthy();
+    const you = screen.getByLabelText('You won 25 points');
+    const ann = screen.getByLabelText('Ann won 30 points');
+    // Newest first in the document, numbered up from the oldest.
+    expect(you.compareDocumentPosition(ann) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByText('Round 2')).toBeTruthy();
+    expect(screen.getByText('Round 1')).toBeTruthy();
+    expect(screen.getByText('+25')).toBeTruthy();
+    expect(screen.getByText('+30')).toBeTruthy();
   });
 
   it('shows delete affordances only when canDelete is true', () => {

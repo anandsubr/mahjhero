@@ -1236,7 +1236,7 @@ describe('organizer view', () => {
   it('adds a table', async () => {
     render(<EventScreen />);
     await screen.findByText('Thursday Mahjong');
-    fireEvent.click(screen.getByText('Add a table'));
+    fireEvent.click(screen.getByRole('button', { name: 'Add a table' }));
     await vi.waitFor(() => expect(addEventTable).toHaveBeenCalledWith('event-1'));
   });
 
@@ -1246,7 +1246,7 @@ describe('organizer view', () => {
     });
     render(<EventScreen />);
     await screen.findByText('Thursday Mahjong');
-    fireEvent.click(screen.getByText('Add a table'));
+    fireEvent.click(screen.getByRole('button', { name: 'Add a table' }));
     expect(
       await screen.findByText('This game already has the maximum of 20 tables.'),
     ).toBeTruthy();
@@ -1262,7 +1262,7 @@ describe('organizer view', () => {
       TABLE_1,
       { id: 'table-2', label: 'Table 2', skill_tier: 'mixed' as const, capacity: 4, position: 2 },
     ]);
-    fireEvent.click(screen.getByText('Add a table'));
+    fireEvent.click(screen.getByRole('button', { name: 'Add a table' }));
 
     const removeButton = await screen.findByLabelText('Remove Table 1');
     fireEvent.click(removeButton);
@@ -1315,6 +1315,10 @@ describe('organizer view', () => {
       render(<EventScreen />);
       await screen.findByText('Thursday Mahjong');
 
+      // The guest form now sits behind its own "Invite a guest by email"
+      // tile (the 2a options grid); opened alongside the sheet, the sheet
+      // still comes first.
+      fireEvent.click(screen.getByRole('button', { name: 'Invite a guest by email' }));
       fireEvent.click(screen.getByRole('button', { name: 'Invite' }));
       const sheet = await screen.findByText("Who's coming?");
       const guestField = screen.getByLabelText("Guest's email address");
@@ -1328,6 +1332,7 @@ describe('organizer view', () => {
       render(<EventScreen />);
       await screen.findByText('Thursday Mahjong');
 
+      fireEvent.click(screen.getByRole('button', { name: 'Invite a guest by email' }));
       fireEvent.change(screen.getByLabelText("Guest's email address"), {
         target: { value: 'guest@example.com' },
       });
@@ -1367,6 +1372,7 @@ describe('organizer view', () => {
       render(<EventScreen />);
       await screen.findByText('Thursday Mahjong');
 
+      fireEvent.click(screen.getByRole('button', { name: 'Invite a guest by email' }));
       fireEvent.change(screen.getByLabelText("Guest's email address"), {
         target: { value: 'guest@example.com' },
       });
@@ -1383,6 +1389,7 @@ describe('organizer view', () => {
       render(<EventScreen />);
       await screen.findByText('Thursday Mahjong');
 
+      fireEvent.click(screen.getByRole('button', { name: 'Invite a guest by email' }));
       fireEvent.change(screen.getByLabelText("Guest's email address"), {
         target: { value: 'guest@example.com' },
       });
@@ -1397,6 +1404,7 @@ describe('organizer view', () => {
       render(<EventScreen />);
       await screen.findByText('Thursday Mahjong');
 
+      fireEvent.click(screen.getByRole('button', { name: 'Invite a guest by email' }));
       fireEvent.change(screen.getByLabelText("Guest's email address"), {
         target: { value: 'not-an-email' },
       });
@@ -1659,14 +1667,16 @@ describe('table rounds', () => {
 
     render(<EventScreen />);
 
-    expect(await screen.findByText('Ravi K. · 8 pts')).toBeTruthy();
+    // RoundLog's 2a row: the winner, "Round 1", and the trophy with "+8",
+    // announced as one "<name> won <points> points".
+    expect(await screen.findByLabelText('Ravi K. won 8 points')).toBeTruthy();
+    expect(screen.getByText('+8')).toBeTruthy();
   });
 
   it('lets an organizer record a round while the game is live', async () => {
-    // Recording now happens through the seat's own tap panel (SeatGrid,
-    // Tasks 3-4), not a picker inside RoundLog (Task 5 removed that
-    // entirely) -- so this opens Ravi's seat panel, taps "Record a win",
-    // then taps one of the seven fixed point chips, matching how SeatGrid
+    // Recording happens through the seat's own sheet (SeatGrid/SeatSheet),
+    // not a picker inside RoundLog -- so this opens Ravi's seat sheet, picks
+    // one of the seven fixed point chips, then confirms, matching how SeatGrid
     // itself is exercised elsewhere in this file (e.g. "Manage Ravi K.'s
     // seat" / "Move Ravi K. to Table 2" above).
     fetchRoster.mockResolvedValue(HOST_ROSTER_WITH_RAVI);
@@ -1678,7 +1688,7 @@ describe('table rounds', () => {
     render(<EventScreen />);
 
     fireEvent.click(await screen.findByLabelText("Manage Ravi K.'s seat"));
-    fireEvent.click(screen.getByLabelText('Record a win for Ravi K.'));
+    fireEvent.click(screen.getByLabelText('30 points'));
     fireEvent.click(
       screen.getByLabelText("Record Ravi K.'s win for 30 points"),
     );
@@ -1720,7 +1730,7 @@ describe('table rounds', () => {
     expect(screen.queryByText(/^Move to /)).toBeNull();
     expect(screen.queryByLabelText('Remove Ada from this game')).toBeNull();
 
-    fireEvent.click(screen.getByLabelText('Record a win for Ada'));
+    fireEvent.click(screen.getByLabelText('25 points'));
     fireEvent.click(screen.getByLabelText("Record Ada's win for 25 points"));
 
     await waitFor(() =>
@@ -1732,7 +1742,7 @@ describe('table rounds', () => {
     );
   });
 
-  it('hides the "Record a win" control before the game has started', async () => {
+  it('hides the win recorder before the game has started', async () => {
     // EVENT's default fixture starts in the future, so gameLive is false --
     // the same guard assert_round_writable enforces server-side ("this
     // game has not started yet").
@@ -1743,9 +1753,36 @@ describe('table rounds', () => {
     render(<EventScreen />);
 
     fireEvent.click(await screen.findByLabelText("Manage Ravi K.'s seat"));
-    expect(
-      screen.queryByLabelText('Record a win for Ravi K.'),
-    ).toBeNull();
+    // The sheet opened (Move/Remove are there), but with no win recorder.
+    expect(screen.getByLabelText('Remove Ravi K. from this game')).toBeTruthy();
+    expect(screen.queryByText('Choose points')).toBeNull();
+    expect(screen.queryByLabelText('30 points')).toBeNull();
+  });
+
+  // The 2a pinned round bar replaced the per-table timer rows: one bar,
+  // above the tab bar, only while the game is live, naming the viewer's own
+  // table's next round.
+  it('pins the round bar while the game is live, naming the next round', async () => {
+    fetchRoster.mockResolvedValue(MEMBER_ROLE);
+    fetchEvent.mockResolvedValue(liveEvent());
+    fetchEventSeating.mockResolvedValue([SEATED_ADA, SEATED_RAVI]);
+    fetchTableRounds.mockResolvedValue([ROUND_1]);
+
+    render(<EventScreen />);
+
+    expect(await screen.findByText('Start round 2 · 15 min')).toBeTruthy();
+    expect(screen.getAllByTestId('round-bar')).toHaveLength(1);
+  });
+
+  it('has no round bar before the game has started', async () => {
+    fetchRoster.mockResolvedValue(MEMBER_ROLE);
+    fetchEventSeating.mockResolvedValue([SEATED_ADA, SEATED_RAVI]);
+    fetchTableRounds.mockResolvedValue([]);
+
+    render(<EventScreen />);
+
+    await screen.findByText('Thursday Mahjong');
+    expect(screen.queryByTestId('round-bar')).toBeNull();
   });
 
   it('lets only the organizer delete a round', async () => {
@@ -1756,7 +1793,7 @@ describe('table rounds', () => {
 
     render(<EventScreen />);
 
-    await screen.findByText('Ravi K. · 8 pts');
+    await screen.findByLabelText('Ravi K. won 8 points');
     expect(
       screen.queryByRole('button', {
         name: "Delete Ravi K.'s round for 8 points",
