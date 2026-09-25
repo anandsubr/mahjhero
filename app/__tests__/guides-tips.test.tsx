@@ -393,7 +393,7 @@ describe('event page tip', () => {
 
   it('is not shown to an organizer', async () => {
     renderEventAsOrganizer();
-    await screen.findByText(/Invite a guest by email/);
+    await screen.findByLabelText("Guest's email address");
     expect(screen.queryByText('Getting a seat')).toBeNull();
   });
 
