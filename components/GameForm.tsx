@@ -493,7 +493,7 @@ export function ConfirmSheet({
             onPress={onConfirm}
             accessibilityRole="button"
             accessibilityLabel={confirmLabel}
-            style={({ pressed }) => [styles.primaryButton, styles.sheetPrimary, pressed && styles.primaryButtonPressed]}
+            style={({ pressed }) => [styles.sheetPrimary, pressed && styles.primaryButtonPressed]}
           >
             <Text style={styles.primaryText}>{confirmLabel}</Text>
           </Pressable>
@@ -753,7 +753,18 @@ const styles = StyleSheet.create({
   },
   sheetTitle: { fontFamily: type.bodyBold, fontSize: 17, color: colors.text },
   sheetBody: { fontFamily: type.bodyRegular, fontSize: 15, lineHeight: 21, color: colors.neutral[800] },
-  sheetPrimary: { flex: 0, marginTop: 4 },
+  // Not built on `primaryButton`: its `flex: 1` (right for the side-by-side
+  // action bar) becomes a 0 flex-basis in this column, and `flex: 0` on top
+  // does not undo it on web -- the button collapsed to zero height, leaving
+  // white "Discard" text floating on the pale sheet.
+  sheetPrimary: {
+    height: 50,
+    marginTop: 4,
+    borderRadius: radius.pill,
+    backgroundColor: colors.accent[700],
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   sheetCancel: { height: 44, alignItems: 'center', justifyContent: 'center' },
   sheetCancelText: { fontFamily: type.bodyBold, fontSize: 15, color: colors.neutral[700] },
 });

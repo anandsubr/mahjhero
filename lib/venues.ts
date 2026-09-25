@@ -21,6 +21,9 @@ export type VenueMatch = {
   locality: string | null;
   visibility: VenueVisibility;
   is_own_club: boolean;
+  /** This club's non-cancelled games at the venue. Absent from a server
+   *  that predates 20260925100000_search_venues_game_count. */
+  game_count?: number;
 };
 
 /**

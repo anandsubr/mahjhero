@@ -847,6 +847,7 @@ export default function EditEventScreen() {
               // instance to show the newly-active snapshot's venue.
               key={isSeriesScope ? 'series' : 'event'}
               variant="row"
+              clubName={club.name}
               clubId={clubId}
               value={venueId}
               valueName={venueName}
