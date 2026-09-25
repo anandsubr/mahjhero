@@ -17,8 +17,7 @@ vi.mock('../../../lib/attachments', () => ({
 }));
 
 // A pure presentational component: no session, router, or focus-effect
-// dependency to mock -- the same reasoning MessageBubble.test.tsx's own
-// header gives. app/__tests__/thread.test.tsx still exercises this through
+// dependency to mock. app/__tests__/thread.test.tsx still exercises this through
 // the real screen end to end; these tests exist so Tasks 11-12 can render
 // Composer on its own with confidence.
 // The attachment-related props Task 10 added, spread into every render
@@ -149,11 +148,10 @@ describe('Composer', () => {
     expect(onClearReply).toHaveBeenCalled();
   });
 
-  // The artboard's composer is a 58x58 circular icon button beside a
-  // 58-tall input -- the same assertion app/__tests__/thread.test.tsx
-  // already carries for the full screen, repeated here since this is now
-  // where that layout actually lives.
-  it("matches the input's resting height to the send button's", () => {
+  // The Messages 2a composer: a 46pt pill (3pt padding around a 40pt field)
+  // beside a 46pt round Send button, with the camera -- the only attach
+  // control -- inside the pill.
+  it('rests the field at 40 inside a 46 pill, beside a 46 Send circle and an inline camera', () => {
     render(
       <Composer
         draft=""
@@ -166,9 +164,13 @@ describe('Composer', () => {
       />,
     );
     const input = screen.getByLabelText('Message');
-    expect(getComputedStyle(input).height).toBe('58px');
+    expect(getComputedStyle(input).height).toBe('40px');
+    expect(input.getAttribute('placeholder')).toBe('Message');
+    const pill = input.parentElement!;
+    expect(getComputedStyle(pill).minHeight).toBe('46px');
+    expect(pill.contains(screen.getByLabelText('Attach an image'))).toBe(true);
     const send = screen.getByLabelText('Send');
-    expect(getComputedStyle(send).width).toBe('58px');
-    expect(getComputedStyle(send).height).toBe('58px');
+    expect(getComputedStyle(send).width).toBe('46px');
+    expect(getComputedStyle(send).height).toBe('46px');
   });
 });

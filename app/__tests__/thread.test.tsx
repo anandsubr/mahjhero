@@ -432,38 +432,35 @@ describe('thread screen', () => {
     await waitFor(() => expect((input as HTMLInputElement).value).toBe(''));
   });
 
-  // The artboard's composer is a 58×58 circular icon button beside a
-  // 58-tall input -- matched heights, one shape. We shipped a text "Send"
-  // pill with horizontal padding next to a multiline input whose rendered
-  // height exceeded 58, so the two halves never lined up. Asserted on the
-  // literal CSS `width`/`height`/`borderRadius` rather than a real layout
-  // measurement (jsdom does not lay pages out) -- these are properties this
-  // component sets directly, not ones a browser would need to compute.
-  it('renders Send as a 58×58 circular icon button, not a text pill', async () => {
+  // The Messages 2a composer: a 46pt round Send button beside a 46pt pill
+  // holding the field. Asserted on literal CSS rather than real layout
+  // (jsdom does not lay pages out) -- these are properties the component
+  // sets directly.
+  it('renders Send as a 46×46 circular icon button, not a text pill', async () => {
     render(<ThreadScreen />);
     const send = await screen.findByLabelText('Send');
-    // No "Send" text node left inside it -- an icon button has no label to
-    // change into "Confirm" the way the old text pill did.
     expect(screen.queryByText('Send')).toBeNull();
     const style = getComputedStyle(send);
-    expect(style.width).toBe('58px');
-    expect(style.height).toBe('58px');
-    // Not `style.borderRadius` -- react-native-web emits the four longhand
-    // corner properties, and jsdom's `getComputedStyle` does not synthesize
-    // the shorthand back up from them (it reads back as '').
+    expect(style.width).toBe('46px');
+    expect(style.height).toBe('46px');
+    // react-native-web emits the four longhand corners; jsdom doesn't
+    // synthesize the shorthand back from them.
     expect(style.borderTopLeftRadius).toBe('999px');
   });
 
-  // The input's resting height must match the button's -- not merely claim
-  // to via `minHeight`, which is exactly what let a react-native-web
-  // `<textarea>`'s own intrinsic rows push the box taller than 58 in the
-  // first place. The fix sets an explicit `height`, which (unlike
-  // `minHeight`) is a literal value `getComputedStyle` can read back even
-  // without jsdom performing real layout.
-  it("matches the composer input's resting height to the send button's", async () => {
+  // An explicit `height`, not `minHeight` -- a react-native-web textarea's
+  // own intrinsic rows would otherwise push it taller than the pill.
+  it('rests the composer field at 40, inside the 46 pill', async () => {
     render(<ThreadScreen />);
     const input = await screen.findByLabelText('Message');
-    expect(getComputedStyle(input).height).toBe('58px');
+    expect(getComputedStyle(input).height).toBe('40px');
+  });
+
+  // The camera is the only attach control, inside the pill -- no "+".
+  it('puts the camera inside the message pill', async () => {
+    render(<ThreadScreen />);
+    const input = await screen.findByLabelText('Message');
+    expect(input.parentElement!.contains(screen.getByLabelText('Attach an image'))).toBe(true);
   });
 
   // The owner's call: composing an announcement (the toggle, its recipient-
@@ -812,17 +809,13 @@ describe('thread screen', () => {
     expect(screen.queryByTestId('quote-stub')).toBeNull();
   });
 
-  // The owner's fix for the loudest thing on the old screen: a permanent
-  // orange "Reply" link on every single bubble. The iOS/WhatsApp convention
-  // replaces it with a long press on the bubble itself -- no visible control
-  // survives, and the same reply-target selection the old link performed
-  // fires from holding the bubble down instead.
-  it('picks the reply target with a long press on the bubble, with no visible Reply control on screen', async () => {
+  // A long press on any message picks it as the reply target. The Messages
+  // 2a handoff also brings back a quiet, outlined Reply chip -- one per run
+  // of someone else's messages, not the loud link that used to sit on every
+  // bubble.
+  it('picks the reply target with a long press on the message', async () => {
     render(<ThreadScreen />);
     const bubble = await screen.findByTestId('bubble-m1');
-    // The loudest thing about the old screen: gone. Nothing on screen reads
-    // "Reply" any more, visibly or otherwise as plain text content.
-    expect(screen.queryByText('Reply')).toBeNull();
 
     // A held press: mousedown, hold past the long-press delay, mouseup --
     // react-native-web's own responder system schedules onLongPress off of
@@ -840,8 +833,6 @@ describe('thread screen', () => {
     fireEvent.mouseUp(bubble);
     vi.useRealTimers();
 
-    // The identical stub the old "Reply" link produced -- only how it gets
-    // picked has changed.
     expect(
       await screen.findByText('Sara Lindqvist: We are one short for Tuesday.'),
     ).toBeTruthy();
@@ -865,27 +856,23 @@ describe('thread screen', () => {
     ).toBeTruthy();
   });
 
-  // The design specifies an asymmetric, tail-clipped corner on the person
-  // bubbles -- `22px 22px 22px 8px` for an incoming message, mirrored to
-  // `22px 22px 8px 22px` for your own -- so they read as speech rather than
-  // plain rounded boxes. Asserted on the literal longhand corner properties
-  // react-native-web emits (jsdom does not synthesize the `border-radius`
-  // shorthand back up from them), the same pattern the Send button's own
-  // corner test above already uses.
-  it('gives incoming and outgoing bubbles an asymmetric, tail-clipped corner', async () => {
+  // Messages 2a: someone else's message is plain text with no bubble at
+  // all; yours sits in an accent bubble whose tight bottom-right corner is
+  // its tail (20/20/6/20). Asserted on the longhand corners react-native-web
+  // emits.
+  it("draws someone else's message with no bubble and yours with a tailed accent bubble", async () => {
     render(<ThreadScreen />);
     await screen.findByText('We are one short for Tuesday.');
     const theirs = getComputedStyle(screen.getByTestId('bubble-m1'));
-    expect(theirs.borderTopLeftRadius).toBe('28px');
-    expect(theirs.borderTopRightRadius).toBe('28px');
-    expect(theirs.borderBottomRightRadius).toBe('28px');
-    expect(theirs.borderBottomLeftRadius).toBe('8px');
+    expect(theirs.backgroundColor).not.toBe('rgb(235, 221, 197)');
 
-    const mine = getComputedStyle(screen.getByTestId('bubble-m2'));
-    expect(mine.borderTopLeftRadius).toBe('28px');
-    expect(mine.borderTopRightRadius).toBe('28px');
-    expect(mine.borderBottomRightRadius).toBe('8px');
-    expect(mine.borderBottomLeftRadius).toBe('28px');
+    const mineBubble = screen.getByText(MESSAGES[1].body).parentElement!;
+    const mine = getComputedStyle(mineBubble);
+    expect(mine.backgroundColor).toBe('rgb(140, 73, 26)');
+    expect(mine.borderTopLeftRadius).toBe('20px');
+    expect(mine.borderTopRightRadius).toBe('20px');
+    expect(mine.borderBottomRightRadius).toBe('6px');
+    expect(mine.borderBottomLeftRadius).toBe('20px');
   });
 
   // The announcement bubble is full-width and addressed to everyone -- there
@@ -968,12 +955,9 @@ describe('thread screen', () => {
     it('shows one separator above the first message and none before the second, same-group message', async () => {
       render(<ThreadScreen />);
       await screen.findByText('We are one short for Tuesday.');
-      expect(
-        screen.getByText(groupSeparatorLabel(MESSAGES[0].created_at)),
-      ).toBeTruthy();
-      expect(
-        screen.queryByText(groupSeparatorLabel(MESSAGES[1].created_at)),
-      ).toBeNull();
+      const separators = screen.getAllByTestId('conversation-separator');
+      expect(separators).toHaveLength(1);
+      expect(separators[0].textContent).toBe(groupSeparatorLabel(MESSAGES[0].created_at));
     });
 
     // A third message an hour-plus after the second starts a new group of
@@ -997,23 +981,22 @@ describe('thread screen', () => {
       render(<ThreadScreen />);
       await screen.findByText('Still there?');
       expect(
-        screen.getByText(groupSeparatorLabel(MESSAGES[0].created_at)),
-      ).toBeTruthy();
-      expect(
-        screen.getByText(groupSeparatorLabel('2026-08-25T11:30:00Z')),
-      ).toBeTruthy();
+        screen.getAllByTestId('conversation-separator').map((el) => el.textContent),
+      ).toEqual([
+        groupSeparatorLabel(MESSAGES[0].created_at),
+        groupSeparatorLabel('2026-08-25T11:30:00Z'),
+      ]);
     });
 
-    // Centred and muted -- `colors.textMuted` on `colors.bg`, the same
-    // already-pinned 5.15:1 pairing lib/theme.test.ts holds for helper text
-    // on the page background, reused rather than a new pin for a fresh one.
-    it('centres the separator text in the already-pinned muted colour', async () => {
+    // Centred, neutral[700] on colors.bg (pinned in lib/theme.test.ts), with
+    // the day in bold and the time regular -- "**Today** 6:00 am".
+    it('centres the separator in neutral-700 with the day set in bold', async () => {
       render(<ThreadScreen />);
-      const separator = await screen.findByText(
-        groupSeparatorLabel(MESSAGES[0].created_at),
-      );
-      expect(getComputedStyle(separator).color).toBe('rgb(103, 97, 88)');
+      await screen.findByText('We are one short for Tuesday.');
+      const separator = screen.getByTestId('conversation-separator');
+      expect(getComputedStyle(separator).color).toBe('rgb(100, 92, 80)');
       expect(getComputedStyle(separator).textAlign).toBe('center');
+      expect(screen.getByText('Today')).toBeTruthy();
     });
   });
 
@@ -1186,46 +1169,35 @@ describe('thread screen', () => {
     });
   });
 
-  // TabBar navigates with router.replace off an entry route that is itself
-  // a Redirect, so the history stack is typically one deep. A thread screen
-  // with no bar would be a dead end on native short of relaunching the app.
-  it('carries the tab bar with Messages marked', async () => {
+  // The Messages 2a handoff hides the tab bar inside a conversation. That
+  // is not a dead end even on a one-deep native history stack (TabBar
+  // navigates with router.replace off a Redirect entry route): the header's
+  // back chevron pushes /messages outright rather than relying on history.
+  it('hides the tab bar inside a conversation, leaving the back chevron as the way out', async () => {
     render(<ThreadScreen />);
     await screen.findByText('Sara, Peter');
-    expect(
-      screen.getByRole('button', { name: 'Messages' }).getAttribute('aria-selected'),
-    ).toBe('true');
-    expect(
-      screen.getByRole('button', { name: 'Club' }).getAttribute('aria-selected'),
-    ).toBe('false');
+    expect(screen.queryByRole('button', { name: 'Messages' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Club' })).toBeNull();
+    fireEvent.click(screen.getByLabelText('Back to Messages'));
+    expect(push).toHaveBeenCalledWith('/messages');
   });
 
-  it('carries the tab bar when the thread cannot be loaded', async () => {
+  it('still offers the way back when the thread cannot be loaded', async () => {
     fetchThread.mockResolvedValueOnce(null);
     render(<ThreadScreen />);
     expect(await screen.findByText(/Could not reach MahjHero/)).toBeTruthy();
-    expect(
-      screen.getByRole('button', { name: 'Messages' }).getAttribute('aria-selected'),
-    ).toBe('true');
+    expect(screen.getByLabelText('Back to Messages')).toBeTruthy();
   });
 
-  // The iOS Messages convention the owner asked for: a compact back chevron
-  // top-left, a circular avatar for the conversation, and its name in a
-  // pill beneath it. The owner is knowingly reinstating a back control the
-  // tab bar's own "Messages" tab made this screen drop a round ago -- but a
-  // compact header chevron reads very differently from the text link that
-  // was removed, so it is not the same regression coming back.
+  // The Messages 2a header: back chevron, a 40pt avatar, the name (with a
+  // member count under a group's), and an overflow button -- one row.
   describe('header', () => {
-    it('shows a back chevron, distinctly named from the Messages tab, that returns to /messages', async () => {
+    it('puts a 40pt avatar beside the name in one compact row', async () => {
       render(<ThreadScreen />);
       await screen.findByText('Sara, Peter');
-      // Still exactly one control literally named "Messages" -- the tab
-      // bar's own tab. The back chevron carries its own distinct accessible
-      // name, so the two can never collapse into the same control the way
-      // the old text back link once did.
-      expect(screen.getAllByRole('button', { name: 'Messages' })).toHaveLength(1);
-      fireEvent.click(screen.getByLabelText('Back to Messages'));
-      expect(push).toHaveBeenCalledWith('/messages');
+      const avatar = getComputedStyle(screen.getByTestId('thread-header-avatar-group'));
+      expect(avatar.width).toBe('40px');
+      expect(avatar.height).toBe('40px');
     });
 
     // The same per-kind treatment components/ThreadRow.tsx's list row already
@@ -1251,10 +1223,9 @@ describe('thread screen', () => {
       );
     });
 
-    // The name pill replaces the old pressable heading as the way into the
-    // members view -- same accessible name, same panel, just a new control
-    // carrying it.
-    it('opens the members panel from the name pill for a group thread', async () => {
+    // Tapping the name is the way into the members view -- same accessible
+    // name, same panel as before.
+    it('opens the members panel from the name for a group thread', async () => {
       fetchThread.mockResolvedValueOnce(GROUP_THREAD);
       fetchThreadMessages.mockResolvedValueOnce([]);
       render(<ThreadScreen />);
@@ -1262,18 +1233,39 @@ describe('thread screen', () => {
       expect(await screen.findByText('Sara Lindqvist')).toBeTruthy();
     });
 
+    // The overflow button opens the same panel -- it's where Add people and
+    // Leave live.
+    it('opens the members panel from the overflow button too', async () => {
+      fetchThread.mockResolvedValueOnce(GROUP_THREAD);
+      fetchThreadMessages.mockResolvedValueOnce([]);
+      render(<ThreadScreen />);
+      fireEvent.click(await screen.findByLabelText('Conversation options'));
+      expect(await screen.findByText('Sara Lindqvist')).toBeTruthy();
+    });
+
+    // In place of "Active now", which needs presence data the app lacks.
+    it("shows a group's member count under its name", async () => {
+      fetchThread.mockResolvedValueOnce(GROUP_THREAD);
+      fetchThreadMessages.mockResolvedValueOnce([]);
+      render(<ThreadScreen />);
+      const n = GROUP_THREAD.thread_members.length;
+      expect(await screen.findByText(`${n} ${n === 1 ? 'member' : 'members'}`)).toBeTruthy();
+      expect(screen.queryByText('Active now')).toBeNull();
+    });
+
     // A club or game thread has no members view to open -- rendering the
     // pill as a Pressable with a chevron anyway would be a control that
     // LOOKS tappable and does nothing, which is worse than one that plainly
     // isn't. It stays a plain, non-interactive label instead. On a GAME
     // thread here, for the reason the members-control test above records.
-    it('gives the name pill no tap affordance on a game thread', async () => {
+    it('gives the name no tap affordance and draws no overflow button on a game thread', async () => {
       fetchThread.mockResolvedValueOnce(GAME_THREAD);
       render(<ThreadScreen />);
       await screen.findByText('Tuesday night mahjong');
       expect(
         screen.queryByRole('button', { name: /Tuesday night mahjong/ }),
       ).toBeNull();
+      expect(screen.queryByLabelText('Conversation options')).toBeNull();
     });
   });
 });

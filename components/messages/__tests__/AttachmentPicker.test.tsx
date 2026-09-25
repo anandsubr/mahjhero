@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import type React from 'react';
 import AttachmentPicker from '../AttachmentPicker';
 
 // Mocked wholesale rather than through `vi.importActual` (the pattern
@@ -56,6 +57,36 @@ function openLibrary() {
 }
 
 describe('AttachmentPicker', () => {
+  // The composer's text field lives inside `layout`, so it can't be reset by
+  // remounting with `key` -- bumping `resetKey` clears the images and leaves
+  // everything drawn through `layout` mounted.
+  it('clears picked images when resetKey changes, without remounting what layout drew', async () => {
+    pickImages.mockResolvedValueOnce([{ uri: 'file://a.jpg', width: 400, height: 300 }]);
+    compressImage.mockResolvedValueOnce({ uri: 'file://a-small.jpg', width: 400, height: 300 });
+    uploadAttachment.mockResolvedValueOnce({ storagePath: 't1/a.jpg', error: null });
+    const onAttachmentsChange = vi.fn();
+    const layout = ({ strip, trigger }: { strip: React.ReactNode; trigger: React.ReactNode }) => (
+      <>
+        {strip}
+        <input aria-label="field" />
+        {trigger}
+      </>
+    );
+    const { rerender } = render(
+      <AttachmentPicker threadId="t1" onAttachmentsChange={onAttachmentsChange} layout={layout} resetKey={0} />,
+    );
+    const field = screen.getByLabelText('field');
+    openLibrary();
+    await waitFor(() => expect(screen.getByTestId('attachment-strip')).toBeTruthy());
+
+    rerender(
+      <AttachmentPicker threadId="t1" onAttachmentsChange={onAttachmentsChange} layout={layout} resetKey={1} />,
+    );
+    await waitFor(() => expect(screen.queryByTestId('attachment-strip')).toBeNull());
+    expect(onAttachmentsChange).toHaveBeenLastCalledWith([], false);
+    expect(screen.getByLabelText('field')).toBe(field);
+  });
+
   it('reports pending while uploading, then the finished attachment once it lands', async () => {
     pickImages.mockResolvedValueOnce([{ uri: 'file://a.jpg', width: 400, height: 300 }]);
     compressImage.mockResolvedValueOnce({ uri: 'file://a-small.jpg', width: 400, height: 300 });

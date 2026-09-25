@@ -1,19 +1,18 @@
 import { useCallback, useState } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SendIcon } from '../icons';
 import { quoteStub, type MessageAttachmentInput, type ThreadMessage } from '../../lib/messages';
 import { colors, radius, space, type } from '../../lib/theme';
 import AttachmentPicker from './AttachmentPicker';
 
-// The artboard's `.bigin` height (`min-height: 58px`), and this screen's own
-// Send button -- a 58x58 circle beside a 58-tall input, matched heights, one
-// shape. Named once so the input's resting/grown heights and the button's
-// own size are visibly the same number rather than two literals that could
-// drift apart.
-const COMPOSER_HEIGHT = 58;
-// How tall a long draft may grow the input before it scrolls internally
-// instead. Unchanged from the pre-existing behaviour this screen already
-// had; only how it's enforced changes (see `handleDraftSize` below).
+// The Messages 2a handoff's composer: a 46pt pill beside a 46pt Send
+// circle. The pill has 3pt of padding top and bottom, so the text field
+// inside it rests at 40 -- the same as the camera button beside it.
+const SEND_SIZE = 46;
+const FIELD_HEIGHT = 40;
+// How tall a long draft may grow the field before it scrolls internally
+// instead.
 const DRAFT_MAX_HEIGHT = 140;
 
 type Props = {
@@ -35,15 +34,17 @@ type Props = {
   // their own `attachments` state for `postMessage`; they just no longer
   // pass it down here too.
   onAttachmentsChange: (ready: MessageAttachmentInput[], pending: boolean) => void;
-  /** Bumped by the caller after a successful send to remount AttachmentPicker clean. */
+  /** Bumped by the caller after a successful send to clear AttachmentPicker's images. */
   attachmentsResetKey: number;
 };
 
 /**
- * The `1C thread` artboard's composer: the quoted-reply row, the message
- * input, and the Send button.
+ * The conversation composer (Messages 2a handoff): the quoted-reply row, any
+ * picked images, then one pill holding the message field and a camera
+ * button, beside a round Send button. The bottom padding is the device's
+ * home-indicator inset, since the tab bar no longer sits under it.
  *
- * Extracted verbatim from app/messages/[threadId].tsx. `draft`, `replyTo`,
+ * `draft`, `replyTo`,
  * and `sending` stay owned by the caller and arrive as props here -- the
  * caller still owns `sending` because it still owns `sendingRef`, the
  * synchronous guard against a second send landing in the same tick a
@@ -74,7 +75,9 @@ export default function Composer({
   // includes this input's padding — so clamping THAT number, not a CSS
   // hint, is what keeps the box between the resting 58px height and
   // `DRAFT_MAX_HEIGHT` for a long draft.
-  const [inputHeight, setInputHeight] = useState(COMPOSER_HEIGHT);
+  const [inputHeight, setInputHeight] = useState(FIELD_HEIGHT);
+  const [focused, setFocused] = useState(false);
+  const insets = useSafeAreaInsets();
 
   // `contentSize.height` is react-native-web's own name for the textarea's
   // `scrollHeight` -- the real rendered height of the padding + text inside
@@ -84,14 +87,14 @@ export default function Composer({
   const handleDraftSize = useCallback(
     (e: { nativeEvent: { contentSize: { height: number } } }) => {
       setInputHeight(
-        Math.min(DRAFT_MAX_HEIGHT, Math.max(COMPOSER_HEIGHT, e.nativeEvent.contentSize.height)),
+        Math.min(DRAFT_MAX_HEIGHT, Math.max(FIELD_HEIGHT, e.nativeEvent.contentSize.height)),
       );
     },
     [],
   );
 
   return (
-    <>
+    <View style={[styles.wrap, { paddingBottom: Math.max(insets.bottom, 12) }]}>
       {replyTo ? (
         <View style={styles.replyingRow}>
           <Text numberOfLines={1} style={styles.replyingText}>
@@ -107,53 +110,57 @@ export default function Composer({
         </View>
       ) : null}
 
-      <View style={styles.composer}>
-        <AttachmentPicker
-          key={attachmentsResetKey}
-          threadId={threadId}
-          onAttachmentsChange={onAttachmentsChange}
-        />
-        <TextInput
-          style={[styles.input, { height: inputHeight }]}
-          value={draft}
-          onChangeText={onDraftChange}
-          onContentSizeChange={handleDraftSize}
-          placeholder="Message"
-          accessibilityLabel="Message"
-          multiline
-          // Without this, react-native-web's own default (no `rows`/
-          // `numberOfLines` given) leaves the underlying `<textarea>`'s
-          // `rows` attribute unset, and an unset `<textarea rows>`
-          // renders 2 browser-default rows -- taller than the 58px
-          // resting height this screen needs to match the Send button,
-          // before a single character has even been typed.
-          // `numberOfLines`, not the newer `rows` prop react-native-web
-          // also accepts: `rows` is not in @types/react-native's
-          // `TextInputProps` at all, and `numberOfLines` is the same
-          // prop TextField.tsx already uses for this exact job.
-          // `handleDraftSize` still grows the box from here for a long
-          // draft.
-          numberOfLines={1}
-        />
-        <Pressable
-          // A single tap posts an ordinary message. Composing an
-          // announcement -- and the two-step Send/Confirm arming that
-          // existed only for it -- is gone from this screen (see
-          // app/messages/[threadId].tsx's own docstring).
-          onPress={() => void onSend()}
-          accessibilityRole="button"
-          accessibilityLabel="Send"
-          disabled={sending}
-          style={styles.send}
-        >
-          <SendIcon />
-        </Pressable>
-      </View>
-    </>
+      <AttachmentPicker
+        resetKey={attachmentsResetKey}
+        threadId={threadId}
+        onAttachmentsChange={onAttachmentsChange}
+        layout={({ strip, trigger }) => (
+          <>
+            {strip}
+            <View style={styles.composer}>
+              <View style={[styles.field, focused ? styles.fieldFocused : null]}>
+                <TextInput
+                  style={[styles.input, { height: inputHeight }]}
+                  value={draft}
+                  onChangeText={onDraftChange}
+                  onContentSizeChange={handleDraftSize}
+                  onFocus={() => setFocused(true)}
+                  onBlur={() => setFocused(false)}
+                  placeholder="Message"
+                  placeholderTextColor={colors.neutral[600]}
+                  accessibilityLabel="Message"
+                  multiline
+                  // Without this, react-native-web leaves the underlying
+                  // `<textarea>`'s `rows` unset, which renders 2 browser-
+                  // default rows -- taller than the field's resting height
+                  // before a single character is typed. `handleDraftSize`
+                  // still grows the box from here for a long draft.
+                  numberOfLines={1}
+                />
+                {trigger}
+              </View>
+              <Pressable
+                // A single tap posts an ordinary message. Composing an
+                // announcement is not offered here (see
+                // app/messages/[threadId].tsx's own docstring).
+                onPress={() => void onSend()}
+                accessibilityRole="button"
+                accessibilityLabel="Send"
+                disabled={sending}
+                style={({ pressed }) => [styles.send, pressed ? styles.sendPressed : null]}
+              >
+                <SendIcon size={21} color={colors.bg} />
+              </Pressable>
+            </View>
+          </>
+        )}
+      />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  wrap: { paddingTop: 8, paddingHorizontal: 12, gap: 8 },
   replyingRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -175,43 +182,60 @@ const styles = StyleSheet.create({
     fontSize: type.size.helper,
     color: colors.accent[800],
   },
-  composer: { flexDirection: 'row', alignItems: 'flex-end', gap: space[2] },
-  // Height is NOT set here -- it's driven by `inputHeight` state above (see
-  // `handleDraftSize`'s own comment), because `minHeight` alone is exactly
-  // what let this box render taller than the 58px Send button beside it:
-  // react-native-web's multiline `TextInput` is a `<textarea>`, which has
-  // its own intrinsic row height independent of `minHeight`.
-  //
-  // `paddingVertical: 17` and `lineHeight: 24` are deliberately literal, not
-  // pulled from the `space`/`type` scales: their SUM has to land on exactly
-  // `COMPOSER_HEIGHT` (58) for the placeholder/first line to sit centred at
-  // rest. A `<textarea>` does not centre its own content vertically the way
-  // a plain `<input>` does (this is the artboard's `<input class="input
-  // bigin">`, singular-line, not a growing textarea) — the only way to get
-  // that centred look out of one is to leave no slack: equal top/bottom
-  // padding plus a line-height that together exactly fill the box, so there
-  // is no extra space left over for the text to be top-aligned within.
+  composer: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
+  // `flex-end` so the camera stays on the bottom line while a long draft
+  // grows the field upward.
+  field: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 2,
+    minHeight: SEND_SIZE,
+    backgroundColor: colors.surface,
+    // Half the resting height rather than radius.pill: identical on one
+    // line, but a long draft grows into a rounded rectangle instead of an
+    // ellipse.
+    borderRadius: SEND_SIZE / 2,
+    paddingTop: 3,
+    paddingRight: 4,
+    paddingBottom: 3,
+    paddingLeft: 3,
+  },
+  // The handoff's keyboard focus ring, drawn on the pill rather than the
+  // bare textarea inside it.
+  fieldFocused: {
+    outlineWidth: 2,
+    outlineStyle: 'solid',
+    outlineColor: colors.accentColor,
+    outlineOffset: 2,
+  },
+  // Height is driven by `inputHeight` (see `handleDraftSize`), not
+  // `minHeight`: react-native-web's multiline TextInput is a `<textarea>`
+  // with its own intrinsic row height. Vertical padding plus line height
+  // (9 + 22 + 9) land exactly on FIELD_HEIGHT so one line sits centred at
+  // rest -- a textarea does not centre its own content.
   input: {
     flex: 1,
-    borderRadius: radius.lg,
-    backgroundColor: colors.surface,
-    paddingHorizontal: space[4],
-    paddingVertical: 17,
-    lineHeight: 24,
+    minWidth: 0,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    lineHeight: 22,
     fontFamily: type.bodyRegular,
-    fontSize: type.size.body,
+    fontSize: 16,
     color: colors.text,
+    backgroundColor: 'transparent',
+    outlineStyle: 'none' as never,
   },
-  // The artboard's 58x58 circular icon button -- accent[700], not
-  // accentColor: colors.bg on accentColor measures 3.03:1 and fails AA at
-  // this size; accent[700] reads 5.72:1 (already pinned in
-  // lib/theme.test.ts for this exact bubble/button pairing).
+  // accent[700], not accentColor: colors.bg on accentColor measures 3.03:1;
+  // accent[700] reads 5.72:1 (pinned in lib/theme.test.ts).
   send: {
-    width: COMPOSER_HEIGHT,
-    height: COMPOSER_HEIGHT,
+    width: SEND_SIZE,
+    height: SEND_SIZE,
     borderRadius: radius.pill,
     backgroundColor: colors.accent[700],
     alignItems: 'center',
     justifyContent: 'center',
   },
+  sendPressed: { backgroundColor: colors.accent[800] },
 });

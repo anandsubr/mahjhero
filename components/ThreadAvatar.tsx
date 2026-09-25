@@ -35,6 +35,8 @@ export default function ThreadAvatar({
   testID,
   asTile = false,
   clubId,
+  initialsSize,
+  tileSize = 'chip',
 }: {
   kind: ThreadKind;
   /** Club name (club) or the other member's/thread's title (direct).
@@ -55,12 +57,20 @@ export default function ThreadAvatar({
   /** Required (in practice) whenever `asTile` is true and `kind==='club'`
    *  — the tile's glyph is derived from this, not from `name`. */
   clubId?: string;
+  /** Overrides the proportional initials size -- the conversation screen's
+   *  small sender avatars and compact header set theirs from the Messages
+   *  2a handoff (12px at 28pt, 17px at 40pt) rather than the list-row ratio. */
+  initialsSize?: number;
+  /** The tile's size when `asTile` applies. `"section"` (30x40, glyph only,
+   *  no initials) fits the compact conversation header's 40pt avatar slot,
+   *  where the club's name already sits right beside it. */
+  tileSize?: 'chip' | 'section';
 }) {
   const dim = { width: size, height: size, borderRadius: size / 2 };
   const glyphSize = Math.round(size * (24 / DEFAULT_SIZE));
   const initialsStyle = [
     styles.avatarInitials,
-    { fontSize: Math.round(size * (18 / DEFAULT_SIZE)) },
+    { fontSize: initialsSize ?? Math.round(size * (18 / DEFAULT_SIZE)) },
   ];
 
   if (kind === 'club' && asTile && clubId) {
@@ -68,7 +78,7 @@ export default function ThreadAvatar({
       <View testID={testID ?? 'thread-avatar-club-tile'}>
         <MahjongTile
           suit={glyphForClub(clubId)}
-          size="chip"
+          size={tileSize}
           label={initialsFrom(name)}
         />
       </View>

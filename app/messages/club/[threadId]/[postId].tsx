@@ -1,22 +1,18 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
 import Composer from '../../../../components/messages/Composer';
+import ConversationHeader from '../../../../components/messages/ConversationHeader';
+import ConversationMessages from '../../../../components/messages/ConversationMessages';
 import ErrorBanner from '../../../../components/ErrorBanner';
-import MessageBubble from '../../../../components/messages/MessageBubble';
 import Screen from '../../../../components/Screen';
-import TabBar from '../../../../components/TabBar';
-import ThreadAvatar from '../../../../components/ThreadAvatar';
-import { ChevronLeftIcon } from '../../../../components/icons';
 import { getSignedUrls } from '../../../../lib/attachments';
 import { GENERIC_ERROR } from '../../../../lib/constants';
 import {
   fetchPostMessages,
   fetchThread,
-  groupSeparatorLabel,
   markPostRead,
   postMessage,
-  startsNewGroup,
   threadKindFor,
   threadTitleFor,
   type MessageAttachmentInput,
@@ -24,7 +20,7 @@ import {
   type ThreadMessage,
 } from '../../../../lib/messages';
 import { useSession } from '../../../../lib/session';
-import { colors, radius, space, type } from '../../../../lib/theme';
+import { colors } from '../../../../lib/theme';
 import { useThreadRealtime } from '../../../../lib/use-thread-realtime';
 
 /**
@@ -55,8 +51,9 @@ import { useThreadRealtime } from '../../../../lib/use-thread-realtime';
  * (`fetch_post_messages` returns only this root and its replies) and there
  * is no payload field to filter on that would make skipping it worthwhile.
  *
- * Carries the same header the board does (app/messages/club/[threadId]/
- * index.tsx), not just a bare chevron: a post can be reached directly (a
+ * Carries the club's name and avatar in its header, not just a bare
+ * chevron -- the compact conversation header (Messages 2a handoff), the
+ * same one the thread screen uses, with no tab bar under the composer. A post can be reached directly (a
  * deep link, a notification, a bookmark) without ever passing through the
  * board, and a member arriving that way has exactly the same "which club is
  * this" problem the board itself shipped with. The chevron still returns to
@@ -241,7 +238,7 @@ export default function PostScreen() {
 
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="messages" />}>
+      <Screen center contentStyle={styles.centered}>
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
     );
@@ -257,78 +254,42 @@ export default function PostScreen() {
   const kind = thread ? threadKindFor(thread, viewerId) : null;
 
   return (
-    <Screen contentStyle={styles.container} tabBar={<TabBar active="messages" />}>
+    <Screen contentStyle={styles.container}>
       {/*
-        The same header the board carries (app/messages/club/[threadId]/
-        index.tsx) -- see this screen's own docstring for why a bare
-        chevron back to the board is not enough context on its own. The
-        chevron goes to the board, not `/messages`: this screen is one level
-        below the board, not two below the list.
+        The chevron goes to the board, not `/messages`: this screen is one
+        level below the board, not two below the list. A post has no members
+        view, so the name is plain and there is no overflow button.
       */}
-      <View style={styles.header}>
-        <Pressable
-          onPress={() => router.push(`/messages/club/${threadId}`)}
-          accessibilityRole="button"
-          accessibilityLabel="Back to board"
-          style={styles.backButton}
-        >
-          <ChevronLeftIcon color={colors.text} size={22} />
-        </Pressable>
-
-        {thread && kind ? (
-          <View style={styles.headerCenter}>
-            <ThreadAvatar
-              kind={kind}
-              name={title}
-              size={72}
-              testID={`thread-header-avatar-${kind}`}
-              asTile={kind === 'club'}
-              clubId={kind === 'club' ? (thread.club_id ?? undefined) : undefined}
-            />
-
-            {/*
-              A plain View, not a Pressable -- matching the board's own
-              pill (app/messages/club/[threadId]/index.tsx) and
-              app/messages/club/new.tsx's: no button role, no chevron.
-            */}
-            <View style={styles.namePill}>
-              <Text numberOfLines={1} style={styles.namePillText}>
-                {title}
-              </Text>
-            </View>
-          </View>
-        ) : null}
-      </View>
+      <ConversationHeader
+        onBack={() => router.push(`/messages/club/${threadId}`)}
+        backLabel="Back to board"
+        kind={thread ? kind : null}
+        title={title}
+        clubId={thread?.club_id}
+      />
 
       {/* The alert role lives inside ErrorBanner now -- see its docstring. */}
-      {error ? <ErrorBanner message={error} /> : null}
+      {error ? (
+        <View style={styles.inset}>
+          <ErrorBanner message={error} />
+        </View>
+      ) : null}
 
       {!ready ? (
-        <ActivityIndicator color={colors.accentColor} />
+        <ActivityIndicator color={colors.accentColor} style={styles.spinner} />
       ) : (
         <>
-          <ScrollView testID="screen-scroll" style={styles.scroller}>
-            {messages.map((m, i) => {
-              // Same iOS-Messages convention app/messages/[threadId].tsx
-              // established: MessageBubble carries no time of its own, so a
-              // centred separator marks the first message of a new group
-              // instead of repeating it on every bubble.
-              const previous = i > 0 ? messages[i - 1] : null;
-              const newGroup = startsNewGroup(m.created_at, previous?.created_at ?? null);
-              return (
-                <Fragment key={m.id}>
-                  {newGroup ? (
-                    <Text style={styles.separator}>{groupSeparatorLabel(m.created_at)}</Text>
-                  ) : null}
-                  <MessageBubble
-                    message={m}
-                    mine={m.author_id === viewerId}
-                    onReply={setReplyTo}
-                    attachmentUrls={attachmentUrls}
-                  />
-                </Fragment>
-              );
-            })}
+          <ScrollView
+            testID="screen-scroll"
+            style={styles.scroller}
+            contentContainerStyle={styles.list}
+          >
+            <ConversationMessages
+              messages={messages}
+              viewerId={viewerId}
+              onReply={setReplyTo}
+              attachmentUrls={attachmentUrls}
+            />
           </ScrollView>
 
           <Composer
@@ -352,55 +313,12 @@ export default function PostScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: space[6], gap: space[3], flex: 1 },
+  // Edge to edge, the same as app/messages/[threadId].tsx: the header and
+  // the message list set their own side padding.
+  container: { flex: 1 },
   centered: { alignItems: 'center' },
-  // Copied from the board's own `header`/`backButton`/`headerCenter`/
-  // `namePill`/`namePillText` (app/messages/club/[threadId]/index.tsx),
-  // itself copied from app/messages/[threadId].tsx -- see either's own
-  // comments for the reasoning behind the absolute positioning, the 44x44
-  // target, and the contrast ratios.
-  header: {
-    position: 'relative',
-    alignItems: 'center',
-    paddingBottom: space[2],
-  },
-  backButton: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerCenter: { alignItems: 'center', gap: space[2] },
-  namePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space[1],
-    maxWidth: 240,
-    backgroundColor: colors.surface,
-    borderRadius: radius.pill,
-    paddingHorizontal: space[3],
-    paddingVertical: space[1],
-  },
-  namePillText: {
-    flexShrink: 1,
-    minWidth: 0,
-    fontFamily: type.bodySemiBold,
-    fontSize: type.size.helper,
-    color: colors.text,
-  },
+  inset: { paddingHorizontal: 14, paddingTop: 8 },
+  spinner: { marginTop: 16 },
   scroller: { flex: 1 },
-  // Same treatment as app/messages/[threadId].tsx's own `separator`: always
-  // on colors.bg (never a bubble's ground), so colors.textMuted's pinned
-  // 5.15:1 ratio (lib/theme.test.ts) applies here unchanged.
-  separator: {
-    fontFamily: type.bodyRegular,
-    fontSize: type.size.helper,
-    color: colors.textMuted,
-    textAlign: 'center',
-    marginTop: space[3],
-    marginBottom: space[2],
-  },
+  list: { gap: 18, paddingTop: 8, paddingBottom: 12 },
 });

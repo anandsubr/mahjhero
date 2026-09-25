@@ -1,23 +1,19 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Composer from '../../components/messages/Composer';
+import ConversationHeader from '../../components/messages/ConversationHeader';
+import ConversationMessages from '../../components/messages/ConversationMessages';
 import ErrorBanner from '../../components/ErrorBanner';
 import MembersPanel from '../../components/messages/MembersPanel';
-import MessageBubble from '../../components/messages/MessageBubble';
 import Screen from '../../components/Screen';
-import TabBar from '../../components/TabBar';
-import ThreadAvatar from '../../components/ThreadAvatar';
-import { ChevronLeftIcon, ChevronRightIcon } from '../../components/icons';
 import { getSignedUrls } from '../../lib/attachments';
 import { GENERIC_ERROR } from '../../lib/constants';
 import {
   fetchThread,
   fetchThreadMessages,
-  groupSeparatorLabel,
   markThreadRead,
   postMessage,
-  startsNewGroup,
   threadKindFor,
   threadTitleFor,
   type MessageAttachmentInput,
@@ -39,18 +35,11 @@ import { useThreadRealtime } from '../../lib/use-thread-realtime';
  * badges live at the cost of a connection held for the whole session and the
  * hardest thing in the plan to test; the list refetches on focus instead.
  *
- * Carries the tab bar with `active="messages"`, the same as every other
- * signed-in screen: the design source renders the bar as a sibling of every
- * `appScreens` entry, `thread` included — it is not gated to the four tabs
- * themselves. Its own "← Messages" text back link, drawn above the heading,
- * was removed once the Messages tab reached the identical `/messages` route
- * — the same call already made once for the club detail screen
- * (`app/clubs/[id]/index.tsx`'s own docstring). The header below now carries
- * a COMPACT chevron control of its own again, on the owner's explicit call:
- * the iOS Messages convention this header is rebuilt to puts a back chevron
- * in the header itself, and a small icon-only control there reads nothing
- * like the loud text link that was removed for duplicating the tab bar — it
- * is not that regression coming back.
+ * Laid out to the Messages 2a handoff: a compact one-row header
+ * (components/messages/ConversationHeader.tsx), runs of messages grouped by
+ * sender (components/messages/ConversationMessages.tsx), and a pill
+ * composer. The tab bar is hidden while inside a conversation, on the
+ * handoff's call -- the header's back chevron is the way out.
  *
  * The composer's "Also email everyone" toggle and its two-step Send/Confirm
  * arming are gone too, on the owner's call: they intend to redesign how
@@ -224,7 +213,7 @@ export default function ThreadScreen() {
 
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="messages" />}>
+      <Screen center contentStyle={styles.centered}>
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
     );
@@ -265,87 +254,46 @@ export default function ThreadScreen() {
   // so this doesn't carry a second copy of that branching.
   const kind = thread ? threadKindFor(thread, viewerId) : null;
   const memberCount = thread?.thread_members.length ?? 0;
-  const membersLabel = `${title}, ${memberCount} ${
-    memberCount === 1 ? 'member' : 'members'
-  }, view members`;
+  const memberCountText = `${memberCount} ${memberCount === 1 ? 'member' : 'members'}`;
+  const membersLabel = `${title}, ${memberCountText}, view members`;
 
   return (
-    <Screen contentStyle={styles.container} tabBar={<TabBar active="messages" />}>
+    <Screen contentStyle={styles.container}>
       {/*
-        The iOS Messages convention the owner asked for: a compact back
-        chevron top-left, a circular avatar for the conversation centred
-        beneath it, and the conversation's name in a rounded pill under
-        that. The chevron always renders (it doesn't need `thread` to
-        navigate away); the avatar and pill need a loaded thread to know
-        what to show, so they wait for one.
+        The back chevron always renders (it doesn't need `thread` to
+        navigate away); the avatar and name wait for a loaded thread.
+
+        Only a group or direct thread has a members view to open, so only
+        those get a tappable name and the overflow button -- a club or game
+        thread's header is plain. The member count goes under a group's
+        name in place of the handoff's "Active now", which needs presence
+        data the app doesn't have; a direct thread's count is always two
+        and says nothing.
       */}
-      <View style={styles.header}>
-        <Pressable
-          onPress={() => router.push('/messages')}
-          accessibilityRole="button"
-          accessibilityLabel="Back to Messages"
-          style={styles.backButton}
-        >
-          <ChevronLeftIcon color={colors.text} size={22} />
-        </Pressable>
+      <ConversationHeader
+        onBack={() => router.push('/messages')}
+        backLabel="Back to Messages"
+        kind={thread ? kind : null}
+        title={title}
+        subtitle={kind === 'group' ? memberCountText : null}
+        onOpenDetails={canManageMembers ? () => setMembersOpen((v) => !v) : undefined}
+        detailsLabel={membersLabel}
+      />
 
-        {thread && kind ? (
-          <View style={styles.headerCenter}>
-            <ThreadAvatar
-              kind={kind}
-              name={title}
-              size={72}
-              testID={`thread-header-avatar-${kind}`}
-            />
-
-            {/*
-              The pill replaces the old pressable heading as the way into
-              the members view. Its accessibilityLabel composes the title,
-              the member count, and what pressing it does -- react-native-web's
-              aria-label REPLACES the accessible name computed from a
-              Pressable's children rather than merging with it, and this is
-              the only place the thread's title reaches assistive tech at
-              all now that the plain heading is gone, so the label has to
-              carry it explicitly instead of leaning on the visible text.
-
-              A club or game thread has no members view to open -- offering
-              the identical pill as a Pressable with a trailing chevron
-              anyway would be a control that LOOKS tappable and does
-              nothing, worse than one that plainly isn't interactive at
-              all. It renders as a plain, non-interactive label instead,
-              with no chevron and no button role.
-            */}
-            {canManageMembers ? (
-              <Pressable
-                onPress={() => setMembersOpen((v) => !v)}
-                accessibilityRole="button"
-                accessibilityLabel={membersLabel}
-                style={styles.namePill}
-              >
-                <Text numberOfLines={1} style={styles.namePillText}>
-                  {title}
-                </Text>
-                <ChevronRightIcon color={colors.text} size={14} />
-              </Pressable>
-            ) : (
-              <View style={styles.namePill}>
-                <Text numberOfLines={1} style={styles.namePillText}>
-                  {title}
-                </Text>
-              </View>
-            )}
-          </View>
-        ) : null}
-      </View>
-
-      {error ? <ErrorBanner message={error} /> : null}
+      {error ? (
+        <View style={styles.inset}>
+          <ErrorBanner message={error} />
+        </View>
+      ) : null}
 
       {!ready ? (
-        <ActivityIndicator color={colors.accentColor} />
+        <ActivityIndicator color={colors.accentColor} style={styles.spinner} />
       ) : (
         <>
           {canManageMembers && membersOpen && thread ? (
-            <MembersPanel thread={thread} onChanged={load} onLeaveError={setError} />
+            <View style={styles.inset}>
+              <MembersPanel thread={thread} onChanged={load} onLeaveError={setError} />
+            </View>
           ) : null}
 
           <ScrollView
@@ -360,6 +308,7 @@ export default function ThreadScreen() {
             // whatever `scrollToEnd` below left on screen.
             testID="screen-scroll"
             style={styles.scroller}
+            contentContainerStyle={styles.list}
             onContentSizeChange={() =>
               scroller.current?.scrollToEnd({ animated: false })
             }
@@ -384,30 +333,12 @@ export default function ThreadScreen() {
               </View>
             ) : null}
 
-            {messages.map((m, i) => {
-              const mine = m.author_id === viewerId;
-              // iOS Messages carries no time inside a bubble at all -- time
-              // lives here instead, in a centred separator above the first
-              // message of a new group (lib/messages.ts's `startsNewGroup`),
-              // not repeated on every bubble the way this screen used to.
-              const previous = i > 0 ? messages[i - 1] : null;
-              const newGroup = startsNewGroup(m.created_at, previous?.created_at ?? null);
-              return (
-                <Fragment key={m.id}>
-                  {newGroup ? (
-                    <Text style={styles.separator}>
-                      {groupSeparatorLabel(m.created_at)}
-                    </Text>
-                  ) : null}
-                  <MessageBubble
-                    message={m}
-                    mine={mine}
-                    onReply={setReplyTo}
-                    attachmentUrls={attachmentUrls}
-                  />
-                </Fragment>
-              );
-            })}
+            <ConversationMessages
+              messages={messages}
+              viewerId={viewerId}
+              onReply={setReplyTo}
+              attachmentUrls={attachmentUrls}
+            />
           </ScrollView>
 
           <Composer
@@ -431,61 +362,18 @@ export default function ThreadScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: space[6], gap: space[3], flex: 1 },
+  // Edge to edge: the header's divider and the message list run the full
+  // column width, each setting its own side padding per the handoff.
+  container: { flex: 1 },
   centered: { alignItems: 'center' },
-  // The iOS Messages header: back chevron pinned top-left via absolute
-  // positioning against this `relative` container, avatar + name pill
-  // centred beneath it. Absolute positioning (rather than a mirrored spacer
-  // View the same width as the chevron) keeps the centred column exactly
-  // centred on the screen's own width regardless of the chevron's size.
-  header: {
-    position: 'relative',
-    alignItems: 'center',
-    paddingBottom: space[2],
-  },
-  // 44x44: below this screen's usual 58px "big" targets (this is a compact
-  // header control, not a primary action), but still at the common minimum
-  // touch-target size rather than a bare icon-sized hit area.
-  backButton: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerCenter: { alignItems: 'center', gap: space[2] },
-  // colors.surface, the same pill/panel ground Composer's `replyingRow` and
-  // MembersPanel's own `membersPanel` reuse -- not a fresh token. Capped so
-  // `namePillText`'s `numberOfLines={1}` has a width to actually truncate
-  // against for a long thread name.
-  namePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space[1],
-    maxWidth: 240,
-    backgroundColor: colors.surface,
-    borderRadius: radius.pill,
-    paddingHorizontal: space[3],
-    paddingVertical: space[1],
-  },
-  // colors.text on colors.surface reads 12.40:1 -- comfortably past AA's
-  // 4.5:1 for this 16px text, and the same pairing MembersPanel's own
-  // `memberName`/`candidateName` already use on this exact ground, so this
-  // is not a new pairing.
-  namePillText: {
-    flexShrink: 1,
-    minWidth: 0,
-    fontFamily: type.bodySemiBold,
-    fontSize: type.size.helper,
-    color: colors.text,
-  },
+  inset: { paddingHorizontal: 14, paddingTop: 8 },
+  spinner: { marginTop: 16 },
   scroller: { flex: 1 },
+  list: { gap: 18, paddingTop: 8, paddingBottom: 12 },
   // The same dashed-border empty card app/messages/index.tsx and
-  // app/friends.tsx already use, reused rather than a third near-identical
-  // pair of styles.
+  // app/friends.tsx already use.
   emptyCard: {
+    marginHorizontal: 14,
     padding: space[4],
     borderRadius: radius.card,
     borderWidth: 2,
@@ -497,24 +385,5 @@ const styles = StyleSheet.create({
     fontSize: type.size.helper,
     lineHeight: 24,
     color: colors.textMuted,
-  },
-  // The iOS Messages convention this screen now follows: no time inside any
-  // bubble (the three `timestamp*` styles this replaced each put it in a
-  // bubble's own corner, on that bubble's own ground -- gone along with the
-  // per-bubble render). Instead, a single centred line sits between groups
-  // of messages, small (`type.size.helper`, this app's one sanctioned
-  // exception below its 18pt body minimum) and muted so it recedes rather
-  // than competing with the bubbles either side of it. It always sits on
-  // `colors.bg` -- the screen's own page background, never a bubble's --
-  // so one colour suffices where the old per-bubble version needed three:
-  // `colors.textMuted` reads 5.15:1 there, already pinned in
-  // lib/theme.test.ts for exactly this ground.
-  separator: {
-    fontFamily: type.bodyRegular,
-    fontSize: type.size.helper,
-    color: colors.textMuted,
-    textAlign: 'center',
-    marginTop: space[3],
-    marginBottom: space[2],
   },
 });
