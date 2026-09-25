@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import VenuePicker from '../VenuePicker';
 
@@ -54,9 +54,9 @@ describe('VenuePicker', () => {
     // as anything matches — which is exactly when a host adding a second,
     // similarly-named hall needs it.
     await waitFor(() => {
-      expect(screen.getByText('St Mary’s Hall')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'St Mary’s Hall' })).toBeTruthy();
     });
-    expect(screen.getByText('St Michael’s Rooms')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'St Michael’s Rooms' })).toBeTruthy();
     expect(screen.getByRole('button', { name: /Add “St”/ })).toBeTruthy();
     // Confirms the matches shown actually came from the mocked search call,
     // not from some other rendering path — this would fail if searchVenues
@@ -108,7 +108,7 @@ describe('VenuePicker', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText('St Mary’s Hall')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'St Mary’s Hall' })).toBeTruthy();
     });
     fireEvent.click(screen.getByRole('button', { name: 'St Mary’s Hall' }));
 
@@ -129,7 +129,7 @@ describe('VenuePicker', () => {
     // asserting its absence.
     await new Promise((resolve) => setTimeout(resolve, 250));
 
-    expect(screen.queryByText('St Mary’s Hall')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'St Mary’s Hall' })).toBeNull();
     expect(screen.queryAllByRole('button', { name: /^Add / })).toHaveLength(0);
   });
 
@@ -258,5 +258,42 @@ describe('VenuePicker', () => {
     expect(screen.getByRole('button', { name: /Add “St”/ })).toBeTruthy();
     expect(screen.queryByText('This club')).toBeNull();
     expect(screen.queryByText('Public venues')).toBeNull();
+  });
+
+  it('heads the own-club group with the club name when given one', async () => {
+    render(
+      <VenuePicker clubId="c1" clubName="Test Club" value={null} valueName="" onChange={() => {}} />,
+    );
+    fireEvent.change(screen.getByLabelText('Venue'), { target: { value: 'St' } });
+    expect(await screen.findByText('Test Club venues')).toBeTruthy();
+  });
+
+  it('highlights the typed text in each name', async () => {
+    render(<VenuePicker clubId="c1" value={null} valueName="" onChange={() => {}} />);
+    fireEvent.change(screen.getByLabelText('Venue'), { target: { value: 'mary' } });
+    const row = await screen.findByRole('button', { name: 'St Mary’s Hall' });
+    // The match keeps the venue's own casing, in its own span.
+    expect(within(row).getByText('Mary')).toBeTruthy();
+  });
+
+  it('shows the address under the name when there is one', async () => {
+    vi.mocked(searchVenues).mockResolvedValue([
+      { ...MATCHES[1], address_line: '1 High St' },
+      { ...MATCHES[0], locality: null },
+    ]);
+    render(<VenuePicker clubId="c1" value={null} valueName="" onChange={() => {}} />);
+    fireEvent.change(screen.getByLabelText('Venue'), { target: { value: 'St' } });
+    expect(await screen.findByText('1 High St, Newton')).toBeTruthy();
+    const bare = screen.getByRole('button', { name: 'St Mary’s Hall' });
+    expect(bare.textContent).toBe('St Mary’s Hall');
+  });
+
+  it('clears the typed text with the ✕', async () => {
+    render(<VenuePicker variant="row" clubId="c1" value={null} valueName="" onChange={() => {}} />);
+    const field = screen.getByLabelText('Venue') as HTMLInputElement;
+    expect(screen.queryByRole('button', { name: 'Clear venue' })).toBeNull();
+    fireEvent.change(field, { target: { value: 'St' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Clear venue' }));
+    expect(field.value).toBe('');
   });
 });

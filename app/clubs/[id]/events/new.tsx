@@ -424,6 +424,7 @@ export default function NewEventScreen() {
             />
             <VenuePicker
               variant="row"
+              clubName={club.name}
               clubId={clubId}
               value={venueId}
               valueName={venueName}

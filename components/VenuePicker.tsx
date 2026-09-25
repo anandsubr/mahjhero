@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
-import { StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import Button from './Button';
 import Card from './Card';
 import TextField from './TextField';
 import Toggle from './Toggle';
-import { MapPinIcon } from './icons';
+import { MapPinIcon, PlusIcon, XIcon } from './icons';
 import { createVenue, searchVenues, type VenueMatch } from '../lib/venues';
-import { colors, space, type } from '../lib/theme';
+import { colors, radius, shadow, space, type } from '../lib/theme';
 
 type VenuePickerProps = {
   clubId: string;
@@ -22,6 +22,8 @@ type VenuePickerProps = {
    * results and the add-a-venue form render under it the same way.
    */
   variant?: 'field' | 'row';
+  /** Heads the own-club group ("Test Club venues"); "This club" without. */
+  clubName?: string;
 };
 
 /**
@@ -46,6 +48,7 @@ export default function VenuePicker({
   onChange,
   disabled,
   variant = 'field',
+  clubName,
 }: VenuePickerProps) {
   const [query, setQuery] = useState(valueName);
   const [matches, setMatches] = useState<VenueMatch[]>([]);
@@ -178,6 +181,16 @@ export default function VenuePicker({
               style={styles.rowInput}
             />
           </View>
+          {query.length > 0 && !disabled ? (
+            <Pressable
+              onPress={() => setQuery('')}
+              accessibilityRole="button"
+              accessibilityLabel="Clear venue"
+              style={({ pressed }) => [styles.clear, pressed && styles.clearPressed]}
+            >
+              <XIcon size={16} color={colors.neutral[800]} />
+            </Pressable>
+          ) : null}
         </View>
       ) : (
         <TextField
@@ -191,51 +204,95 @@ export default function VenuePicker({
       )}
 
       {showResults ? (
-        <Card>
+        <View style={styles.results} testID="venue-results">
           {own.length > 0 ? (
             <>
-              <Text style={styles.groupLabel}>This club</Text>
+              <Text style={styles.resultsGroup}>
+                {clubName ? `${clubName} venues` : 'This club'}
+              </Text>
               {own.map((match) => (
-                <Button
-                  key={match.id}
-                  variant="ghost"
-                  bodyFace
-                  onPress={() => select(match)}
-                  accessibilityLabel={match.name}
-                >
-                  {match.name}
-                </Button>
+                <VenueRow key={match.id} match={match} query={trimmed} onPress={() => select(match)} />
               ))}
             </>
           ) : null}
 
           {shared.length > 0 ? (
             <>
-              <Text style={styles.groupLabel}>Public venues</Text>
+              <Text style={styles.resultsGroup}>Public venues</Text>
               {shared.map((match) => (
-                <Button
-                  key={match.id}
-                  variant="ghost"
-                  bodyFace
-                  onPress={() => select(match)}
-                  accessibilityLabel={match.name}
-                >
-                  {match.name}
-                </Button>
+                <VenueRow key={match.id} match={match} query={trimmed} onPress={() => select(match)} />
               ))}
             </>
           ) : null}
 
-          <Button
-            variant="secondary"
+          {own.length + shared.length > 0 ? <View style={styles.resultsDivider} /> : null}
+
+          <Pressable
             onPress={startAdding}
+            accessibilityRole="button"
             accessibilityLabel={`Add “${trimmed}”`}
+            style={({ pressed }) => [styles.resultRow, pressed && styles.resultRowPressed]}
           >
-            {`Add “${trimmed}”`}
-          </Button>
-        </Card>
+            <View style={styles.addBadge}>
+              <PlusIcon size={18} color={colors.accent[600]} />
+            </View>
+            <View style={styles.resultText}>
+              <Text numberOfLines={1} style={styles.addTitle}>{`Add “${trimmed}”`}</Text>
+              <Text style={styles.resultMeta}>Save as a new venue for this club</Text>
+            </View>
+          </Pressable>
+        </View>
       ) : null}
     </View>
+  );
+}
+
+/** Where the venue is, when it has an address on file. */
+function venueMeta(match: VenueMatch): string {
+  return [match.address_line, match.locality].filter(Boolean).join(', ');
+}
+
+/** A match, with the typed text picked out in the name. */
+function VenueRow({
+  match,
+  query,
+  onPress,
+}: {
+  match: VenueMatch;
+  query: string;
+  onPress: () => void;
+}) {
+  const at = match.name.toLowerCase().indexOf(query.toLowerCase());
+  const meta = venueMeta(match);
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={match.name}
+      style={({ pressed }) => [styles.resultRow, pressed && styles.resultRowPressed]}
+    >
+      <View style={styles.pinBadge}>
+        <MapPinIcon size={18} color={colors.accent2[700]} />
+      </View>
+      <View style={styles.resultText}>
+        <Text numberOfLines={1} style={styles.resultName}>
+          {at < 0 ? (
+            match.name
+          ) : (
+            <>
+              {match.name.slice(0, at)}
+              <Text style={styles.resultMatch}>{match.name.slice(at, at + query.length)}</Text>
+              {match.name.slice(at + query.length)}
+            </>
+          )}
+        </Text>
+        {meta ? (
+          <Text numberOfLines={1} style={styles.resultMeta}>
+            {meta}
+          </Text>
+        ) : null}
+      </View>
+    </Pressable>
   );
 }
 
@@ -257,6 +314,71 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     backgroundColor: 'transparent',
     outlineStyle: 'none' as never,
+  },
+  clear: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.pill,
+    backgroundColor: colors.neutral[300],
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  clearPressed: { backgroundColor: colors.neutral[400] },
+  results: {
+    marginHorizontal: 12,
+    marginBottom: 12,
+    paddingVertical: 12,
+    borderRadius: 20,
+    backgroundColor: colors.bg,
+    ...shadow.md,
+  },
+  resultsGroup: {
+    fontFamily: type.bodyBold,
+    fontSize: 12,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    color: colors.neutral[700],
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    paddingBottom: 4,
+  },
+  resultRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    minHeight: 56,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  resultRowPressed: { backgroundColor: colors.surface },
+  pinBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.pill,
+    backgroundColor: colors.accent2[200],
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.pill,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: colors.accent[500],
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  resultText: { flex: 1, minWidth: 0, gap: 1 },
+  resultName: { fontFamily: type.bodyRegular, fontSize: 16, color: colors.text },
+  resultMatch: { fontFamily: type.bodyBold, color: colors.accent[700] },
+  resultMeta: { fontFamily: type.bodyRegular, fontSize: 13, color: colors.neutral[700] },
+  addTitle: { fontFamily: type.bodyBold, fontSize: 16, color: colors.accent[700] },
+  resultsDivider: {
+    height: 1,
+    backgroundColor: colors.divider,
+    marginHorizontal: 16,
+    marginVertical: 6,
   },
   groupLabel: {
     fontFamily: type.bodySemiBold,
