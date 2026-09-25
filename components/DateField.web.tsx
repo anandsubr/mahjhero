@@ -1,5 +1,6 @@
 import type { ChangeEvent, CSSProperties } from 'react';
-import { View } from 'react-native';
+import { Text, View } from 'react-native';
+import { dateStringToDate } from '../lib/time';
 import { colors, radius, space, type } from '../lib/theme';
 
 type DateFieldProps = {
@@ -17,6 +18,12 @@ type DateFieldProps = {
    * supabase/migrations/20260824001000's, in the database.
    */
   minimum?: string;
+  /**
+   * The game form's chip ("Thu 24 Sept"): a small pill showing the date,
+   * with the real input laid transparently over it so a tap still opens
+   * the browser's own picker.
+   */
+  compact?: boolean;
 };
 
 /**
@@ -44,10 +51,37 @@ export default function DateField({
   onChange,
   label,
   minimum,
+  compact = false,
 }: DateFieldProps) {
   function handleChange(event: ChangeEvent<HTMLInputElement>) {
     if (event.target.value === '') return;
     onChange(event.target.value);
+  }
+
+  if (compact) {
+    return (
+      <View style={chipStyle}>
+        <Text style={chipTextStyle}>{value ? formatChipDate(value) : 'Pick a date'}</Text>
+        <input
+          type="date"
+          value={value}
+          onChange={handleChange}
+          min={minimum}
+          aria-label={label}
+          onClick={(event) => {
+            // Chrome only opens its calendar from the icon; showPicker makes
+            // a tap anywhere on the chip do it.
+            try {
+              event.currentTarget.showPicker?.();
+            } catch {
+              // Not allowed outside a user gesture in some browsers -- the
+              // native click still focuses the input.
+            }
+          }}
+          style={overlayStyle}
+        />
+      </View>
+    );
   }
 
   return (
@@ -79,4 +113,40 @@ const webInputStyle: CSSProperties = {
   boxSizing: 'border-box',
   fontFamily: 'inherit',
   caretColor: colors.accentColor,
+};
+
+function formatChipDate(value: string): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  }).format(dateStringToDate(value));
+}
+
+const chipStyle = {
+  position: 'relative' as const,
+  height: 38,
+  paddingHorizontal: 14,
+  borderRadius: radius.pill,
+  backgroundColor: colors.bg,
+  alignItems: 'center' as const,
+  justifyContent: 'center' as const,
+};
+
+const chipTextStyle = {
+  fontFamily: type.bodySemiBold,
+  fontSize: 15,
+  color: colors.text,
+};
+
+const overlayStyle: CSSProperties = {
+  position: 'absolute',
+  inset: 0,
+  width: '100%',
+  height: '100%',
+  opacity: 0,
+  cursor: 'pointer',
+  border: 0,
+  padding: 0,
+  margin: 0,
 };

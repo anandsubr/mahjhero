@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, TextInput, View } from 'react-native';
 import Button from './Button';
 import Card from './Card';
 import TextField from './TextField';
 import Toggle from './Toggle';
+import { MapPinIcon } from './icons';
 import { createVenue, searchVenues, type VenueMatch } from '../lib/venues';
 import { colors, space, type } from '../lib/theme';
 
@@ -15,6 +16,12 @@ type VenuePickerProps = {
   valueName: string;
   onChange: (venueId: string, venueName: string) => void;
   disabled?: boolean;
+  /**
+   * `row`: the game form's borderless card row (pin icon, a small label
+   * over a plain input) instead of the full-width labelled pill. Search
+   * results and the add-a-venue form render under it the same way.
+   */
+  variant?: 'field' | 'row';
 };
 
 /**
@@ -38,6 +45,7 @@ export default function VenuePicker({
   valueName,
   onChange,
   disabled,
+  variant = 'field',
 }: VenuePickerProps) {
   const [query, setQuery] = useState(valueName);
   const [matches, setMatches] = useState<VenueMatch[]>([]);
@@ -155,14 +163,32 @@ export default function VenuePicker({
 
   return (
     <View>
-      <TextField
-        label="Venue"
-        value={query}
-        onChangeText={setQuery}
-        editable={!disabled}
-        accessibilityLabel="Venue"
-        placeholder="Where are you playing?"
-      />
+      {variant === 'row' ? (
+        <View style={styles.row}>
+          <MapPinIcon size={18} color={colors.accent2[700]} />
+          <View style={styles.rowText}>
+            <Text style={styles.rowLabel}>Venue</Text>
+            <TextInput
+              value={query}
+              onChangeText={setQuery}
+              editable={!disabled}
+              accessibilityLabel="Venue"
+              placeholder="Where are you playing?"
+              placeholderTextColor={colors.neutral[600]}
+              style={styles.rowInput}
+            />
+          </View>
+        </View>
+      ) : (
+        <TextField
+          label="Venue"
+          value={query}
+          onChangeText={setQuery}
+          editable={!disabled}
+          accessibilityLabel="Venue"
+          placeholder="Where are you playing?"
+        />
+      )}
 
       {showResults ? (
         <Card>
@@ -214,6 +240,24 @@ export default function VenuePicker({
 }
 
 const styles = StyleSheet.create({
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingTop: 10,
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+  },
+  rowText: { flex: 1, minWidth: 0 },
+  rowLabel: { fontFamily: type.bodySemiBold, fontSize: 12, color: colors.neutral[700] },
+  rowInput: {
+    fontFamily: type.bodySemiBold,
+    fontSize: 16,
+    color: colors.text,
+    paddingVertical: 2,
+    backgroundColor: 'transparent',
+    outlineStyle: 'none' as never,
+  },
   groupLabel: {
     fontFamily: type.bodySemiBold,
     fontSize: type.size.helper,

@@ -279,3 +279,43 @@ export function SearchIcon({ size = 18, color = colors.neutral[700] }: { size?: 
     </Svg>
   );
 }
+
+/** Game form (GameForm.tsx): the start-time row. */
+export function ClockIcon({ size = 18, color = colors.text }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.75} strokeLinecap="round" strokeLinejoin="round">
+      <Circle cx={12} cy={12} r={10} />
+      <Path d="M12 6v6l4 2" />
+    </Svg>
+  );
+}
+
+/** Game form (GameForm.tsx): the table stepper's "one fewer". */
+export function MinusIcon({ size = 18, color = colors.text }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.75} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M5 12h14" />
+    </Svg>
+  );
+}
+
+/** Game form (GameForm.tsx): the "Require check-in" row. */
+export function ClipboardCheckIcon({ size = 18, color = colors.text }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.75} strokeLinecap="round" strokeLinejoin="round">
+      <Rect x={8} y={2} width={8} height={4} rx={1} />
+      <Path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+      <Path d="m9 14 2 2 4-4" />
+    </Svg>
+  );
+}
+
+/** Game form (GameForm.tsx): the "Invite-only" row. */
+export function LockIcon({ size = 18, color = colors.text }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.75} strokeLinecap="round" strokeLinejoin="round">
+      <Rect x={3} y={11} width={18} height={11} rx={2} />
+      <Path d="M7 11V7a5 5 0 0 1 10 0v4" />
+    </Svg>
+  );
+}

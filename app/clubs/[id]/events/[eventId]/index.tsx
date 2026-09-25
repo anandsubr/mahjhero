@@ -73,7 +73,6 @@ import {
 } from '../../../../../lib/bookings';
 import {
   addEventTable,
-  cancelEvent,
   fetchEvent,
   fetchEventTables,
   fetchSeries,
@@ -1743,17 +1742,8 @@ export default function EventScreen() {
       ) : null}
 
 
-      {isOrganizer && event.status !== 'cancelled' ? (
-        <View style={styles.cancelGame}>
-          <GhostPill
-            label="Cancel this game"
-            accessibilityLabel="Cancel this game"
-            disabled={busy}
-            onPress={() => run(() => cancelEvent(event.id))}
-            large
-          />
-        </View>
-      ) : null}
+      {/* "Cancel this game" lives on the Edit screen now (game form
+          handoff), behind a confirmation. */}
     </Screen>
   );
 }
@@ -1968,7 +1958,6 @@ const styles = StyleSheet.create({
   guestSendPressed: { backgroundColor: colors.neutral[800] },
   guestSendBusy: { opacity: 0.6 },
   guestSendText: { fontFamily: type.bodyBold, fontSize: 15, color: colors.bg },
-  cancelGame: { alignSelf: 'center' },
   chips: {
     flexDirection: 'row',
     flexWrap: 'wrap',

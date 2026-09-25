@@ -1,20 +1,37 @@
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
-import Button from '../../../../../components/Button';
-import Card from '../../../../../components/Card';
+import { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import DateField from '../../../../../components/DateField';
 import ErrorBanner from '../../../../../components/ErrorBanner';
+import {
+  ActionBar,
+  ConfirmSheet,
+  FormCard,
+  FormHeader,
+  FormSection,
+  FormTitle,
+  GhostLink,
+  MoneyCards,
+  Segmented,
+  StartTimeRow,
+  TablesCard,
+  TextRow,
+  ToggleRow,
+  formStyles,
+  type TableDraft,
+} from '../../../../../components/GameForm';
+import { ClipboardCheckIcon, LockIcon } from '../../../../../components/icons';
 import Screen from '../../../../../components/Screen';
 import TabBar from '../../../../../components/TabBar';
-import TextField from '../../../../../components/TextField';
-import TierPicker from '../../../../../components/TierPicker';
 import TimeField from '../../../../../components/TimeField';
-import Toggle from '../../../../../components/Toggle';
 import VenuePicker from '../../../../../components/VenuePicker';
+import type { SkillTier } from '../../../../../lib/bookings';
 import { fetchClub, type Club, type GameMode } from '../../../../../lib/clubs';
 import {
+  addEventTable,
+  cancelEvent,
   endEventSeries,
+  eventDateInZone,
   eventStartTimeInZone,
   fetchEvent,
   fetchEventTables,
@@ -24,6 +41,7 @@ import {
   formatEventWhen,
   frequencyLabel,
   parseDollarsToCents,
+  removeEventTable,
   updateEvent,
   updateEventSeries,
   updateEventTable,
@@ -34,7 +52,7 @@ import {
 } from '../../../../../lib/events';
 import { useSession } from '../../../../../lib/session';
 import { dateToDateString } from '../../../../../lib/time';
-import { colors, radius, shadow, space, type } from '../../../../../lib/theme';
+import { colors, space, type } from '../../../../../lib/theme';
 
 type Scope = 'event' | 'series';
 
@@ -83,6 +101,7 @@ type OriginalOccurrence = {
   title: string;
   venueId: string;
   notes: string;
+  date: string;
   startTime: string;
   checkInRequired: boolean;
   gameMode: GameMode;
@@ -132,97 +151,14 @@ type OriginalOccurrence = {
  *     notes) when the host actually touched it.
  */
 
-/**
- * The "This game" / "The whole series" scope chooser below is the control
- * that decides whether a save touches one night or rewrites every future
- * week of a recurring series -- so a screen reader that cannot tell which
- * one is currently selected is not a cosmetic gap here. `Button` cannot
- * carry that state to the DOM: it merges a caller's `accessibilityState`
- * straight into RN's own `accessibilityState` prop, and react-native-web's
- * `createDOMProps` has no handling for `accessibilityState` at all (see
- * components/Toggle.tsx's docstring for the full account), so the `selected`
- * value this control used to pass as `accessibilityState={{ selected }}`
- * never reached the DOM on web. `Button` itself is not touched here -- it
- * still has no way to forward a caller's `aria-selected` to its underlying
- * `Pressable` -- so this follows the fix already established for the
- * identical shape by the organizer's per-table tier chips
- * (app/clubs/[id]/events/[eventId]/index.tsx's `TierChip`) and this event's
- * own duration/table-count/repeat rows (app/clubs/[id]/events/new.tsx's
- * `Chip`): a bespoke `Pressable` carrying the flat `aria-selected` prop,
- * styled to match `Button`'s own primary/secondary/big=false chip
- * pixel-for-pixel so replacing `Button` here changes no layout or visible
- * text.
- */
-function ScopeChip({
-  children,
-  selected,
-  onPress,
-  accessibilityLabel,
-}: {
-  children: string;
-  selected: boolean;
-  onPress: () => void;
-  accessibilityLabel: string;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel}
-      aria-selected={selected}
-      style={({ pressed }) => [
-        scopeChipStyles.base,
-        selected ? scopeChipStyles.selected : scopeChipStyles.unselected,
-        pressed ? scopeChipStyles.pressed : null,
-      ]}
-    >
-      <Text
-        style={selected ? scopeChipStyles.labelSelected : scopeChipStyles.label}
-      >
-        {children}
-      </Text>
-    </Pressable>
-  );
-}
+/** A table as the form holds it until Save: `id` null for one added here. */
+type StagedTable = TableDraft & { id: string | null };
 
-const scopeChipStyles = StyleSheet.create({
-  // Matches components/Button.tsx's `base` + `regular` (big=false) exactly.
-  base: {
-    borderRadius: radius.pill,
-    minHeight: 46,
-    paddingHorizontal: space[5],
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-  },
-  // Matches Button's `variantStyles.primary`.
-  selected: {
-    backgroundColor: colors.accentColor,
-    borderColor: 'transparent',
-    ...shadow.sm,
-  },
-  // Matches Button's `variantStyles.secondary`.
-  unselected: {
-    backgroundColor: colors.surface,
-    borderColor: colors.divider,
-  },
-  // Matches Button's `pressed`.
-  pressed: {
-    opacity: 0.85,
-  },
-  // Matches Button's `label` + `variantTextStyles.primary`.
-  labelSelected: {
-    fontFamily: type.heading,
-    fontSize: type.size.body,
-    color: colors.bg,
-  },
-  // Matches Button's `label` + `variantTextStyles.secondary`.
-  label: {
-    fontFamily: type.heading,
-    fontSize: type.size.body,
-    color: colors.text,
-  },
-});
+function stageTables(tables: EventTable[]): StagedTable[] {
+  return [...tables]
+    .sort((a, b) => a.position - b.position)
+    .map((t) => ({ key: t.id, id: t.id, label: t.label, tier: t.skill_tier }));
+}
 
 export default function EditEventScreen() {
   const { id: clubId, eventId } = useLocalSearchParams<{
@@ -253,17 +189,10 @@ export default function EditEventScreen() {
   // above: a failed fetch must not read as "this game has no tables".
   const [tables, setTables] = useState<EventTable[]>([]);
   const [tablesFailed, setTablesFailed] = useState(false);
-  // Per-table in-flight guard for the Tables section's TierPickers below --
-  // distinct from `saving` (which only covers the Save/End-series buttons,
-  // an entirely separate `updateEvent`/`updateEventSeries` call), matching
-  // the game screen's own tier picker this replaced, which disabled itself
-  // via `busy` while its own update was pending. A Set keyed by table id,
-  // not one shared boolean, so tapping one table's tier does not also
-  // freeze every other table's picker while its own unrelated update is in
-  // flight.
-  const [updatingTierTableIds, setUpdatingTierTableIds] = useState<Set<string>>(
-    new Set(),
-  );
+  // The Tables card's working copy, applied only on Save (see
+  // `applyTableChanges`) -- the stepper and level taps are part of the form,
+  // so Cancel discards them like every other field.
+  const [tableDraft, setTableDraft] = useState<StagedTable[]>([]);
   const [ready, setReady] = useState(false);
 
   const [scope, setScope] = useState<Scope>('event');
@@ -276,6 +205,7 @@ export default function EditEventScreen() {
   const [eventTitle, setEventTitle] = useState('');
   const [eventVenueId, setEventVenueId] = useState<string | null>(null);
   const [eventVenueName, setEventVenueName] = useState('');
+  const [eventDate, setEventDate] = useState('');
   const [eventStartTime, setEventStartTime] = useState('19:00');
   const [eventNotes, setEventNotes] = useState('');
   const [eventCheckInRequired, setEventCheckInRequired] = useState(false);
@@ -362,6 +292,24 @@ export default function EditEventScreen() {
   const [includeOverridden, setIncludeOverridden] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Which bottom-sheet confirmation is up, if any.
+  const [confirming, setConfirming] = useState<'discard' | 'unseat' | 'cancelGame' | null>(null);
+
+  // Everything the host can change, for "has anything been changed?" --
+  // baselined once the load effect has seeded it all.
+  const formSnapshot = JSON.stringify([
+    scope, eventTitle, eventVenueId, eventDate, eventStartTime, eventNotes,
+    eventCheckInRequired, eventGameMode, eventFeeText, eventMinSpendText,
+    eventSeatingMode, eventCapacityText, seriesTitle, seriesVenueId, seriesStartTime,
+    seriesNotes, seriesCheckInRequired, seriesGameMode, seriesFeeText, seriesMinSpendText,
+    seriesSeatingMode, seriesCapacityText, endsOn, runsIndefinitely, includeOverridden,
+    tableDraft.map((t) => [t.id, t.tier]),
+  ]);
+  const baselineRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (ready && baselineRef.current === null) baselineRef.current = formSnapshot;
+  }, [ready, formSnapshot]);
+  const dirty = baselineRef.current !== null && baselineRef.current !== formSnapshot;
 
   useEffect(() => {
     if (!session) return;
@@ -379,6 +327,7 @@ export default function EditEventScreen() {
       setEvent(loadedEvent);
       setTablesFailed(loadedTables === null);
       setTables(loadedTables ?? []);
+      setTableDraft(stageTables(loadedTables ?? []));
 
       if (loadedEvent && loadedClub) {
         const initialStartTime = eventStartTimeInZone(
@@ -389,6 +338,7 @@ export default function EditEventScreen() {
         setEventVenueId(loadedEvent.venue_id);
         setEventVenueName(loadedEvent.venue_name);
         setEventNotes(loadedEvent.notes);
+        setEventDate(eventDateInZone(loadedEvent.starts_at, loadedClub.timezone));
         setEventStartTime(initialStartTime);
         setEventCheckInRequired(loadedEvent.check_in_required);
         setEventGameMode(loadedEvent.game_mode);
@@ -409,6 +359,7 @@ export default function EditEventScreen() {
           title: loadedEvent.title,
           venueId: loadedEvent.venue_id,
           notes: loadedEvent.notes,
+          date: eventDateInZone(loadedEvent.starts_at, loadedClub.timezone),
           startTime: initialStartTime,
           checkInRequired: loadedEvent.check_in_required,
           gameMode: loadedEvent.game_mode,
@@ -593,7 +544,64 @@ export default function EditEventScreen() {
   // nested closure when it can prove the captured binding is never
   // reassigned, and a hoisted function declaration doesn't give it that
   // guarantee the way a const-bound closure defined after the guard does.
-  const onSave = async () => {
+  // Tables the draft no longer has, and who is seated at them -- removing a
+  // table unseats its players and notifies each of them
+  // (remove_event_table), so Save asks first.
+  const removedTables = tables.filter((t) => !tableDraft.some((d) => d.id === t.id));
+  const unseatCount = (event.bookings ?? []).filter(
+    (b) => b.status === 'confirmed' && removedTables.some((t) => t.id === b.event_table_id),
+  ).length;
+
+  /**
+   * Applies the Tables card's staged changes, after the game's own update
+   * has succeeded: removals (last first), additions, then level changes --
+   * for added tables, once their ids exist. Stops at the first refusal and
+   * returns it; the caller then reloads the real tables into the draft.
+   * Open seating has no tables to change, so nothing is sent for it.
+   */
+  const applyTableChanges = async (): Promise<string | null> => {
+    if (seatingMode !== 'assigned_tables') return null;
+    for (const table of [...removedTables].reverse()) {
+      const { error: removeError } = await removeEventTable(table.id);
+      if (removeError) return removeError;
+    }
+    const added = tableDraft.filter((d) => d.id === null);
+    for (let i = 0; i < added.length; i += 1) {
+      const { error: addError } = await addEventTable(event.id);
+      if (addError) return addError;
+    }
+    for (const draft of tableDraft) {
+      const before = tables.find((t) => t.id === draft.id);
+      if (before && before.skill_tier !== draft.tier) {
+        const { error: tierError } = await updateEventTable(before.id, { tier: draft.tier });
+        if (tierError) return tierError;
+      }
+    }
+    if (added.some((d) => d.tier !== 'mixed')) {
+      const fresh = await fetchEventTables(event.id);
+      if (fresh === null) return "The tables were added, but their levels couldn't be set.";
+      const kept = new Set(tableDraft.filter((d) => d.id !== null).map((d) => d.id));
+      const newOnes = [...fresh]
+        .filter((t) => !kept.has(t.id))
+        .sort((a, b) => a.position - b.position);
+      for (let i = 0; i < added.length && i < newOnes.length; i += 1) {
+        if (added[i].tier === 'mixed') continue;
+        const { error: tierError } = await updateEventTable(newOnes[i].id, { tier: added[i].tier });
+        if (tierError) return tierError;
+      }
+    }
+    return null;
+  };
+
+  const reloadTables = async () => {
+    const fresh = await fetchEventTables(event.id);
+    if (fresh !== null) {
+      setTables(fresh);
+      setTableDraft(stageTables(fresh));
+    }
+  };
+
+  const onSave = async (unseatConfirmed = false) => {
     // Refuse an unparseable capacity outright, before touching the network
     // -- see parseCapacity's own doc for the typo (`6o` for `60`) this
     // guards against. `capacityText`/`isSeriesScope` above already resolve
@@ -609,6 +617,11 @@ export default function EditEventScreen() {
     const capacityParsed = parseCapacity(capacityText);
     if (capacityTouched && !capacityParsed.valid) {
       setError(INVALID_CAPACITY_MESSAGE);
+      return;
+    }
+
+    if (unseatCount > 0 && !unseatConfirmed) {
+      setConfirming('unseat');
       return;
     }
 
@@ -661,8 +674,8 @@ export default function EditEventScreen() {
           capacityParsed.valid &&
           capacityParsed.value === null,
       });
-      setSaving(false);
       if (result.error) {
+        setSaving(false);
         setError(result.error);
         return;
       }
@@ -674,6 +687,7 @@ export default function EditEventScreen() {
       const venueChanged = original ? venueId !== original.venueId : false;
       const notesChanged = original ? notes !== original.notes : false;
       const startTimeChanged = original ? startTime !== original.startTime : false;
+      const dateChanged = original ? eventDate !== original.date : false;
       const checkInChanged = original
         ? checkInRequired !== original.checkInRequired
         : false;
@@ -698,6 +712,7 @@ export default function EditEventScreen() {
         title: titleChanged ? title.trim() : null,
         venueId: venueChanged ? venueId : null,
         notes: notesChanged ? notes : null,
+        date: dateChanged ? eventDate : null,
         startTime: startTimeChanged ? startTime : null,
         checkInRequired: checkInChanged ? checkInRequired : null,
         gameMode: gameModeChanged ? gameMode : null,
@@ -715,14 +730,53 @@ export default function EditEventScreen() {
           capacityParsed.valid &&
           capacityParsed.value === null,
       });
-      setSaving(false);
       if (result.error) {
+        setSaving(false);
         setError(result.error);
         return;
       }
     }
 
+    const tableError = await applyTableChanges();
+    setSaving(false);
+    if (tableError) {
+      setError(tableError);
+      void reloadTables();
+      return;
+    }
+
     router.replace(`/clubs/${clubId}/events/${eventId}`);
+  };
+
+  const onCancelGame = async () => {
+    setConfirming(null);
+    setSaving(true);
+    setError(null);
+    const result = await cancelEvent(event.id);
+    setSaving(false);
+    if (result.error) {
+      setError(result.error);
+      return;
+    }
+    router.replace(`/clubs/${clubId}/events/${eventId}`);
+  };
+
+  const leave = () => {
+    // A direct URL, a page reload on web, a deep link, or a cold launch
+    // straight into this route leaves nothing to pop -- only `back()` when
+    // there is history to unwind. The fallback replaces rather than pushes:
+    // a pushed event screen would leave this cancelled form one browser-back
+    // away, a stale entry the member could stumble straight back into.
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace(`/clubs/${clubId}/events/${eventId}`);
+    }
+  };
+
+  const requestLeave = () => {
+    if (dirty) setConfirming('discard');
+    else leave();
   };
 
   const onEndSeries = async () => {
@@ -738,382 +792,345 @@ export default function EditEventScreen() {
     router.replace(`/clubs/${clubId}/events/new`);
   };
 
+  const seriesLabel = series
+    ? frequencyLabel(series.frequency, series.weekday, series.nth_week)
+    : null;
+
   return (
-    <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="club" />}>
-      <Text style={styles.heading}>Edit</Text>
-
-      {error ? <ErrorBanner message={error} /> : null}
-
-      {event.series_id && seriesFailed ? (
-        <ErrorBanner message="Could not load this game's series. You can still edit this game on its own." />
-      ) : null}
-
-      {series ? (
-        <>
-          <Text style={styles.label}>What are you changing?</Text>
-          <View style={styles.chips}>
-            <ScopeChip
-              selected={scope === 'event'}
-              onPress={() => setScope('event')}
-              accessibilityLabel="This game only"
-            >
-              This game
-            </ScopeChip>
-            <ScopeChip
-              selected={scope === 'series'}
-              onPress={() => setScope('series')}
-              accessibilityLabel="The whole series"
-            >
-              The whole series
-            </ScopeChip>
-          </View>
-          <Text style={styles.help}>
-            {frequencyLabel(series.frequency, series.weekday, series.nth_week)}
-          </Text>
-        </>
-      ) : null}
-
-      <TextField
-        label="What is it called?"
-        value={title}
-        onChangeText={setTitle}
-        accessibilityLabel="Game name"
-      />
-
-      <VenuePicker
-        // VenuePicker seeds its own internal search text from `valueName`
-        // only on mount (it does not resync when the prop later changes --
-        // see its own props doc) -- so switching scope needs a fresh
-        // instance to show the newly-active snapshot's venue instead of
-        // going on displaying whichever scope was showing when it first
-        // mounted.
-        key={isSeriesScope ? 'series' : 'event'}
-        clubId={clubId}
-        value={venueId}
-        valueName={venueName}
-        onChange={setVenue}
-      />
-
-      <Text style={styles.label}>Start time</Text>
-      <TimeField value={startTime} onChange={setStartTime} label="Start time" />
-
-      <TextField
-        label="Anything else? (optional)"
-        value={notes}
-        onChangeText={setNotes}
-        accessibilityLabel="Notes"
-        multiline
-      />
-
-      <Text style={styles.label}>Require check-in</Text>
-      <Toggle
-        value={checkInRequired}
-        onValueChange={setCheckInRequired}
-        accessibilityLabel="Require check-in"
-      />
-      <Text style={styles.help}>
-        Turn this on and this game gets a door list, so you can check people
-        in as they arrive. Small games usually don't need it.
-      </Text>
-
-      <Text style={styles.label}>Invite-only</Text>
-      <Toggle
-        value={gameMode === 'invite_only'}
-        onValueChange={(next) => setGameMode(next ? 'invite_only' : 'open_play')}
-        accessibilityLabel="Invite-only"
-      />
-
-      <Text style={styles.label}>How does this seat people?</Text>
-      <View style={styles.chips}>
-        <ScopeChip
-          selected={seatingMode === 'assigned_tables'}
-          onPress={() => setSeatingMode('assigned_tables')}
-          accessibilityLabel="Assigned tables"
-        >
-          Assigned tables
-        </ScopeChip>
-        <ScopeChip
-          selected={seatingMode === 'open_seating'}
-          onPress={() => setSeatingMode('open_seating')}
-          accessibilityLabel="Open seating"
-        >
-          Open seating
-        </ScopeChip>
-      </View>
-
-      {/*
-        No table-count picker here at all -- unlike the create screen, this
-        one never offered a way to choose a table count in the first place
-        (tables are per-occurrence and managed below, in the Tables
-        section), so there is nothing for open seating to hide. This cap is
-        independent of table capacity, and entirely optional.
-      */}
-      {seatingMode === 'open_seating' ? (
-        <>
-          <TextField
-            label="Capacity (optional)"
-            value={capacityText}
-            onChangeText={setCapacityText}
-            keyboardType="number-pad"
-            placeholder="70"
+    <>
+      <Screen
+        scroll
+        contentStyle={formStyles.body}
+        tabBar={
+          <ActionBar
+            onCancel={requestLeave}
+            primaryLabel="Save"
+            primaryAccessibilityLabel="Save changes"
+            onPrimary={() => void onSave()}
+            busy={saving}
           />
-          <Text style={styles.help}>
-            Caps how many players can confirm a spot. Leave blank for no
-            limit.
-          </Text>
-        </>
-      ) : null}
-
-      <TextField
-        label="Cost to play"
-        value={feeText}
-        onChangeText={setFeeText}
-        keyboardType="decimal-pad"
-        placeholder="0.00"
-      />
-      <TextField
-        label="Minimum spend"
-        value={minSpendText}
-        onChangeText={setMinSpendText}
-        keyboardType="decimal-pad"
-        placeholder="0.00"
-      />
-
-      {scope === 'series' && series ? (
-        <>
-          <Text style={styles.label}>Stop repeating on</Text>
-          {runsIndefinitely ? (
-            <Text style={styles.help}>This series runs indefinitely.</Text>
-          ) : (
-            <DateField
-              value={endsOn}
-              onChange={setEndsOn}
-              label="Stop repeating on"
-              // Today, for the same reason the create screen passes it: an
-              // end date in the past is a date this screen should not offer.
-              // It is not refused by the database -- pulling a run's end back
-              // to a past date legitimately means "this series is over", and
-              // update_event_series has no past guard
-              // (supabase/migrations/20260824001000 says why) -- but it does
-              // now DELETE every future week beyond it
-              // (supabase/migrations/20260824000000), so a mistyped year here
-              // would silently clear the whole run. The picker declining to
-              // offer the day is where that mistake is cheapest to stop.
-              minimum={today}
-            />
-          )}
-          <View style={styles.shareRow}>
-            <Toggle
-              value={runsIndefinitely}
-              onValueChange={(next) => {
-                setRunsIndefinitely(next);
-                if (next) {
-                  // Clears the picked date from view along with the toggle
-                  // -- turning this back off should not silently resurrect
-                  // a date the host just said they don't want.
-                  setEndsOn('');
-                } else {
-                  // Restores the series' own end date. Leaving `endsOn`
-                  // at '' here would show an empty DateField while
-                  // `series.ends_on` is still set -- onSave then sends
-                  // neither `endsOnInput` nor `clearEndsOn`, so the series
-                  // silently keeps the end date the screen just told the
-                  // host it no longer had.
-                  setEndsOn(series?.ends_on ?? '');
-                }
-              }}
-              accessibilityLabel="Runs indefinitely, with no end date"
-            />
-            <Text style={styles.help}>
-              Runs indefinitely, with no end date. Turn this off to set one.
-            </Text>
-          </View>
-        </>
-      ) : null}
-
-      {/*
-        Only rendered when there is something for it to apply to. A toggle
-        offering to overwrite nothing is a question the host cannot answer
-        wrong and should not have to read. Its copy describes exactly what it
-        does -- apply THIS edit to the weeks you've customised -- and nothing
-        broader: fields this edit did not touch keep their overrides either
-        way (supabase/migrations/20260823040000).
-      */}
-      {scope === 'series' && series && !overriddenFailed && customised.length > 0 ? (
-        <Card>
-          <View style={styles.shareRow}>
-            <Toggle
-              value={includeOverridden}
-              onValueChange={setIncludeOverridden}
-              accessibilityLabel={`Also apply this edit to the ${customised.length} ${
-                customised.length === 1 ? 'game' : 'games'
-              } you've changed`}
-            />
-            <Text style={styles.help}>
-              {customised.length <= 3
-                ? `Also apply this edit to the ${customised.length} ${
-                    customised.length === 1 ? 'game' : 'games'
-                  } you've changed — ${customised
-                    .map((e) => formatEventWhen(e.starts_at, club.timezone))
-                    .join(', ')}.`
-                : `Also apply this edit to the ${customised.length} games you've changed.`}{' '}
-              Cancelled games are never affected.
-            </Text>
-          </View>
-        </Card>
-      ) : null}
-      {scope === 'series' && series && overriddenFailed ? (
-        <Text style={styles.help}>
-          Could not check which games you've changed — this edit will leave
-          them exactly as they are.
-        </Text>
-      ) : null}
-
-      {/*
-        Per-occurrence, so rendered regardless of `scope` -- unlike every
-        block above, a table's tier is not part of either the "This game" or
-        "The whole series" field sets this screen otherwise tracks.
-        Optimistic local update on a successful `updateEventTable`, not a
-        full reload: unlike `onSave`'s `router.replace` (which leaves this
-        screen entirely) there is no other state here a tier change could
-        put out of sync, so patching just the changed row is enough. On
-        failure, this reuses the same `error`/`ErrorBanner` this screen
-        already shows for `onSave`/`onEndSeries` failures, rather than
-        swallowing it silently.
-      */}
-      {tablesFailed ? (
-        <Text style={styles.help}>Could not load this game's tables.</Text>
-      ) : tables.length > 0 ? (
-        <Card>
-          <Text style={styles.sectionTitle}>Tables</Text>
-          {tables.map((t) => (
-            <TierPicker
-              key={t.id}
-              tableLabel={t.label}
-              tier={t.skill_tier}
-              disabled={updatingTierTableIds.has(t.id)}
-              onChange={(nextTier) => {
-                setUpdatingTierTableIds(
-                  (current) => new Set(current).add(t.id),
-                );
-                void updateEventTable(t.id, { tier: nextTier }).then((result) => {
-                  setUpdatingTierTableIds((current) => {
-                    const next = new Set(current);
-                    next.delete(t.id);
-                    return next;
-                  });
-                  if (result.error) {
-                    setError(result.error);
-                    return;
-                  }
-                  setTables((current) =>
-                    current.map((row) =>
-                      row.id === t.id ? { ...row, skill_tier: nextTier } : row,
-                    ),
-                  );
-                })
-              }}
-            />
-          ))}
-        </Card>
-      ) : null}
-
-      <Button onPress={onSave} loading={saving} accessibilityLabel="Save changes">
-        Save
-      </Button>
-      {/*
-        NOT redundant with the Club tab, and stays: this returns to THIS
-        specific game (`/clubs/${clubId}/events/${eventId}`), while the Club
-        tab goes to the clubs dashboard (`/clubs`) -- different
-        destinations, the same reasoning app/clubs/[id]/events/new.tsx's own
-        Cancel button documents for itself.
-      */}
-      <Button
-        variant="ghost"
-        onPress={() => {
-          // A direct URL, a page reload on web, a deep link, or a cold
-          // launch straight into this route leaves nothing to pop -- only
-          // `back()` when there is history to unwind. The fallback replaces
-          // rather than pushes: a pushed event screen would leave this
-          // cancelled form one browser-back away, a stale entry the member
-          // could stumble straight back into.
-          if (router.canGoBack()) {
-            router.back();
-          } else {
-            router.replace(`/clubs/${clubId}/events/${eventId}`);
-          }
-        }}
-        accessibilityLabel="Cancel"
+        }
       >
-        Cancel
-      </Button>
+        <FormHeader clubId={clubId} clubName={club.name} onClose={requestLeave} />
+        <FormTitle>Edit</FormTitle>
 
-      {series ? (
-        series.ended_at === null ? (
-          <Card>
-            <Text style={styles.help}>
-              There is no control here for a different day or a different
-              rhythm — frequency, weekday and start date are fixed for a
-              series. To change when this repeats, end this series and start
-              a new one.{' '}
-              {futureCount !== null
-                ? `Ending it cancels ${futureCount} future ${
-                    futureCount === 1 ? 'game' : 'games'
-                  } in it.`
-                : 'Ending it cancels every future game in it.'}
-            </Text>
-            <Button
-              variant="ghost"
-              onPress={onEndSeries}
-              disabled={saving}
-              accessibilityLabel="End this series and start a new one"
+        {error ? <ErrorBanner message={error} /> : null}
+
+        {event.series_id && seriesFailed ? (
+          <ErrorBanner message="Could not load this game's series. You can still edit this game on its own." />
+        ) : null}
+
+        {series ? (
+          <FormSection label="What are you changing?" helper={seriesLabel}>
+            <Segmented
+              options={[
+                { value: 'event' as const, label: 'This game', accessibilityLabel: 'This game only' },
+                { value: 'series' as const, label: 'The whole series' },
+              ]}
+              value={scope}
+              onChange={setScope}
+            />
+          </FormSection>
+        ) : null}
+
+        <FormSection label="Details">
+          <FormCard>
+            <TextRow
+              label="What is it called?"
+              value={title}
+              onChangeText={setTitle}
+              accessibilityLabel="Game name"
+            />
+            <VenuePicker
+              // VenuePicker seeds its own internal search text from
+              // `valueName` only on mount -- so switching scope needs a fresh
+              // instance to show the newly-active snapshot's venue.
+              key={isSeriesScope ? 'series' : 'event'}
+              variant="row"
+              clubId={clubId}
+              value={venueId}
+              valueName={venueName}
+              onChange={setVenue}
+            />
+            <StartTimeRow>
+              {/* The date is this game's alone: a series' days are fixed by
+                  its rhythm (see "Change the schedule" below). */}
+              {isSeriesScope ? null : (
+                <DateField value={eventDate} onChange={setEventDate} label="Date" minimum={today} compact />
+              )}
+              <TimeField value={startTime} onChange={setStartTime} label="Start time" compact />
+            </StartTimeRow>
+            <TextRow
+              label="Anything else? (optional)"
+              value={notes}
+              onChangeText={setNotes}
+              accessibilityLabel="Notes"
+              placeholder="Parking, what to bring, house rules…"
+              multiline
+            />
+          </FormCard>
+        </FormSection>
+
+        <FormSection
+          label="How does this seat people?"
+          helper={
+            seatingMode === 'assigned_tables'
+              ? 'You place players at tables. Set a level for each table.'
+              : 'Players take any open seat when they arrive.'
+          }
+        >
+          <Segmented
+            options={[
+              { value: 'assigned_tables' as const, label: 'Assigned tables' },
+              { value: 'open_seating' as const, label: 'Open seating' },
+            ]}
+            value={seatingMode}
+            onChange={setSeatingMode}
+          />
+        </FormSection>
+
+        {seatingMode === 'open_seating' ? (
+          // This cap is independent of table capacity, and entirely optional.
+          <FormSection helper="Caps how many players can confirm a spot. Leave blank for no limit.">
+            <FormCard>
+              <TextRow
+                label="Capacity (optional)"
+                value={capacityText}
+                onChangeText={setCapacityText}
+                accessibilityLabel="Capacity (optional)"
+                keyboardType="number-pad"
+                placeholder="70"
+              />
+            </FormCard>
+          </FormSection>
+        ) : tablesFailed ? (
+          <Text style={styles.help}>Could not load this game's tables.</Text>
+        ) : tableDraft.length > 0 ? (
+          // Per-occurrence, whichever scope is chosen: tables belong to this
+          // game, never to the series.
+          <TablesCard
+            tables={tableDraft}
+            onAdd={() =>
+              setTableDraft((current) => [
+                ...current,
+                {
+                  key: `new-${current.length}-${Date.now()}`,
+                  id: null,
+                  label: `Table ${current.length + 1}`,
+                  tier: 'mixed' as SkillTier,
+                },
+              ])
+            }
+            onRemove={() => setTableDraft((current) => current.slice(0, -1))}
+            onTierChange={(index, tier) =>
+              setTableDraft((current) => current.map((t, i) => (i === index ? { ...t, tier } : t)))
+            }
+            note={isSeriesScope ? 'Tables are set per game: these apply to this game only.' : null}
+          />
+        ) : null}
+
+        <FormSection helper="Leave at 0 if it's free.">
+          <MoneyCards
+            fee={feeText}
+            minSpend={minSpendText}
+            onFeeChange={setFeeText}
+            onMinSpendChange={setMinSpendText}
+          />
+        </FormSection>
+
+        <FormSection label="Check-in & access">
+          <FormCard>
+            <ToggleRow
+              icon={<ClipboardCheckIcon size={18} color={colors.accent[700]} />}
+              title="Require check-in"
+              helper="Turn this on and this game gets a door list, so you can check people in as they arrive. Small games usually don't need it."
+              value={checkInRequired}
+              onValueChange={setCheckInRequired}
+            />
+            <ToggleRow
+              icon={<LockIcon size={18} color={colors.accent[700]} />}
+              title="Invite-only"
+              helper={
+                gameMode === 'invite_only'
+                  ? 'Only people you invite can see and join.'
+                  : 'Anyone in the club can see and join.'
+              }
+              value={gameMode === 'invite_only'}
+              onValueChange={(next) => setGameMode(next ? 'invite_only' : 'open_play')}
+            />
+          </FormCard>
+        </FormSection>
+
+        {scope === 'series' && series ? (
+          <FormSection label="Repeats">
+            <FormCard>
+              <View style={styles.stopRow}>
+                <Text style={styles.stopLabel}>Stop repeating on</Text>
+                {runsIndefinitely ? (
+                  <Text style={styles.stopValue}>No end date</Text>
+                ) : (
+                  <DateField
+                    value={endsOn}
+                    onChange={setEndsOn}
+                    label="Stop repeating on"
+                    // Today: an end date in the past is not refused by the
+                    // database, but it DELETES every future week beyond it
+                    // (supabase/migrations/20260824000000), so a mistyped
+                    // year here would silently clear the whole run.
+                    minimum={today}
+                    compact
+                  />
+                )}
+              </View>
+              <ToggleRow
+                icon={null}
+                title="Runs indefinitely"
+                helper="No end date. Turn this off to set one."
+                accessibilityLabel="Runs indefinitely, with no end date"
+                value={runsIndefinitely}
+                onValueChange={(next) => {
+                  setRunsIndefinitely(next);
+                  if (next) {
+                    // Clears the picked date along with the toggle -- turning
+                    // this back off should not resurrect a date the host just
+                    // said they don't want.
+                    setEndsOn('');
+                  } else {
+                    // Restores the series' own end date. Leaving `endsOn` at
+                    // '' would show no date while `series.ends_on` is still
+                    // set, and the series would silently keep it.
+                    setEndsOn(series?.ends_on ?? '');
+                  }
+                }}
+              />
+              {/*
+                Only rendered when there is something for it to apply to. It
+                applies THIS edit to the weeks you've customised, and nothing
+                broader: fields this edit did not touch keep their overrides
+                either way (supabase/migrations/20260823040000).
+              */}
+              {!overriddenFailed && customised.length > 0 ? (
+                <ToggleRow
+                  icon={null}
+                  title={`Also apply this edit to the ${customised.length} ${
+                    customised.length === 1 ? 'game' : 'games'
+                  } you've changed`}
+                  helper={`${
+                    customised.length <= 3
+                      ? `${customised
+                          .map((e) => formatEventWhen(e.starts_at, club.timezone))
+                          .join(', ')}. `
+                      : ''
+                  }Cancelled games are never affected.`}
+                  accessibilityLabel={`Also apply this edit to the ${customised.length} ${
+                    customised.length === 1 ? 'game' : 'games'
+                  } you've changed`}
+                  value={includeOverridden}
+                  onValueChange={setIncludeOverridden}
+                />
+              ) : null}
+            </FormCard>
+            {overriddenFailed ? (
+              <Text style={styles.help}>
+                Could not check which games you've changed — this edit will leave them exactly as
+                they are.
+              </Text>
+            ) : null}
+          </FormSection>
+        ) : null}
+
+        {series ? (
+          series.ended_at === null ? (
+            <FormSection
+              helper={`There is no control here for a different day or a different rhythm — frequency, weekday and start date are fixed for a series. To change when this repeats, end this series and start a new one. ${
+                futureCount !== null
+                  ? `Ending it cancels ${futureCount} future ${futureCount === 1 ? 'game' : 'games'} in it.`
+                  : 'Ending it cancels every future game in it.'
+              }`}
             >
-              Change the schedule
-            </Button>
-          </Card>
-        ) : (
-          <Text style={styles.help}>
-            This series has already ended, so there is no schedule left to
-            change.
-          </Text>
-        )
+              <GhostLink
+                label="Change the schedule"
+                accessibilityLabel="End this series and start a new one"
+                onPress={onEndSeries}
+                disabled={saving}
+              />
+            </FormSection>
+          ) : (
+            <Text style={styles.help}>
+              This series has already ended, so there is no schedule left to change.
+            </Text>
+          )
+        ) : null}
+
+        {event.status !== 'cancelled' ? (
+          <GhostLink
+            label="Cancel this game"
+            onPress={() => setConfirming('cancelGame')}
+            disabled={saving}
+          />
+        ) : null}
+      </Screen>
+
+      {confirming === 'discard' ? (
+        <ConfirmSheet
+          title="Discard your changes?"
+          body="Nothing you've changed here will be saved."
+          confirmLabel="Discard"
+          cancelLabel="Keep editing"
+          onConfirm={() => {
+            setConfirming(null);
+            leave();
+          }}
+          onCancel={() => setConfirming(null)}
+        />
       ) : null}
-    </Screen>
+      {confirming === 'unseat' ? (
+        <ConfirmSheet
+          title={`Save and unseat ${unseatCount} ${unseatCount === 1 ? 'player' : 'players'}?`}
+          body={`Removing ${removedTables.map((t) => t.label).join(' and ')} takes ${
+            unseatCount === 1 ? 'the player' : 'the players'
+          } seated there off their table. They'll be told.`}
+          confirmLabel="Save and unseat"
+          cancelLabel="Keep editing"
+          onConfirm={() => {
+            setConfirming(null);
+            void onSave(true);
+          }}
+          onCancel={() => setConfirming(null)}
+        />
+      ) : null}
+      {confirming === 'cancelGame' ? (
+        <ConfirmSheet
+          title="Cancel this game?"
+          body="Players will see it's cancelled."
+          confirmLabel="Cancel game"
+          cancelLabel="Keep it"
+          onConfirm={() => void onCancelGame()}
+          onCancel={() => setConfirming(null)}
+        />
+      ) : null}
+    </>
   );
 }
 
 const styles = StyleSheet.create({
   container: { padding: space[6], gap: space[4] },
   centered: { alignItems: 'center' },
-  heading: {
-    fontFamily: type.heading,
-    fontSize: type.size.h2,
-    color: colors.text,
-  },
-  label: {
-    fontFamily: type.bodySemiBold,
-    fontSize: type.size.helper,
-    color: colors.textLabel,
-  },
-  // Matches the game screen's own `sectionTitle` (index.tsx) for
-  // consistency between the two screens' Tables sections.
-  sectionTitle: {
-    fontFamily: type.bodyBold,
-    fontSize: type.size.body,
-    color: colors.text,
-    marginTop: space[4],
-  },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space[2] },
-  shareRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: space[3],
-  },
   help: {
-    flex: 1,
     fontFamily: type.bodyRegular,
-    fontSize: type.size.helper,
-    color: colors.textMuted,
-    lineHeight: 24,
+    fontSize: 13,
+    lineHeight: 18,
+    color: colors.neutral[700],
+    paddingHorizontal: 6,
   },
+  stopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+  },
+  stopLabel: { flex: 1, fontFamily: type.bodyRegular, fontSize: 15, color: colors.text },
+  stopValue: { fontFamily: type.bodySemiBold, fontSize: 15, color: colors.neutral[700] },
 });
