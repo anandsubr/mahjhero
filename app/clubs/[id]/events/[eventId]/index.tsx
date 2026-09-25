@@ -5,6 +5,7 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
   type StyleProp,
   type ViewStyle,
@@ -20,7 +21,6 @@ import Screen from '../../../../../components/Screen';
 import Tag from '../../../../../components/Tag';
 import TabBar from '../../../../../components/TabBar';
 import TableCard from '../../../../../components/TableCard';
-import TextField from '../../../../../components/TextField';
 import TipCard, { TipText } from '../../../../../components/TipCard';
 import WaitlistPanel from '../../../../../components/WaitlistPanel';
 import {
@@ -1720,26 +1720,40 @@ export default function EventScreen() {
         undefined, eventId)` call.
       */}
       {isOrganizer && guestFormOpen ? (
+        // One pill: the email field with a compact "Invite" button inside
+        // its right end (the Messages composer's shape). The tile above
+        // already reads "Invite a guest by email", so no separate label.
         <View style={styles.guestForm}>
-          <TextField
-            label="Invite a guest by email"
+          <TextInput
+            style={styles.guestInput}
             value={guestEmail}
             onChangeText={setGuestEmail}
+            onSubmitEditing={onInviteGuest}
             placeholder="guest@example.com"
+            placeholderTextColor={colors.neutral[600]}
             autoCapitalize="none"
             autoCorrect={false}
             keyboardType="email-address"
+            returnKeyType="send"
             accessibilityLabel="Guest's email address"
           />
-          <Button
-            variant="secondary"
-            disabled={busy || invitingGuest}
-            loading={invitingGuest}
+          <Pressable
             onPress={onInviteGuest}
+            disabled={busy || invitingGuest}
+            accessibilityRole="button"
             accessibilityLabel="Invite a guest"
+            style={({ pressed }) => [
+              styles.guestSend,
+              pressed ? styles.guestSendPressed : null,
+              busy || invitingGuest ? styles.guestSendBusy : null,
+            ]}
           >
-            Invite a guest
-          </Button>
+            {invitingGuest ? (
+              <ActivityIndicator size="small" color={colors.bg} />
+            ) : (
+              <Text style={styles.guestSendText}>Invite</Text>
+            )}
+          </Pressable>
         </View>
       ) : null}
       {isOrganizer && guestInviteSent ? (
@@ -1944,7 +1958,37 @@ const styles = StyleSheet.create({
     color: colors.text,
     flexShrink: 1,
   },
-  guestForm: { gap: space[3] },
+  guestForm: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    height: 52,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    padding: 4,
+  },
+  guestInput: {
+    flex: 1,
+    minWidth: 0,
+    alignSelf: 'stretch',
+    paddingHorizontal: 16,
+    fontFamily: type.bodyRegular,
+    fontSize: 16,
+    color: colors.text,
+    backgroundColor: 'transparent',
+    outlineStyle: 'none' as never,
+  },
+  guestSend: {
+    height: 44,
+    paddingHorizontal: 20,
+    borderRadius: radius.pill,
+    backgroundColor: colors.neutral[900],
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  guestSendPressed: { backgroundColor: colors.neutral[800] },
+  guestSendBusy: { opacity: 0.6 },
+  guestSendText: { fontFamily: type.bodyBold, fontSize: 15, color: colors.bg },
   cancelGame: { alignSelf: 'center' },
   chips: {
     flexDirection: 'row',
