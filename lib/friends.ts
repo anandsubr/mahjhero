@@ -1,5 +1,6 @@
 import { GENERIC_ERROR } from './constants';
 import { supabase } from './supabase';
+import { colors } from './theme';
 
 /** A `fetch_friends` row. `club_names` is the clubs you STILL share — it is
  *  empty for a friend you acquired in a club one of you has since left, which
@@ -29,6 +30,25 @@ export type AddablePerson = {
 export function sharedClubsLabel(clubNames: string[]): string {
   if (clubNames.length === 0) return 'No clubs in common';
   return clubNames.join(' · ');
+}
+
+/** The friends handoff's avatar fills, all dark enough for a white initial. */
+const AVATAR_COLORS = [
+  colors.accent2[700],
+  colors.accent[700],
+  colors.neutral[800],
+  colors.accent2[800],
+  colors.accent[600],
+];
+
+/** A stable avatar fill per person, so someone keeps their colour as they
+ *  move from "People in your clubs" into "Your friends". */
+export function avatarColorFor(profileId: string): string {
+  let hash = 0;
+  for (let i = 0; i < profileId.length; i++) {
+    hash = (hash * 31 + profileId.charCodeAt(i)) | 0;
+  }
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
 }
 
 /**

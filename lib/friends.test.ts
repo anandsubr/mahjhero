@@ -10,6 +10,7 @@ vi.mock('./supabase', () => ({
 
 import { GENERIC_ERROR } from './constants';
 import {
+  avatarColorFor,
   addFriend,
   fetchAddablePeople,
   fetchFriends,
@@ -29,6 +30,17 @@ describe('sharedClubsLabel', () => {
   // line under their name would read as a rendering bug.
   it('says so plainly when nothing is shared any more', () => {
     expect(sharedClubsLabel([])).toBe('No clubs in common');
+  });
+});
+
+describe('avatarColorFor', () => {
+  it('gives the same person the same colour every time', () => {
+    expect(avatarColorFor('p1')).toBe(avatarColorFor('p1'));
+  });
+
+  it('spreads different people across more than one colour', () => {
+    const ids = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+    expect(new Set(ids.map(avatarColorFor)).size).toBeGreaterThan(1);
   });
 });
 

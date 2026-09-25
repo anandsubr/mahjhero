@@ -439,6 +439,8 @@ export function GhostLink({
  *  `disabled` it is drawn in the pale not-yet-ready treatment. */
 export function ActionBar({
   onCancel,
+  cancelLabel = 'Cancel',
+  aboveTabBar = false,
   primaryLabel,
   primaryAccessibilityLabel,
   onPrimary,
@@ -446,6 +448,10 @@ export function ActionBar({
   disabled = false,
 }: {
   onCancel?: () => void;
+  cancelLabel?: string;
+  /** Sits over the tab bar (Notifications' save bar) rather than in its
+   *  place, so the bar below already clears the home indicator. */
+  aboveTabBar?: boolean;
   primaryLabel: string;
   primaryAccessibilityLabel: string;
   onPrimary: () => void;
@@ -454,15 +460,21 @@ export function ActionBar({
 }) {
   const insets = useSafeAreaInsets();
   return (
-    <View style={[styles.actionBar, { paddingBottom: Math.max(16, insets.bottom + 8) }]}>
+    <View
+      style={[
+        styles.actionBar,
+        { paddingBottom: aboveTabBar ? 10 : Math.max(16, insets.bottom + 8) },
+        aboveTabBar && styles.actionBarAboveTabs,
+      ]}
+    >
       {onCancel ? (
         <Pressable
           onPress={onCancel}
           accessibilityRole="button"
-          accessibilityLabel="Cancel"
+          accessibilityLabel={cancelLabel}
           style={({ pressed }) => [styles.cancelButton, pressed && styles.cancelButtonPressed]}
         >
-          <Text style={styles.cancelText}>Cancel</Text>
+          <Text style={styles.cancelText}>{cancelLabel}</Text>
         </Pressable>
       ) : null}
       <Pressable
@@ -726,6 +738,7 @@ const styles = StyleSheet.create({
     borderTopColor: colors.divider,
     backgroundColor: colors.bg,
   },
+  actionBarAboveTabs: { paddingTop: 10 },
   cancelButton: {
     height: 50,
     paddingHorizontal: 22,

@@ -3,6 +3,7 @@ import DateTimePicker, {
 } from '@react-native-community/datetimepicker';
 import { useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ChevronDownIcon } from './icons';
 import { dateToTimeString, formatTimeLabel, timeStringToDate } from '../lib/time';
 import { colors, radius, space, type } from '../lib/theme';
 
@@ -12,6 +13,9 @@ type TimeFieldProps = {
   label: string; // accessibility label, e.g. "Quiet hours start"
   /** The game form's chip: a small pill rather than a full-width field. */
   compact?: boolean;
+  /** Notifications' quiet-hours tile: this small label ("From"/"Until")
+   *  over the time in the heading face, with a chevron. */
+  tileLabel?: string;
 };
 
 /**
@@ -37,7 +41,7 @@ type TimeFieldProps = {
  *   plain Pressable showing the current time, and the picker is mounted
  *   only while `open` is true, then unmounted on selection or dismissal.
  */
-export default function TimeField({ value, onChange, label, compact = false }: TimeFieldProps) {
+export default function TimeField({ value, onChange, label, compact = false, tileLabel }: TimeFieldProps) {
   const [open, setOpen] = useState(false);
   const date = timeStringToDate(value);
 
@@ -51,6 +55,48 @@ export default function TimeField({ value, onChange, label, compact = false }: T
 
   function handleDismiss() {
     setOpen(false);
+  }
+
+  if (tileLabel !== undefined) {
+    // iOS keeps its native compact picker inside the tile (its button is
+    // system-drawn, as on the game form's time chip); Android shows the
+    // time itself and opens the dialog on tap.
+    return (
+      <View style={styles.tile}>
+        <Text style={styles.tileLabel}>{tileLabel}</Text>
+        {Platform.OS === 'android' ? (
+          <Pressable
+            onPress={() => setOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel={label}
+            style={styles.tileValueRow}
+          >
+            <Text style={styles.tileValue}>{formatTimeLabel(date)}</Text>
+            <ChevronDownIcon size={16} color={colors.neutral[600]} />
+          </Pressable>
+        ) : (
+          <DateTimePicker
+            value={date}
+            mode="time"
+            display="compact"
+            onValueChange={handleValueChange}
+            accessibilityLabel={label}
+            style={styles.iosPicker}
+            accentColor={colors.accentColor}
+            minuteInterval={15}
+          />
+        )}
+        {Platform.OS === 'android' && open ? (
+          <DateTimePicker
+            value={date}
+            mode="time"
+            display="default"
+            onValueChange={handleValueChange}
+            onDismiss={handleDismiss}
+          />
+        ) : null}
+      </View>
+    );
   }
 
   if (Platform.OS === 'android') {
@@ -113,6 +159,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  tile: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+    paddingTop: 10,
+    paddingHorizontal: 14,
+    paddingBottom: 12,
+    borderRadius: 16,
+    backgroundColor: colors.bg,
+  },
+  tileLabel: { fontFamily: type.bodySemiBold, fontSize: 12, color: colors.neutral[700] },
+  tileValueRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  tileValue: { flex: 1, fontFamily: type.heading, fontSize: 22, color: colors.text },
   chipText: { fontFamily: type.bodySemiBold, fontSize: 15, color: colors.text },
   iosPicker: {
     // The library sizes itself; this only stops it from stretching past its

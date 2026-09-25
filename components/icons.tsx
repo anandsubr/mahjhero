@@ -351,3 +351,33 @@ export function LogOutIcon({ size = 18, color = colors.text }: { size?: number; 
     </Svg>
   );
 }
+
+/** Notifications (app/notifications.tsx): the "Push only" channel. */
+export function SmartphoneIcon({ size = 18, color = colors.text }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.75} strokeLinecap="round" strokeLinejoin="round">
+      <Rect x={5} y={2} width={14} height={20} rx={2} />
+      <Path d="M12 18h.01" />
+    </Svg>
+  );
+}
+
+/** Notifications (app/notifications.tsx): quiet hours. */
+export function MoonIcon({ size = 18, color = colors.text }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.75} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+    </Svg>
+  );
+}
+
+/** Friends (app/friends.tsx): remove a friend. */
+export function UserMinusIcon({ size = 18, color = colors.text }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.75} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <Circle cx={9} cy={7} r={4} />
+      <Path d="M22 11h-6" />
+    </Svg>
+  );
+}
