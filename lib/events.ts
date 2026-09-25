@@ -447,6 +447,24 @@ export function eventStartTimeInZone(startsAt: string, timezone: string): string
   return `${hour}:${minute}`;
 }
 
+/**
+ * The club-local calendar date ("YYYY-MM-DD") an instant falls on -- the
+ * date half of `eventStartTimeInZone`, for seeding the edit screen's date
+ * chip. Empty for an unparseable instant, for the same reason.
+ */
+export function eventDateInZone(startsAt: string, timezone: string): string {
+  const when = new Date(startsAt);
+  if (Number.isNaN(when.getTime())) return '';
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    timeZone: timezone,
+  }).formatToParts(when);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
+  return `${get('year')}-${get('month')}-${get('day')}`;
+}
+
 /** One booking row as `EVENT_COLUMNS`'s `bookings(...)` embed returns it. */
 export type EventBookingRow = {
   profile_id: string;

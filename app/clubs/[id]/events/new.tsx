@@ -1,31 +1,48 @@
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
-import Button from '../../../../components/Button';
-import { ChevronLeftIcon } from '../../../../components/icons';
+import { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import DateField from '../../../../components/DateField';
 import ErrorBanner from '../../../../components/ErrorBanner';
+import {
+  ActionBar,
+  ChipsRow,
+  ConfirmSheet,
+  FormCard,
+  FormHeader,
+  FormSection,
+  FormTitle,
+  MoneyCards,
+  Segmented,
+  SmallChip,
+  StartTimeRow,
+  TablesCard,
+  TextRow,
+  ToggleRow,
+  formStyles,
+} from '../../../../components/GameForm';
+import { ClipboardCheckIcon, LockIcon } from '../../../../components/icons';
 import Screen from '../../../../components/Screen';
 import TabBar from '../../../../components/TabBar';
-import TextField from '../../../../components/TextField';
 import TimeField from '../../../../components/TimeField';
-import Toggle from '../../../../components/Toggle';
 import TipCard, { TipText } from '../../../../components/TipCard';
 import VenuePicker from '../../../../components/VenuePicker';
+import type { SkillTier } from '../../../../lib/bookings';
 import { fetchClub, fetchMyRoles, type Club, type GameMode } from '../../../../lib/clubs';
 import {
   createEvent,
   createEventSeries,
+  fetchEventTables,
   frequencyLabel,
   nextOccurrences,
   parseDollarsToCents,
+  updateEventTable,
   type SeatingMode,
   type SeriesFrequency,
 } from '../../../../lib/events';
 import { useGuides } from '../../../../lib/use-guides';
 import { useSession } from '../../../../lib/session';
 import { dateToDateString } from '../../../../lib/time';
-import { colors, radius, shadow, space, type } from '../../../../lib/theme';
+import { colors, space, type } from '../../../../lib/theme';
 
 type Repeat = 'never' | SeriesFrequency;
 
@@ -67,93 +84,6 @@ function parseCapacity(text: string): CapacityParse {
 const INVALID_CAPACITY_MESSAGE =
   'Enter a whole number of players, or leave it blank for no limit.';
 
-/**
- * The duration/table-count/repeat rows below are chip-style selectors where
- * "which one is selected" is the entire point -- exactly the case `Button`
- * cannot serve: `Button` merges a caller's `accessibilityState` straight into
- * RN's own `accessibilityState` prop, and react-native-web's `createDOMProps`
- * has no handling for `accessibilityState` at all (see
- * components/Toggle.tsx's docstring for the full account), so the `selected`
- * value these rows used to pass as `accessibilityState={{ selected }}` never
- * reached the DOM on web. `Button` itself is not touched here -- it still has
- * no way to forward a caller's `aria-selected` to its underlying `Pressable`
- * -- so this follows the fix the organizer's own per-table tier chips already
- * established for the identical shape
- * (app/clubs/[id]/events/[eventId]/index.tsx's `TierChip`, itself following
- * `BringSomeoneSheet`'s chips): a bespoke `Pressable` carrying the flat
- * `aria-selected` prop, styled to match `Button`'s own
- * primary/secondary/big=false chip pixel-for-pixel so replacing `Button` here
- * changes no layout or visible text.
- */
-function Chip({
-  children,
-  selected,
-  onPress,
-  accessibilityLabel,
-}: {
-  children: string;
-  selected: boolean;
-  onPress: () => void;
-  accessibilityLabel: string;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel}
-      aria-selected={selected}
-      style={({ pressed }) => [
-        chipStyles.base,
-        selected ? chipStyles.selected : chipStyles.unselected,
-        pressed ? chipStyles.pressed : null,
-      ]}
-    >
-      <Text style={selected ? chipStyles.labelSelected : chipStyles.label}>
-        {children}
-      </Text>
-    </Pressable>
-  );
-}
-
-const chipStyles = StyleSheet.create({
-  // Matches components/Button.tsx's `base` + `regular` (big=false) exactly.
-  base: {
-    borderRadius: radius.pill,
-    minHeight: 46,
-    paddingHorizontal: space[5],
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-  },
-  // Matches Button's `variantStyles.primary`.
-  selected: {
-    backgroundColor: colors.accentColor,
-    borderColor: 'transparent',
-    ...shadow.sm,
-  },
-  // Matches Button's `variantStyles.secondary`.
-  unselected: {
-    backgroundColor: colors.surface,
-    borderColor: colors.divider,
-  },
-  // Matches Button's `pressed`.
-  pressed: {
-    opacity: 0.85,
-  },
-  // Matches Button's `label` + `variantTextStyles.primary`.
-  labelSelected: {
-    fontFamily: type.heading,
-    fontSize: type.size.body,
-    color: colors.bg,
-  },
-  // Matches Button's `label` + `variantTextStyles.secondary`.
-  label: {
-    fontFamily: type.heading,
-    fontSize: type.size.body,
-    color: colors.text,
-  },
-});
-
 /*
  * This screen converts no timezones.
  *
@@ -171,22 +101,10 @@ const chipStyles = StyleSheet.create({
  * arguments the series functions take so that there is nothing left here to
  * disagree.
  *
- * Carries the tab bar with `active="club"`, the same as every other
- * signed-in screen: the design source renders the bar as a sibling of every
- * `appScreens` entry, `host` included — it is not gated to the four tabs
- * themselves. The Cancel button below is NOT redundant with the Club tab and
- * stays: it returns to THIS specific club (`/clubs/${clubId}`), while the
- * Club tab goes to the clubs dashboard (`/clubs`) — different destinations,
- * unlike the `newclub` screen's dropped `← Clubs` link, which pointed at the
- * same place its tab does.
- *
- * Also carries an explicit top-of-screen back link to `/clubs`
- * (2026-09-02-club-page-games-and-back-links-design.md) — the Club tab
- * reaches that same route but renders as already-active here, which reads
- * as "you are here" rather than "go back", the same reasoning every other
- * back link on this branch documents. This is a different control from the
- * Cancel button above: "I didn't mean to be here" versus "abandon this
- * draft".
+ * Game form handoff: no tab bar once the form is up -- the header's ✕ and
+ * the pinned Cancel both leave, asking first if anything was changed.
+ * Leaving goes back where the host came from, or to this club's own page
+ * when there is no history (a direct URL, a reload, a deep link).
  */
 export default function NewEventScreen() {
   const { id: clubId } = useLocalSearchParams<{ id: string }>();
@@ -219,7 +137,9 @@ export default function NewEventScreen() {
   const [today] = useState(() => dateToDateString(new Date()));
   const [startTime, setStartTime] = useState('19:00');
   const [duration, setDuration] = useState(180);
-  const [tableCount, setTableCount] = useState(1);
+  // One entry per table, holding its level. Its length is the table count.
+  const [tableTiers, setTableTiers] = useState<SkillTier[]>(['mixed']);
+  const tableCount = tableTiers.length;
   // Defaults to the app's existing behaviour -- every event before this
   // task shipped assigned tables, and `create_event`/`create_event_series`
   // themselves default here too, so an unmounted-then-remounted form (or a
@@ -239,6 +159,20 @@ export default function NewEventScreen() {
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmingDiscard, setConfirmingDiscard] = useState(false);
+
+  // Everything the host can change, for "has anything been changed?". The
+  // baseline is taken once the club (and with it the default game mode) has
+  // loaded, so that seeding is not mistaken for an edit.
+  const formSnapshot = JSON.stringify([
+    title, venueId, date, startTime, duration, tableTiers, seatingMode, capacityText,
+    repeat, endsOn, checkInRequired, gameMode, feeText, minSpendText, notes,
+  ]);
+  const baselineRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (ready && baselineRef.current === null) baselineRef.current = formSnapshot;
+  }, [ready, formSnapshot]);
+  const dirty = baselineRef.current !== null && baselineRef.current !== formSnapshot;
 
   useEffect(() => {
     if (!session) return;
@@ -364,16 +298,35 @@ export default function NewEventScreen() {
         seatingMode,
         capacity: capacityParsed.value,
       });
-      setSaving(false);
-      if (result.error) {
+      if (result.error || !result.eventId) {
+        setSaving(false);
         setError(result.error);
         return;
       }
+      // `create_event` makes every table "Any level"; any other level picked
+      // here is applied to the new tables afterwards, in position order.
+      if (seatingMode === 'assigned_tables' && tableTiers.some((t) => t !== 'mixed')) {
+        const created = await fetchEventTables(result.eventId);
+        const ordered = [...(created ?? [])].sort((a, b) => a.position - b.position);
+        const writes = await Promise.all(
+          ordered.map((table, index) =>
+            tableTiers[index] && tableTiers[index] !== 'mixed'
+              ? updateEventTable(table.id, { tier: tableTiers[index] })
+              : Promise.resolve({ error: null }),
+          ),
+        );
+        if (created === null || writes.some((w) => w.error)) {
+          // The game exists; only its levels did not land. Send the host to
+          // its edit screen, where they can set them, rather than offering a
+          // Save that would create the game a second time.
+          setSaving(false);
+          router.replace(`/clubs/${clubId}/events/${result.eventId}/edit`);
+          return;
+        }
+      }
+      setSaving(false);
       // The clubs dashboard, not this specific club's own page -- a newly
-      // created game already shows up there, and it matches this screen's
-      // own top-of-screen back link and the Club tab, unlike the Cancel
-      // button below (which deliberately stays on `/clubs/${clubId}`, see
-      // this file's own docstring).
+      // created game already shows up there.
       router.replace('/clubs');
       return;
     }
@@ -409,270 +362,271 @@ export default function NewEventScreen() {
     router.replace('/clubs');
   }
 
+  function leave() {
+    // A direct URL, a page reload on web, a deep link, or a cold launch
+    // straight into this route leaves nothing to pop -- only `back()` when
+    // there is history to unwind. The fallback replaces rather than pushes:
+    // a pushed club screen would leave this cancelled form one browser-back
+    // away, a stale entry the member could stumble straight back into.
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace(`/clubs/${clubId}`);
+    }
+  }
+
+  function requestLeave() {
+    if (dirty) setConfirmingDiscard(true);
+    else leave();
+  }
+
+  const repeating = repeat !== 'never';
+
   return (
-    <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="club" />}>
-      <Button
-        variant="ghost"
-        big={false}
-        icon={<ChevronLeftIcon color={colors.accentColor} />}
-        onPress={() => router.push('/clubs')}
-        accessibilityLabel="Back to your clubs"
-        style={styles.backButton}
+    <>
+      <Screen
+        scroll
+        contentStyle={formStyles.body}
+        tabBar={
+          <ActionBar
+            onCancel={requestLeave}
+            primaryLabel="Create game"
+            primaryAccessibilityLabel="Save game"
+            onPrimary={onSave}
+            busy={saving}
+          />
+        }
       >
-        Clubs
-      </Button>
+        <FormHeader clubId={clubId} clubName={club.name} onClose={requestLeave} />
+        <FormTitle>New game</FormTitle>
 
-      <Text style={styles.heading}>Add a game</Text>
+        {error ? <ErrorBanner message={error} /> : null}
 
-      {error ? <ErrorBanner message={error} /> : null}
+        {guides.isVisible('tip:new-game') ? (
+          <TipCard tag="Tip" title="Setting up a game" onDismiss={() => guides.dismiss('tip:new-game')}>
+            <TipText>Assigned tables: players pick an Empty seat at a table.</TipText>
+            <TipText>Open seating: players tap Join, and no tables are set in advance.</TipText>
+            <TipText>
+              Set Cost to play, and Minimum spend if the venue asks for one. Players see the
+              cost up front, and you mark who's paid at check-in. No money goes through the app.
+            </TipText>
+          </TipCard>
+        ) : null}
 
-      {guides.isVisible('tip:new-game') ? (
-        <TipCard tag="Tip" title="Setting up a game" onDismiss={() => guides.dismiss('tip:new-game')}>
-          <TipText>Assigned tables: players pick an Empty seat at a table.</TipText>
-          <TipText>Open seating: players tap Join, and no tables are set in advance.</TipText>
-          <TipText>
-            Set Cost to play, and Minimum spend if the venue asks for one. Players see the
-            cost up front, and you mark who's paid at check-in. No money goes through the app.
-          </TipText>
-        </TipCard>
-      ) : null}
+        <FormSection label="Details">
+          <FormCard>
+            <TextRow
+              label="What is it called?"
+              value={title}
+              onChangeText={setTitle}
+              accessibilityLabel="Game name"
+              placeholder="Tuesday night mahjong"
+            />
+            <VenuePicker
+              variant="row"
+              clubId={clubId}
+              value={venueId}
+              valueName={venueName}
+              onChange={(id, name) => {
+                setVenueId(id);
+                setVenueName(name);
+              }}
+            />
+            <StartTimeRow>
+              <DateField value={date} onChange={setDate} label="Date" minimum={today} compact />
+              <TimeField value={startTime} onChange={setStartTime} label="Start time" compact />
+            </StartTimeRow>
+            <ChipsRow label="How long?">
+              {DURATIONS.map((minutes) => (
+                <SmallChip
+                  key={minutes}
+                  label={`${minutes / 60} hours`}
+                  selected={duration === minutes}
+                  onPress={() => setDuration(minutes)}
+                />
+              ))}
+            </ChipsRow>
+            <TextRow
+              label="Anything else? (optional)"
+              value={notes}
+              onChangeText={setNotes}
+              accessibilityLabel="Notes"
+              placeholder="Parking, what to bring, house rules…"
+              multiline
+            />
+          </FormCard>
+        </FormSection>
 
-      <TextField
-        label="What is it called?"
-        value={title}
-        onChangeText={setTitle}
-        accessibilityLabel="Game name"
-        placeholder="Tuesday night mahjong"
-      />
-
-      <VenuePicker
-        clubId={clubId}
-        value={venueId}
-        valueName={venueName}
-        onChange={(id, name) => {
-          setVenueId(id);
-          setVenueName(name);
-        }}
-      />
-
-      <Text style={styles.label}>Date</Text>
-      <DateField value={date} onChange={setDate} label="Date" minimum={today} />
-
-      <Text style={styles.label}>Start time</Text>
-      <TimeField value={startTime} onChange={setStartTime} label="Start time" />
-
-      <Text style={styles.label}>How long?</Text>
-      <View style={styles.chips}>
-        {DURATIONS.map((minutes) => (
-          <Chip
-            key={minutes}
-            selected={duration === minutes}
-            onPress={() => setDuration(minutes)}
-            accessibilityLabel={`${minutes / 60} hours`}
-          >
-            {`${minutes / 60} hours`}
-          </Chip>
-        ))}
-      </View>
-
-      <Text style={styles.label}>How does this seat people?</Text>
-      <View style={styles.chips}>
-        <Chip
-          selected={seatingMode === 'assigned_tables'}
-          onPress={() => setSeatingMode('assigned_tables')}
-          accessibilityLabel="Assigned tables"
-        >
-          Assigned tables
-        </Chip>
-        <Chip
-          selected={seatingMode === 'open_seating'}
-          onPress={() => setSeatingMode('open_seating')}
-          accessibilityLabel="Open seating"
-        >
-          Open seating
-        </Chip>
-      </View>
-
-      {seatingMode === 'assigned_tables' ? (
-        <>
-          <Text style={styles.label}>How many tables?</Text>
-          <View style={styles.chips}>
-            {[1, 2, 3, 4, 5, 6].map((n) => (
-              <Chip
-                key={n}
-                selected={tableCount === n}
-                onPress={() => setTableCount(n)}
-                accessibilityLabel={`${n} ${n === 1 ? 'table' : 'tables'}`}
-              >
-                {String(n)}
-              </Chip>
-            ))}
-          </View>
-          <Text style={styles.help}>
-            Every table seats four, so {tableCount}{' '}
-            {tableCount === 1 ? 'table is' : 'tables are'} room for{' '}
-            {tableCount * 4} players.
-          </Text>
-        </>
-      ) : (
-        <>
-          {/*
-            No table picker at all here -- who turns up to a 60-70 player
-            open-seating night is not known until the door, so there is
-            nothing to pre-assign. This cap is independent of table
-            capacity: it limits confirmed players directly, and is entirely
-            optional.
-          */}
-          <TextField
-            label="Capacity (optional)"
-            value={capacityText}
-            onChangeText={setCapacityText}
-            keyboardType="number-pad"
-            placeholder="70"
-          />
-          <Text style={styles.help}>
-            Caps how many players can confirm a spot. Leave blank for no
-            limit.
-          </Text>
-        </>
-      )}
-
-      <Text style={styles.label}>Require check-in</Text>
-      <Toggle
-        value={checkInRequired}
-        onValueChange={setCheckInRequired}
-        accessibilityLabel="Require check-in"
-      />
-      <Text style={styles.help}>
-        Turn this on and this game gets a door list, so you can check people
-        in as they arrive. Small games usually don't need it.
-      </Text>
-
-      <Text style={styles.label}>Invite-only</Text>
-      <Toggle
-        value={gameMode === 'invite_only'}
-        onValueChange={(next) => setGameMode(next ? 'invite_only' : 'open_play')}
-        accessibilityLabel="Invite-only"
-      />
-      <Text style={styles.help}>
-        Turn this on and only people you invite can see or join this game.
-        Off means any club member can join.
-      </Text>
-
-      <TextField
-        label="Cost to play"
-        value={feeText}
-        onChangeText={setFeeText}
-        keyboardType="decimal-pad"
-        placeholder="0.00"
-      />
-      <TextField
-        label="Minimum spend"
-        value={minSpendText}
-        onChangeText={setMinSpendText}
-        keyboardType="decimal-pad"
-        placeholder="0.00"
-      />
-
-      <Text style={styles.label}>Does it repeat?</Text>
-      <View style={styles.chips}>
-        {REPEATS.map((option) => (
-          <Chip
-            key={option.value}
-            selected={repeat === option.value}
-            onPress={() => setRepeat(option.value)}
-            accessibilityLabel={option.label}
-          >
-            {option.label}
-          </Chip>
-        ))}
-      </View>
-
-      {repeat !== 'never' ? (
-        <>
-          <Text style={styles.help}>
-            {frequencyLabel(
-              repeat,
-              weekday,
-              repeat === 'monthly_nth_weekday' ? nthWeek : null,
-            )}
-            .{' '}
-            {preview.length > 0
-              ? `Next: ${preview.join(', ')}`
-              : 'No games would be created before that end date.'}
-          </Text>
-          <Text style={styles.label}>Stop repeating on (optional)</Text>
-          {/*
-            Empty until the host picks one, because that is what gets sent:
-            `endsOn: null`. Showing the START date here instead (which this
-            field used to do) put a date on screen the host never chose, and
-            contradicted the preview immediately above it — which, correctly,
-            listed occurrences past that date. It also made the start date the
-            one value the host could not select: a controlled input already
-            holding it fires no change event when you pick it again.
-          */}
-          <DateField
-            value={endsOn}
-            onChange={setEndsOn}
-            label="Stop repeating on"
-            minimum={today}
-          />
-        </>
-      ) : null}
-
-      <TextField
-        label="Anything else? (optional)"
-        value={notes}
-        onChangeText={setNotes}
-        accessibilityLabel="Notes"
-        multiline
-      />
-
-      <Button onPress={onSave} loading={saving} accessibilityLabel="Save game">
-        Save
-      </Button>
-      <Button
-        variant="ghost"
-        onPress={() => {
-          // A direct URL, a page reload on web, a deep link, or a cold
-          // launch straight into this route leaves nothing to pop -- only
-          // `back()` when there is history to unwind. The fallback replaces
-          // rather than pushes: a pushed club screen would leave this
-          // cancelled form one browser-back away, a stale entry the member
-          // could stumble straight back into.
-          if (router.canGoBack()) {
-            router.back();
-          } else {
-            router.replace(`/clubs/${clubId}`);
+        <FormSection
+          label="Does it repeat?"
+          helper={
+            repeating
+              ? `${frequencyLabel(
+                  repeat,
+                  weekday,
+                  repeat === 'monthly_nth_weekday' ? nthWeek : null,
+                )}. ${
+                  preview.length > 0
+                    ? `Next: ${preview.join(', ')}`
+                    : 'No games would be created before that end date.'
+                }`
+              : null
           }
-        }}
-        accessibilityLabel="Cancel"
-      >
-        Cancel
-      </Button>
-    </Screen>
+        >
+          <FormCard>
+            <View style={styles.repeatChips}>
+              {REPEATS.map((option) => (
+                <SmallChip
+                  key={option.value}
+                  label={option.label}
+                  selected={repeat === option.value}
+                  onPress={() => setRepeat(option.value)}
+                />
+              ))}
+            </View>
+            {repeating ? (
+              // Empty until the host picks one, because that is what gets
+              // sent: `endsOn: null`. Showing the START date here instead
+              // put a date on screen the host never chose.
+              <View style={styles.stopRow}>
+                <Text style={styles.stopLabel}>Stop repeating on (optional)</Text>
+                <DateField
+                  value={endsOn}
+                  onChange={setEndsOn}
+                  label="Stop repeating on"
+                  minimum={today}
+                  compact
+                />
+              </View>
+            ) : null}
+          </FormCard>
+        </FormSection>
+
+        <FormSection
+          label="How does this seat people?"
+          helper={
+            seatingMode === 'assigned_tables'
+              ? 'You place players at tables. Set a level for each table.'
+              : 'Players take any open seat when they arrive.'
+          }
+        >
+          <Segmented
+            options={[
+              { value: 'assigned_tables' as const, label: 'Assigned tables' },
+              { value: 'open_seating' as const, label: 'Open seating' },
+            ]}
+            value={seatingMode}
+            onChange={setSeatingMode}
+          />
+        </FormSection>
+
+        {seatingMode === 'assigned_tables' ? (
+          <TablesCard
+            tables={tableTiers.map((tier, index) => ({
+              key: String(index),
+              label: `Table ${index + 1}`,
+              tier,
+            }))}
+            onAdd={() => setTableTiers((current) => [...current, 'mixed'])}
+            onRemove={() => setTableTiers((current) => current.slice(0, -1))}
+            onTierChange={(index, tier) =>
+              setTableTiers((current) => current.map((t, i) => (i === index ? tier : t)))
+            }
+            max={6}
+            // A series makes its tables week by week, each "Any level";
+            // levels are then set per game, from its own Edit screen.
+            levels={!repeating}
+            note={
+              repeating
+                ? `Room for ${tableCount * 4} players. Set each table's level from a game's Edit screen once it's created.`
+                : `Every table seats four: room for ${tableCount * 4} players.`
+            }
+          />
+        ) : (
+          // No tables at all -- who turns up to an open-seating night is not
+          // known until the door, so there is nothing to pre-assign. This cap
+          // limits confirmed players directly, and is entirely optional.
+          <FormSection helper="Caps how many players can confirm a spot. Leave blank for no limit.">
+            <FormCard>
+              <TextRow
+                label="Capacity (optional)"
+                value={capacityText}
+                onChangeText={setCapacityText}
+                accessibilityLabel="Capacity (optional)"
+                keyboardType="number-pad"
+                placeholder="70"
+              />
+            </FormCard>
+          </FormSection>
+        )}
+
+        <FormSection helper="Leave at 0 if it's free.">
+          <MoneyCards
+            fee={feeText}
+            minSpend={minSpendText}
+            onFeeChange={setFeeText}
+            onMinSpendChange={setMinSpendText}
+          />
+        </FormSection>
+
+        <FormSection label="Check-in & access">
+          <FormCard>
+            <ToggleRow
+              icon={<ClipboardCheckIcon size={18} color={colors.accent[700]} />}
+              title="Require check-in"
+              helper="Turn this on and this game gets a door list, so you can check people in as they arrive. Small games usually don't need it."
+              value={checkInRequired}
+              onValueChange={setCheckInRequired}
+            />
+            <ToggleRow
+              icon={<LockIcon size={18} color={colors.accent[700]} />}
+              title="Invite-only"
+              helper={
+                gameMode === 'invite_only'
+                  ? 'Only people you invite can see and join.'
+                  : 'Anyone in the club can see and join.'
+              }
+              value={gameMode === 'invite_only'}
+              onValueChange={(next) => setGameMode(next ? 'invite_only' : 'open_play')}
+            />
+          </FormCard>
+        </FormSection>
+      </Screen>
+
+      {confirmingDiscard ? (
+        <ConfirmSheet
+          title="Discard this game?"
+          body="You'll lose what you've filled in."
+          confirmLabel="Discard"
+          cancelLabel="Keep editing"
+          onConfirm={() => {
+            setConfirmingDiscard(false);
+            leave();
+          }}
+          onCancel={() => setConfirmingDiscard(false)}
+        />
+      ) : null}
+    </>
   );
 }
 
 const styles = StyleSheet.create({
   container: { padding: space[6], gap: space[4] },
   centered: { alignItems: 'center' },
-  backButton: { alignSelf: 'flex-start' },
-  heading: {
-    fontFamily: type.heading,
-    fontSize: type.size.h2,
-    color: colors.text,
+  repeatChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
   },
-  label: {
-    fontFamily: type.bodySemiBold,
-    fontSize: type.size.helper,
-    color: colors.textLabel,
+  stopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
   },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space[2] },
-  help: {
-    fontFamily: type.bodyRegular,
-    fontSize: type.size.helper,
-    color: colors.textMuted,
-    lineHeight: 24,
-  },
+  stopLabel: { flex: 1, fontFamily: type.bodyRegular, fontSize: 15, color: colors.text },
 });

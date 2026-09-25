@@ -26,6 +26,8 @@ type DateFieldProps = {
    * this alone could never be enough.
    */
   minimum?: string;
+  /** The game form's chip: a small pill rather than a full-width field. */
+  compact?: boolean;
 };
 
 /**
@@ -53,6 +55,7 @@ export default function DateField({
   onChange,
   label,
   minimum,
+  compact = false,
 }: DateFieldProps) {
   const [open, setOpen] = useState(false);
   const hasValue = value.length > 0;
@@ -75,7 +78,7 @@ export default function DateField({
 
   if (Platform.OS === 'android') {
     return (
-      <View style={styles.container}>
+      <View style={compact ? null : styles.container}>
         <Pressable
           style={styles.androidButton}
           onPress={() => setOpen(true)}
@@ -115,7 +118,7 @@ export default function DateField({
   }
 
   return (
-    <View style={styles.container}>
+    <View style={compact ? null : styles.container}>
       <DateTimePicker
         value={date}
         mode="date"
@@ -136,6 +139,15 @@ export default function DateField({
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  chip: {
+    height: 38,
+    paddingHorizontal: 14,
+    borderRadius: radius.pill,
+    backgroundColor: colors.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chipText: { fontFamily: type.bodySemiBold, fontSize: 15, color: colors.text },
   iosPicker: {
     // The library sizes itself; this only stops it from stretching past its
     // content width.

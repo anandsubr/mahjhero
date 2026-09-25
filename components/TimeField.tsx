@@ -10,6 +10,8 @@ type TimeFieldProps = {
   value: string; // "HH:MM"
   onChange: (next: string) => void;
   label: string; // accessibility label, e.g. "Quiet hours start"
+  /** The game form's chip: a small pill rather than a full-width field. */
+  compact?: boolean;
 };
 
 /**
@@ -35,7 +37,7 @@ type TimeFieldProps = {
  *   plain Pressable showing the current time, and the picker is mounted
  *   only while `open` is true, then unmounted on selection or dismissal.
  */
-export default function TimeField({ value, onChange, label }: TimeFieldProps) {
+export default function TimeField({ value, onChange, label, compact = false }: TimeFieldProps) {
   const [open, setOpen] = useState(false);
   const date = timeStringToDate(value);
 
@@ -53,14 +55,14 @@ export default function TimeField({ value, onChange, label }: TimeFieldProps) {
 
   if (Platform.OS === 'android') {
     return (
-      <View style={styles.container}>
+      <View style={compact ? null : styles.container}>
         <Pressable
-          style={styles.androidButton}
+          style={compact ? styles.chip : styles.androidButton}
           onPress={() => setOpen(true)}
           accessibilityRole="button"
           accessibilityLabel={label}
         >
-          <Text style={styles.androidButtonText}>{formatTimeLabel(date)}</Text>
+          <Text style={compact ? styles.chipText : styles.androidButtonText}>{formatTimeLabel(date)}</Text>
         </Pressable>
         {open ? (
           <DateTimePicker
@@ -76,7 +78,7 @@ export default function TimeField({ value, onChange, label }: TimeFieldProps) {
   }
 
   return (
-    <View style={styles.container}>
+    <View style={compact ? null : styles.container}>
       <DateTimePicker
         value={date}
         mode="time"
@@ -103,6 +105,15 @@ export default function TimeField({ value, onChange, label }: TimeFieldProps) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  chip: {
+    height: 38,
+    paddingHorizontal: 14,
+    borderRadius: radius.pill,
+    backgroundColor: colors.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chipText: { fontFamily: type.bodySemiBold, fontSize: 15, color: colors.text },
   iosPicker: {
     // The library sizes itself; this only stops it from stretching past its
     // content width and squeezing the "to" label between the two fields.

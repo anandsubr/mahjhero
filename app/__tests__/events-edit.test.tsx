@@ -56,6 +56,9 @@ const updateEvent = vi.fn();
 const updateEventSeries = vi.fn();
 const updateEventTable = vi.fn();
 const endEventSeries = vi.fn();
+const addEventTable = vi.fn();
+const removeEventTable = vi.fn();
+const cancelEvent = vi.fn();
 
 // formatEventWhen, frequencyLabel and eventStartTimeInZone stay real (pure) —
 // the point of several tests below is to exercise the real Intl formatting,
@@ -73,6 +76,9 @@ vi.mock('../../lib/events', async (importOriginal) => {
     updateEventSeries: (...args: unknown[]) => updateEventSeries(...args),
     updateEventTable: (...args: unknown[]) => updateEventTable(...args),
     endEventSeries: (...args: unknown[]) => endEventSeries(...args),
+    addEventTable: (...args: unknown[]) => addEventTable(...args),
+    removeEventTable: (...args: unknown[]) => removeEventTable(...args),
+    cancelEvent: (...args: unknown[]) => cancelEvent(...args),
   };
 });
 
@@ -238,6 +244,9 @@ beforeEach(() => {
   updateEventSeries.mockResolvedValue({ error: null });
   updateEventTable.mockResolvedValue({ error: null });
   endEventSeries.mockResolvedValue({ error: null });
+  addEventTable.mockResolvedValue({ error: null });
+  removeEventTable.mockResolvedValue({ error: null });
+  cancelEvent.mockResolvedValue({ error: null });
   // Defaults to the common case (reached via a push from the event screen).
   // Tests for the no-history path override this to false.
   canGoBack.mockReturnValue(true);
@@ -264,10 +273,26 @@ describe('guard ordering', () => {
 // the bar strands a host with no way out but relaunching the app. See
 // clubs.test.tsx's and venues.test.tsx's identical rationale.
 describe('screen chrome', () => {
-  it('carries the tab bar once ready', async () => {
+  // Game form handoff: the loaded form hides the tab bar -- the header's ✕
+  // and the pinned Cancel/Save bar take its place.
+  it('hides the tab bar once ready, pinning Cancel and Save instead', async () => {
     render(<EditEventScreen />);
-    expect(await screen.findByRole('button', { name: 'Club' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Messages' })).toBeTruthy();
+    await screen.findByDisplayValue('Thursday Mahjong');
+    expect(screen.queryByRole('button', { name: 'Club' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Close' })).toBeTruthy();
+  });
+
+  it('asks before discarding changes, and leaves without asking when there are none', async () => {
+    render(<EditEventScreen />);
+    await screen.findByDisplayValue('Thursday Mahjong');
+
+    fireEvent.change(screen.getByLabelText('Game name'), { target: { value: 'Changed' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(screen.getByText('Discard your changes?')).toBeTruthy();
+    expect(back).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    expect(back).toHaveBeenCalledTimes(1);
   });
 
   it('carries the tab bar while the event is still loading', () => {
@@ -363,6 +388,7 @@ describe('a one-off event', () => {
       title: 'Friday Mahjong',
       venueId: null,
       notes: null,
+      date: null,
       startTime: null,
       checkInRequired: null,
       gameMode: null,
@@ -372,7 +398,8 @@ describe('a one-off event', () => {
       capacity: null,
       clearCapacity: false,
     });
-    expect(replace).toHaveBeenCalledWith('/clubs/club-1/events/event-1');
+    // After any staged table changes (none here) have been applied.
+    await vi.waitFor(() => expect(replace).toHaveBeenCalledWith('/clubs/club-1/events/event-1'));
   });
 
   it('sends every field null when the host saves without changing anything', async () => {
@@ -385,6 +412,7 @@ describe('a one-off event', () => {
       title: null,
       venueId: null,
       notes: null,
+      date: null,
       startTime: null,
       checkInRequired: null,
       gameMode: null,
@@ -411,6 +439,7 @@ describe('a one-off event', () => {
       title: null,
       venueId: 'venue-2',
       notes: null,
+      date: null,
       startTime: '20:30',
       checkInRequired: null,
       gameMode: null,
@@ -448,6 +477,7 @@ describe('a one-off event', () => {
       title: null,
       venueId: null,
       notes: null,
+      date: null,
       startTime: null,
       checkInRequired: true,
       gameMode: null,
@@ -476,6 +506,7 @@ describe('a one-off event', () => {
       title: null,
       venueId: null,
       notes: null,
+      date: null,
       startTime: null,
       checkInRequired: null,
       gameMode: null,
@@ -1147,11 +1178,12 @@ describe('the overridden-occurrences toggle', () => {
     // single text block, so this checks the whole rendered message rather
     // than word-boundary-matching a fragment glued to its neighbours (see
     // the task report's note on react-native-web Text concatenation).
-    const message = await screen.findByText(
-      /Also apply this edit to the 2 games you've changed/,
-    );
-    expect(message.textContent).toContain('10 Sept');
-    expect(message.textContent).toContain('17 Sept');
+    // The toggle's title says how many; the line under it names them.
+    const toggle = await screen.findByRole('switch', {
+      name: "Also apply this edit to the 2 games you've changed",
+    });
+    expect(toggle.textContent).toContain('10 Sept');
+    expect(toggle.textContent).toContain('17 Sept');
   });
 
   it('reaches the RPC as include_overridden when switched on', async () => {
@@ -1239,79 +1271,92 @@ describe('the Tables section', () => {
     expect(screen.getByRole('button', { name: 'Table 2: Beginner' })).toBeTruthy();
   });
 
-  it("calls updateEventTable with the table's id and the newly picked tier", async () => {
+  // Table changes are part of the form: staged, and applied only on Save.
+  it("stages a level change and applies it with the table's id on Save", async () => {
     fetchEventTables.mockResolvedValue([TABLE_1]);
     render(<EditEventScreen />);
     await screen.findByDisplayValue('Thursday Mahjong');
 
     fireEvent.click(screen.getByRole('button', { name: 'Table 1: Advanced' }));
+    expect(screen.getByText('Advanced')).toBeTruthy();
+    expect(updateEventTable).not.toHaveBeenCalled();
 
+    fireEvent.click(screen.getByText('Save'));
     await vi.waitFor(() =>
       expect(updateEventTable).toHaveBeenCalledWith('table-1', { tier: 'advanced' }),
     );
+    await vi.waitFor(() => expect(replace).toHaveBeenCalledWith('/clubs/club-1/events/event-1'));
   });
 
-  it("reflects the new tier locally once the update succeeds, without a full reload", async () => {
+  it('discards staged table changes on Cancel, writing nothing', async () => {
     fetchEventTables.mockResolvedValue([TABLE_1]);
     render(<EditEventScreen />);
     await screen.findByDisplayValue('Thursday Mahjong');
 
-    // TABLE_1 starts as 'mixed' ("Any level"), shown as the current label
-    // beside the pips.
-    expect(screen.getByText('Any level')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Add a table' }));
+    fireEvent.click(screen.getByLabelText('Cancel'));
+    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Table 1: Advanced' }));
-
-    await screen.findByText('Advanced');
-    expect(screen.queryByText('Any level')).toBeNull();
-    // Only the initial mount load, not a second round-trip through the
-    // tables fetch, proving the update is applied optimistically.
-    expect(fetchEventTables).toHaveBeenCalledTimes(1);
+    expect(back).toHaveBeenCalledTimes(1);
+    expect(addEventTable).not.toHaveBeenCalled();
+    expect(updateEventTable).not.toHaveBeenCalled();
   });
 
-  // Minor #12 from the whole-branch review: this section's TierPickers had
-  // no busy/disabled state at all, unlike the game-screen picker they
-  // replaced (which had `disabled={busy}`) -- rapid taps could fire
-  // concurrent updates for the same table. The guard is per-table, not
-  // screen-wide, so an unrelated table's picker stays usable while this
-  // one's own update is in flight.
-  it("disables a table's own TierPicker while its update is in flight, but not another table's", async () => {
-    fetchEventTables.mockResolvedValue([TABLE_1, TABLE_2]);
-    let resolveUpdate: (value: { error: string | null }) => void = () => {};
-    updateEventTable.mockReturnValueOnce(
-      new Promise((resolve) => {
-        resolveUpdate = resolve;
-      }),
-    );
+  it('adds a table on Save, then sets the level picked for it', async () => {
+    fetchEventTables
+      .mockResolvedValueOnce([TABLE_1])
+      .mockResolvedValueOnce([TABLE_1, { ...TABLE_2, id: 'table-new', skill_tier: 'mixed' as const }]);
     render(<EditEventScreen />);
     await screen.findByDisplayValue('Thursday Mahjong');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Table 1: Advanced' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add a table' }));
+    expect(screen.getByLabelText('2 tables')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Table 2: Intermediate' }));
+    fireEvent.click(screen.getByText('Save'));
 
+    await vi.waitFor(() => expect(addEventTable).toHaveBeenCalledWith('event-1'));
     await vi.waitFor(() =>
-      expect(
-        screen
-          .getByRole('button', { name: 'Table 1: Advanced' })
-          .getAttribute('aria-disabled'),
-      ).toBe('true'),
+      expect(updateEventTable).toHaveBeenCalledWith('table-new', { tier: 'intermediate' }),
     );
-    // Table 2's picker is a wholly separate update -- untouched by Table 1's
-    // own in-flight guard.
-    expect(
-      screen
-        .getByRole('button', { name: 'Table 2: Advanced' })
-        .getAttribute('aria-disabled'),
-    ).toBeNull();
+  });
 
-    resolveUpdate({ error: null });
+  it('warns before a save that would unseat players, and removes the table once confirmed', async () => {
+    fetchEvent.mockResolvedValue({
+      ...ONE_OFF_EVENT,
+      bookings: [
+        { profile_id: 'p1', status: 'confirmed', event_table_id: 'table-2', group_id: 'g1', invite_holds_seat: false },
+        { profile_id: 'p2', status: 'confirmed', event_table_id: 'table-2', group_id: 'g2', invite_holds_seat: false },
+        { profile_id: 'p3', status: 'confirmed', event_table_id: 'table-1', group_id: 'g3', invite_holds_seat: false },
+      ],
+    });
+    fetchEventTables.mockResolvedValue([TABLE_1, TABLE_2]);
+    render(<EditEventScreen />);
+    await screen.findByDisplayValue('Thursday Mahjong');
 
-    await vi.waitFor(() =>
-      expect(
-        screen
-          .getByRole('button', { name: 'Table 1: Advanced' })
-          .getAttribute('aria-disabled'),
-      ).toBeNull(),
-    );
+    fireEvent.click(screen.getByRole('button', { name: 'Remove a table' }));
+    fireEvent.click(screen.getByText('Save'));
+
+    expect(await screen.findByText('Save and unseat 2 players?')).toBeTruthy();
+    expect(updateEvent).not.toHaveBeenCalled();
+    expect(removeEventTable).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save and unseat' }));
+    await vi.waitFor(() => expect(removeEventTable).toHaveBeenCalledWith('table-2'));
+    await vi.waitFor(() => expect(replace).toHaveBeenCalledWith('/clubs/club-1/events/event-1'));
+  });
+
+  it('keeps the host on the form, with the real tables reloaded, when a table change is refused', async () => {
+    fetchEventTables.mockResolvedValue([TABLE_1]);
+    addEventTable.mockResolvedValue({ error: 'Could not add a table.' });
+    render(<EditEventScreen />);
+    await screen.findByDisplayValue('Thursday Mahjong');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add a table' }));
+    fireEvent.click(screen.getByText('Save'));
+
+    expect(await screen.findByText('Could not add a table.')).toBeTruthy();
+    await vi.waitFor(() => expect(screen.getByLabelText('1 table')).toBeTruthy());
+    expect(replace).not.toHaveBeenCalled();
   });
 
   it('is absent, but everything else on the screen still renders, when there are no tables', async () => {
@@ -1336,5 +1381,51 @@ describe('the Tables section', () => {
     // The rest of the form -- unrelated to the tables fetch -- still works.
     fireEvent.click(screen.getByText('Save'));
     await vi.waitFor(() => expect(updateEvent).toHaveBeenCalled());
+  });
+});
+
+describe('the date', () => {
+  it("sends a changed date for this game only, and offers no date for the whole series", async () => {
+    render(<EditEventScreen />);
+    await screen.findByDisplayValue('Thursday Mahjong');
+
+    fireEvent.change(screen.getByLabelText('Date'), { target: { value: '2099-01-15' } });
+    fireEvent.click(screen.getByText('Save'));
+
+    await vi.waitFor(() => expect(updateEvent).toHaveBeenCalled());
+    expect(updateEvent.mock.calls[0][1]).toMatchObject({ date: '2099-01-15', startTime: null });
+  });
+
+  it('has no date chip in the whole-series scope', async () => {
+    fetchEvent.mockResolvedValue(SERIES_EVENT);
+    fetchSeries.mockResolvedValue(SERIES);
+    render(<EditEventScreen />);
+    await screen.findByText('The whole series');
+    expect(screen.getByLabelText('Date')).toBeTruthy();
+    fireEvent.click(screen.getByText('The whole series'));
+    expect(screen.queryByLabelText('Date')).toBeNull();
+  });
+});
+
+// Moved here from the game screen (game form handoff), behind a confirmation.
+describe('Cancel this game', () => {
+  it('asks first, then cancels and returns to the game', async () => {
+    render(<EditEventScreen />);
+    await screen.findByDisplayValue('Thursday Mahjong');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel this game' }));
+    expect(screen.getByText('Cancel this game?')).toBeTruthy();
+    expect(cancelEvent).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel game' }));
+    await vi.waitFor(() => expect(cancelEvent).toHaveBeenCalledWith('event-1'));
+    await vi.waitFor(() => expect(replace).toHaveBeenCalledWith('/clubs/club-1/events/event-1'));
+  });
+
+  it('is not offered for a game that is already cancelled', async () => {
+    fetchEvent.mockResolvedValue({ ...ONE_OFF_EVENT, status: 'cancelled' });
+    render(<EditEventScreen />);
+    await screen.findByDisplayValue('Thursday Mahjong');
+    expect(screen.queryByRole('button', { name: 'Cancel this game' })).toBeNull();
   });
 });

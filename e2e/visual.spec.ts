@@ -1023,7 +1023,7 @@ test.describe('signed in', () => {
       test(`new event at ${vp.name}`, async ({ page }) => {
         await page.setViewportSize({ width: vp.width, height: vp.height });
         await page.goto(`/clubs/${seeded.clubId}/events/new`);
-        await expect(page.getByText('Add a game')).toBeVisible();
+        await expect(page.getByText('New game')).toBeVisible();
         // The frozen clock, asserted rather than assumed. This screen's Date
         // field opens on "today", and this is the only baseline in the suite
         // whose content depends on when it was taken — if the clock override
@@ -1059,9 +1059,7 @@ test.describe('signed in', () => {
           `/clubs/${seeded.clubId}/events/${seeded.eventId}/edit`,
         );
         await page.getByRole('button', { name: 'The whole series' }).click();
-        await expect(
-          page.getByText('This series runs indefinitely.'),
-        ).toBeVisible();
+        await expect(page.getByText('No end date', { exact: true })).toBeVisible();
         // The overridden-occurrences toggle only renders when the series has
         // a customised week to apply the edit to — the seeded first
         // occurrence is that week.

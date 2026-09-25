@@ -64,6 +64,9 @@ vi.mock('../../lib/use-notifications-unread', () => ({
 
 const createEvent = vi.fn();
 const createEventSeries = vi.fn();
+// Table levels picked on this screen are applied after `create_event`.
+const fetchEventTables = vi.fn();
+const updateEventTable = vi.fn();
 
 // nextOccurrences and frequencyLabel stay real (pure functions) -- the whole
 // point of the preview tests below is to exercise the actual date maths
@@ -75,6 +78,8 @@ vi.mock('../../lib/events', async (importOriginal) => {
     ...actual,
     createEvent: (...args: unknown[]) => createEvent(...args),
     createEventSeries: (...args: unknown[]) => createEventSeries(...args),
+    fetchEventTables: (...args: unknown[]) => fetchEventTables(...args),
+    updateEventTable: (...args: unknown[]) => updateEventTable(...args),
   };
 });
 
@@ -117,6 +122,8 @@ beforeEach(() => {
   // the default fixture rather than something each test opts into.
   fetchMyRoles.mockResolvedValue([{ club_id: 'club-1', role: 'host' }]);
   createEvent.mockResolvedValue({ eventId: 'event-1', error: null });
+  fetchEventTables.mockResolvedValue([]);
+  updateEventTable.mockResolvedValue({ error: null });
   createEventSeries.mockResolvedValue({ seriesId: 'series-1', error: null });
   // Defaults to the common case (reached via a push from the club screen).
   // Tests for the no-history path override this to false.
@@ -143,20 +150,35 @@ describe('guard ordering', () => {
   });
 });
 
-// The club management page's own "Add a game" + is gone
-// (2026-09-02-club-page-games-and-back-links-design.md) — every real way
-// into this form is the dashboard now (its header's own +, or the
-// empty-state "Host a table" button), so this screen's back link goes
-// there. The Club tab reaches the same /clubs route but renders as
-// already-active here, which reads as "you are here" rather than "go
-// back" -- the same reasoning every other back link on this branch
-// documents.
-describe('back link', () => {
-  it('draws a back link to the dashboard', async () => {
+// Game form handoff: a ✕ in the header replaces the old back link. It and
+// the pinned Cancel both leave the same way, asking first when the host has
+// changed anything.
+describe('Close and discard', () => {
+  it('leaves straight away from an untouched form', async () => {
+    canGoBack.mockReturnValue(true);
     render(<NewEventScreen />);
-    await screen.findByText('Add a game');
-    fireEvent.click(screen.getByRole('button', { name: 'Back to your clubs' }));
-    expect(push).toHaveBeenCalledWith('/clubs');
+    await screen.findByText('New game');
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(back).toHaveBeenCalledTimes(1);
+  });
+
+  it('asks before discarding a form the host has filled in', async () => {
+    canGoBack.mockReturnValue(true);
+    render(<NewEventScreen />);
+    await screen.findByText('New game');
+    fireEvent.change(screen.getByLabelText('Game name'), { target: { value: 'Draft' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(back).not.toHaveBeenCalled();
+    expect(screen.getByText('Discard this game?')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
+    expect(screen.queryByText('Discard this game?')).toBeNull();
+    expect(back).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByLabelText('Cancel'));
+    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    expect(back).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -172,7 +194,7 @@ describe('Cancel', () => {
   it('calls back() when there is history to pop', async () => {
     canGoBack.mockReturnValue(true);
     render(<NewEventScreen />);
-    await screen.findByText('Add a game');
+    await screen.findByText('New game');
 
     fireEvent.click(screen.getByLabelText('Cancel'));
 
@@ -183,7 +205,7 @@ describe('Cancel', () => {
   it('falls back to the club screen when there is no history', async () => {
     canGoBack.mockReturnValue(false);
     render(<NewEventScreen />);
-    await screen.findByText('Add a game');
+    await screen.findByText('New game');
 
     fireEvent.click(screen.getByLabelText('Cancel'));
 
@@ -218,7 +240,7 @@ describe('one-off creation sends club-local calendar values', () => {
     fetchClub.mockResolvedValue(TOKYO_CLUB);
     render(<NewEventScreen />);
 
-    await screen.findByText('Add a game');
+    await screen.findByText('New game');
     fireEvent.change(screen.getByLabelText('Date'), {
       target: { value: '2027-09-07' },
     });
@@ -229,7 +251,7 @@ describe('one-off creation sends club-local calendar values', () => {
     fireEvent.change(screen.getByLabelText('Game name'), {
       target: { value: 'Tuesday night' },
     });
-    fireEvent.click(screen.getByText('Save'));
+    fireEvent.click(screen.getByText('Create game'));
 
     await vi.waitFor(() => expect(createEvent).toHaveBeenCalled());
     const call = createEvent.mock.calls[0][0];
@@ -248,7 +270,7 @@ describe('one-off creation sends club-local calendar values', () => {
     // device's own offset (this suite runs at TZ=America/New_York) is exactly
     // what used to move a date like this one.
     render(<NewEventScreen />);
-    await screen.findByText('Add a game');
+    await screen.findByText('New game');
     fireEvent.change(screen.getByLabelText('Date'), {
       target: { value: '2027-03-14' },
     });
@@ -259,7 +281,7 @@ describe('one-off creation sends club-local calendar values', () => {
     fireEvent.change(screen.getByLabelText('Game name'), {
       target: { value: 'Small hours' },
     });
-    fireEvent.click(screen.getByText('Save'));
+    fireEvent.click(screen.getByText('Create game'));
 
     await vi.waitFor(() => expect(createEvent).toHaveBeenCalled());
     const call = createEvent.mock.calls[0][0];
@@ -273,7 +295,7 @@ describe('one-off creation sends club-local calendar values', () => {
     const TOKYO_CLUB = { ...CLUB, timezone: 'Asia/Tokyo' };
     fetchClub.mockResolvedValue(TOKYO_CLUB);
     render(<NewEventScreen />);
-    await screen.findByText('Add a game');
+    await screen.findByText('New game');
     fireEvent.change(screen.getByLabelText('Date'), {
       target: { value: '2027-11-07' },
     });
@@ -284,7 +306,7 @@ describe('one-off creation sends club-local calendar values', () => {
     fireEvent.change(screen.getByLabelText('Game name'), {
       target: { value: 'The repeated hour' },
     });
-    fireEvent.click(screen.getByText('Save'));
+    fireEvent.click(screen.getByText('Create game'));
 
     await vi.waitFor(() => expect(createEvent).toHaveBeenCalled());
     const call = createEvent.mock.calls[0][0];
@@ -303,12 +325,12 @@ describe('a failed save', () => {
   it('shows the error and does not navigate away when createEvent fails', async () => {
     createEvent.mockResolvedValue({ eventId: null, error: 'Something broke.' });
     render(<NewEventScreen />);
-    await screen.findByText('Add a game');
+    await screen.findByText('New game');
     pickVenue();
     fireEvent.change(screen.getByLabelText('Game name'), {
       target: { value: 'Doomed game' },
     });
-    fireEvent.click(screen.getByText('Save'));
+    fireEvent.click(screen.getByText('Create game'));
 
     expect(await screen.findByText('Something broke.')).toBeTruthy();
     expect(replace).not.toHaveBeenCalled();
@@ -324,13 +346,13 @@ describe('a failed save', () => {
       error: 'Something broke.',
     });
     render(<NewEventScreen />);
-    await screen.findByText('Add a game');
+    await screen.findByText('New game');
     fireEvent.click(screen.getByText('Every week'));
     pickVenue();
     fireEvent.change(screen.getByLabelText('Game name'), {
       target: { value: 'Doomed series' },
     });
-    fireEvent.click(screen.getByText('Save'));
+    fireEvent.click(screen.getByText('Create game'));
 
     expect(await screen.findByText('Something broke.')).toBeTruthy();
     expect(replace).not.toHaveBeenCalled();
@@ -338,12 +360,12 @@ describe('a failed save', () => {
 
   it('navigates to the clubs dashboard once the save actually succeeds', async () => {
     render(<NewEventScreen />);
-    await screen.findByText('Add a game');
+    await screen.findByText('New game');
     pickVenue();
     fireEvent.change(screen.getByLabelText('Game name'), {
       target: { value: 'Real game' },
     });
-    fireEvent.click(screen.getByText('Save'));
+    fireEvent.click(screen.getByText('Create game'));
 
     // The clubs dashboard, not this specific club's own page -- a newly
     // created game already shows up there. Different from Cancel above,
@@ -353,13 +375,13 @@ describe('a failed save', () => {
 
   it('navigates to the clubs dashboard once a series save succeeds too', async () => {
     render(<NewEventScreen />);
-    await screen.findByText('Add a game');
+    await screen.findByText('New game');
     fireEvent.click(screen.getByText('Every week'));
     pickVenue();
     fireEvent.change(screen.getByLabelText('Game name'), {
       target: { value: 'Real series' },
     });
-    fireEvent.click(screen.getByText('Save'));
+    fireEvent.click(screen.getByText('Create game'));
 
     await vi.waitFor(() => expect(replace).toHaveBeenCalledWith('/clubs'));
   });
@@ -375,7 +397,7 @@ describe('a failed save', () => {
 describe('series creation', () => {
   it('sends the club-local date and wall time unconverted, letting the database resolve the instant', async () => {
     render(<NewEventScreen />);
-    await screen.findByText('Add a game');
+    await screen.findByText('New game');
     fireEvent.change(screen.getByLabelText('Date'), {
       target: { value: '2027-09-07' },
     });
@@ -387,7 +409,7 @@ describe('series creation', () => {
     fireEvent.change(screen.getByLabelText('Game name'), {
       target: { value: 'Tuesday night' },
     });
-    fireEvent.click(screen.getByText('Save'));
+    fireEvent.click(screen.getByText('Create game'));
 
     await vi.waitFor(() => expect(createEventSeries).toHaveBeenCalled());
     const call = createEventSeries.mock.calls[0][0];
@@ -405,7 +427,7 @@ describe('series creation', () => {
 describe('monthly recurrence and the preview', () => {
   it('derives the 5th-Tuesday rule from the picked date without asking twice', async () => {
     render(<NewEventScreen />);
-    await screen.findByText('Add a game');
+    await screen.findByText('New game');
     // 2027-08-31 is the 5th Tuesday of August 2027 (lib/events.test.ts's own
     // fixture: the three 5th Tuesdays in 2027 are March 30, June 29, and
     // August 31).
@@ -422,7 +444,7 @@ describe('monthly recurrence and the preview', () => {
     fireEvent.change(screen.getByLabelText('Game name'), {
       target: { value: 'Monthly game' },
     });
-    fireEvent.click(screen.getByText('Save'));
+    fireEvent.click(screen.getByText('Create game'));
 
     await vi.waitFor(() => expect(createEventSeries).toHaveBeenCalled());
     const call = createEventSeries.mock.calls[0][0];
@@ -433,7 +455,7 @@ describe('monthly recurrence and the preview', () => {
 
   it('shows a preview that agrees with what the series will actually materialize, honouring the end date', async () => {
     render(<NewEventScreen />);
-    await screen.findByText('Add a game');
+    await screen.findByText('New game');
     fireEvent.change(screen.getByLabelText('Date'), {
       target: { value: '2027-08-31' },
     });
@@ -471,7 +493,7 @@ describe('monthly recurrence and the preview', () => {
     fireEvent.change(screen.getByLabelText('Game name'), {
       target: { value: 'Monthly game' },
     });
-    fireEvent.click(screen.getByText('Save'));
+    fireEvent.click(screen.getByText('Create game'));
 
     await vi.waitFor(() => expect(createEventSeries).toHaveBeenCalled());
     // What is shown is what is sent.
@@ -489,7 +511,7 @@ describe('monthly recurrence and the preview', () => {
 describe('clearing a date field', () => {
   it('keeps the date already picked rather than sending an empty one', async () => {
     render(<NewEventScreen />);
-    await screen.findByText('Add a game');
+    await screen.findByText('New game');
 
     const dateInput = screen.getByLabelText('Date') as HTMLInputElement;
     fireEvent.change(dateInput, { target: { value: '2027-08-31' } });
@@ -500,7 +522,7 @@ describe('clearing a date field', () => {
     fireEvent.change(screen.getByLabelText('Game name'), {
       target: { value: 'Still dated' },
     });
-    fireEvent.click(screen.getByText('Save'));
+    fireEvent.click(screen.getByText('Create game'));
 
     await vi.waitFor(() => expect(createEvent).toHaveBeenCalled());
     expect(createEvent.mock.calls[0][0].date).toBe('2027-08-31');
@@ -531,7 +553,7 @@ describe('a date in the past is not offered', () => {
 
   it('floors the game date at today', async () => {
     render(<NewEventScreen />);
-    await screen.findByText('Add a game');
+    await screen.findByText('New game');
 
     expect(
       (screen.getByLabelText('Date') as HTMLInputElement).getAttribute('min'),
@@ -540,7 +562,7 @@ describe('a date in the past is not offered', () => {
 
   it('floors the series end date at today too', async () => {
     render(<NewEventScreen />);
-    await screen.findByText('Add a game');
+    await screen.findByText('New game');
     fireEvent.click(screen.getByText('Every week'));
 
     expect(
@@ -554,11 +576,11 @@ describe('a date in the past is not offered', () => {
 describe('venue is required', () => {
   it('refuses to save without a venue and never calls createEvent', async () => {
     render(<NewEventScreen />);
-    await screen.findByText('Add a game');
+    await screen.findByText('New game');
     fireEvent.change(screen.getByLabelText('Game name'), {
       target: { value: 'No venue yet' },
     });
-    fireEvent.click(screen.getByText('Save'));
+    fireEvent.click(screen.getByText('Create game'));
 
     expect(
       await screen.findByText('Choose where you are playing.'),
@@ -584,7 +606,7 @@ describe('venue is required', () => {
 describe('the "Require check-in" toggle', () => {
   it('defaults check-in to off', async () => {
     render(<NewEventScreen />);
-    await screen.findByText('Add a game');
+    await screen.findByText('New game');
 
     expect(
       screen.getByRole('switch', { name: 'Require check-in' }).getAttribute('aria-checked'),
@@ -593,14 +615,14 @@ describe('the "Require check-in" toggle', () => {
 
   it('passes the toggle through on submit', async () => {
     render(<NewEventScreen />);
-    await screen.findByText('Add a game');
+    await screen.findByText('New game');
 
     fireEvent.click(screen.getByRole('switch', { name: 'Require check-in' }));
     pickVenue();
     fireEvent.change(screen.getByLabelText('Game name'), {
       target: { value: 'Door-list game' },
     });
-    fireEvent.click(screen.getByText('Save'));
+    fireEvent.click(screen.getByText('Create game'));
 
     await vi.waitFor(() => expect(createEvent).toHaveBeenCalled());
     expect(createEvent.mock.calls[0][0].checkInRequired).toBe(true);
@@ -612,7 +634,7 @@ describe('the "Require check-in" toggle', () => {
   // RPCs depending on "Does it repeat?".
   it('passes the toggle through on a series submit too', async () => {
     render(<NewEventScreen />);
-    await screen.findByText('Add a game');
+    await screen.findByText('New game');
 
     fireEvent.click(screen.getByRole('switch', { name: 'Require check-in' }));
     fireEvent.click(screen.getByText('Every week'));
@@ -620,7 +642,7 @@ describe('the "Require check-in" toggle', () => {
     fireEvent.change(screen.getByLabelText('Game name'), {
       target: { value: 'Weekly door-list game' },
     });
-    fireEvent.click(screen.getByText('Save'));
+    fireEvent.click(screen.getByText('Create game'));
 
     await vi.waitFor(() => expect(createEventSeries).toHaveBeenCalled());
     expect(createEventSeries.mock.calls[0][0].checkInRequired).toBe(true);
@@ -630,7 +652,7 @@ describe('the "Require check-in" toggle', () => {
 describe('the duration/table-count/repeat chips reach the DOM with aria-selected', () => {
   it('marks the default chips as selected and their siblings as not', async () => {
     render(<NewEventScreen />);
-    await screen.findByText('Add a game');
+    await screen.findByText('New game');
 
     const selectedDuration = screen.getByRole('button', { name: '3 hours' });
     expect(selectedDuration.getAttribute('aria-selected')).toBe('true');
@@ -638,12 +660,11 @@ describe('the duration/table-count/repeat chips reach the DOM with aria-selected
       screen.getByRole('button', { name: '2 hours' }).getAttribute('aria-selected'),
     ).toBe('false');
 
+    // One table by default, at any level.
+    expect(screen.getByLabelText('1 table')).toBeTruthy();
     expect(
-      screen.getByRole('button', { name: '1 table' }).getAttribute('aria-selected'),
+      screen.getByRole('button', { name: 'Table 1: Any level' }).getAttribute('aria-selected'),
     ).toBe('true');
-    expect(
-      screen.getByRole('button', { name: '2 tables' }).getAttribute('aria-selected'),
-    ).toBe('false');
 
     expect(
       screen.getByRole('button', { name: 'Just once' }).getAttribute('aria-selected'),
@@ -655,7 +676,7 @@ describe('the duration/table-count/repeat chips reach the DOM with aria-selected
 
   it('flips aria-selected to the newly chosen duration chip', async () => {
     render(<NewEventScreen />);
-    await screen.findByText('Add a game');
+    await screen.findByText('New game');
 
     fireEvent.click(screen.getByRole('button', { name: '2 hours' }));
 
@@ -668,28 +689,25 @@ describe('the duration/table-count/repeat chips reach the DOM with aria-selected
   });
 });
 
-// TabBar navigates with router.replace off an entry route that is itself a
-// Redirect, so the history stack is typically one deep. This screen's own
-// Cancel button (asserted elsewhere in this file) is not a substitute: it
-// goes to this specific club, not the Club tab's dashboard, so a member
-// without the bar would still have no way to any OTHER tab. Every state
-// carries it, matching app/profile.tsx's own pattern.
-describe('carries the tab bar', () => {
-  it('with Club marked, on the loaded form', async () => {
+// The loaded form hides the tab bar (game form handoff) -- the header's ✕
+// and the pinned Cancel/Create bar take its place. The loading and error
+// states, which have neither, still carry it.
+describe('the tab bar', () => {
+  it('is hidden on the loaded form, with Cancel and Create game pinned instead', async () => {
     render(<NewEventScreen />);
-    await screen.findByText('Add a game');
-    expect(
-      screen.getByRole('button', { name: 'Club' }).getAttribute('aria-selected'),
-    ).toBe('true');
+    await screen.findByText('New game');
+    expect(screen.queryByRole('button', { name: 'Club' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Save game' })).toBeTruthy();
+    expect(screen.getByLabelText('Cancel')).toBeTruthy();
   });
 
-  it('while the session is still loading', () => {
+  it('is carried while the session is still loading', () => {
     useSessionMock.mockReturnValueOnce({ session: null, loading: true });
     render(<NewEventScreen />);
     expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
   });
 
-  it('while the club is still loading', () => {
+  it('is carried while the club is still loading', () => {
     // A promise that never settles: the screen stays in its !ready state for
     // the life of the test.
     fetchClub.mockReturnValueOnce(new Promise(() => {}));
@@ -697,11 +715,60 @@ describe('carries the tab bar', () => {
     expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
   });
 
-  it('when the club cannot be loaded', async () => {
+  it('is carried when the club cannot be loaded', async () => {
     fetchClub.mockResolvedValueOnce(null);
     render(<NewEventScreen />);
     expect(await screen.findByText('That club could not be loaded.')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
+  });
+});
+
+describe('table levels', () => {
+  it('applies the levels picked here to the new tables, in position order', async () => {
+    fetchEventTables.mockResolvedValue([
+      { id: 't2', label: 'Table 2', skill_tier: 'mixed', capacity: 4, position: 2 },
+      { id: 't1', label: 'Table 1', skill_tier: 'mixed', capacity: 4, position: 1 },
+    ]);
+    render(<NewEventScreen />);
+    await screen.findByText('New game');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add a table' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Table 2: Advanced' }));
+    pickVenue();
+    fireEvent.change(screen.getByLabelText('Game name'), { target: { value: 'Levels' } });
+    fireEvent.click(screen.getByText('Create game'));
+
+    await vi.waitFor(() => expect(replace).toHaveBeenCalledWith('/clubs'));
+    expect(createEvent.mock.calls[0][0].tableCount).toBe(2);
+    // Table 1 stays "Any level" -- nothing to send for it.
+    expect(updateEventTable).toHaveBeenCalledTimes(1);
+    expect(updateEventTable).toHaveBeenCalledWith('t2', { tier: 'advanced' });
+  });
+
+  it('sends the host to the new game\'s Edit screen if its levels could not be set', async () => {
+    fetchEventTables.mockResolvedValue([
+      { id: 't1', label: 'Table 1', skill_tier: 'mixed', capacity: 4, position: 1 },
+    ]);
+    updateEventTable.mockResolvedValue({ error: 'nope' });
+    render(<NewEventScreen />);
+    await screen.findByText('New game');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Table 1: Beginner' }));
+    pickVenue();
+    fireEvent.change(screen.getByLabelText('Game name'), { target: { value: 'Levels' } });
+    fireEvent.click(screen.getByText('Create game'));
+
+    await vi.waitFor(() =>
+      expect(replace).toHaveBeenCalledWith('/clubs/club-1/events/event-1/edit'),
+    );
+  });
+
+  it('offers no per-table levels for a repeating game', async () => {
+    render(<NewEventScreen />);
+    await screen.findByText('New game');
+    fireEvent.click(screen.getByRole('button', { name: 'Every week' }));
+    expect(screen.queryByRole('button', { name: 'Table 1: Beginner' })).toBeNull();
+    expect(screen.getByLabelText('1 table')).toBeTruthy();
   });
 });
 
@@ -713,7 +780,7 @@ describe('carries the tab bar', () => {
 describe('seating mode and capacity', () => {
   it('defaults to assigned tables, showing the tables picker and no capacity field', async () => {
     render(<NewEventScreen />);
-    await screen.findByText('Add a game');
+    await screen.findByText('New game');
 
     expect(
       screen.getByRole('button', { name: 'Assigned tables' }).getAttribute('aria-selected'),
@@ -721,20 +788,20 @@ describe('seating mode and capacity', () => {
     expect(
       screen.getByRole('button', { name: 'Open seating' }).getAttribute('aria-selected'),
     ).toBe('false');
-    expect(screen.getByRole('button', { name: '1 table' })).toBeTruthy();
+    expect(screen.getByLabelText('1 table')).toBeTruthy();
     expect(screen.queryByLabelText('Capacity (optional)')).toBeNull();
   });
 
   it('selecting open seating hides the tables picker and reveals the capacity field', async () => {
     render(<NewEventScreen />);
-    await screen.findByText('Add a game');
+    await screen.findByText('New game');
 
     fireEvent.click(screen.getByRole('button', { name: 'Open seating' }));
 
     expect(
       screen.getByRole('button', { name: 'Open seating' }).getAttribute('aria-selected'),
     ).toBe('true');
-    expect(screen.queryByRole('button', { name: '1 table' })).toBeNull();
+    expect(screen.queryByLabelText('1 table')).toBeNull();
     expect(screen.queryByText(/Every table seats four/)).toBeNull();
     expect(screen.getByLabelText('Capacity (optional)')).toBeTruthy();
     expect(screen.getByText(/Leave blank for no limit/)).toBeTruthy();
@@ -742,25 +809,25 @@ describe('seating mode and capacity', () => {
 
   it('switching back to assigned tables restores the picker and drops the capacity field', async () => {
     render(<NewEventScreen />);
-    await screen.findByText('Add a game');
+    await screen.findByText('New game');
 
     fireEvent.click(screen.getByRole('button', { name: 'Open seating' }));
     fireEvent.click(screen.getByRole('button', { name: 'Assigned tables' }));
 
-    expect(screen.getByRole('button', { name: '1 table' })).toBeTruthy();
+    expect(screen.getByLabelText('1 table')).toBeTruthy();
     expect(screen.queryByLabelText('Capacity (optional)')).toBeNull();
   });
 
   it('sends tableCount: 0 and the open_seating mode for a one-off game', async () => {
     render(<NewEventScreen />);
-    await screen.findByText('Add a game');
+    await screen.findByText('New game');
 
     fireEvent.click(screen.getByRole('button', { name: 'Open seating' }));
     pickVenue();
     fireEvent.change(screen.getByLabelText('Game name'), {
       target: { value: 'Big open-seating night' },
     });
-    fireEvent.click(screen.getByText('Save'));
+    fireEvent.click(screen.getByText('Create game'));
 
     await vi.waitFor(() => expect(createEvent).toHaveBeenCalled());
     const call = createEvent.mock.calls[0][0];
@@ -770,7 +837,7 @@ describe('seating mode and capacity', () => {
 
   it('sends tableCount: 0 and the open_seating mode for a series too', async () => {
     render(<NewEventScreen />);
-    await screen.findByText('Add a game');
+    await screen.findByText('New game');
 
     fireEvent.click(screen.getByRole('button', { name: 'Open seating' }));
     fireEvent.click(screen.getByText('Every week'));
@@ -778,7 +845,7 @@ describe('seating mode and capacity', () => {
     fireEvent.change(screen.getByLabelText('Game name'), {
       target: { value: 'Big weekly open-seating night' },
     });
-    fireEvent.click(screen.getByText('Save'));
+    fireEvent.click(screen.getByText('Create game'));
 
     await vi.waitFor(() => expect(createEventSeries).toHaveBeenCalled());
     const call = createEventSeries.mock.calls[0][0];
@@ -788,14 +855,15 @@ describe('seating mode and capacity', () => {
 
   it('still sends the picked table count and assigned_tables mode when left on the default', async () => {
     render(<NewEventScreen />);
-    await screen.findByText('Add a game');
+    await screen.findByText('New game');
 
-    fireEvent.click(screen.getByRole('button', { name: '3 tables' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add a table' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add a table' }));
     pickVenue();
     fireEvent.change(screen.getByLabelText('Game name'), {
       target: { value: 'Regular night' },
     });
-    fireEvent.click(screen.getByText('Save'));
+    fireEvent.click(screen.getByText('Create game'));
 
     await vi.waitFor(() => expect(createEvent).toHaveBeenCalled());
     const call = createEvent.mock.calls[0][0];
@@ -806,7 +874,7 @@ describe('seating mode and capacity', () => {
 
   it('parses the typed capacity as an integer and sends it uncapped when left blank', async () => {
     render(<NewEventScreen />);
-    await screen.findByText('Add a game');
+    await screen.findByText('New game');
 
     fireEvent.click(screen.getByRole('button', { name: 'Open seating' }));
     fireEvent.change(screen.getByLabelText('Capacity (optional)'), {
@@ -816,7 +884,7 @@ describe('seating mode and capacity', () => {
     fireEvent.change(screen.getByLabelText('Game name'), {
       target: { value: 'Capped open-seating night' },
     });
-    fireEvent.click(screen.getByText('Save'));
+    fireEvent.click(screen.getByText('Create game'));
 
     await vi.waitFor(() => expect(createEvent).toHaveBeenCalled());
     expect(createEvent.mock.calls[0][0].capacity).toBe(70);
@@ -824,14 +892,14 @@ describe('seating mode and capacity', () => {
 
   it('sends a null (uncapped) capacity when the field is left blank', async () => {
     render(<NewEventScreen />);
-    await screen.findByText('Add a game');
+    await screen.findByText('New game');
 
     fireEvent.click(screen.getByRole('button', { name: 'Open seating' }));
     pickVenue();
     fireEvent.change(screen.getByLabelText('Game name'), {
       target: { value: 'Uncapped open-seating night' },
     });
-    fireEvent.click(screen.getByText('Save'));
+    fireEvent.click(screen.getByText('Create game'));
 
     await vi.waitFor(() => expect(createEvent).toHaveBeenCalled());
     expect(createEvent.mock.calls[0][0].capacity).toBeNull();
@@ -843,7 +911,7 @@ describe('seating mode and capacity', () => {
   // must instead refuse to save at all.
   it('refuses to save an unparseable capacity, and never calls createEvent', async () => {
     render(<NewEventScreen />);
-    await screen.findByText('Add a game');
+    await screen.findByText('New game');
 
     fireEvent.click(screen.getByRole('button', { name: 'Open seating' }));
     fireEvent.change(screen.getByLabelText('Capacity (optional)'), {
@@ -853,7 +921,7 @@ describe('seating mode and capacity', () => {
     fireEvent.change(screen.getByLabelText('Game name'), {
       target: { value: 'Typo capacity night' },
     });
-    fireEvent.click(screen.getByText('Save'));
+    fireEvent.click(screen.getByText('Create game'));
 
     expect(
       await screen.findByText(
@@ -868,7 +936,7 @@ describe('seating mode and capacity', () => {
 describe('cost to play and minimum spend', () => {
   it('sends the typed dollar amounts as integer cents', async () => {
     render(<NewEventScreen />);
-    await screen.findByText('Add a game');
+    await screen.findByText('New game');
 
     fireEvent.change(screen.getByLabelText('Date'), {
       target: { value: '2027-09-07' },
@@ -886,7 +954,7 @@ describe('cost to play and minimum spend', () => {
     fireEvent.change(screen.getByLabelText('Minimum spend'), {
       target: { value: '20.50' },
     });
-    fireEvent.click(screen.getByText('Save'));
+    fireEvent.click(screen.getByText('Create game'));
 
     await vi.waitFor(() => expect(createEvent).toHaveBeenCalled());
     const call = createEvent.mock.calls[0][0];
@@ -896,7 +964,7 @@ describe('cost to play and minimum spend', () => {
 
   it('defaults to zero when left blank', async () => {
     render(<NewEventScreen />);
-    await screen.findByText('Add a game');
+    await screen.findByText('New game');
 
     fireEvent.change(screen.getByLabelText('Date'), {
       target: { value: '2027-09-07' },
@@ -908,7 +976,7 @@ describe('cost to play and minimum spend', () => {
     fireEvent.change(screen.getByLabelText('Game name'), {
       target: { value: 'Tuesday night' },
     });
-    fireEvent.click(screen.getByText('Save'));
+    fireEvent.click(screen.getByText('Create game'));
 
     await vi.waitFor(() => expect(createEvent).toHaveBeenCalled());
     const call = createEvent.mock.calls[0][0];

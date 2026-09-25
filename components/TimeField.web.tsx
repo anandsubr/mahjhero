@@ -1,5 +1,5 @@
 import type { ChangeEvent, CSSProperties } from 'react';
-import { View } from 'react-native';
+import { Text, View } from 'react-native';
 import { formatTimeLabel, timeStringToDate } from '../lib/time';
 import { colors, radius, space, type } from '../lib/theme';
 
@@ -7,6 +7,9 @@ type TimeFieldProps = {
   value: string; // "HH:MM"
   onChange: (next: string) => void;
   label: string; // accessibility label, e.g. "Quiet hours start"
+  /** The game form's chip ("11:30 PM"): the real select laid transparently
+   *  over a small pill, so a tap still opens the browser's own list. */
+  compact?: boolean;
 };
 
 /**
@@ -56,7 +59,7 @@ for (let hour = 0; hour < 24; hour++) {
  * is what a screen reader announces, same role as the native side's
  * accessibilityLabel.
  */
-export default function TimeField({ value, onChange, label }: TimeFieldProps) {
+export default function TimeField({ value, onChange, label, compact = false }: TimeFieldProps) {
   function handleChange(event: ChangeEvent<HTMLSelectElement>) {
     onChange(event.target.value);
   }
@@ -64,6 +67,21 @@ export default function TimeField({ value, onChange, label }: TimeFieldProps) {
   const options = TIME_OPTIONS.includes(value)
     ? TIME_OPTIONS
     : [...TIME_OPTIONS, value].sort();
+
+  if (compact) {
+    return (
+      <View style={chipStyle}>
+        <Text style={chipTextStyle}>{formatTimeLabel(timeStringToDate(value))}</Text>
+        <select value={value} onChange={handleChange} aria-label={label} style={overlayStyle}>
+          {options.map((time) => (
+            <option key={time} value={time}>
+              {formatTimeLabel(timeStringToDate(time))}
+            </option>
+          ))}
+        </select>
+      </View>
+    );
+  }
 
   return (
     <View style={{ flex: 1 }}>
@@ -94,4 +112,32 @@ const webSelectStyle: CSSProperties = {
   width: '100%',
   boxSizing: 'border-box',
   fontFamily: 'inherit',
+};
+
+const chipStyle = {
+  position: 'relative' as const,
+  height: 38,
+  paddingHorizontal: 14,
+  borderRadius: radius.pill,
+  backgroundColor: colors.bg,
+  alignItems: 'center' as const,
+  justifyContent: 'center' as const,
+};
+
+const chipTextStyle = {
+  fontFamily: type.bodySemiBold,
+  fontSize: 15,
+  color: colors.text,
+};
+
+const overlayStyle: CSSProperties = {
+  position: 'absolute',
+  inset: 0,
+  width: '100%',
+  height: '100%',
+  opacity: 0,
+  cursor: 'pointer',
+  border: 0,
+  padding: 0,
+  margin: 0,
 };
