@@ -2,6 +2,7 @@ import { Redirect, useRouter } from 'expo-router';
 import { useEffect, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import ErrorBanner from '../components/ErrorBanner';
+import MahjongTile from '../components/MahjongTile';
 import { FormCard, FormSection, FormTitle, TextRow } from '../components/GameForm';
 import Screen from '../components/Screen';
 import TabBar from '../components/TabBar';
@@ -175,7 +176,12 @@ export default function ProfileScreen() {
 
   return (
     <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="profile" />}>
-      <FormTitle>Profile</FormTitle>
+      <View style={styles.titleRow}>
+        <View testID="section-tile">
+          <MahjongTile suit="red-dragon" size="section" />
+        </View>
+        <FormTitle>Profile</FormTitle>
+      </View>
 
       <View style={styles.identity} testID="profile-identity">
         <View style={styles.avatar}>
@@ -416,6 +422,7 @@ function SettingsRow({
 }
 
 const styles = StyleSheet.create({
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   container: { paddingTop: 6, paddingHorizontal: 16, paddingBottom: 24, gap: 22 },
   centered: {
     alignItems: 'center',

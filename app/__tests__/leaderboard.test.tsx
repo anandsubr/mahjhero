@@ -129,6 +129,17 @@ describe('LeaderboardScreen', () => {
     expect(await screen.findByText('Member')).toBeTruthy();
   });
 
+  it('marks the viewer\'s own row', async () => {
+    fetchClubLeaderboard.mockResolvedValue([
+      { profile_id: 'p1', display_name: 'Ada', total_points: 120, rounds_won: 4 },
+      { profile_id: 'test-user', display_name: 'Pat', total_points: 60, rounds_won: 2 },
+    ]);
+    render(<LeaderboardScreen />);
+    expect(await screen.findByText('Pat (you)')).toBeTruthy();
+    expect(screen.getByTestId('leaderboard-row-mine').textContent).toContain('Pat (you)');
+    expect(screen.getByText('Ada')).toBeTruthy();
+  });
+
   it('shows an empty state when the club has no recorded rounds', async () => {
     fetchClubLeaderboard.mockResolvedValue([]);
     render(<LeaderboardScreen />);
