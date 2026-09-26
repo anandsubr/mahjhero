@@ -1,4 +1,5 @@
-import { StyleSheet, Text, TextInput, View, type TextInputProps } from 'react-native';
+import { StyleSheet, View, type TextInputProps } from 'react-native';
+import { Text, TextInput } from './Text';
 import { colors, radius, space, type } from '../lib/theme';
 
 type TextFieldProps = Omit<TextInputProps, 'style'> & {

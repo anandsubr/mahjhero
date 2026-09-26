@@ -1,6 +1,7 @@
 import { Link, Redirect, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { Text } from '../../components/Text';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
 import CheckInControl from '../../components/CheckInControl';

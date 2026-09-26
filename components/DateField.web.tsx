@@ -1,5 +1,6 @@
 import type { ChangeEvent, CSSProperties } from 'react';
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
+import { Text } from './Text';
 import { dateStringToDate } from '../lib/time';
 import { colors, radius, space, type } from '../lib/theme';
 

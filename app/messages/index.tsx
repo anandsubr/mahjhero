@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { Redirect, useFocusEffect, useRouter } from 'expo-router';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { Text } from '../../components/Text';
 import MahjongTile from '../../components/MahjongTile';
 import PlusButton from '../../components/PlusButton';
 import ErrorBanner from '../../components/ErrorBanner';

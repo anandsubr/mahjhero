@@ -2,7 +2,8 @@ import DateTimePicker, {
   type DateTimePickerChangeEvent,
 } from '@react-native-community/datetimepicker';
 import { useState } from 'react';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Text } from './Text';
 import { ChevronDownIcon } from './icons';
 import { dateToTimeString, formatTimeLabel, timeStringToDate } from '../lib/time';
 import { colors, radius, space, type } from '../lib/theme';

@@ -1,4 +1,5 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { Text } from './Text';
 import ThreadAvatar from './ThreadAvatar';
 import { ChevronLeftIcon, MoreVerticalIcon, PencilIcon, PlusIcon } from './icons';
 import type { ThreadKind } from '../lib/messages';

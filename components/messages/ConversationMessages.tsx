@@ -1,4 +1,5 @@
-import { StyleSheet, Text } from 'react-native';
+import { StyleSheet } from 'react-native';
+import { Text } from '../Text';
 import AnnouncementCard from './AnnouncementCard';
 import MessageGroup from './MessageGroup';
 import { groupMessages, groupSeparatorParts, type ThreadMessage } from '../../lib/messages';

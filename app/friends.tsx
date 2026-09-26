@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Redirect, useRouter } from 'expo-router';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { Text, TextInput } from '../components/Text';
 import BackRow from '../components/BackRow';
 import ErrorBanner from '../components/ErrorBanner';
 import { FormCard, FormTitle, formStyles } from '../components/GameForm';

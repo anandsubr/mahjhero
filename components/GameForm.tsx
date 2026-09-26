@@ -4,13 +4,12 @@ import {
   Modal,
   Pressable,
   StyleSheet,
-  Text,
-  TextInput,
   View,
   type StyleProp,
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
+import { Text, TextInput } from './Text';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ThreadAvatar from './ThreadAvatar';
 import { ClockIcon, MinusIcon, PlusIcon, XIcon } from './icons';

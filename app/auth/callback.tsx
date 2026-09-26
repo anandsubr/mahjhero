@@ -1,6 +1,7 @@
 import { Redirect } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { Text } from '../../components/Text';
 import Screen from '../../components/Screen';
 import { useSession } from '../../lib/session';
 import { colors, space, type } from '../../lib/theme';

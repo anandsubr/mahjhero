@@ -1,6 +1,7 @@
 import { Redirect, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Keyboard, Platform, StyleSheet, Text, View } from 'react-native';
+import { Keyboard, Platform, StyleSheet, View } from 'react-native';
+import { Text } from '../components/Text';
 import Button from '../components/Button';
 import ErrorBanner from '../components/ErrorBanner';
 import { ChevronLeftIcon, MailIcon } from '../components/icons';
