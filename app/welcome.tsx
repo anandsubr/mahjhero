@@ -1,5 +1,6 @@
 import { Redirect, useRouter } from 'expo-router';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { Text } from '../components/Text';
 import Svg, { Circle, Path } from 'react-native-svg';
 import Button from '../components/Button';
 import Card from '../components/Card';

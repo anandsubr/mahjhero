@@ -4,9 +4,9 @@ import {
   Modal,
   Pressable,
   StyleSheet,
-  Text,
   View,
 } from "react-native";
+import { Text } from "./Text";
 import Toggle from "./Toggle";
 import type { BookingOutcome } from "../lib/bookings";
 import type { EventTable } from "../lib/events";

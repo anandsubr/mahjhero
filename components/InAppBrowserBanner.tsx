@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Platform, StyleSheet, Text, View } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
+import { Text } from './Text';
 import Button from './Button';
 import { CopyIcon } from './icons';
 import { detectInAppBrowserLabel } from '../lib/in-app-browser';

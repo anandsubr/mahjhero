@@ -3,12 +3,12 @@ import {
   ActivityIndicator,
   Pressable,
   StyleSheet,
-  Text,
   View,
   type AccessibilityState,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
+import { Text } from './Text';
 import { colors, radius, shadow, space, type } from '../lib/theme';
 
 export type ButtonVariant =

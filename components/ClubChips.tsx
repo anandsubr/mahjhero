@@ -1,4 +1,5 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { Text } from './Text';
 import { PlusIcon } from './icons';
 import MahjongTile from './MahjongTile';
 import UnreadBadge from './UnreadBadge';

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Keyboard, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Keyboard, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Text, TextInput } from '../Text';
 import { SendIcon } from '../icons';
 import { quoteStub, type MessageAttachmentInput, type ThreadMessage } from '../../lib/messages';
 import { colors, radius, space, type } from '../../lib/theme';

@@ -1,6 +1,7 @@
 // components/messages/AttachmentPicker.tsx
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Image, Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Modal, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Text } from '../Text';
 import { CameraIcon, PlusIcon, TrashIcon } from '../icons';
 import {
   compressImage,

@@ -1,4 +1,5 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { Text } from './Text';
 import Svg, { Circle, Path } from 'react-native-svg';
 import { colors, shadow, space, type } from '../lib/theme';
 

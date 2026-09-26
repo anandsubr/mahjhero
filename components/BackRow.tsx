@@ -1,4 +1,5 @@
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { Pressable, StyleSheet } from 'react-native';
+import { Text } from './Text';
 import { ChevronLeftIcon } from './icons';
 import { colors, radius, type } from '../lib/theme';
 

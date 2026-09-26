@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
+import { Text } from '../../components/Text';
 import Composer from '../../components/messages/Composer';
 import CompactHeader from '../../components/CompactHeader';
 import ConversationMessages from '../../components/messages/ConversationMessages';

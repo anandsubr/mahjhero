@@ -1,6 +1,7 @@
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { Text } from '../../../components/Text';
 import Button from '../../../components/Button';
 import Card from '../../../components/Card';
 import ErrorBanner from '../../../components/ErrorBanner';
