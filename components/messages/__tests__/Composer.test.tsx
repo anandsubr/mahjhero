@@ -173,4 +173,42 @@ describe('Composer', () => {
     expect(getComputedStyle(send).width).toBe('46px');
     expect(getComputedStyle(send).height).toBe('46px');
   });
+
+  function renderWithDraft(draft: string, onSend: () => void) {
+    render(
+      <Composer
+        draft={draft}
+        onDraftChange={() => {}}
+        replyTo={null}
+        onClearReply={() => {}}
+        onSend={onSend}
+        sending={false}
+        {...attachmentProps}
+      />,
+    );
+    return screen.getByLabelText('Message');
+  }
+
+  it('sends on Enter', () => {
+    const onSend = vi.fn();
+    fireEvent.keyDown(renderWithDraft('See you Tuesday', onSend), { key: 'Enter' });
+    expect(onSend).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps Shift+Enter for a line break', () => {
+    const onSend = vi.fn();
+    fireEvent.keyDown(renderWithDraft('See you Tuesday', onSend), { key: 'Enter', shiftKey: true });
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it('ignores Enter on a blank draft', () => {
+    const onSend = vi.fn();
+    fireEvent.keyDown(renderWithDraft('   ', onSend), { key: 'Enter' });
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it('labels the keyboard return key Send', () => {
+    const input = renderWithDraft('', () => {});
+    expect(input.getAttribute('enterkeyhint')).toBe('send');
+  });
 });

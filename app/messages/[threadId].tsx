@@ -258,7 +258,7 @@ export default function ThreadScreen() {
   const membersLabel = `${title}, ${memberCountText}, view members`;
 
   return (
-    <Screen contentStyle={styles.container}>
+    <Screen avoidKeyboard contentStyle={styles.container}>
       {/*
         The back chevron always renders (it doesn't need `thread` to
         navigate away); the avatar and name wait for a loaded thread.
@@ -313,6 +313,9 @@ export default function ThreadScreen() {
             onContentSizeChange={() =>
               scroller.current?.scrollToEnd({ animated: false })
             }
+            // The keyboard shrinks this list from the bottom; keep the
+            // latest message in view rather than behind the composer.
+            onLayout={() => scroller.current?.scrollToEnd({ animated: false })}
           >
             {/*
               A thread with nothing posted yet used to render as an enormous

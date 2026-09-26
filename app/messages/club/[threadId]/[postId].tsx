@@ -254,7 +254,7 @@ export default function PostScreen() {
   const kind = thread ? threadKindFor(thread, viewerId) : null;
 
   return (
-    <Screen contentStyle={styles.container}>
+    <Screen avoidKeyboard contentStyle={styles.container}>
       {/*
         The chevron goes to the board, not `/messages`: this screen is one
         level below the board, not two below the list. A post has no members

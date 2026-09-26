@@ -1,6 +1,6 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Keyboard, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SendIcon } from '../icons';
 import { quoteStub, type MessageAttachmentInput, type ThreadMessage } from '../../lib/messages';
 import { colors, radius, space, type } from '../../lib/theme';
@@ -78,6 +78,48 @@ export default function Composer({
   const [inputHeight, setInputHeight] = useState(FIELD_HEIGHT);
   const [focused, setFocused] = useState(false);
   const insets = useSafeAreaInsets();
+  // While the keyboard is up it covers the home indicator, so the inset
+  // padding would only float the composer a gap above the keys.
+  const [keyboardUp, setKeyboardUp] = useState(false);
+
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardWillShow', () => setKeyboardUp(true));
+    const hide = Keyboard.addListener('keyboardWillHide', () => setKeyboardUp(false));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+
+  // A sent (cleared) draft fires no content-size change on web, which left
+  // the empty field at the last message's height.
+  useEffect(() => {
+    if (draft === '') setInputHeight(FIELD_HEIGHT);
+  }, [draft]);
+
+  // Return sends from the keyboard (the phone's key reads "Send"). A blank
+  // draft is left alone rather than answered with "Write something first."
+  // -- an image-only message still goes through the Send button.
+  const submitFromKeyboard = useCallback(() => {
+    if (draft.trim().length === 0) return;
+    onSend();
+  }, [draft, onSend]);
+
+  // Web: Enter sends, Shift+Enter still breaks the line. Handled here rather
+  // than through onSubmitEditing, which react-native-web only fires for a
+  // multiline field that also blurs -- dropping focus after every message.
+  // Preventing the default is what stops react-native-web's own Enter
+  // handling from running as well.
+  const handleKeyPress = useCallback(
+    (e: { nativeEvent: { key: string; shiftKey?: boolean; isComposing?: boolean }; preventDefault?: () => void }) => {
+      if (Platform.OS !== 'web') return;
+      const { key, shiftKey, isComposing } = e.nativeEvent;
+      if (key !== 'Enter' || shiftKey || isComposing) return;
+      e.preventDefault?.();
+      submitFromKeyboard();
+    },
+    [submitFromKeyboard],
+  );
 
   // `contentSize.height` is react-native-web's own name for the textarea's
   // `scrollHeight` -- the real rendered height of the padding + text inside
@@ -94,7 +136,7 @@ export default function Composer({
   );
 
   return (
-    <View style={[styles.wrap, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+    <View style={[styles.wrap, { paddingBottom: keyboardUp ? 8 : Math.max(insets.bottom, 12) }]}>
       {replyTo ? (
         <View style={styles.replyingRow}>
           <Text numberOfLines={1} style={styles.replyingText}>
@@ -136,6 +178,12 @@ export default function Composer({
                   // before a single character is typed. `handleDraftSize`
                   // still grows the box from here for a long draft.
                   numberOfLines={1}
+                  returnKeyType="send"
+                  // "submit", not "blurAndSubmit": the keyboard stays up for
+                  // the next message.
+                  submitBehavior="submit"
+                  onSubmitEditing={submitFromKeyboard}
+                  onKeyPress={handleKeyPress}
                 />
                 {trigger}
               </View>

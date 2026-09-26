@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react';
 import {
+  KeyboardAvoidingView,
+  Platform,
   ScrollView,
   StyleSheet,
   View,
@@ -50,6 +52,13 @@ type ScreenProps = {
    * list.
    */
   stickyHeaderIndices?: number[];
+  /**
+   * Lifts the whole screen above the on-screen keyboard -- for screens with
+   * a composer pinned at the bottom (a conversation, a club post), which the
+   * iOS keyboard otherwise covers, hiding what is being typed. iOS only:
+   * Android was never observed to have this problem.
+   */
+  avoidKeyboard?: boolean;
 };
 
 /**
@@ -74,6 +83,7 @@ export default function Screen({
   contentStyle,
   tabBar,
   stickyHeaderIndices,
+  avoidKeyboard = false,
 }: ScreenProps) {
   // The status bar/notch/Dynamic Island inset. Applied here, on the layer
   // above `contentStyle`, rather than folded into `styles.content`: nearly
@@ -117,9 +127,9 @@ export default function Screen({
     </View>
   );
 
-  if (!tabBar) return body;
-
-  return (
+  const shell = !tabBar ? (
+    body
+  ) : (
     <View style={[styles.fill, { backgroundColor: background }]}>
       <View style={styles.tabShellBody}>{body}</View>
       {/*
@@ -130,6 +140,19 @@ export default function Screen({
       */}
       <View style={styles.tabBarColumn}>{tabBar}</View>
     </View>
+  );
+
+  if (!avoidKeyboard || Platform.OS !== 'ios') return shell;
+
+  // No offset: every screen fills the window from the very top (there is no
+  // navigator header above it), so the keyboard's full height is the lift.
+  return (
+    <KeyboardAvoidingView
+      behavior="padding"
+      style={[styles.fill, { backgroundColor: background }]}
+    >
+      {shell}
+    </KeyboardAvoidingView>
   );
 }
 

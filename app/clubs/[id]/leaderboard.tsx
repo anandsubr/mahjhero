@@ -1,9 +1,9 @@
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
-import Card from '../../../components/Card';
-import DashboardHeader from '../../../components/DashboardHeader';
+import CompactHeader from '../../../components/CompactHeader';
 import ErrorBanner from '../../../components/ErrorBanner';
+import { FormCard, FormTitle } from '../../../components/GameForm';
 import Screen from '../../../components/Screen';
 import TabBar from '../../../components/TabBar';
 import { fetchClub } from '../../../lib/clubs';
@@ -13,19 +13,19 @@ import {
   fetchClubLeaderboard,
   type LeaderboardEntry,
 } from '../../../lib/leaderboard';
+import { initialsFrom } from '../../../lib/dashboard';
+import { avatarColorFor } from '../../../lib/friends';
 import { useSession } from '../../../lib/session';
-import { colors, space, type } from '../../../lib/theme';
+import { colors, radius, space, type } from '../../../lib/theme';
+import { TrophyIcon } from '../../../components/icons';
 
 /**
  * All-time, points-first ranking, built on app/clubs/[id]/venues.tsx's own
- * template for guard order and load-failure handling. The header itself,
- * though, uses the "Your club" tile shape (DashboardHeader, same as
- * app/clubs/[id]/index.tsx and the game screen) rather than venues.tsx's
- * flat kicker/name/meta shape -- the human asked for this screen's header
- * to match the club edit page's exactly, tile and back chevron included.
- * That shape's `name` slot is the club-name pill, not a page title, so
- * "Leaderboard" renders as its own heading below the header instead,
- * matching how the game screen names itself under the same tile header.
+ * template for guard order and load-failure handling. Styled after the
+ * redesigned screens: the game screen's compact club header (back chevron,
+ * the club's tile and name), a left-aligned Caprasimo "Leaderboard" title,
+ * and one surface card of divider rows in the Friends screen's shape --
+ * same seeded avatar colours, so a person looks the same on both.
  *
  * `entriesFailed` is kept separate from `loadFailed` the same way
  * venues.tsx keeps `venuesFailed` apart from its own club/roster load -- a
@@ -95,87 +95,135 @@ export default function LeaderboardScreen() {
     );
   }
 
+  const displayName = (entry: LeaderboardEntry) =>
+    entry.display_name.trim().length > 0 ? entry.display_name : 'Member';
+
   return (
     <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="club" />}>
-      <DashboardHeader
-        kicker="Your club"
-        name={club.name}
-        meta=""
-        clubId={clubId}
-        onPressBack={() => router.push(`/clubs/${clubId}`)}
+      <CompactHeader
+        variant="inset"
+        divider={false}
+        onBack={() => router.push(`/clubs/${clubId}`)}
         backLabel="Back to the club"
+        kind="club"
+        clubId={clubId}
+        title={club.name}
       />
 
-      <Text style={styles.heading}>Leaderboard</Text>
+      <FormTitle>Leaderboard</FormTitle>
 
       {entriesFailed ? (
         <ErrorBanner message="The leaderboard could not be loaded. Pull to refresh or try again shortly." />
       ) : entries.length === 0 ? (
-        <Text style={styles.help}>No rounds recorded yet.</Text>
+        <View style={styles.emptyCard}>
+          <View style={styles.emptyIcon}>
+            <TrophyIcon size={20} color={colors.accent2[800]} />
+          </View>
+          <Text style={styles.emptyText}>No rounds recorded yet.</Text>
+        </View>
       ) : (
-        entries.map((entry, index) => (
-          <Card key={entry.profile_id}>
-            <View style={styles.row}>
-              <Text style={styles.rank}>{index + 1}</Text>
-              <Text style={styles.name} numberOfLines={1}>
-                {entry.display_name.trim().length > 0
-                  ? entry.display_name
-                  : 'Member'}
-              </Text>
-              <Text style={styles.points}>{entry.total_points} pts</Text>
-            </View>
-            <Text style={styles.roundsWon}>
-              {entry.rounds_won} {entry.rounds_won === 1 ? 'round' : 'rounds'} won
-            </Text>
-          </Card>
-        ))
+        // Clipped so the viewer's tinted row keeps the card's rounded corners
+        // when it is the first or last row.
+        <FormCard style={styles.list}>
+          {entries.map((entry, index) => {
+            const isMe = entry.profile_id === userId;
+            const podium = index < 3;
+            const name = displayName(entry);
+            return (
+              <View
+                key={entry.profile_id}
+                style={[styles.row, isMe && styles.rowMine]}
+                testID={isMe ? 'leaderboard-row-mine' : undefined}
+              >
+                <View style={[styles.rank, podium && styles.rankPodium]}>
+                  {index === 0 ? <TrophyIcon size={12} color="#ffffff" /> : null}
+                  <Text style={[styles.rankText, podium && styles.rankTextPodium]}>
+                    {index + 1}
+                  </Text>
+                </View>
+                <View style={[styles.avatar, { backgroundColor: avatarColorFor(entry.profile_id) }]}>
+                  <Text style={styles.avatarText}>{initialsFrom(name)}</Text>
+                </View>
+                <View style={styles.rowBody}>
+                  <Text style={styles.name} numberOfLines={1}>
+                    {isMe ? `${name} (you)` : name}
+                  </Text>
+                  <Text style={styles.meta}>
+                    {entry.rounds_won} {entry.rounds_won === 1 ? 'round' : 'rounds'} won
+                  </Text>
+                </View>
+                <Text style={styles.points}>{entry.total_points} pts</Text>
+              </View>
+            );
+          })}
+        </FormCard>
       )}
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { padding: space[6], gap: space[4] },
+  container: { paddingTop: 6, paddingHorizontal: 16, paddingBottom: 28, gap: 18 },
   centered: { alignItems: 'center' },
-  heading: {
-    fontFamily: type.heading,
-    fontSize: type.size.h2,
-    color: colors.text,
-  },
+  list: { overflow: 'hidden' },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: space[3],
+    gap: 12,
+    minHeight: 64,
+    paddingVertical: 10,
+    paddingLeft: 12,
+    paddingRight: 16,
   },
+  rowMine: { backgroundColor: colors.accent[100] },
   rank: {
-    fontFamily: type.bodyBold,
-    fontSize: type.size.body,
-    color: colors.textMuted,
-    minWidth: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+    minWidth: 32,
+    height: 26,
+    paddingHorizontal: 6,
+    borderRadius: radius.pill,
   },
-  name: {
-    fontFamily: type.bodySemiBold,
-    fontSize: type.size.body,
-    color: colors.text,
+  rankPodium: { backgroundColor: colors.accent[700] },
+  rankText: { fontFamily: type.bodyBold, fontSize: 14, color: colors.neutral[700] },
+  rankTextPodium: { color: '#ffffff' },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: { fontFamily: type.bodyBold, fontSize: 15, color: '#ffffff' },
+  rowBody: { flex: 1, minWidth: 0 },
+  name: { fontFamily: type.bodySemiBold, fontSize: 15, color: colors.text },
+  meta: { fontFamily: type.bodyRegular, fontSize: 13, color: colors.neutral[700] },
+  points: { fontFamily: type.heading, fontSize: 20, color: colors.text },
+  emptyCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: space[4],
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: colors.neutral[400],
+  },
+  emptyIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.accent2[200],
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyText: {
     flex: 1,
-    minWidth: 0,
-  },
-  points: {
-    fontFamily: type.bodyBold,
-    fontSize: type.size.body,
-    color: colors.text,
-  },
-  help: {
     fontFamily: type.bodyRegular,
-    fontSize: type.size.helper,
-    color: colors.textMuted,
-    lineHeight: 24,
-  },
-  roundsWon: {
-    fontFamily: type.bodyRegular,
-    fontSize: type.size.helper,
-    color: colors.textMuted,
-    lineHeight: 24,
-    textAlign: 'right',
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.neutral[700],
   },
 });
