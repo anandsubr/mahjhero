@@ -1,6 +1,6 @@
 import { Redirect, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Platform, StyleSheet, Text, View } from 'react-native';
+import { Keyboard, Platform, StyleSheet, Text, View } from 'react-native';
 import Button from '../components/Button';
 import ErrorBanner from '../components/ErrorBanner';
 import { ChevronLeftIcon, MailIcon } from '../components/icons';
@@ -49,6 +49,19 @@ export default function SignIn() {
   // native `openAuthSessionAsync` takes seconds, and a second tap opens a
   // second auth session on top of the first.
   const busy = status === 'sending' || verifying || resending || pendingProvider !== null;
+
+  // The code step's mail icon is decorative; while the keyboard is up it is
+  // dropped so "Verify code" still fits above the number pad on a small
+  // phone (the number pad has no return key to submit with instead).
+  const [keyboardUp, setKeyboardUp] = useState(false);
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardWillShow', () => setKeyboardUp(true));
+    const hide = Keyboard.addListener('keyboardWillHide', () => setKeyboardUp(false));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
 
   // Ticks the resend cooldown down to zero once a second. Re-created every
   // tick (the dependency is the count itself) rather than once at 60 — a
@@ -151,10 +164,15 @@ export default function SignIn() {
 
   if (status === 'code-entry') {
     return (
-      <Screen center contentStyle={styles.checkContent}>
-        <View style={styles.mailWell}>
-          <MailIcon />
-        </View>
+      // Scrolls and lifts above the keyboard: the code field's number pad has
+      // no return key, so with the keyboard covering "Verify code" there was
+      // no way forward at all.
+      <Screen scroll center avoidKeyboard contentStyle={styles.checkContent}>
+        {keyboardUp ? null : (
+          <View style={styles.mailWell}>
+            <MailIcon />
+          </View>
+        )}
         <Text style={styles.heading}>Enter your code</Text>
         <Text style={styles.body}>
           We sent a sign-in code to <Text style={styles.bodyStrong}>{email.trim()}</Text>. Enter
@@ -207,7 +225,7 @@ export default function SignIn() {
   const providers = availableProviders(Platform.OS);
 
   return (
-    <Screen center contentStyle={styles.content}>
+    <Screen scroll center avoidKeyboard contentStyle={styles.content}>
       {/* Sign-in is a step inside the welcome screen now, not the app's
           front door, so it needs a way back to it. The artboard draws this
           same chevron.
@@ -248,6 +266,8 @@ export default function SignIn() {
         autoCorrect={false}
         keyboardType="email-address"
         textContentType="emailAddress"
+        returnKeyType="send"
+        onSubmitEditing={() => void onSubmit()}
         accessibilityLabel="Email address"
       />
       {error ? <ErrorBanner message={error} /> : null}

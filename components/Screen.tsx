@@ -106,6 +106,9 @@ export default function Screen({
       // fold. See "Why the visual suite resizes the viewport" in
       // docs/testing.md.
       testID="screen-scroll"
+      // A tap on a button while the keyboard is up acts on the button (e.g.
+      // "Verify code") instead of only dismissing the keyboard first.
+      keyboardShouldPersistTaps="handled"
       style={[styles.fill, { backgroundColor: background }]}
       contentContainerStyle={[
         { paddingTop: insets.top },

@@ -127,6 +127,17 @@ describe('sign-in screen', () => {
     expect(screen.getByText('Enter your code')).toBeTruthy();
   });
 
+  it('sends the code from the keyboard\'s return key too', async () => {
+    render(<SignIn />);
+    const field = screen.getByLabelText('Email address');
+    fireEvent.change(field, { target: { value: 'jane@example.com' } });
+    await act(async () => {
+      fireEvent.keyDown(field, { key: 'Enter' });
+    });
+    expect(sendSignInCode).toHaveBeenCalledWith('jane@example.com');
+    expect(screen.getByText('Enter your code')).toBeTruthy();
+  });
+
   it('verifies the entered code', async () => {
     render(<SignIn />);
     await sendCode('jane@example.com');
