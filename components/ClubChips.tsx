@@ -94,7 +94,9 @@ export default function ClubChips({
           <View style={styles.newClubTile}>
             <PlusIcon size={16} color={colors.text} />
           </View>
-          <Text style={styles.label} numberOfLines={1}>
+          {/* Two lines, like a club's own label: at the tile's 64pt width
+              "New club" never fit on one and always truncated. */}
+          <Text style={styles.label} numberOfLines={2}>
             New club
           </Text>
         </Pressable>

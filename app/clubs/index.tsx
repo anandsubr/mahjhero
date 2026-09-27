@@ -886,7 +886,7 @@ export default function ClubsScreen() {
         <Text style={styles.help}>Could not load your games.</Text>
       ) : rows.length === 0 ? (
         <View style={styles.emptyCard}>
-          <Text style={styles.help}>Nothing else coming up.</Text>
+          <Text style={[styles.help, styles.emptyText]}>Nothing else coming up.</Text>
           {canAddGames ? (
             <Button
               variant="secondary"
@@ -1479,10 +1479,11 @@ const styles = StyleSheet.create({
   gameAction: {
     flexShrink: 0,
   },
+  // Stacked and centred rather than text-left / button-right: side by side,
+  // "Host a table" didn't fit a phone's width and pushed past the dashed
+  // border.
   emptyCard: {
-    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     gap: space[3],
     padding: space[4],
     borderRadius: radius.card,
@@ -1490,4 +1491,5 @@ const styles = StyleSheet.create({
     borderStyle: 'dashed',
     borderColor: colors.neutral[400],
   },
+  emptyText: { textAlign: 'center' },
 });
