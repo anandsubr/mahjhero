@@ -14,42 +14,19 @@ vi.mock('expo-router', () => ({
   // Wrapped in a real `useEffect` keyed on the callback's identity, not
   // called inline on every render: `(cb) => cb()` fires on every render,
   // which the real hook never does, and would refire this screen's own
-  // fetch (and TabBar's `useUnreadCounts`) on every state update it causes.
+  // fetch on every state update it causes.
   useFocusEffect: (cb: () => void | (() => void)) => {
     useEffect(cb, [cb]);
   },
 }));
 
-// Module-scoped constant, not a fresh object per render: TabBar's badge
-// reads `useSession` too (via `useUnreadCounts`), and a fresh object here
-// breaks the referential stability its `useCallback([session])` depends on,
-// refiring the fetch on every render.
 const SESSION = { session: { user: { id: 'me' } }, loading: false };
 vi.mock('../../lib/session', () => ({
   useSession: () => SESSION,
 }));
 
-// TabBar calls `useUnreadCounts`, which reaches `fetchUnreadCounts`. Spread
-// `actual` rather than replacing the module outright: TabBar also calls
-// `unreadSuffix`, a pure helper covered by lib/messages.test.ts -- only
-// `fetchUnreadCounts` needs to be a controllable double here.
-vi.mock('../../lib/messages', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../lib/messages')>();
-  return {
-    ...actual,
-    fetchUnreadCounts: vi.fn(async () => []),
-  };
-});
-
 const fetchMyNotifications = vi.fn();
 const markNotificationsRead = vi.fn();
-// TabBar itself now also reaches this module, via `useNotificationsUnread`
-// -> `fetchNotificationUnreadCount` -- the same reason `fetchUnreadCounts`
-// is doubled above for `useUnreadCounts`. Without this, TabBar's own
-// fetch call falls through to the real, unmocked implementation. Hoisted to
-// module scope (not left inline in the factory below) so individual tests
-// can control what each call resolves to -- see the badge-clearing test.
-const fetchNotificationUnreadCount = vi.fn(async () => 0);
 
 vi.mock('../../lib/notifications', async () => {
   // describeNotification is pure and already covered in
@@ -62,7 +39,6 @@ vi.mock('../../lib/notifications', async () => {
     describeNotification: actual.describeNotification,
     fetchMyNotifications: (...a: unknown[]) => fetchMyNotifications(...a),
     markNotificationsRead: (...a: unknown[]) => markNotificationsRead(...a),
-    fetchNotificationUnreadCount: () => fetchNotificationUnreadCount(),
   };
 });
 
@@ -166,63 +142,9 @@ describe('alerts screen', () => {
     expect(markNotificationsRead).not.toHaveBeenCalled();
   });
 
-  // TabBar (rendered inside this very screen's tree) fetches its badge count
-  // as a child effect, before this screen's own load() has even called
-  // markNotificationsRead() -- so the badge's FIRST fetch always sees the
-  // stale, pre-read count. Nothing about staying on this screen fires a real
-  // focus event, so without notifyNotificationsRead() the badge would only
-  // ever clear on a navigate-away-and-back. This test never triggers a
-  // rerender or refocus itself -- the badge dropping its "unread" suffix has
-  // to come from the pub/sub alone.
-  it('clears the alerts badge once mark-read succeeds, with no refocus', async () => {
-    fetchMyNotifications.mockResolvedValueOnce([BOOKED_BY_FRIEND]);
-    fetchNotificationUnreadCount.mockResolvedValueOnce(3).mockResolvedValueOnce(0);
-
-    // markNotificationsRead is held open rather than left to resolve on its
-    // own tick: with everything else mocked to resolve immediately, its
-    // real (fast) resolution and the badge's own initial fetch would settle
-    // in the same microtask flush, and this test would never observe the
-    // "3 unread" state in between -- only ever the end state. Holding this
-    // one promise open gives a deterministic window to assert it.
-    let resolveMarkRead: (result: { error: string | null }) => void;
-    markNotificationsRead.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          resolveMarkRead = resolve;
-        }),
-    );
-
-    render(<AlertsScreen />);
-
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Alerts, 3 unread' })).toBeTruthy(),
-    );
-
-    resolveMarkRead!({ error: null });
-
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Alerts' })).toBeTruthy(),
-    );
-  });
-
-  it('carries the tab bar with Alerts marked', async () => {
-    render(<AlertsScreen />);
-    await screen.findByText(/No notifications yet/);
-    expect(
-      screen.getByRole('button', { name: 'Alerts' }).getAttribute('aria-selected'),
-    ).toBe('true');
-    expect(
-      screen.getByRole('button', { name: 'Club' }).getAttribute('aria-selected'),
-    ).toBe('false');
-  });
-
   // The tile is purely decorative -- scoped to a wrapping testID rather than
-  // a bare `[aria-hidden="true"]` query, since TabBar (carried by every
-  // screen) renders its own four `aria-hidden` tiles too, which would let a
-  // bare query pass whether or not this screen's own section tile exists.
-  // Waits on the empty-state text, not the heading text `Alerts` itself --
-  // TabBar's own Alerts tab carries that exact label too, which makes
-  // `findByText('Alerts')` ambiguous once both are on screen.
+  // a bare `[aria-hidden="true"]` query, which would pass whether or not
+  // this screen's own section tile exists.
   it('shows a decorative green-dragon tile before the heading', async () => {
     render(<AlertsScreen />);
     await screen.findByText(/No notifications yet/);

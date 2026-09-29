@@ -806,9 +806,9 @@ function toClubEvent(row: EventRow): ClubEvent {
  * it ends" rule `my_upcoming_bookings`
  * (20260827070000_my_upcoming_bookings_check_in.sql) already uses.
  * Dropping an event the instant it started used to hide it from
- * `buildDashboardRows`' organizing-row branch (lib/dashboard.ts) for
- * exactly the games that most need to stay reachable: an organizer's own
- * in-progress game they never booked a seat at.
+ * Home's need-a-fourth alerts (lib/use-needs-you.ts) for exactly the games
+ * that most need to stay reachable: an organizer's own in-progress game
+ * they never booked a seat at.
  *
  * `needAFourthAlerts` (lib/dashboard.ts) is the OTHER consumer of this
  * function's output and is unaffected by the widened window: `needsAFourth`

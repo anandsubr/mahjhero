@@ -13,8 +13,7 @@ import { colors, radius, space, type } from '../lib/theme';
  * `accent[700]`, not the artboard's `accentColor`: `colors.bg` on
  * `accentColor` measures 3.03:1, and this text is 16px bold — below the
  * 14pt-bold "large text" threshold — so it needs AA's 4.5:1, not 3:1. It
- * fails. accent[700] reads 5.72:1 against `colors.bg` and clears AA. Same
- * failure, and the same fix, as components/TabBar.tsx's selected-tab tint.
+ * fails. accent[700] reads 5.72:1 against `colors.bg` and clears AA.
  */
 export default function UnreadBadge({ count }: { count: number }) {
   if (count <= 0) return null;

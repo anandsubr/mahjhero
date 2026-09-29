@@ -6,9 +6,6 @@ const searchParams: Record<string, string> = { id: 'club-1', eventId: 'event-1' 
 const push = vi.fn();
 const replace = vi.fn();
 
-// This screen's own route, never TabBar's own /clubs -- the Club tab stays
-// live here the same way it does on the club detail and venues screens (see
-// clubs.test.tsx's and venues.test.tsx's identical comment).
 const pathname = '/clubs/club-1/events/event-1/check-in';
 
 vi.mock('expo-router', () => ({
@@ -19,9 +16,8 @@ vi.mock('expo-router', () => ({
   usePathname: () => pathname,
   useLocalSearchParams: () => searchParams,
   // Wrapped in a real `useEffect` keyed on the callback's identity, not
-  // called inline on every render -- see venues.test.tsx's identical
-  // comment: `(cb) => cb()` would refire `useUnreadCounts`'s fetch (now
-  // pulled in by TabBar) on every state update it causes.
+  // called inline on every render: `(cb) => cb()` fires on every render,
+  // which the real hook never does.
   useFocusEffect: (cb: () => void | (() => void)) => {
     useEffect(cb, [cb]);
   },
@@ -94,23 +90,6 @@ vi.mock('../../lib/payments', async (importOriginal) => {
     setPaymentStatus: (...args: unknown[]) => setPaymentStatus(...args),
   };
 });
-
-// TabBar (now carried by this screen) calls `useUnreadCounts`, which reaches
-// `fetchUnreadCounts`.
-const fetchUnreadCounts = vi.fn(async () => []);
-vi.mock('../../lib/messages', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../lib/messages')>();
-  return {
-    ...actual,
-    fetchUnreadCounts: () => fetchUnreadCounts(),
-  };
-});
-
-// TabBar also now calls useNotificationsUnread for its Alerts badge --
-// without this it falls through to a real, unmocked RPC call.
-vi.mock('../../lib/use-notifications-unread', () => ({
-  useNotificationsUnread: () => 0,
-}));
 
 import CheckInScreen from '../clubs/[id]/events/[eventId]/check-in';
 import type { AttendanceRow } from '../../lib/attendance';
@@ -194,21 +173,13 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-// TabBar navigates with router.replace off an entry route that is itself a
-// Redirect, so the history stack is typically one deep -- a state without
-// the bar strands a host with no way out but relaunching the app. See
-// clubs.test.tsx's and venues.test.tsx's identical rationale. This screen
-// also carries its own explicit back link to the game it is checking in
-// for (2026-09-01-back-links-design.md) -- unlike the club/messages
-// screens, nothing in the tab bar reaches that destination at all.
+// This screen carries its own explicit back link to the game it is
+// checking in for (2026-09-01-back-links-design.md).
 describe('screen chrome', () => {
-  // The redesign hides the tab bar once the door list is up: the header's
-  // back arrow is always there, and "Add a walk-in" is pinned in its place.
-  it('pins Add a walk-in where the tab bar was, once ready', async () => {
+  it('pins Add a walk-in at the bottom, once ready', async () => {
     render(<CheckInScreen />);
     expect(await screen.findByRole('button', { name: 'Add a walk-in' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Back to the game' })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Club' })).toBeNull();
   });
 
   it('names the game, its date and venue in the header', async () => {
@@ -222,24 +193,6 @@ describe('screen chrome', () => {
     render(<CheckInScreen />);
     fireEvent.click(await screen.findByRole('button', { name: 'Back to the game' }));
     expect(push).toHaveBeenCalledWith('/clubs/club-1/events/event-1');
-  });
-
-  it('carries the tab bar while the event is still loading', () => {
-    fetchEvent.mockReturnValueOnce(new Promise(() => {}));
-    fetchRoster.mockReturnValueOnce(new Promise(() => {}));
-    render(<CheckInScreen />);
-    expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
-  });
-
-  it('carries the tab bar when the viewer is not an organizer', async () => {
-    fetchRoster.mockResolvedValue([
-      { profile_id: 'test-user', role: 'member' as const, display_name: 'Ada', skill_level: null },
-    ]);
-    render(<CheckInScreen />);
-    expect(
-      await screen.findByText('You are not an organizer of this club.'),
-    ).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
   });
 });
 

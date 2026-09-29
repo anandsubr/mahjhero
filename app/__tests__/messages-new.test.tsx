@@ -12,8 +12,7 @@ vi.mock('expo-router', () => ({
   usePathname: () => '/messages/new',
   // Wrapped in a real `useEffect` keyed on the callback's identity, not
   // called inline on every render: `(cb) => cb()` fires on every render,
-  // which the real hook never does, and would refire `useUnreadCounts`'s
-  // fetch (now pulled in by TabBar) on every state update it causes.
+  // which the real hook never does.
   useFocusEffect: (cb: () => void | (() => void)) => {
     useEffect(cb, [cb]);
   },
@@ -45,17 +44,8 @@ vi.mock('../../lib/messages', async () => {
     ...actual,
     createGroupThread: (...a: unknown[]) => createGroupThread(...a),
     postMessage: (...a: unknown[]) => postMessage(...a),
-    // TabBar (now carried by this screen) calls `useUnreadCounts`, which
-    // reaches this.
-    fetchUnreadCounts: vi.fn(async () => []),
   };
 });
-
-// TabBar also now calls useNotificationsUnread for its Alerts badge --
-// without this it falls through to a real, unmocked RPC call.
-vi.mock('../../lib/use-notifications-unread', () => ({
-  useNotificationsUnread: () => 0,
-}));
 
 describe('new message screen', () => {
   beforeEach(() => {
@@ -174,30 +164,11 @@ describe('new message screen', () => {
     expect(replace).not.toHaveBeenCalled();
   });
 
-  // TabBar navigates with router.replace off an entry route that is itself
-  // a Redirect, so the history stack is typically one deep. A compose screen
-  // with no bar would be a dead end on native short of relaunching the app.
-  it('carries the tab bar with Messages marked', async () => {
-    render(<NewMessageScreen />);
-    await screen.findByText('New message');
-    expect(
-      screen.getByRole('button', { name: 'Messages' }).getAttribute('aria-selected'),
-    ).toBe('true');
-    expect(
-      screen.getByRole('button', { name: 'Club' }).getAttribute('aria-selected'),
-    ).toBe('false');
-  });
-
-  // The Messages tab renders active on this screen too, which reads as
-  // "you are here" rather than a way out, so this screen carries its own
-  // explicit back link again (2026-09-01-back-links-design.md). Its
-  // accessible name is "Back to messages", distinct from TabBar's own tab
-  // ("Messages") — `getAllByRole(..., { name: 'Messages' })` staying at 1
-  // is what confirms the two controls do not collide.
+  // This screen carries its own explicit back link
+  // (2026-09-01-back-links-design.md).
   it('draws a back link to the messages list', async () => {
     render(<NewMessageScreen />);
     await screen.findByText('New message');
-    expect(screen.getAllByRole('button', { name: 'Messages' })).toHaveLength(1);
     fireEvent.click(screen.getByRole('button', { name: 'Back to messages' }));
     expect(push).toHaveBeenCalledWith('/messages');
   });

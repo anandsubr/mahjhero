@@ -26,8 +26,7 @@ vi.mock('expo-router', () => ({
   useLocalSearchParams: () => ({ threadId: 't1' }),
   // Wrapped in a real `useEffect` keyed on the callback's identity, not
   // called inline on every render: `(cb) => cb()` fires on every render,
-  // which the real hook never does, and would refire `useUnreadCounts`'s
-  // fetch (now pulled in by TabBar) on every state update it causes.
+  // which the real hook never does.
   useFocusEffect: (cb: () => void | (() => void)) => {
     useEffect(cb, [cb]);
   },
@@ -81,17 +80,8 @@ vi.mock('../../lib/messages', async () => {
     markThreadRead: (...a: unknown[]) => markThreadRead(...a),
     addToGroupThread: (...a: unknown[]) => addToGroupThread(...a),
     leaveGroupThread: (...a: unknown[]) => leaveGroupThread(...a),
-    // TabBar (now carried by this screen) calls `useUnreadCounts`, which
-    // reaches this.
-    fetchUnreadCounts: vi.fn(async () => []),
   };
 });
-
-// TabBar also now calls useNotificationsUnread for its Alerts badge --
-// without this it falls through to a real, unmocked RPC call.
-vi.mock('../../lib/use-notifications-unread', () => ({
-  useNotificationsUnread: () => 0,
-}));
 
 // Composer now renders AttachmentPicker (Task 10), which imports
 // lib/attachments.ts -- itself pulling in expo-crypto,
@@ -1169,15 +1159,9 @@ describe('thread screen', () => {
     });
   });
 
-  // The Messages 2a handoff hides the tab bar inside a conversation. That
-  // is not a dead end even on a one-deep native history stack (TabBar
-  // navigates with router.replace off a Redirect entry route): the header's
-  // back chevron pushes /messages outright rather than relying on history.
-  it('hides the tab bar inside a conversation, leaving the back chevron as the way out', async () => {
+  it('leaves the back chevron as the way out of a conversation', async () => {
     render(<ThreadScreen />);
     await screen.findByText('Sara, Peter');
-    expect(screen.queryByRole('button', { name: 'Messages' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Club' })).toBeNull();
     fireEvent.click(screen.getByLabelText('Back to Messages'));
     expect(push).toHaveBeenCalledWith('/messages');
   });

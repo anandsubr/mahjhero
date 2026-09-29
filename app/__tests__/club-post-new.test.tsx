@@ -26,10 +26,6 @@ vi.mock('../../lib/session', () => ({
 }));
 
 const postMessage = vi.fn();
-// TabBar (carried by this screen via Screen's `tabBar` prop) calls
-// useUnreadCounts, which reaches this -- the same reason every other screen
-// test that renders TabBar mocks it.
-const fetchUnreadCounts = vi.fn(async () => []);
 
 vi.mock('../../lib/messages', async () => {
   const actual =
@@ -37,15 +33,8 @@ vi.mock('../../lib/messages', async () => {
   return {
     ...actual,
     postMessage: (...a: unknown[]) => postMessage(...a),
-    fetchUnreadCounts: () => fetchUnreadCounts(),
   };
 });
-
-// TabBar also now calls useNotificationsUnread for its Alerts badge --
-// without this it falls through to a real, unmocked RPC call.
-vi.mock('../../lib/use-notifications-unread', () => ({
-  useNotificationsUnread: () => 0,
-}));
 
 // This screen now renders AttachmentPicker directly (Task 12), which
 // imports lib/attachments.ts -- itself pulling in expo-crypto,
@@ -106,7 +95,6 @@ const CLUB = {
 describe('composing a post', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    fetchUnreadCounts.mockResolvedValue([]);
     postMessage.mockResolvedValue({ id: 'p1', error: null });
     countBroadcastRecipients.mockResolvedValue(12);
     fetchClub.mockResolvedValue(CLUB);
@@ -418,7 +406,6 @@ describe('composing a post', () => {
 describe('backing out of a post', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    fetchUnreadCounts.mockResolvedValue([]);
     fetchRoster.mockResolvedValue(member('member'));
     fetchClub.mockResolvedValue(CLUB);
   });

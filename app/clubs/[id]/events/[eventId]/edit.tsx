@@ -23,7 +23,6 @@ import {
 } from '../../../../../components/GameForm';
 import { ClipboardCheckIcon, LockIcon } from '../../../../../components/icons';
 import Screen from '../../../../../components/Screen';
-import TabBar from '../../../../../components/TabBar';
 import TimeField from '../../../../../components/TimeField';
 import VenuePicker from '../../../../../components/VenuePicker';
 import type { SkillTier } from '../../../../../lib/bookings';
@@ -425,16 +424,12 @@ export default function EditEventScreen() {
     };
   }, [clubId, eventId, session]);
 
-  // Every state below carries the tab bar, the same rule
-  // app/clubs/[id]/index.tsx and app/clubs/[id]/venues.tsx already follow:
-  // TabBar navigates with router.replace off an entry route that is itself
-  // a <Redirect>, so the history stack is typically one deep, and a state
-  // with no bar strands a host with no way out but relaunching the app. The
-  // <Redirect> branch below is the deliberate exception -- it renders
-  // nothing, and a signed-out visitor belongs at sign-in, not in a tab bar.
+  // The <Redirect> branch below is the deliberate exception among these
+  // early returns -- it renders nothing, and a signed-out visitor belongs at
+  // sign-in.
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="club" />}>
+      <Screen center contentStyle={styles.centered}>
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
     );
@@ -451,7 +446,7 @@ export default function EditEventScreen() {
 
   if (!ready) {
     return (
-      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="club" />}>
+      <Screen center contentStyle={styles.centered}>
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
     );
@@ -459,7 +454,7 @@ export default function EditEventScreen() {
 
   if (!club || !event) {
     return (
-      <Screen contentStyle={styles.container} tabBar={<TabBar active="club" />}>
+      <Screen contentStyle={styles.container}>
         <ErrorBanner message="That game could not be loaded." />
       </Screen>
     );
@@ -474,7 +469,7 @@ export default function EditEventScreen() {
   // answer that cannot lose the stored time.
   if (Number.isNaN(new Date(event.starts_at).getTime())) {
     return (
-      <Screen contentStyle={styles.container} tabBar={<TabBar active="club" />}>
+      <Screen contentStyle={styles.container}>
         <ErrorBanner message="This game's start time could not be read, so it cannot be edited." />
       </Screen>
     );
@@ -802,15 +797,6 @@ export default function EditEventScreen() {
       <Screen
         scroll
         contentStyle={formStyles.body}
-        tabBar={
-          <ActionBar
-            onCancel={requestLeave}
-            primaryLabel="Save"
-            primaryAccessibilityLabel="Save changes"
-            onPrimary={() => void onSave()}
-            busy={saving}
-          />
-        }
       >
         <FormHeader clubId={clubId} clubName={club.name} onClose={requestLeave} />
         <FormTitle>Edit</FormTitle>
@@ -1071,6 +1057,14 @@ export default function EditEventScreen() {
             disabled={saving}
           />
         ) : null}
+
+        <ActionBar
+          onCancel={requestLeave}
+          primaryLabel="Save"
+          primaryAccessibilityLabel="Save changes"
+          onPrimary={() => void onSave()}
+          busy={saving}
+        />
       </Screen>
 
       {confirming === 'discard' ? (

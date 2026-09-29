@@ -12,15 +12,11 @@ vi.mock('expo-router', () => ({
     <div data-testid="redirect" data-href={href} />
   ),
   useRouter: () => ({ push, replace }),
-  // TabBar reads this to decide whether its own tab's route is the current
-  // one; this screen lives under /clubs/[id]/venues, never at the Club
-  // tab's own /clubs, so its Club button always stays live.
   usePathname: () => '/clubs/club-1/venues',
   useLocalSearchParams: () => searchParams,
   // Wrapped in a real `useEffect` keyed on the callback's identity, not
   // called inline on every render: `(cb) => cb()` fires on every render,
-  // which the real hook never does, and would refire `useUnreadCounts`'s
-  // fetch (now pulled in by TabBar) on every state update it causes.
+  // which the real hook never does.
   useFocusEffect: (cb: () => void | (() => void)) => {
     useEffect(cb, [cb]);
   },
@@ -70,26 +66,6 @@ vi.mock('../../lib/profile', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../lib/profile')>();
   return { ...actual, fetchProfile: (...args: unknown[]) => fetchProfile(...args) };
 });
-
-// TabBar (carried by this screen) now calls `useUnreadCounts`, which reaches
-// `fetchUnreadCounts`.
-// Spread `actual` rather than replacing the module outright: TabBar (carried
-// by this screen) now also calls `unreadSuffix`, a pure helper covered by
-// lib/messages.test.ts -- only `fetchUnreadCounts` needs to be a
-// controllable double here.
-vi.mock('../../lib/messages', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../lib/messages')>();
-  return {
-    ...actual,
-    fetchUnreadCounts: vi.fn(async () => []),
-  };
-});
-
-// TabBar also now calls useNotificationsUnread for its Alerts badge --
-// without this it falls through to a real, unmocked RPC call.
-vi.mock('../../lib/use-notifications-unread', () => ({
-  useNotificationsUnread: () => 0,
-}));
 
 import VenuesScreen from '../clubs/[id]/venues';
 
@@ -353,30 +329,14 @@ describe('retiring a venue', () => {
 });
 
 describe('screen chrome', () => {
-  it('carries the tab bar', async () => {
-    render(<VenuesScreen />);
-    expect(await screen.findByRole('button', { name: 'Club' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Alerts' })).toBeTruthy();
-  });
-
-  it('carries the tab bar when the club cannot be loaded', async () => {
-    fetchClub.mockResolvedValueOnce(null);
-    render(<VenuesScreen />);
-    expect(await screen.findByText(/Could not reach MahjHero/)).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
-  });
-
   it('heads the screen with the club as kicker and Venues as the name', async () => {
     render(<VenuesScreen />);
     expect(await screen.findByText('Venues')).toBeTruthy();
-    // The bottom tab bar's own Profile tab is the way to profile now —
-    // this header no longer draws its own avatar/profile control.
+    // Home's own Profile button is the way to profile now -- this header
+    // no longer draws its own avatar/profile control.
     expect(screen.queryByRole('button', { name: 'Your profile' })).toBeNull();
   });
 
-  // Kept, unlike the club screen's: no tab reaches a specific club, so the
-  // Club tab would strand a member at the dashboard rather than returning
-  // them to the club they came from.
   it('keeps its back link to the club', async () => {
     render(<VenuesScreen />);
     fireEvent.click(await screen.findByRole('button', { name: 'Back to the club' }));

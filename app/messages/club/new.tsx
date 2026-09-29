@@ -7,7 +7,6 @@ import Card from '../../../components/Card';
 import CompactHeader from '../../../components/CompactHeader';
 import ErrorBanner from '../../../components/ErrorBanner';
 import Screen from '../../../components/Screen';
-import TabBar from '../../../components/TabBar';
 import TextField from '../../../components/TextField';
 import Toggle from '../../../components/Toggle';
 import AttachmentPicker from '../../../components/messages/AttachmentPicker';
@@ -273,7 +272,7 @@ export default function NewPostScreen() {
 
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="messages" />}>
+      <Screen center contentStyle={styles.centered}>
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
     );
@@ -306,7 +305,7 @@ export default function NewPostScreen() {
       : '');
 
   return (
-    <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="messages" />}>
+    <Screen scroll contentStyle={styles.container}>
       {/*
         The compact one-row header the board and post screens use
         (components/CompactHeader.tsx): chevron and the club's tile and

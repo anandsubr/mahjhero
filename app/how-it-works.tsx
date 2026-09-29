@@ -6,7 +6,6 @@ import Button from '../components/Button';
 import Card from '../components/Card';
 import ErrorBanner from '../components/ErrorBanner';
 import Screen from '../components/Screen';
-import TabBar from '../components/TabBar';
 import { ChevronLeftIcon } from '../components/icons';
 import { GENERIC_ERROR } from '../lib/constants';
 import { useSession } from '../lib/session';
@@ -37,7 +36,7 @@ export default function HowItWorks() {
   }
 
   return (
-    <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="profile" />}>
+    <Screen scroll contentStyle={styles.container}>
       <Button
         variant="ghost"
         big={false}

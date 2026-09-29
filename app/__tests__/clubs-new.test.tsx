@@ -14,18 +14,12 @@ vi.mock('expo-router', () => ({
   usePathname: () => '/clubs/new',
   // Wrapped in a real `useEffect` keyed on the callback's identity, not
   // called inline on every render: `(cb) => cb()` fires on every render,
-  // which the real hook never does, and would refire `useUnreadCounts`'s
-  // fetch (now pulled in by TabBar) on every state update it causes.
+  // which the real hook never does.
   useFocusEffect: (cb: () => void | (() => void)) => {
     useEffect(cb, [cb]);
   },
 }));
 
-// `vi.fn` returning a fixed object by default, not a fresh literal per call:
-// TabBar's badge reads `useSession` too (via `useUnreadCounts`), and a fresh
-// object there would break the referential stability its
-// `useCallback([session])` depends on. `mockReturnValueOnce` below still
-// lets a single test model signed-out/loading.
 const SESSION: { session: { user: { id: string } } | null; loading: boolean } = {
   session: { user: { id: 'me' } },
   loading: false,
@@ -38,23 +32,6 @@ vi.mock('../../lib/session', () => ({
 const createClub = vi.fn();
 vi.mock('../../lib/clubs', () => ({
   createClub: (...a: unknown[]) => createClub(...a),
-}));
-
-// TabBar (now carried by this screen) calls `useUnreadCounts`, which reaches
-// `fetchUnreadCounts`. Spread `actual` rather than replacing the module
-// outright, the same pattern app/__tests__/friends.test.tsx uses.
-vi.mock('../../lib/messages', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../lib/messages')>();
-  return {
-    ...actual,
-    fetchUnreadCounts: vi.fn(async () => []),
-  };
-});
-
-// TabBar also now calls useNotificationsUnread for its Alerts badge --
-// without this it falls through to a real, unmocked RPC call.
-vi.mock('../../lib/use-notifications-unread', () => ({
-  useNotificationsUnread: () => 0,
 }));
 
 beforeEach(() => {
@@ -122,27 +99,10 @@ describe('new club screen', () => {
     expect(replace).not.toHaveBeenCalled();
   });
 
-  // A flow screen: the pinned Create button takes the tab bar's place once
-  // the screen has loaded.
-  it('hides the tab bar once loaded', async () => {
-    render(<NewClubScreen />);
-    expect(await screen.findByText('Start a club')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Club' })).toBeNull();
-  });
-
-  it('carries the tab bar while the session is still loading', () => {
-    useSessionMock.mockReturnValueOnce({ session: null, loading: true });
-    render(<NewClubScreen />);
-    expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
-  });
-
-  // TabBar navigates with router.replace off an entry route that is itself
-  // a Redirect, so the history stack is typically one deep: the ✕ goes to
-  // the dashboard rather than back().
-  it('closes to the dashboard', async () => {
+  it('closes to Home', async () => {
     render(<NewClubScreen />);
     await screen.findByText('Start a club');
     fireEvent.click(screen.getByRole('button', { name: 'Back to your clubs' }));
-    expect(push).toHaveBeenCalledWith('/clubs');
+    expect(push).toHaveBeenCalledWith('/home');
   });
 });

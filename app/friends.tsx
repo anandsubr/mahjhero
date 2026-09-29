@@ -6,7 +6,6 @@ import BackRow from '../components/BackRow';
 import ErrorBanner from '../components/ErrorBanner';
 import { FormCard, FormTitle, formStyles } from '../components/GameForm';
 import Screen from '../components/Screen';
-import TabBar from '../components/TabBar';
 import { PeopleIcon, PlusIcon, SearchIcon, UserMinusIcon } from '../components/icons';
 import { GENERIC_ERROR } from '../lib/constants';
 import { initialsFrom } from '../lib/dashboard';
@@ -113,7 +112,7 @@ export default function FriendsScreen() {
 
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="profile" />}>
+      <Screen center contentStyle={styles.centered}>
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
     );
@@ -134,7 +133,7 @@ export default function FriendsScreen() {
     <Screen
       scroll
       contentStyle={[formStyles.body, styles.body]}
-      tabBar={<TabBar active="profile" />}
+     
     >
       <View style={styles.top}>
         <BackRow

@@ -62,10 +62,6 @@ const markPostRead = vi.fn();
 // `fetch_club_posts`' own rows (ClubPost carries no club_id -- every row it
 // returns already belongs to this one thread).
 const fetchThread = vi.fn();
-// TabBar (carried by this screen via Screen's `tabBar` prop) calls
-// useUnreadCounts, which reaches this -- the same reason every other screen
-// test that renders TabBar mocks it (see app/__tests__/messages.test.tsx).
-const fetchUnreadCounts = vi.fn(async () => []);
 
 vi.mock('../../lib/messages', async () => {
   const actual =
@@ -75,20 +71,12 @@ vi.mock('../../lib/messages', async () => {
     fetchClubPosts: (...a: unknown[]) => fetchClubPosts(...a),
     markPostRead: (...a: unknown[]) => markPostRead(...a),
     fetchThread: (...a: unknown[]) => fetchThread(...a),
-    fetchUnreadCounts: () => fetchUnreadCounts(),
   };
 });
-
-// TabBar also now calls useNotificationsUnread for its Alerts badge --
-// without this it falls through to a real, unmocked RPC call.
-vi.mock('../../lib/use-notifications-unread', () => ({
-  useNotificationsUnread: () => 0,
-}));
 
 describe('the club board', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    fetchUnreadCounts.mockResolvedValue([]);
     fetchThread.mockResolvedValue({ id: 't1', club_id: 'c1' });
   });
 
@@ -262,12 +250,9 @@ describe('the club board', () => {
     // `threadId`), so nothing about a render triggers this on its own --
     // only calling it, the way expo-router's subscription would, does.
     //
-    // TabBar's own `useUnreadCounts` also calls `useFocusEffect` (Screen
-    // renders TabBar), so the spy sees more than one registrant. A real
-    // refocus reaches every one of them, not just the board's -- de-duped
-    // by identity (each is a stable `useCallback`) and invoked all
-    // together is the faithful replay, not a guess at which index is
-    // "the board's".
+    // De-duped by identity (each is a stable `useCallback`) and invoked all
+    // together, in case more than one registrant is ever on screen at once
+    // -- a real refocus reaches every one of them, not just the board's.
     expect(useFocusEffectSpy).toHaveBeenCalled();
     const callbacks = Array.from(
       new Set(useFocusEffectSpy.mock.calls.map((c) => c[0] as () => void)),
@@ -349,13 +334,9 @@ describe('the club board', () => {
       expect(within(tile).getByTestId(`glyph-${glyphForClub('c1')}`)).toBeTruthy();
     });
 
-    it('shows a back chevron, distinctly named from the Messages tab, that returns to /messages', async () => {
+    it('shows a back chevron that returns to /messages', async () => {
       render(<ClubBoardScreen />);
       await screen.findByText('Cedar Falls Mah Jongg');
-      // Still exactly one control literally named "Messages" -- the tab
-      // bar's own tab -- so the two can never collapse into the same
-      // control.
-      expect(screen.getAllByRole('button', { name: 'Messages' })).toHaveLength(1);
       fireEvent.click(screen.getByLabelText('Back to Messages'));
       expect(push).toHaveBeenCalledWith('/messages');
     });

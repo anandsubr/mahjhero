@@ -12,7 +12,6 @@ import {
   formStyles,
 } from '../../components/GameForm';
 import Screen from '../../components/Screen';
-import TabBar from '../../components/TabBar';
 import { createClub } from '../../lib/clubs';
 import { useSession } from '../../lib/session';
 import { colors, type } from '../../lib/theme';
@@ -20,16 +19,14 @@ import { colors, type } from '../../lib/theme';
 /**
  * Start a club (profile & club handoff, 1b): a flow screen in the game
  * form's shape — ✕ + "Clubs" header, a live preview of the club's tile and
- * name, one card of fields, and "Create the club" pinned where the tab bar
- * would be.
+ * name, one card of fields, and "Create the club" pinned at the bottom.
  *
  * "Description (optional)" is the club's `rhythm` column under a new label —
  * the design binds it to the same state — so it keeps showing as the line
  * under the club's name in its header, one line with an ellipsis.
  *
- * The ✕ goes to `/clubs` rather than `back()`: TabBar navigates with
- * `replace` off an entry route that is itself a Redirect, so the history
- * stack here is typically one deep (2026-09-01-back-links-design.md).
+ * The ✕ goes to `/home` rather than `back()`, since the history stack here
+ * is typically one deep (2026-09-01-back-links-design.md).
  */
 export default function NewClubScreen() {
   const { session, loading } = useSession();
@@ -41,7 +38,7 @@ export default function NewClubScreen() {
 
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="club" />}>
+      <Screen center contentStyle={styles.centered}>
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
     );
@@ -70,20 +67,11 @@ export default function NewClubScreen() {
     <Screen
       scroll
       contentStyle={formStyles.body}
-      tabBar={
-        <ActionBar
-          primaryLabel="Create the club"
-          primaryAccessibilityLabel="Create the club"
-          onPrimary={onCreate}
-          busy={saving}
-          disabled={!canCreate}
-        />
-      }
     >
       <FormHeader
         clubName="Clubs"
         closeLabel="Back to your clubs"
-        onClose={() => router.push('/clubs')}
+        onClose={() => router.push('/home')}
       />
 
       <View style={styles.intro}>
@@ -136,6 +124,14 @@ export default function NewClubScreen() {
           inputStyle={styles.description}
         />
       </FormCard>
+
+      <ActionBar
+        primaryLabel="Create the club"
+        primaryAccessibilityLabel="Create the club"
+        onPrimary={onCreate}
+        busy={saving}
+        disabled={!canCreate}
+      />
     </Screen>
   );
 }

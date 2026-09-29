@@ -14,7 +14,6 @@ import ErrorBanner from '../../../components/ErrorBanner';
 import Screen from '../../../components/Screen';
 import SkillLevelPips from '../../../components/SkillLevelPips';
 import Tag from '../../../components/Tag';
-import TabBar from '../../../components/TabBar';
 import TextField from '../../../components/TextField';
 import TipCard, { TipText } from '../../../components/TipCard';
 import Toggle from '../../../components/Toggle';
@@ -101,7 +100,7 @@ export default function ClubDetailScreen() {
       <Screen
         center
         contentStyle={styles.centered}
-        tabBar={<TabBar active="club" />}
+       
       >
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
@@ -115,7 +114,7 @@ export default function ClubDetailScreen() {
       <Screen
         center
         contentStyle={styles.centered}
-        tabBar={<TabBar active="club" />}
+       
       >
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
@@ -124,7 +123,7 @@ export default function ClubDetailScreen() {
 
   if (loadFailed || !club) {
     return (
-      <Screen contentStyle={styles.container} tabBar={<TabBar active="club" />}>
+      <Screen contentStyle={styles.container}>
         <ErrorBanner message={GENERIC_ERROR} />
       </Screen>
     );
@@ -265,13 +264,13 @@ export default function ClubDetailScreen() {
         );
 
   return (
-    <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="club" />}>
+    <Screen scroll contentStyle={styles.container}>
       <DashboardHeader
         kicker="Your club"
         name={club.name}
         meta={club.rhythm}
         clubId={club.id}
-        onPressBack={() => router.push('/clubs')}
+        onPressBack={() => router.push('/home')}
         backLabel="Back to your clubs"
       />
 

@@ -14,7 +14,6 @@ import {
   formStyles,
 } from '../components/GameForm';
 import Screen from '../components/Screen';
-import TabBar from '../components/TabBar';
 import TimeField from '../components/TimeField';
 import {
   BellIcon,
@@ -106,21 +105,11 @@ export default function NotificationSettings() {
     };
   }, [userId]);
 
-  // Every early return below carries the tab bar, exactly as
-  // app/clubs/index.tsx does in all of its states. The back chevron that
-  // rescues this screen lives in the main render, far below these guards, and
-  // TabBar navigates with `router.replace` off an entry route that is itself
-  // a `<Redirect>` — so the history stack is typically one deep. A member
-  // whose `fetchPreferences` failed would otherwise be left staring at
-  // "Something went wrong" with no bar, no back link, and on native no way
-  // out short of relaunching the app — the same dead end this screen's back
-  // chevron was added to close in the first place.
-  //
-  // The `<Redirect>` below is the deliberate exception: it renders nothing
-  // and a signed-out member belongs at sign-in, not in a tab bar.
+  // The `<Redirect>` below is the deliberate exception among these early
+  // returns: it renders nothing, and a signed-out member belongs at sign-in.
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="profile" />}>
+      <Screen center contentStyle={styles.centered}>
         <ActivityIndicator />
       </Screen>
     );
@@ -130,7 +119,7 @@ export default function NotificationSettings() {
 
   if (!ready) {
     return (
-      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="profile" />}>
+      <Screen center contentStyle={styles.centered}>
         <ActivityIndicator />
       </Screen>
     );
@@ -138,7 +127,7 @@ export default function NotificationSettings() {
 
   if (!prefs || !savedPrefs) {
     return (
-      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="profile" />}>
+      <Screen center contentStyle={styles.centered}>
         <Text style={styles.error}>{GENERIC_ERROR}</Text>
       </Screen>
     );
@@ -216,24 +205,6 @@ export default function NotificationSettings() {
     <Screen
       scroll
       contentStyle={[formStyles.body, styles.body]}
-      tabBar={
-        <>
-          {dirty ? (
-            <ActionBar
-              aboveTabBar
-              onCancel={onDiscard}
-              cancelLabel="Discard"
-              primaryLabel="Save changes"
-              primaryAccessibilityLabel="Save changes"
-              onPrimary={onSave}
-              // Busy while the write is in flight: a second tap would start
-              // a second overlapping update whose result races the first.
-              busy={saving}
-            />
-          ) : null}
-          <TabBar active="profile" />
-        </>
-      }
     >
       {/* Without this the screen was a dead end on native: nothing else on
           it navigates away, so a member who opened it had no way off short
@@ -344,6 +315,18 @@ export default function NotificationSettings() {
           <CheckIcon size={14} color={colors.accent2[700]} />
           <Text style={styles.savedText}>Saved</Text>
         </View>
+      ) : null}
+      {dirty ? (
+        <ActionBar
+          onCancel={onDiscard}
+          cancelLabel="Discard"
+          primaryLabel="Save changes"
+          primaryAccessibilityLabel="Save changes"
+          onPrimary={onSave}
+          // Busy while the write is in flight: a second tap would start
+          // a second overlapping update whose result races the first.
+          busy={saving}
+        />
       ) : null}
     </Screen>
   );

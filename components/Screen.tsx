@@ -27,12 +27,6 @@ type ScreenProps = {
    */
   contentStyle?: StyleProp<ViewStyle>;
   /**
-   * The app's bottom tab bar, for the four screens that are tabs. Rendered
-   * outside the scroller: inside, it would scroll off the bottom of a long
-   * dashboard, which is exactly where it is most needed.
-   */
-  tabBar?: ReactNode;
-  /**
    * Forwarded verbatim to the underlying `ScrollView`'s own
    * `stickyHeaderIndices` (only meaningful together with `scroll`). Optional
    * and `undefined` by default, so every existing caller keeps rendering
@@ -81,7 +75,6 @@ export default function Screen({
   center = false,
   background = colors.bg,
   contentStyle,
-  tabBar,
   stickyHeaderIndices,
   avoidKeyboard = false,
 }: ScreenProps) {
@@ -130,22 +123,7 @@ export default function Screen({
     </View>
   );
 
-  const shell = !tabBar ? (
-    body
-  ) : (
-    <View style={[styles.fill, { backgroundColor: background }]}>
-      <View style={styles.tabShellBody}>{body}</View>
-      {/*
-        The bar is capped and centred like the content column rather than
-        running full-bleed. On a desktop browser — a first-class case here,
-        since club invite links open the web build — a 1400px-wide tab bar
-        under a 440px column reads as a different app's chrome.
-      */}
-      <View style={styles.tabBarColumn}>{tabBar}</View>
-    </View>
-  );
-
-  if (!avoidKeyboard || Platform.OS !== 'ios') return shell;
+  if (!avoidKeyboard || Platform.OS !== 'ios') return body;
 
   // No offset: every screen fills the window from the very top (there is no
   // navigator header above it), so the keyboard's full height is the lift.
@@ -154,7 +132,7 @@ export default function Screen({
       behavior="padding"
       style={[styles.fill, { backgroundColor: background }]}
     >
-      {shell}
+      {body}
     </KeyboardAvoidingView>
   );
 }
@@ -172,15 +150,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   content: {
-    width: '100%',
-    maxWidth: layout.contentMaxWidth,
-    alignSelf: 'center',
-  },
-  tabShellBody: {
-    flex: 1,
-    minHeight: 0,
-  },
-  tabBarColumn: {
     width: '100%',
     maxWidth: layout.contentMaxWidth,
     alignSelf: 'center',

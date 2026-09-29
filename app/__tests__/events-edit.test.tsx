@@ -9,9 +9,6 @@ const canGoBack = vi.fn();
 
 const searchParams: Record<string, string> = { id: 'club-1', eventId: 'event-1' };
 
-// This screen's own route, never TabBar's own /clubs -- the Club tab stays
-// live here the same way it does on the club detail and venues screens (see
-// clubs.test.tsx's and venues.test.tsx's identical comment).
 const pathname = '/clubs/club-1/events/event-1/edit';
 
 vi.mock('expo-router', () => ({
@@ -22,9 +19,8 @@ vi.mock('expo-router', () => ({
   usePathname: () => pathname,
   useLocalSearchParams: () => searchParams,
   // Wrapped in a real `useEffect` keyed on the callback's identity, not
-  // called inline on every render -- see venues.test.tsx's identical
-  // comment: `(cb) => cb()` would refire `useUnreadCounts`'s fetch (now
-  // pulled in by TabBar) on every state update it causes.
+  // called inline on every render: `(cb) => cb()` fires on every render,
+  // which the real hook never does.
   useFocusEffect: (cb: () => void | (() => void)) => {
     useEffect(cb, [cb]);
   },
@@ -121,23 +117,6 @@ vi.mock('../../components/VenuePicker', () => ({
       </div>
     );
   },
-}));
-
-// TabBar (now carried by this screen) calls `useUnreadCounts`, which reaches
-// `fetchUnreadCounts`.
-const fetchUnreadCounts = vi.fn(async () => []);
-vi.mock('../../lib/messages', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../lib/messages')>();
-  return {
-    ...actual,
-    fetchUnreadCounts: () => fetchUnreadCounts(),
-  };
-});
-
-// TabBar also now calls useNotificationsUnread for its Alerts badge --
-// without this it falls through to a real, unmocked RPC call.
-vi.mock('../../lib/use-notifications-unread', () => ({
-  useNotificationsUnread: () => 0,
 }));
 
 import EditEventScreen from '../clubs/[id]/events/[eventId]/edit';
@@ -268,17 +247,10 @@ describe('guard ordering', () => {
   });
 });
 
-// TabBar navigates with router.replace off an entry route that is itself a
-// Redirect, so the history stack is typically one deep -- a state without
-// the bar strands a host with no way out but relaunching the app. See
-// clubs.test.tsx's and venues.test.tsx's identical rationale.
 describe('screen chrome', () => {
-  // Game form handoff: the loaded form hides the tab bar -- the header's ✕
-  // and the pinned Cancel/Save bar take its place.
-  it('hides the tab bar once ready, pinning Cancel and Save instead', async () => {
+  it('pins Cancel and Save at the bottom once ready', async () => {
     render(<EditEventScreen />);
     await screen.findByDisplayValue('Thursday Mahjong');
-    expect(screen.queryByRole('button', { name: 'Club' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Save changes' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Close' })).toBeTruthy();
   });
@@ -295,36 +267,7 @@ describe('screen chrome', () => {
     expect(back).toHaveBeenCalledTimes(1);
   });
 
-  it('carries the tab bar while the event is still loading', () => {
-    fetchClub.mockReturnValueOnce(new Promise(() => {}));
-    fetchEvent.mockReturnValueOnce(new Promise(() => {}));
-    render(<EditEventScreen />);
-    expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
-  });
-
-  it('carries the tab bar when the event cannot be loaded', async () => {
-    fetchEvent.mockResolvedValue(null);
-    render(<EditEventScreen />);
-    expect(
-      await screen.findByText('That game could not be loaded.'),
-    ).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
-  });
-
-  it('carries the tab bar when the start time cannot be read', async () => {
-    fetchEvent.mockResolvedValue({ ...ONE_OFF_EVENT, starts_at: 'not-a-date' });
-    render(<EditEventScreen />);
-    await screen.findByText(
-      "This game's start time could not be read, so it cannot be edited.",
-    );
-    expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
-  });
-
-  // Cancel goes to /clubs/club-1/events/event-1, a specific game -- a
-  // different destination from the Club tab's own /clubs -- so it stays,
-  // the same reasoning events-new.test.tsx's Cancel and venues.test.tsx's
-  // "Back to the club" document for themselves.
-  it('keeps Cancel, a different destination from the Club tab', async () => {
+  it('keeps Cancel going to the specific game being edited', async () => {
     canGoBack.mockReturnValue(false);
     render(<EditEventScreen />);
     await screen.findByDisplayValue('Thursday Mahjong');

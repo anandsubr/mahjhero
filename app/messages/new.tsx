@@ -10,7 +10,6 @@ import { Text } from '../../components/Text';
 import Button from '../../components/Button';
 import ErrorBanner from '../../components/ErrorBanner';
 import Screen from '../../components/Screen';
-import TabBar from '../../components/TabBar';
 import { ChevronLeftIcon } from '../../components/icons';
 import { GENERIC_ERROR } from '../../lib/constants';
 import { initialsFrom } from '../../lib/dashboard';
@@ -181,7 +180,7 @@ export default function NewMessageScreen() {
 
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="messages" />}>
+      <Screen center contentStyle={styles.centered}>
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
     );
@@ -217,7 +216,7 @@ export default function NewMessageScreen() {
   const genuinelyEmpty = friends !== null && people !== null && candidates.length === 0;
 
   return (
-    <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="messages" />}>
+    <Screen scroll contentStyle={styles.container}>
       <Button
         variant="ghost"
         big={false}

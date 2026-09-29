@@ -14,7 +14,6 @@ import DoorStatusControl from '../../../../../components/DoorStatusControl';
 import ErrorBanner from '../../../../../components/ErrorBanner';
 import PaidControl from '../../../../../components/PaidControl';
 import Screen from '../../../../../components/Screen';
-import TabBar from '../../../../../components/TabBar';
 import TipCard, { TipText } from '../../../../../components/TipCard';
 import {
   CheckIcon,
@@ -689,17 +688,12 @@ export default function CheckInScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clubId, eventId, session]);
 
-  // Every state below carries the tab bar, the same rule
-  // app/clubs/[id]/index.tsx and app/clubs/[id]/venues.tsx already follow:
-  // TabBar navigates with router.replace off an entry route that is itself
-  // a <Redirect>, so the history stack is typically one deep, and a state
-  // with no bar strands an organizer with no way out but relaunching the
-  // app. The <Redirect> branch below is the deliberate exception -- it
-  // renders nothing, and a signed-out visitor belongs at sign-in, not in a
-  // tab bar.
+  // The <Redirect> branch below is the deliberate exception among these
+  // early returns -- it renders nothing, and a signed-out visitor belongs at
+  // sign-in.
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="club" />}>
+      <Screen center contentStyle={styles.centered}>
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
     );
@@ -713,7 +707,7 @@ export default function CheckInScreen() {
 
   if (!ready) {
     return (
-      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="club" />}>
+      <Screen center contentStyle={styles.centered}>
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
     );
@@ -721,7 +715,7 @@ export default function CheckInScreen() {
 
   if (!isOrganizer) {
     return (
-      <Screen contentStyle={styles.container} tabBar={<TabBar active="club" />}>
+      <Screen contentStyle={styles.container}>
         <ErrorBanner message="You are not an organizer of this club." />
       </Screen>
     );
@@ -1377,14 +1371,11 @@ export default function CheckInScreen() {
 
   return (
     <>
-      {/* The bottom tab bar is hidden here, per the design: the header's
-          back arrow is always on screen, so a host is never stranded, and
-          the pinned "Add a walk-in" takes the bar's place. `tabBar` is just
-          Screen's slot for a fixed bottom strip. */}
-      <Screen scroll stickyHeaderIndices={[1]} tabBar={footer}>
+      <Screen scroll stickyHeaderIndices={[1]}>
         {top}
         {pinned}
         {list}
+        {footer}
       </Screen>
 
       {pickerOpen ? (

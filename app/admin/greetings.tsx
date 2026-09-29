@@ -6,7 +6,6 @@ import Button from '../../components/Button';
 import Card from '../../components/Card';
 import ErrorBanner from '../../components/ErrorBanner';
 import Screen from '../../components/Screen';
-import TabBar from '../../components/TabBar';
 import TextField from '../../components/TextField';
 import { ChevronLeftIcon } from '../../components/icons';
 import { GENERIC_ERROR } from '../../lib/constants';
@@ -114,7 +113,7 @@ export default function AdminGreetingsScreen() {
 
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="profile" />}>
+      <Screen center contentStyle={styles.centered}>
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
     );
@@ -122,7 +121,7 @@ export default function AdminGreetingsScreen() {
   if (!session) return <Redirect href="/sign-in" />;
 
   return (
-    <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="profile" />}>
+    <Screen scroll contentStyle={styles.container}>
       <Button
         variant="ghost"
         big={false}

@@ -7,9 +7,6 @@ const replace = vi.fn();
 
 const searchParams: Record<string, string> = { id: 'club-1', eventId: 'event-1' };
 
-// This screen's own route, never TabBar's own /clubs -- the Club tab stays
-// live here the same way it does on the club detail and venues screens (see
-// clubs.test.tsx's and venues.test.tsx's identical comment).
 const pathname = '/clubs/club-1/events/event-1';
 
 vi.mock('expo-router', () => ({
@@ -21,9 +18,8 @@ vi.mock('expo-router', () => ({
   usePathname: () => pathname,
   useLocalSearchParams: () => searchParams,
   // Wrapped in a real `useEffect` keyed on the callback's identity, not
-  // called inline on every render -- see venues.test.tsx's identical
-  // comment: `(cb) => cb()` would refire `useUnreadCounts`'s fetch (now
-  // pulled in by TabBar) on every state update it causes.
+  // called inline on every render: `(cb) => cb()` fires on every render,
+  // which the real hook never does.
   useFocusEffect: (cb: () => void | (() => void)) => {
     useEffect(cb, [cb]);
   },
@@ -173,24 +169,6 @@ vi.mock('../../lib/rounds', async (importOriginal) => {
     deleteRound: (...args: unknown[]) => deleteRound(...args),
   };
 });
-
-// TabBar (now carried by this screen) calls `useUnreadCounts`, which reaches
-// `fetchUnreadCounts` -- `openThreadForEvent` (used by the "Open the game
-// thread" button, never clicked in this file) stays real via the spread.
-const fetchUnreadCounts = vi.fn(async () => []);
-vi.mock('../../lib/messages', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../lib/messages')>();
-  return {
-    ...actual,
-    fetchUnreadCounts: () => fetchUnreadCounts(),
-  };
-});
-
-// TabBar also now calls useNotificationsUnread for its Alerts badge --
-// without this it falls through to a real, unmocked RPC call.
-vi.mock('../../lib/use-notifications-unread', () => ({
-  useNotificationsUnread: () => 0,
-}));
 
 import EventScreen from '../clubs/[id]/events/[eventId]/index';
 
@@ -412,45 +390,15 @@ describe('essential data missing', () => {
   });
 });
 
-// TabBar navigates with router.replace off an entry route that is itself a
-// Redirect, so the history stack is typically one deep -- a state without
-// the bar strands a member with no way out but relaunching the app. See
-// clubs.test.tsx's and venues.test.tsx's identical rationale.
 describe('screen chrome', () => {
-  it('carries the tab bar once ready', async () => {
-    render(<EventScreen />);
-    expect(await screen.findByRole('button', { name: 'Club' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Messages' })).toBeTruthy();
-  });
-
-  it('carries the tab bar while the event is still loading', () => {
-    fetchClub.mockReturnValueOnce(new Promise(() => {}));
-    fetchEvent.mockReturnValueOnce(new Promise(() => {}));
-    render(<EventScreen />);
-    expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
-  });
-
-  it('carries the tab bar when the event cannot be loaded', async () => {
-    fetchEvent.mockResolvedValue(null);
-    render(<EventScreen />);
-    expect(
-      await screen.findByText('That game could not be loaded.'),
-    ).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
-  });
-
-  // This screen's back link now goes to /clubs -- the dashboard, not the
-  // specific club -- because the club management page no longer lists
-  // games (2026-09-02-club-page-games-and-back-links-design.md): the
-  // dashboard is the only real way into this screen left, so that is where
-  // back goes. The Club tab reaches the same /clubs route but renders as
-  // already-active here, which reads as "you are here" rather than "go
-  // back" -- the same reasoning every other back link on this branch
-  // documents -- so the explicit link still earns its place.
-  it('draws a back link to the dashboard', async () => {
+  // This screen's back link goes to /home -- not the specific club --
+  // because the club management page no longer lists games
+  // (2026-09-02-club-page-games-and-back-links-design.md): Home is the only
+  // real way into this screen left, so that is where back goes.
+  it('draws a back link to Home', async () => {
     render(<EventScreen />);
     fireEvent.click(await screen.findByRole('button', { name: 'Back to your clubs' }));
-    expect(push).toHaveBeenCalledWith('/clubs');
+    expect(push).toHaveBeenCalledWith('/home');
   });
 
   it("shows the club as a tile with its name in a pill below, matching the Club Dashboard header exactly", async () => {
@@ -2251,16 +2199,16 @@ describe('game invites', () => {
     render(<EventScreen />);
     fireEvent.click(await screen.findByLabelText('Decline the invite'));
     await waitFor(() => expect(declineBooking).toHaveBeenCalledWith('b-inv'));
-    expect(push).not.toHaveBeenCalledWith('/clubs');
+    expect(push).not.toHaveBeenCalledWith('/home');
   });
 
-  it('declines an invite-only invite and goes back to the dashboard', async () => {
+  it('declines an invite-only invite and goes back to Home', async () => {
     fetchEvent.mockResolvedValue({ ...EVENT, game_mode: 'invite_only' as const });
     fetchEventSeating.mockResolvedValue([INVITED_ADA]);
     render(<EventScreen />);
     fireEvent.click(await screen.findByLabelText('Decline the invite'));
     await waitFor(() => expect(declineBooking).toHaveBeenCalledWith('b-inv'));
-    await waitFor(() => expect(push).toHaveBeenCalledWith('/clubs'));
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/home'));
   });
 
   it('offers an invitee no seat tap and no waitlist -- the invite is their way in', async () => {
