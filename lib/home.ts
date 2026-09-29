@@ -125,6 +125,10 @@ const ROLE_LABEL: Record<ClubRole, string> = {
   member: 'Member',
 };
 
+export function normalizeTimeSpaces(s: string): string {
+  return s.replace(/\u202f/g, ' ');
+}
+
 export function dateColumn(
   startsAt: string,
   timezone: string,
@@ -142,10 +146,9 @@ export function dateColumn(
 export function clubSubline(role: ClubRole, nextStartsAt: string | null, timezone: string): string {
   if (!nextStartsAt) return `${ROLE_LABEL[role]} · No games scheduled`;
   const key = gameDateKey(nextStartsAt, timezone);
+  if (!key) return `${ROLE_LABEL[role]} · No games scheduled`;
   const d = keyToUtc(key);
   const when = `${WEEKDAYS_SHORT[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
-  let time = formatEventTime(nextStartsAt, timezone, 'en-US');
-  // Handle narrow no-break space that might appear before AM/PM in some locales
-  time = time.replace(/ /g, ' ');
+  const time = normalizeTimeSpaces(formatEventTime(nextStartsAt, timezone, 'en-US'));
   return `${ROLE_LABEL[role]} · Next game ${when}, ${time}`;
 }

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   addDays, buildMonthGrid, clubColor, clubSubline, dateColumn, dayHeading,
   gameCountLabel, gameDateKey, gameHeadline, homeDefault, monthLabel,
-  upcomingSummary, weekBucket,
+  normalizeTimeSpaces, upcomingSummary, weekBucket,
 } from './home';
 
 describe('gameHeadline', () => {
@@ -108,5 +108,17 @@ describe('labels', () => {
   it('clubColor is stable per club and from the palette', () => {
     expect(clubColor('abc')).toBe(clubColor('abc'));
     expect(typeof clubColor('xyz')).toBe('string');
+  });
+});
+
+describe('normalizeTimeSpaces', () => {
+  it('leaves regular spaces unchanged', () => {
+    expect(normalizeTimeSpaces('11:30 AM')).toBe('11:30 AM');
+  });
+});
+
+describe('clubSubline guards', () => {
+  it('returns no games scheduled for invalid nextStartsAt', () => {
+    expect(clubSubline('host', 'not-a-date', 'UTC')).toBe('Host · No games scheduled');
   });
 });
