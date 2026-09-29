@@ -100,6 +100,8 @@ describe('NeedsYouStack', () => {
     render(<NeedsYouStack needs={n} />);
     expect(screen.getByText("You're in — Thursday.")).toBeTruthy();
     expect(screen.getByText('That game is full.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    expect(n.dismissNotice).toHaveBeenCalled();
   });
 });
 
@@ -150,6 +152,21 @@ describe('useNeedsYou', () => {
     const { result } = renderHook(() => useNeedsYou('u1', CLUBS, vi.fn()));
     await waitFor(() => expect(result.current.offers).toEqual([live]));
     expect(result.current.gameInvites).toEqual([invited]);
+  });
+
+  it('keeps showing an offer when a later reload of my bookings fails', async () => {
+    const live = {
+      booking_id: 'b1', status: 'waitlisted', offer_id: 'o1', offer_seats: 1,
+      offer_expires_at: new Date(Date.now() + 3600_000).toISOString(),
+    } as unknown as MyBooking;
+    fetchMyUpcomingBookings.mockResolvedValueOnce([live]).mockResolvedValue(null);
+    const { result } = renderHook(() => useNeedsYou('u1', CLUBS, vi.fn()));
+    await waitFor(() => expect(result.current.offers).toEqual([live]));
+    await act(async () => {
+      await result.current.reload();
+    });
+    expect(fetchMyUpcomingBookings).toHaveBeenCalledTimes(2);
+    expect(result.current.offers).toEqual([live]);
   });
 
   it('takeSeat: a waitlisted outcome says so, naming the game, and survives the clear', async () => {

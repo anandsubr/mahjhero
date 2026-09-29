@@ -140,9 +140,14 @@ export function useNeedsYou(
       Promise.all(clubList.map((c) => fetchUpcomingEvents(c.id))),
     ]);
     if (!mounted.current || seq !== reloadSeq.current) return;
-    setClubInvites(invites ?? []);
-    setBookings(mine ?? []);
-    setEvents(perClub.filter((e): e is ClubEvent[] => e !== null).flat());
+    // A null read is a failed fetch, not "nothing to do": keep what is on
+    // screen rather than hiding every other invite or offer over a blip.
+    if (invites !== null) setClubInvites(invites);
+    if (mine !== null) setBookings(mine);
+    const loaded = perClub.filter((e): e is ClubEvent[] => e !== null);
+    // Keep the previous events only when every per-club read failed; a club
+    // set that is now empty legitimately clears them.
+    if (perClub.length === 0 || loaded.length > 0) setEvents(loaded.flat());
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `clubKey` is `clubs`'s stable summary; a new array with the same ids reads the same clubs.
   }, [userId, clubKey]);
 

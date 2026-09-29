@@ -118,7 +118,6 @@ function GameInviteCards({
   );
 }
 
-
 function OfferCard({
   offer,
   busy,
