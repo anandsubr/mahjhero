@@ -70,7 +70,7 @@
 - Produces (SQL, callable by `authenticated`):
   - `public.create_club(club_name text, club_rhythm text default '', club_code text default null) returns uuid` — raises SQLSTATE `23505` if the code is taken, `23514` if the format is invalid.
   - `public.join_club_by_code(club_code text) returns jsonb` — `{"club_id": uuid, "already_member": bool}`, or SQL null for no match. Raises message `rate_limited` (P0001) after 10 attempts/hour, message `removed_member` (P0001) for a removed member.
-  - `public.set_club_code(target_club uuid, new_code text) returns text` — returns the stored code. Raises `42501` non-organizer, `invalid_code` (22023), `23505` taken, `rate_limited` (P0001).
+  - `public.set_club_code(target_club uuid, new_code text) returns text` — returns the stored code, or SQL null when another club has it. Raises `42501` non-organizer, `invalid_code` (22023), `rate_limited` (P0001). Direct UPDATEs of `clubs.code` are frozen.
 - Internal: `public.suggest_club_code(text)`, `public.clubs_fill_code()` trigger fn, table `public.club_code_attempts`.
 
 - [ ] **Step 1: Write the failing pgTAP test**
@@ -879,8 +879,8 @@ describe('club codes', () => {
     );
   });
 
-  it('setClubCode maps taken and invalid', async () => {
-    rpc.mockResolvedValueOnce({ data: null, error: { code: '23505', message: 'duplicate' } });
+  it('setClubCode maps taken (null result) and invalid', async () => {
+    rpc.mockResolvedValueOnce({ data: null, error: null });
     expect((await setClubCode('c1', 'OAK2')).error).toBe('That code is taken.');
     expect((await setClubCode('c1', 'no')).error).toBe('Codes are 4–16 letters or numbers.');
   });
@@ -1078,10 +1078,13 @@ export async function setClubCode(
       target_club: clubId,
       new_code: normalized,
     });
-    if (error || !data) {
+    if (error) {
       console.error('setClubCode failed', error);
       return { code: null, error: codeError(error) };
     }
+    // set_club_code returns null (not an error) when another club has the
+    // code, so the attempt still counts against the rate limit.
+    if (!data) return { code: null, error: CODE_TAKEN };
     return { code: data as string, error: null };
   } catch (cause) {
     console.error('setClubCode failed', cause);
