@@ -512,6 +512,19 @@ describe('BOOKING_REFUSALS (self-audit against the migrations)', () => {
     'club name needs a letter or number':
       'raised by create_club — lib/clubs.ts’s function, not this module’s',
     'not signed in': 'raised by create_club — lib/clubs.ts’s function, not this module’s',
+
+    // Club codes (20260929100000_club_codes.sql): unlike the rest of
+    // Category 3 above, these ARE mapped client-side — just not by this
+    // module. lib/clubs.ts's codeError/joinClubByCode/setClubCode translate
+    // each of these into a real sentence.
+    'rate_limited':
+      'raised by record_club_code_attempt, called from join_club_by_code/set_club_code — mapped by lib/clubs.ts’s own codeError/joinClubByCode, not this module’s',
+    'removed_member':
+      'raised by join_club_by_code — mapped by lib/clubs.ts’s own codeError/joinClubByCode, not this module’s',
+    'invalid_code':
+      'raised by set_club_code — mapped by lib/clubs.ts’s own codeError/joinClubByCode, not this module’s',
+    'not allowed':
+      'raised by set_club_code (caller is not the club’s organizer) — mapped by lib/clubs.ts’s own codeError/joinClubByCode, not this module’s',
     // clubs_freeze_identity is an UPDATE trigger on public.clubs, revoked
     // from public/anon/authenticated execute (the grant a trigger fires
     // under is the table owner's, not the caller's, so the revoke does not
@@ -524,6 +537,13 @@ describe('BOOKING_REFUSALS (self-audit against the migrations)', () => {
       'trigger (clubs_freeze_identity) on public.clubs UPDATE — no lib/*.ts function changes this column',
     'club slug cannot be changed':
       'trigger (clubs_freeze_identity) on public.clubs UPDATE — no lib/*.ts function changes this column',
+    // Same trigger, same guard added for the `code` column (20260929100000):
+    // only create_club/set_club_code (both security definer, running as the
+    // function owner, which the trigger exempts) ever write `code` — a
+    // direct client UPDATE never reaches this and would only fire it as
+    // defence in depth, not a reachable path from any lib/*.ts function.
+    'club code cannot be changed directly':
+      'trigger (clubs_freeze_identity) on public.clubs UPDATE — never reached through an RPC, only a direct UPDATE no lib/*.ts function performs',
     // clubs_validate_timezone is an INSERT/UPDATE trigger on public.clubs;
     // lib/clubs.ts only ever writes a timezone from a fixed picker of valid
     // IANA names, so this is defence in depth, not a reachable client path.
