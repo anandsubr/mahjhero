@@ -6,7 +6,7 @@ import { colors } from '../lib/theme';
 
 /**
  * Decides where a visit to "/" should land: a signed-out visitor gets the
- * welcome screen, a signed-in one gets their clubs. Extracted as a pure
+ * welcome screen, a signed-in one gets Home. Extracted as a pure
  * function — rather than inlined in the component below — so the branching
  * is directly testable without rendering or mocking the router. See
  * `app/__tests__/index.test.ts`.
@@ -19,7 +19,7 @@ export function resolveIndexRedirect(
   hasSession: boolean,
 ): string | null {
   if (loading) return null;
-  if (hasSession) return '/clubs';
+  if (hasSession) return '/home';
   return '/welcome';
 }
 
