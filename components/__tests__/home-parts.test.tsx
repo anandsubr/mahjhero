@@ -2,7 +2,15 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import MyGamesList from '../home/MyGamesList';
 import MyGamesCalendar from '../home/MyGamesCalendar';
+import JoinClubCard from '../home/JoinClubCard';
+import ClubCard from '../home/ClubCard';
 import type { MyGame } from '../../lib/my-games';
+
+const joinClubByCode = vi.fn();
+vi.mock('../../lib/clubs', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/clubs')>()),
+  joinClubByCode: (...a: unknown[]) => joinClubByCode(...a),
+}));
 
 const base: MyGame = {
   eventId: 'e1', clubId: 'c1', clubName: 'Test Club', title: 'Tuesday game',
@@ -69,5 +77,52 @@ describe('MyGamesCalendar', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Next month' }));
     expect(props.onPrev).toHaveBeenCalled();
     expect(props.onNext).toHaveBeenCalled();
+  });
+});
+
+describe('JoinClubCard', () => {
+  it('disables Join until text is entered, uppercases input', () => {
+    render(<JoinClubCard onJoined={() => {}} />);
+    const join = screen.getByRole('button', { name: 'Join' });
+    expect(join.getAttribute('aria-disabled')).toBe('true');
+    fireEvent.change(screen.getByLabelText('Club code'), { target: { value: 'oak 2' } });
+    expect((screen.getByLabelText('Club code') as HTMLInputElement).value).toBe('OAK2');
+    expect(screen.getByRole('button', { name: 'Join' }).getAttribute('aria-disabled')).not.toBe('true');
+  });
+
+  it('calls onJoined with the club id', async () => {
+    joinClubByCode.mockResolvedValueOnce({ clubId: 'c1', alreadyMember: false, error: null });
+    const onJoined = vi.fn();
+    render(<JoinClubCard onJoined={onJoined} />);
+    fireEvent.change(screen.getByLabelText('Club code'), { target: { value: 'OAK2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Join' }));
+    await screen.findByRole('button', { name: 'Join' });
+    await vi.waitFor(() => expect(onJoined).toHaveBeenCalledWith('c1'));
+  });
+
+  it('shows the error inline', async () => {
+    joinClubByCode.mockResolvedValueOnce({ clubId: null, alreadyMember: false, error: 'No club with that code.' });
+    render(<JoinClubCard onJoined={() => {}} />);
+    fireEvent.change(screen.getByLabelText('Club code'), { target: { value: 'NOPE' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Join' }));
+    expect(await screen.findByText('No club with that code.')).toBeTruthy();
+  });
+});
+
+describe('ClubCard', () => {
+  it('shows name, subline and unread', () => {
+    render(
+      <ClubCard
+        club={{ id: 'c1', name: 'Test Club', slug: 't', rhythm: '', visibility: 'private',
+          timezone: 'UTC', default_game_mode: 'open_play', code: 'TEST1' }}
+        role="member"
+        nextStartsAt={null}
+        unread={3}
+        onPress={() => {}}
+      />,
+    );
+    expect(screen.getByText('Test Club')).toBeTruthy();
+    expect(screen.getByText('Member · No games scheduled')).toBeTruthy();
+    expect(screen.getByText('3')).toBeTruthy();
   });
 });
