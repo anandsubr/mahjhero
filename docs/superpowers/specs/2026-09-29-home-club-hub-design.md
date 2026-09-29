@@ -166,8 +166,9 @@ Grid `56–60px | 1fr | 18px`, padding 12–14, 1px `divider` between rows, pres
   list failing uses the same pattern.
 - **Join by code:** no match → "No club with that code."; already a member → go to the club;
   `rate_limited` → "Too many tries. Try again in an hour."; network → generic error.
-- **Code editing** (Start a club, club page): Uniqueness is checked on save; `23505` shows "That
-  code is taken."
+- **Code editing** (Start a club, club page): Uniqueness is checked on save and shows "That code
+  is taken." — from `create_club`'s `23505` on Start a club, and from `set_club_code` returning
+  null on the club page.
 - **Calendar:** months fetch on navigation, the previous month stays visible until the new one
   loads; the selected day becomes today if in view, else the 1st of the month.
 - **Stale data:** Home refetches on focus.
