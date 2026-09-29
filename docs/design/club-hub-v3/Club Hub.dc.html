@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/organic-e529898e-18c6-49df-8b56-ec81129be08c/styles.css">
+<script src="_ds/organic-e529898e-18c6-49df-8b56-ec81129be08c/_ds_bundle.js"></script>
+<script src="./image-slot.js"></script>
+<style>body{margin:0}input::placeholder{color:var(--color-neutral-600)}button:focus-visible,input:focus-visible{outline:2px solid var(--color-accent);outline-offset:2px}</style>
+</helmet>
+<div style="width:374px;height:828px;overflow:hidden;display:flex;flex-direction:column;background:var(--color-bg);font-family:var(--font-body);color:var(--color-text);position:relative">
+  <div style="position:relative;flex-shrink:0;background:var(--color-accent-2-800);color:#fff;overflow:hidden">
+    <div style="position:absolute;inset:0"><image-slot id="club-cover" shape="rect" src="assets/temple.png" placeholder="Cover"></image-slot></div>
+    <div style="position:absolute;inset:0;background:color-mix(in srgb,var(--color-neutral-900) 55%,transparent);pointer-events:none"></div>
+    <div style="position:relative;pointer-events:none;display:flex;flex-direction:column">
+      <div style="height:44px;display:flex;align-items:center;justify-content:space-between;padding:0 26px;font-weight:700;font-size:15px"><span>8:00</span><span style="width:24px;height:12px;border-radius:4px;border:1.5px solid rgba(255,255,255,.7);padding:1px"><span style="display:block;width:49%;height:100%;background:#fff;border-radius:2px"></span></span></div>
+      <div style="display:flex;align-items:center;gap:4px;padding:0 8px">
+        <button aria-label="Back to clubs" style="pointer-events:auto;width:44px;height:44px;border:0;background:transparent;display:grid;place-items:center;cursor:pointer;color:#fff;border-radius:999px" style-hover="background:rgba(255,255,255,.14)"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"></path></svg></button>
+        <span style="flex:1;min-width:0;font-family:var(--font-heading);font-size:26px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Test Club</span>
+        <button aria-label="Club settings" style="pointer-events:auto;width:44px;height:44px;border:0;background:transparent;display:grid;place-items:center;cursor:pointer;color:#fff;border-radius:999px" style-hover="background:rgba(255,255,255,.14)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg></button>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;padding:0 16px 0 52px;font-size:14px;font-weight:600;color:rgba(255,255,255,.92)">
+        <span>Club code: TESTCLUB24</span>
+        <button aria-label="Share club code" style="pointer-events:auto;height:32px;padding:0 10px;border:0;border-radius:999px;background:rgba(255,255,255,.16);color:#fff;display:flex;align-items:center;gap:5px;cursor:pointer;font:inherit;font-size:13px;font-weight:700" style-hover="background:rgba(255,255,255,.26)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path><path d="m16 6-4-4-4 4"></path><path d="M12 2v13"></path></svg>Share</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding:14px 12px 12px">
+        <button onClick="{{ toBoard }}" style="pointer-events:auto;height:60px;border:0;border-radius:18px;background:{{ bBg }};color:{{ bFg }};display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;cursor:pointer;font:inherit;font-size:13px;font-weight:700"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"></path></svg>Board</button>
+        <button onClick="{{ toGames }}" style="pointer-events:auto;height:60px;border:0;border-radius:18px;background:{{ gBg }};color:{{ gFg }};display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;cursor:pointer;font:inherit;font-size:13px;font-weight:700"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2"></rect><path d="M16 2v4"></path><path d="M8 2v4"></path><path d="M3 10h18"></path></svg>Games</button>
+        <button onClick="{{ toPhotos }}" style="pointer-events:auto;height:60px;border:0;border-radius:18px;background:{{ pBg }};color:{{ pFg }};display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;cursor:pointer;font:inherit;font-size:13px;font-weight:700"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"></rect><circle cx="9" cy="9" r="2"></circle><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"></path></svg>Photos</button>
+        <button onClick="{{ toMembers }}" style="pointer-events:auto;height:60px;border:0;border-radius:18px;background:{{ mBg }};color:{{ mFg }};display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;cursor:pointer;font:inherit;font-size:13px;font-weight:700"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>Members</button>
+      </div>
+    </div>
+  </div>
+
+  <sc-if value="{{ isGames }}" hint-placeholder-val="{{ true }}">
+    <div style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column">
+      <div style="padding:14px 16px 10px">
+        <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;background:var(--color-surface);border-radius:999px;padding:4px">
+          <sc-for list="{{ gseg }}" as="c" hint-placeholder-count="3"><button onClick="{{ c.pick }}" style="height:40px;border:0;border-radius:999px;background:{{ c.bg }};color:{{ c.fg }};cursor:pointer;font:inherit;font-size:15px;font-weight:700">{{ c.label }}</button></sc-for>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column">
+        <sc-for list="{{ games }}" as="g" hint-placeholder-count="4">
+          <button style="display:grid;grid-template-columns:60px minmax(0,1fr) 18px;align-items:start;gap:12px;padding:14px 14px 16px 8px;border:0;border-top:{{ g.border }};background:transparent;text-align:left;font:inherit;color:var(--color-text);cursor:pointer;opacity:{{ g.op }}" style-hover="background:var(--color-surface)">
+            <span style="display:flex;flex-direction:column;align-items:center;line-height:1;padding-top:2px"><span style="font-size:13px;font-weight:700;letter-spacing:.06em;color:var(--color-accent-700)">{{ g.mon }}</span><span style="font-family:var(--font-heading);font-size:32px;margin-top:4px">{{ g.day }}</span><span style="font-size:12px;font-weight:600;color:var(--color-neutral-700);margin-top:5px">{{ g.dow }}</span></span>
+            <span style="display:flex;flex-direction:column;gap:3px;min-width:0">
+              <span style="font-weight:700;font-size:17px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ g.head }}</span>
+              <span style="font-size:14px;color:var(--color-neutral-800);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ g.sub }}</span>
+              <span style="font-size:13px;color:var(--color-neutral-700);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ g.desc }}</span>
+              <span style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:5px">
+                <span style="display:flex;align-items:center;gap:5px;font-size:13px;font-weight:700;color:var(--color-neutral-800)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>{{ g.seats }}</span>
+                <sc-if value="{{ g.going }}" hint-placeholder-val="{{ false }}"><span style="display:flex;align-items:center;gap:4px;background:var(--color-accent-2-200);color:var(--color-accent-2-800);font-size:12px;font-weight:700;padding:3px 9px;border-radius:999px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg>You're going</span></sc-if>
+                <sc-if value="{{ g.notGoing }}" hint-placeholder-val="{{ false }}"><span style="display:flex;align-items:center;gap:4px;background:var(--color-neutral-300);color:var(--color-neutral-800);font-size:12px;font-weight:700;padding:3px 9px;border-radius:999px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>Not going</span></sc-if>
+                <sc-if value="{{ g.updated }}" hint-placeholder-val="{{ false }}"><span style="background:var(--color-accent-200);color:var(--color-accent-800);font-size:12px;font-weight:700;padding:3px 9px;border-radius:999px">Updated</span></sc-if>
+              </span>
+            </span>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-neutral-600)" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round" style="margin-top:32px"><path d="m9 18 6-6-6-6"></path></svg>
+          </button>
+        </sc-for>
+        <sc-if value="{{ noGames }}" hint-placeholder-val="{{ false }}"><div style="padding:40px 20px;text-align:center;font-size:15px;color:var(--color-neutral-700)">No games here yet.</div></sc-if>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;padding:10px 16px 28px;border-top:1px solid var(--color-divider);background:var(--color-bg)">
+      <button style="flex:1;height:50px;border:0;border-radius:999px;background:var(--color-surface);display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;font:inherit;font-size:15px;font-weight:700;color:var(--color-text)" style-hover="background:var(--color-neutral-300)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2"></rect><path d="M16 2v4"></path><path d="M8 2v4"></path><path d="M3 10h18"></path><path d="M12 14v4"></path><path d="M10 16h4"></path></svg>Add to calendar</button>
+      <sc-if value="{{ isHost }}" hint-placeholder-val="{{ true }}"><button style="flex:1;height:50px;border:0;border-radius:999px;background:var(--color-accent-700);color:#fff;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;font:inherit;font-size:15px;font-weight:700" style-hover="background:var(--color-accent-800)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M5 12h14"></path><path d="M12 5v14"></path></svg>New game</button></sc-if>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ isBoard }}" hint-placeholder-val="{{ false }}">
+    <div style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px 4px">
+        <span style="font-size:13px;color:var(--color-neutral-700)">Everyone in the club sees posts here</span>
+        <button style="height:36px;padding:0 12px;border:0;border-radius:999px;background:var(--color-surface);display:flex;align-items:center;gap:4px;cursor:pointer;font:inherit;font-size:13px;font-weight:700;color:var(--color-text)" style-hover="background:var(--color-neutral-300)">Most recent<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg></button>
+      </div>
+      <sc-for list="{{ posts }}" as="p" hint-placeholder-count="2">
+        <div style="display:flex;flex-direction:column;gap:10px;padding:14px 16px 16px;border-top:{{ p.border }}">
+          <div style="display:flex;align-items:center;gap:12px">
+            <span style="width:44px;height:44px;border-radius:999px;background:{{ p.bg }};color:#fff;display:grid;place-items:center;font-weight:700;font-size:16px;flex-shrink:0">{{ p.initial }}</span>
+            <span style="flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.25"><span style="display:flex;align-items:center;gap:6px"><span style="font-weight:700;font-size:16px;color:var(--color-accent-700)">{{ p.name }}</span><sc-if value="{{ p.host }}" hint-placeholder-val="{{ false }}"><span style="background:var(--color-surface);color:var(--color-neutral-800);font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px">Host</span></sc-if></span><span style="font-size:13px;color:var(--color-neutral-700)">{{ p.time }}</span></span>
+          </div>
+          <div style="font-size:16px;line-height:1.5;white-space:pre-wrap;text-wrap:pretty">{{ p.text }}</div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <button onClick="{{ p.react }}" style="height:34px;padding:0 12px;border:1.5px solid {{ p.rBorder }};border-radius:999px;background:{{ p.rBg }};display:flex;align-items:center;gap:6px;cursor:pointer;font:inherit;font-size:13px;font-weight:700;color:var(--color-accent-800)"><svg width="14" height="14" viewBox="0 0 24 24" fill="{{ p.rFill }}" stroke="var(--color-accent)" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"></path></svg>{{ p.rCount }}</button>
+            <span style="margin-left:auto;display:flex;align-items:center;gap:6px;font-size:14px;font-weight:700;color:var(--color-accent-700)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"></path></svg>{{ p.cLabel }}</span>
+          </div>
+          <sc-if value="{{ p.hasComments }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;flex-direction:column;gap:2px;background:var(--color-surface);border-radius:18px;padding:6px">
+              <sc-for list="{{ p.comments }}" as="c" hint-placeholder-count="1">
+                <div style="display:flex;gap:10px;padding:8px 8px 8px 6px;border-radius:14px;background:{{ c.bg2 }}">
+                  <span style="width:30px;height:30px;border-radius:999px;background:{{ c.bg }};color:#fff;display:grid;place-items:center;font-weight:700;font-size:12px;flex-shrink:0">{{ c.initial }}</span>
+                  <span style="display:flex;flex-direction:column;line-height:1.35;min-width:0"><span style="font-weight:700;font-size:14px;color:var(--color-accent-700)">{{ c.name }}</span><span style="font-size:15px">{{ c.text }}</span></span>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+        </div>
+      </sc-for>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;padding:8px 12px 28px;border-top:1px solid var(--color-divider);background:var(--color-bg)">
+      <button aria-label="Add photo" style="width:44px;height:44px;flex-shrink:0;border:0;border-radius:999px;background:var(--color-surface);display:grid;place-items:center;cursor:pointer;color:var(--color-text)" style-hover="background:var(--color-neutral-300)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"></rect><circle cx="9" cy="9" r="2"></circle><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"></path></svg></button>
+      <input value="{{ draft }}" onChange="{{ onDraft }}" onKeyDown="{{ onKey }}" placeholder="Write to the club" style="flex:1;min-width:0;height:44px;border:1.5px solid var(--color-neutral-400);border-radius:999px;background:var(--color-neutral-100);font:inherit;font-size:16px;color:var(--color-text);padding:0 16px;outline:none">
+      <button onClick="{{ post }}" style="height:44px;padding:0 16px;border:0;border-radius:999px;background:{{ postBg }};color:{{ postFg }};cursor:pointer;font:inherit;font-size:15px;font-weight:700">Post</button>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ isPhotos }}" hint-placeholder-val="{{ false }}">
+    <div style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column">
+      <div style="display:flex;gap:10px;align-items:center;padding:14px 16px 12px">
+        <div style="flex:1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;background:var(--color-surface);border-radius:999px;padding:4px">
+          <button onClick="{{ toPh }}" style="height:40px;border:0;border-radius:999px;background:{{ phBg }};color:{{ phFg }};cursor:pointer;font:inherit;font-size:15px;font-weight:700">Photos</button>
+          <button onClick="{{ toFi }}" style="height:40px;border:0;border-radius:999px;background:{{ fiBg }};color:{{ fiFg }};cursor:pointer;font:inherit;font-size:15px;font-weight:700">Files</button>
+        </div>
+        <button aria-label="Upload" style="width:48px;height:48px;flex-shrink:0;border:0;border-radius:999px;background:var(--color-accent-700);color:#fff;display:grid;place-items:center;cursor:pointer" style-hover="background:var(--color-accent-800)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M5 12h14"></path><path d="M12 5v14"></path></svg></button>
+      </div>
+      <sc-if value="{{ showPh }}" hint-placeholder-val="{{ true }}">
+        <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:3px;padding:0 3px 24px">
+          <sc-for list="{{ photos }}" as="ph" hint-placeholder-count="9"><div style="position:relative;aspect-ratio:1;border-radius:{{ ph.r }};overflow:hidden;background:var(--color-surface)"><image-slot id="{{ ph.id }}" shape="rect" placeholder="Photo" style="position:absolute;inset:0;width:100%;height:100%"></image-slot></div></sc-for>
+        </div>
+      </sc-if>
+      <sc-if value="{{ showFi }}" hint-placeholder-val="{{ false }}">
+        <div style="margin:0 16px 24px;background:var(--color-surface);border-radius:20px;display:flex;flex-direction:column">
+          <sc-for list="{{ files }}" as="f" hint-placeholder-count="3">
+            <div style="display:flex;align-items:center;gap:12px;padding:0 12px 0 14px;min-height:62px;border-top:{{ f.border }}">
+              <span style="width:40px;height:40px;border-radius:12px;background:var(--color-bg);display:grid;place-items:center;flex-shrink:0;color:var(--color-accent-700)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path><path d="M14 2v4a2 2 0 0 0 2 2h4"></path></svg></span>
+              <span style="flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.25"><span style="font-weight:600;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ f.name }}</span><span style="font-size:13px;color:var(--color-neutral-700)">{{ f.meta }}</span></span>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-neutral-700)" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="m7 10 5 5 5-5"></path><path d="M12 15V3"></path></svg>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ isMembers }}" hint-placeholder-val="{{ false }}">
+    <div style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column">
+      <div style="display:flex;gap:10px;align-items:center;padding:14px 16px 6px">
+        <div style="flex:1;display:flex;align-items:center;gap:8px;background:var(--color-surface);border-radius:999px;padding:0 16px;min-height:48px">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--color-neutral-700)" stroke-width="2.75" stroke-linecap="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+          <input value="{{ q }}" onChange="{{ onQ }}" placeholder="{{ searchPh }}" style="flex:1;min-width:0;border:0;background:transparent;font:inherit;font-size:16px;color:var(--color-text);outline:none">
+        </div>
+        <button aria-label="Invite member" style="width:48px;height:48px;flex-shrink:0;border:0;border-radius:999px;background:var(--color-accent-700);color:#fff;display:grid;place-items:center;cursor:pointer" style-hover="background:var(--color-accent-800)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M19 8v6"></path><path d="M22 11h-6"></path></svg></button>
+      </div>
+      <div style="display:flex;justify-content:space-between;padding:0 8px">
+        <button onClick="{{ cycleFilter }}" style="height:40px;padding:0 10px;border:0;border-radius:999px;background:transparent;cursor:pointer;font:inherit;font-size:14px;font-weight:700;color:var(--color-accent-700)" style-hover="background:var(--color-accent-100)">Show: {{ filterLabel }}</button>
+        <button onClick="{{ cycleSort }}" style="height:40px;padding:0 10px;border:0;border-radius:999px;background:transparent;cursor:pointer;font:inherit;font-size:14px;font-weight:700;color:var(--color-accent-700)" style-hover="background:var(--color-accent-100)">Sort: {{ sortLabel }}</button>
+      </div>
+      <div style="display:flex;flex-direction:column;padding-bottom:24px">
+        <sc-for list="{{ members }}" as="m" hint-placeholder-count="6">
+          <div style="display:flex;align-items:center;gap:14px;padding:0 10px 0 16px;min-height:68px">
+            <span style="width:46px;height:46px;border-radius:999px;background:{{ m.bg }};color:#fff;display:grid;place-items:center;font-weight:700;font-size:16px;flex-shrink:0">{{ m.initial }}</span>
+            <span style="flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.25;align-self:stretch;justify-content:center;border-bottom:1px solid var(--color-divider)">
+              <span style="display:flex;align-items:center;gap:8px"><span style="font-weight:600;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ m.name }}</span><sc-if value="{{ m.host }}" hint-placeholder-val="{{ false }}"><span style="background:var(--color-surface);color:var(--color-neutral-800);font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;flex-shrink:0">Host</span></sc-if></span>
+              <span style="font-size:13px;color:var(--color-neutral-700)">{{ m.level }}</span>
+            </span>
+            <sc-if value="{{ m.isMe }}" hint-placeholder-val="{{ false }}"><span style="width:44px;flex-shrink:0"></span></sc-if><sc-if value="{{ m.canMsg }}" hint-placeholder-val="{{ true }}"><button aria-label="Message" style="width:44px;height:44px;flex-shrink:0;border:0;border-radius:999px;background:transparent;display:grid;place-items:center;cursor:pointer;color:var(--color-accent-700)" style-hover="background:var(--color-surface)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"></path></svg></button></sc-if>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:374,&quot;height&quot;:828},&quot;tab&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;board&quot;,&quot;games&quot;,&quot;photos&quot;,&quot;members&quot;],&quot;default&quot;:&quot;games&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;role&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Host&quot;,&quot;Player&quot;],&quot;default&quot;:&quot;Host&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+const COLS = ['var(--color-accent-2-700)', 'var(--color-accent-700)', 'var(--color-neutral-800)', 'var(--color-accent-2-800)', 'var(--color-accent-600)'];
+const GAMES = [
+  { mon: 'SEP', day: '24', dow: 'Thu', title: 'test it out', when: '8:30 PM – 11:00 PM', venue: 'Sample Venue', desc: 'Tables of 4, any level. Bring your own card.', seats: '4/4', past: true, me: 'in' },
+  { mon: 'SEP', day: '29', dow: 'Tue', title: '', when: '11:30 AM – 3:00 PM', venue: 'Sample Venue', desc: 'Open seating. $5 at the door, cash or Venmo.', seats: '14/24', me: 'in', updated: true },
+  { mon: 'SEP', day: '30', dow: 'Wed', title: 'Strategy night with Priya', when: '6:00 PM – 9:00 PM', venue: "Priya's place", desc: 'Small class, 3 openings left. Intermediate and up.', seats: '5/8', me: 'no' },
+  { mon: 'OCT', day: '01', dow: 'Thu', title: '', when: '8:30 PM – 11:00 PM', venue: 'Oak Street Community Hall', desc: 'Assigned tables by level. Check-in at the door.', seats: '9/16', updated: true, inviteOnly: true },
+  { mon: 'OCT', day: '03', dow: 'Sat', title: 'Beginner table', when: '10:00 AM – 1:00 PM', venue: 'Sample Venue', desc: 'Never played? Start here. Sets provided.', seats: '2/8' }
+];
+const POSTS = [
+  { id: 1, name: 'Priya Shah', host: true, time: 'Today, 8:35 AM', reacts: 4, text: "Three seats just opened up for Wednesday's strategy night.\n\nIt's at my place, 6–9 pm. Comment here to grab one.", comments: [['Lena Fischer', 'What level is it pitched at?'], ['Priya Shah', 'Intermediate and up. Bring your card!']] },
+  { id: 2, name: 'Admin', host: true, time: 'Yesterday, 7:59 PM', reacts: 9, text: 'Reminder: Thursday tables are now assigned by level. Check your seat on the game page before you arrive.', comments: [] }
+];
+const MEMBERS = [['Admin', 'Advanced', true, true], ['Priya Shah', 'Advanced', true], ['Anand Rao', 'Intermediate'], ['Kiran Patel', 'Beginner'], ['Lena Fischer', 'Intermediate'], ['Maya Brooks', 'Advanced'], ['Mei Tanaka', 'Beginner'], ['Omar Haddad', 'Intermediate'], ['Ravi Iyer', 'Advanced'], ['Sam Ortiz', 'Beginner'], ['Sofia Rossi', 'Intermediate'], ['Wei Chen', 'Advanced']];
+const FILES = [['House rules.pdf', 'PDF · 120 KB · Admin'], ['2026 card cheat sheet.pdf', 'PDF · 340 KB · Priya Shah'], ['Tournament scorecard.xlsx', 'Spreadsheet · 18 KB · Admin']];
+const ini = n => n.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+const col = n => COLS[[...n].reduce((a, c) => a + c.charCodeAt(0), 0) % COLS.length];
+class Component extends DCLogic {
+  state = { tab: null, gf: 'upcoming', posts: POSTS, draft: '', liked: {}, seg: 'photos', q: '', hostsOnly: false, byLast: false };
+  renderVals() {
+    const s = this.state, tab = s.tab || this.props.tab || 'games', host = (this.props.role ?? 'Host') === 'Host';
+    const tb = k => ({ bg: tab === k ? 'var(--color-bg)' : 'transparent', fg: tab === k ? 'var(--color-accent-800)' : '#fff' });
+    const [B, G, P, M] = ['board', 'games', 'photos', 'members'].map(tb);
+    const on = 'var(--color-accent-700)';
+    const gl = GAMES.filter(g => s.gf === 'all' || (s.gf === 'past') === !!g.past);
+    const q = s.q.trim().toLowerCase();
+    let mem = MEMBERS.filter(m => (!q || m[0].toLowerCase().includes(q)) && (!s.hostsOnly || m[2]));
+    const key = m => s.byLast ? (m[0].split(' ')[1] || m[0]) : m[0];
+    mem = [...mem].sort((a, b) => (b[2] ? 1 : 0) - (a[2] ? 1 : 0) || key(a).localeCompare(key(b)));
+    const send = () => { const t = s.draft.trim(); if (!t) return; this.setState(st => ({ draft: '', posts: [{ id: Date.now(), name: 'Admin', host: true, time: 'Just now', reacts: 0, text: t, comments: [] }, ...st.posts] })); };
+    return {
+      isBoard: tab === 'board', isGames: tab === 'games', isPhotos: tab === 'photos', isMembers: tab === 'members', isHost: host,
+      bBg: B.bg, bFg: B.fg, gBg: G.bg, gFg: G.fg, pBg: P.bg, pFg: P.fg, mBg: M.bg, mFg: M.fg,
+      toBoard: () => this.setState({ tab: 'board' }), toGames: () => this.setState({ tab: 'games' }), toPhotos: () => this.setState({ tab: 'photos' }), toMembers: () => this.setState({ tab: 'members' }),
+      gseg: [['all', 'All'], ['upcoming', 'Upcoming'], ['past', 'Past']].map(([k, label]) => ({ label, pick: () => this.setState({ gf: k }), bg: s.gf === k ? on : 'transparent', fg: s.gf === k ? '#fff' : 'var(--color-text)' })),
+      games: gl.map((g, i) => ({ ...g, head: g.title || (g.inviteOnly ? 'Private game' : 'Open play'), sub: g.when + ' · ' + g.venue, going: g.me === 'in', notGoing: g.me === 'no', updated: !!g.updated && !g.past, op: g.past ? 0.65 : 1, border: i ? '1px solid var(--color-divider)' : '0' })),
+      noGames: !gl.length,
+      posts: s.posts.map((p, i) => { const l = !!s.liked[p.id]; return { ...p, initial: ini(p.name), bg: col(p.name), border: i ? '1px solid var(--color-divider)' : '0',
+        rCount: String(p.reacts + (l ? 1 : 0)), rBg: l ? 'var(--color-accent-200)' : 'transparent', rBorder: l ? 'var(--color-accent-200)' : 'var(--color-neutral-400)', rFill: l ? 'var(--color-accent)' : 'none',
+        react: () => this.setState(st => ({ liked: { ...st.liked, [p.id]: !st.liked[p.id] } })),
+        cLabel: p.comments.length ? p.comments.length + (p.comments.length === 1 ? ' comment' : ' comments') : 'Comment', hasComments: p.comments.length > 0,
+        comments: p.comments.map(([name, text], j) => ({ name, text, initial: ini(name), bg: col(name), bg2: j === p.comments.length - 1 && name === p.name ? 'var(--color-bg)' : 'transparent' })) }; }),
+      draft: s.draft, onDraft: e => this.setState({ draft: e.target.value }), onKey: e => { if (e.key === 'Enter') send(); }, post: send,
+      postBg: s.draft.trim() ? on : 'var(--color-surface)', postFg: s.draft.trim() ? '#fff' : 'var(--color-neutral-600)',
+      phBg: s.seg === 'photos' ? on : 'transparent', phFg: s.seg === 'photos' ? '#fff' : 'var(--color-text)', fiBg: s.seg === 'files' ? on : 'transparent', fiFg: s.seg === 'files' ? '#fff' : 'var(--color-text)',
+      toPh: () => this.setState({ seg: 'photos' }), toFi: () => this.setState({ seg: 'files' }), showPh: s.seg === 'photos', showFi: s.seg === 'files',
+      photos: Array.from({ length: 9 }, (_, i) => ({ id: 'club-photo-' + i, r: i === 0 ? '14px 0 0 0' : i === 2 ? '0 14px 0 0' : '0' })),
+      files: FILES.map(([name, meta], i) => ({ name, meta, border: i ? '1px solid var(--color-divider)' : '0' })),
+      q: s.q, onQ: e => this.setState({ q: e.target.value }), searchPh: 'Search ' + MEMBERS.length + ' members',
+      filterLabel: s.hostsOnly ? 'Hosts' : 'Everyone', sortLabel: s.byLast ? 'Last name' : 'First name',
+      cycleFilter: () => this.setState(st => ({ hostsOnly: !st.hostsOnly })), cycleSort: () => this.setState(st => ({ byLast: !st.byLast })),
+      members: mem.map(m => ({ name: m[0] + (m[3] ? ' (you)' : ''), level: m[1], host: !!m[2], canMsg: !m[3], isMe: !!m[3], initial: ini(m[0]), bg: col(m[0]) }))
+    };
+  }
+}
+</script>
+</body>
+</html>
