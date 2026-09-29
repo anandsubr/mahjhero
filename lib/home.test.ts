@@ -113,7 +113,7 @@ describe('labels', () => {
 
 describe('normalizeTimeSpaces', () => {
   it('leaves regular spaces unchanged', () => {
-    expect(normalizeTimeSpaces('11:30 AM')).toBe('11:30 AM');
+    expect(normalizeTimeSpaces('11:30\u202fAM')).toBe('11:30 AM');
   });
 });
 
