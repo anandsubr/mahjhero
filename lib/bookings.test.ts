@@ -512,6 +512,14 @@ describe('BOOKING_REFUSALS (self-audit against the migrations)', () => {
     'club name needs a letter or number':
       'raised by create_club — lib/clubs.ts’s function, not this module’s',
     'not signed in': 'raised by create_club — lib/clubs.ts’s function, not this module’s',
+    // set_club_code's non-organizer guard (42501). Unlike the club-code
+    // entries just below, codeError has no case for this one — it falls
+    // through to GENERIC_ERROR, same real gap as the three entries above.
+    // The club page only offers the edit-code control to organizers, so
+    // this path is believed unreachable in practice, but the client-side
+    // mapping itself does not exist.
+    'not allowed':
+      'raised by set_club_code for a non-organizer — the club page only offers the edit to organizers, so the client falls back to GENERIC_ERROR',
 
     // Club codes (20260929100000_club_codes.sql): unlike the rest of
     // Category 3 above, these ARE mapped client-side — just not by this
@@ -523,8 +531,6 @@ describe('BOOKING_REFUSALS (self-audit against the migrations)', () => {
       'raised by join_club_by_code — mapped by lib/clubs.ts’s own codeError/joinClubByCode, not this module’s',
     'invalid_code':
       'raised by set_club_code — mapped by lib/clubs.ts’s own codeError/joinClubByCode, not this module’s',
-    'not allowed':
-      'raised by set_club_code (caller is not the club’s organizer) — mapped by lib/clubs.ts’s own codeError/joinClubByCode, not this module’s',
     // clubs_freeze_identity is an UPDATE trigger on public.clubs, revoked
     // from public/anon/authenticated execute (the grant a trigger fires
     // under is the table owner's, not the caller's, so the revoke does not
