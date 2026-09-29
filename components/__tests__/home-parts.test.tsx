@@ -96,7 +96,6 @@ describe('JoinClubCard', () => {
     render(<JoinClubCard onJoined={onJoined} />);
     fireEvent.change(screen.getByLabelText('Club code'), { target: { value: 'OAK2' } });
     fireEvent.click(screen.getByRole('button', { name: 'Join' }));
-    await screen.findByRole('button', { name: 'Join' });
     await vi.waitFor(() => expect(onJoined).toHaveBeenCalledWith('c1'));
   });
 

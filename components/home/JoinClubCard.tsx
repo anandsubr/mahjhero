@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { Text, TextInput } from '../Text';
 import { joinClubByCode, normalizeClubCode } from '../../lib/clubs';
+import { GENERIC_ERROR } from '../../lib/constants';
 import { colors, radius, type } from '../../lib/theme';
 
 /** "Join a club" by code (Design V3 2a, Clubs). Instant join; errors inline. */
@@ -18,7 +19,7 @@ export default function JoinClubCard({ onJoined }: { onJoined: (clubId: string) 
     const result = await joinClubByCode(code);
     setBusy(false);
     if (result.error || !result.clubId) {
-      setError(result.error);
+      setError(result.error ?? GENERIC_ERROR);
       return;
     }
     setCode('');
