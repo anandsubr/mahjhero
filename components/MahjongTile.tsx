@@ -20,8 +20,10 @@ type Props = {
    *  screen's own heading (30x40) -- no label, ever, even if one is
    *  passed. `"chip"`: a club's own tile (48x60, `ClubChips.tsx` and the
    *  large club-header treatment) -- carries `label` too, but as the
-   *  club's initials, not a full word. */
-  size: 'tab' | 'section' | 'chip';
+   *  club's initials, not a full word. `"mini"`: the club-hub redesign's
+   *  20x20 tile beside a game row's club name (`components/GameRow.tsx`)
+   *  -- no label, ever, smaller than any other size. */
+  size: 'tab' | 'section' | 'chip' | 'mini';
   /** A one-step-darker variant of `TileHero`'s (app/welcome.tsx) own
    *  accent-tile treatment: solid `accent[700]` fill, `accent[800]` lip,
    *  glyph/label in `colors.bg` -- see `styles.selected` below for why
@@ -126,7 +128,10 @@ export default function MahjongTile({ suit, size, selected = false, label }: Pro
   const showsLabel = size === 'tab' || size === 'chip';
 
   const sizeStyle =
-    size === 'tab' ? styles.tab : size === 'chip' ? styles.chip : styles.section;
+    size === 'tab' ? styles.tab
+      : size === 'chip' ? styles.chip
+      : size === 'mini' ? styles.mini
+      : styles.section;
 
   return (
     <View
@@ -172,6 +177,13 @@ const styles = StyleSheet.create({
     paddingBottom: space[1],
     gap: 2,
     borderBottomWidth: 3,
+  },
+  mini: {
+    width: 20,
+    height: 20,
+    borderRadius: 6,
+    borderBottomWidth: 2,
+    justifyContent: 'center',
   },
   // accent[700] fill / accent[800] lip -- one step darker each than
   // TileHero's own accent tile (app/welcome.tsx: accentColor fill,
