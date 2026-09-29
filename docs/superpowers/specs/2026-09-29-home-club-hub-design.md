@@ -51,9 +51,12 @@ change completely, and the global bottom tab bar goes away.
     invite brings them back;
   - returns `{club_id, already_member}`, or null when no club has that code.
 - `set_club_code(club_id uuid, code text)` — hosts and co-organizers only; normalizes as above;
-  raises `code_taken` on unique violation, `invalid_code` on format failure. `set_club_code` shares
-  the 10/hour attempt budget; there is no availability RPC (it would be an oracle around the join
-  rate limit).
+  raises `42501` for a non-organizer, `invalid_code` on format failure, `rate_limited` once the
+  shared 10/hour attempt budget is spent; returns null (not an exception) when the normalized code
+  belongs to another club, so a taken-code probe still costs an attempt. There is no availability
+  RPC (it would be an oracle around the same rate limit).
+- Direct client UPDATE of `clubs.code` is frozen (`clubs_freeze_identity`, alongside `slug` and
+  `created_by`); only `create_club` and `set_club_code` may write it.
 
 ### My games feed
 
@@ -173,8 +176,8 @@ Grid `56–60px | 1fr | 18px`, padding 12–14, 1px `divider` between rows, pres
 ## 4. Testing and wrap-up
 
 - **pgTAP:** code format and uniqueness (case-insensitive clash), backfill, `join_club_by_code`
-  (match, already member, reactivation, no match, rate limit, anon refused), `set_club_code`
-  (host ok, member refused, taken), `my_games` (status mapping, host-and-booked, invited
+  (match, already member, removed member refused, no match, rate limit, anon refused),
+  `set_club_code` (host ok, member refused, taken), `my_games` (status mapping, host-and-booked, invited
   excluded, window bounds, seat counts, no cross-club leakage), `my_clubs_next_game`.
 - **vitest (`lib/home.ts`):** headline fallbacks; week buckets across Sunday/Monday and month
   boundaries; month grid Monday start incl. February, past/today flags; `homeDefault`;

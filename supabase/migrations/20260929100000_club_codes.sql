@@ -12,6 +12,12 @@
 
 -- Generator. security definer so the uniqueness probe sees every club, not
 -- just the caller's (RLS would otherwise hide collisions).
+--
+-- The 3-digit suffix only has 1000 values per stem; a popular stem (or a
+-- pathological test) could in principle exhaust them, looping forever. Cap
+-- that loop at 50 tries, then fall back to a 6-digit suffix (stem is capped
+-- at 8 chars, so 8 + 6 = 14, still within the 16-char format limit) and loop
+-- there instead.
 create function public.suggest_club_code(club_name text)
 returns text
 language plpgsql
@@ -22,12 +28,21 @@ as $$
 declare
   stem text := left(regexp_replace(upper(coalesce(club_name, '')), '[^A-Z0-9]', '', 'g'), 8);
   candidate text;
+  tries int := 0;
 begin
   if length(stem) = 0 then
     stem := 'CLUB';
   end if;
   loop
+    tries := tries + 1;
+    exit when tries > 50;
     candidate := stem || lpad(floor(random() * 1000)::int::text, 3, '0');
+    if not exists (select 1 from public.clubs where code = candidate) then
+      return candidate;
+    end if;
+  end loop;
+  loop
+    candidate := stem || lpad(floor(random() * 1000000)::int::text, 6, '0');
     exit when not exists (select 1 from public.clubs where code = candidate);
   end loop;
   return candidate;
@@ -52,8 +67,10 @@ alter table public.clubs
   add constraint clubs_code_format check (code ~ '^[A-Z0-9]{4,16}$');
 create unique index clubs_code_key on public.clubs (code);
 
--- Fills a missing code on insert and normalizes any code written, so fixture
--- inserts, create_club and a host's direct update all land in one shape.
+-- Fills a missing code on insert and normalizes any code written by
+-- create_club or set_club_code, so fixture inserts and both RPCs land in one
+-- shape. A host's direct UPDATE of code is a separate, blocked path: see
+-- clubs_freeze_identity below.
 create function public.clubs_fill_code()
 returns trigger
 language plpgsql
@@ -76,6 +93,46 @@ revoke execute on function public.clubs_fill_code() from public, anon, authentic
 create trigger clubs_fill_code
   before insert or update of code on public.clubs
   for each row execute function public.clubs_fill_code();
+
+/*
+ * `code` needs the same freeze as `slug`/`created_by`/`id`: `clubs_update_host`
+ * gives every host table-wide UPDATE on their own club, and without this a
+ * host's direct PostgREST UPDATE of `code` would bypass set_club_code's rate
+ * limit entirely — an unlimited "is this code taken?" oracle via 23505.
+ * `create or replace` extends the existing function from
+ * 20260822180300_invite_attribution_and_club_identity.sql verbatim, adding
+ * one more frozen column; the `current_user` exemption already there is what
+ * lets create_club/set_club_code (both security definer, running as the
+ * function owner) keep writing it.
+ */
+create or replace function public.clubs_freeze_identity()
+returns trigger
+language plpgsql
+as $$
+begin
+  if current_user in ('postgres', 'supabase_admin', 'service_role') then
+    return new;
+  end if;
+
+  if new.slug is distinct from old.slug then
+    raise exception 'club slug cannot be changed' using errcode = '42501';
+  end if;
+
+  if new.created_by is distinct from old.created_by then
+    raise exception 'club created_by cannot be changed' using errcode = '42501';
+  end if;
+
+  if new.id is distinct from old.id then
+    raise exception 'club id cannot be changed' using errcode = '42501';
+  end if;
+
+  if new.code is distinct from old.code then
+    raise exception 'club code cannot be changed directly' using errcode = '42501';
+  end if;
+
+  return new;
+end;
+$$;
 
 -- Attempt log for the join rate limit. No policies: only the definer
 -- functions below read or write it.
@@ -177,6 +234,13 @@ begin
     raise exception 'not signed in' using errcode = '42501';
   end if;
 
+  -- Before recording the attempt: club_code_attempts.profile_id references
+  -- profiles(id), and a caller who has never joined anything yet may have no
+  -- profile row at all.
+  insert into public.profiles (id, display_name)
+  values (caller, '')
+  on conflict (id) do nothing;
+
   perform public.record_club_code_attempt(caller);
 
   select id into target from public.clubs where code = normalized;
@@ -192,10 +256,6 @@ begin
     end if;
     return jsonb_build_object('club_id', target, 'already_member', true);
   end if;
-
-  insert into public.profiles (id, display_name)
-  values (caller, '')
-  on conflict (id) do nothing;
 
   insert into public.club_members (club_id, profile_id, role)
   values (target, caller, 'member');
@@ -224,6 +284,14 @@ begin
   end if;
 
   perform public.record_club_code_attempt(caller);
+
+  -- A taken code returns null instead of raising: raising would roll back
+  -- this statement, including the attempt row record_club_code_attempt just
+  -- inserted, making "is this code taken?" a free, unlimited oracle. Null
+  -- keeps the probe inside the same 10/hour budget as every other attempt.
+  if exists (select 1 from public.clubs where code = normalized and id <> target_club) then
+    return null;
+  end if;
 
   update public.clubs set code = normalized where id = target_club;
   return normalized;

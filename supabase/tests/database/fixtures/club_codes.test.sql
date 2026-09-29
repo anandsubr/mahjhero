@@ -1,13 +1,14 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(21);
+select plan(23);
 
 insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-000000000001', 'host@example.com'),
   ('bbbbbbbb-0000-0000-0000-000000000002', 'joiner@example.com'),
   ('cccccccc-0000-0000-0000-000000000003', 'removed@example.com'),
-  ('dddddddd-0000-0000-0000-000000000004', 'spammer@example.com');
+  ('dddddddd-0000-0000-0000-000000000004', 'spammer@example.com'),
+  ('eeeeeeee-0000-0000-0000-000000000005', 'ratelimited-host@example.com');
 
 -- A fixture insert with no code gets one from the trigger (existing fixture
 -- files all insert clubs this way, so this is what keeps them working).
@@ -50,10 +51,15 @@ select throws_ok(
   '23505', null, 'codes are unique regardless of the case they were typed in'
 );
 
+insert into public.clubs (id, name, slug, timezone, created_by) values
+  ('c3c3c3c3-0000-0000-0000-000000000003', 'Third Club', 'third-club',
+   'UTC', 'eeeeeeee-0000-0000-0000-000000000005');
+
 insert into public.club_members (club_id, profile_id, role, status) values
   ('c1c1c1c1-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000001', 'host', 'active'),
   ('c1c1c1c1-0000-0000-0000-000000000001', 'cccccccc-0000-0000-0000-000000000003', 'member', 'removed'),
-  ('c2c2c2c2-0000-0000-0000-000000000002', 'aaaaaaaa-0000-0000-0000-000000000001', 'host', 'active');
+  ('c2c2c2c2-0000-0000-0000-000000000002', 'aaaaaaaa-0000-0000-0000-000000000001', 'host', 'active'),
+  ('c3c3c3c3-0000-0000-0000-000000000003', 'eeeeeeee-0000-0000-0000-000000000005', 'host', 'active');
 
 -- create_club with and without a code
 set local role authenticated;
@@ -88,13 +94,19 @@ select is(
   'OAK2',
   'a host can change the code; it comes back normalized'
 );
-select throws_ok(
-  $$select public.set_club_code('c2c2c2c2-0000-0000-0000-000000000002', 'NORTHSIDE')$$,
-  '23505', null, 'set_club_code refuses a code another club has'
+select is(
+  public.set_club_code('c2c2c2c2-0000-0000-0000-000000000002', 'NORTHSIDE'),
+  null,
+  'set_club_code returns null for a code another club has, instead of raising'
 );
 select throws_ok(
   $$select public.set_club_code('c2c2c2c2-0000-0000-0000-000000000002', 'no!')$$,
   '22023', 'invalid_code', 'set_club_code refuses a malformed code'
+);
+select throws_ok(
+  $$update public.clubs set code = 'XXXX1' where id = 'c2c2c2c2-0000-0000-0000-000000000002'$$,
+  '42501', null,
+  'a host cannot change the code with a direct UPDATE; only set_club_code may'
 );
 
 -- join_club_by_code
@@ -153,6 +165,20 @@ set local role anon;
 select throws_ok(
   $$select public.join_club_by_code('OAK2')$$,
   '42501', null, 'anon cannot call join_club_by_code'
+);
+reset role;
+
+-- set_club_code shares the same attempt budget as join_club_by_code: a host
+-- who already has 10 attempts recorded this hour is rate-limited too.
+insert into public.club_code_attempts (profile_id, attempted_at)
+select 'eeeeeeee-0000-0000-0000-000000000005', now() from generate_series(1, 10);
+
+set local role authenticated;
+set local request.jwt.claims = '{"sub": "eeeeeeee-0000-0000-0000-000000000005", "role": "authenticated"}';
+select throws_ok(
+  $$select public.set_club_code('c3c3c3c3-0000-0000-0000-000000000003', 'THIRD1')$$,
+  'P0001', 'rate_limited',
+  'set_club_code is refused once the shared attempt budget is spent'
 );
 reset role;
 
