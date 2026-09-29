@@ -47,25 +47,25 @@ change completely, and the global bottom tab bar goes away.
   - records the attempt in `club_code_attempts(profile_id, attempted_at)`; raises
     `rate_limited` when the caller has more than 10 attempts in the past hour (counted before the
     new one is inserted);
-  - on match, inserts a `member` row or reactivates a removed one (the same path
-    `accept_club_invite` uses);
+  - on match, inserts a `member` row; a removed member is refused (`removed_member`); only an
+    invite brings them back;
   - returns `{club_id, already_member}`, or null when no club has that code.
 - `set_club_code(club_id uuid, code text)` — hosts and co-organizers only; normalizes as above;
-  raises `code_taken` on unique violation, `invalid_code` on format failure.
-- `club_code_available(code text) returns boolean` — `authenticated` only; normalizes, checks
-  format and existence.
+  raises `code_taken` on unique violation, `invalid_code` on format failure. `set_club_code` shares
+  the 10/hour attempt budget; there is no availability RPC (it would be an oracle around the join
+  rate limit).
 
 ### My games feed
 
 `my_games(from_ts timestamptz, to_ts timestamptz)` — one round trip replacing the per-club N+1
 fetch. Returns every game with `starts_at` in `[from_ts, to_ts)` where the caller has a confirmed
-or waitlisted booking or is an organizer. Columns:
+or waitlisted booking or created the game (`events.created_by`). Columns:
 
 `event_id, club_id, club_name, title, game_mode, starts_at, ends_at, timezone, venue_name,
 seats_taken, capacity, my_status ('going' | 'waitlisted' | 'hosting'), waitlist_position,
 table_label`
 
-- An organizer who is also booked gets `my_status = 'hosting'`.
+- A creator who is also booked gets `my_status = 'hosting'`.
 - Invited (not yet accepted) bookings are excluded — they appear in "Needs you".
 - Cancelled events are excluded.
 - `seats_taken` counts the same holds `capacity` logic already counts (confirmed + held invites).
@@ -128,8 +128,8 @@ greetings screen and table stay untouched.)
    - **`ClubCard`** list (`surface`, radius 20, min 80pt): 52pt glyph tile radius 16, name 700 17,
      sub-line, unread badge (`accent-700`, white 12 700), chevron → `/clubs/[id]` (the current club
      page until phase 2).
-   - **Start a club**: dashed 1.5px `neutral-400`, 56pt → `/clubs/new`, which gains an editable
-     code field pre-filled with a suggestion.
+   - **Start a club**: dashed 1.5px `neutral-400`, 56pt → `/clubs/new`, which gains an optional
+     code field (blank = generated).
    - The current club page gets a "Club code" line; hosts/co-organizers can edit it (bridge until
      the phase 2 header/settings).
 
@@ -163,9 +163,8 @@ Grid `56–60px | 1fr | 18px`, padding 12–14, 1px `divider` between rows, pres
   list failing uses the same pattern.
 - **Join by code:** no match → "No club with that code."; already a member → go to the club;
   `rate_limited` → "Too many tries. Try again in an hour."; network → generic error.
-- **Code editing** (Start a club, club page): availability check 400ms after typing stops →
-  "Available" / "That code is taken."; Save disabled while invalid or taken; `code_taken` at save
-  shows the same message.
+- **Code editing** (Start a club, club page): Uniqueness is checked on save; `23505` shows "That
+  code is taken."
 - **Calendar:** months fetch on navigation, the previous month stays visible until the new one
   loads; the selected day becomes today if in view, else the 1st of the month.
 - **Stale data:** Home refetches on focus.
