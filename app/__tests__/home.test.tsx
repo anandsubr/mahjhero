@@ -14,7 +14,7 @@ vi.mock('expo-router', () => ({
 const SESSION = { session: { user: { id: 'me', email: 'me@example.com' } }, loading: false };
 vi.mock('../../lib/session', () => ({ useSession: () => SESSION }));
 
-const GUIDES = { isVisible: () => false, dismiss: vi.fn() };
+const GUIDES = { isVisible: (_k: string) => false, dismiss: vi.fn() };
 vi.mock('../../lib/use-guides', () => ({ useGuides: () => GUIDES }));
 vi.mock('../../lib/use-unread', () => ({ useUnreadCounts: () => ({ total: 0, byClub: {} }) }));
 vi.mock('../../lib/use-notifications-unread', () => ({ useNotificationsUnread: () => 2 }));
@@ -46,9 +46,10 @@ const CLUB = {
   id: 'c1', name: 'Test Club', slug: 't', rhythm: '', visibility: 'private',
   timezone: 'America/New_York', default_game_mode: 'open_play', code: 'TEST1',
 };
+let myClubs: unknown[] = [CLUB];
 vi.mock('../../lib/clubs', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../lib/clubs')>()),
-  fetchMyClubs: async () => [CLUB],
+  fetchMyClubs: async () => myClubs,
   fetchMyRoles: async () => [{ club_id: 'c1', role: 'member' }],
 }));
 vi.mock('../../lib/profile', () => ({
@@ -68,6 +69,9 @@ const GAME = {
 beforeEach(() => {
   push.mockReset();
   store.clear();
+  myClubs = [CLUB];
+  GUIDES.isVisible = () => false;
+  fetchMyGames.mockReset();
   fetchClubsNextGame.mockResolvedValue({});
 });
 
@@ -112,6 +116,39 @@ describe('HomeScreen', () => {
     render(<HomeScreen />);
     fireEvent.click(await screen.findByRole('button', { name: 'Calendar' }));
     await waitFor(() => expect(store.get('home:myGamesMode:me')).toBe('calendar'));
+    expect(await screen.findByRole('button', { name: 'Next month' })).toBeTruthy();
+  });
+
+  it('shows the welcome card to a member with no clubs', async () => {
+    myClubs = [];
+    GUIDES.isVisible = (k: string) => k === 'welcome';
+    fetchMyGames.mockResolvedValue([]);
+    render(<HomeScreen />);
+    expect(await screen.findByText('Welcome to MahjHero')).toBeTruthy();
+    expect(screen.getByText('me@example.com')).toBeTruthy();
+  });
+
+  it('restores a saved Calendar choice on mount', async () => {
+    store.set('home:myGamesMode:me', 'calendar');
+    fetchMyGames.mockResolvedValue([GAME]);
+    render(<HomeScreen />);
+    expect(await screen.findByRole('button', { name: 'Next month' })).toBeTruthy();
+  });
+
+  it('shows Retry when a calendar month fails, and refetches the month', async () => {
+    store.set('home:myGamesMode:me', 'calendar');
+    let monthFails = true;
+    // The list feed spans 120 days; a calendar month spans at most 31.
+    fetchMyGames.mockImplementation(async (from: Date, to: Date) => {
+      const isMonth = to.getTime() - from.getTime() < 40 * 86_400_000;
+      if (isMonth && monthFails) return null;
+      return [GAME];
+    });
+    render(<HomeScreen />);
+    expect(await screen.findByText('Could not load your games.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Next month' })).toBeNull();
+    monthFails = false;
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(await screen.findByRole('button', { name: 'Next month' })).toBeTruthy();
   });
 });
