@@ -181,6 +181,7 @@ describe('nav glyph parity', () => {
       visibility: 'private' as const,
       timezone: 'America/New_York',
       default_game_mode: 'open_play' as const,
+      code: 'TESTCODE',
     };
     vi.mocked(fetchMyClubs).mockResolvedValueOnce([club]);
 

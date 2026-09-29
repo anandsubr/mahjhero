@@ -14,6 +14,7 @@ export type Club = {
   visibility: ClubVisibility;
   timezone: string;
   default_game_mode: GameMode;
+  code: string;
 };
 
 export type ClubMember = {
@@ -44,7 +45,7 @@ export type RosterRow = {
 
 export type RosterError = { row: number; message: string };
 
-const CLUB_COLUMNS = 'id, name, slug, rhythm, visibility, timezone, default_game_mode';
+const CLUB_COLUMNS = 'id, name, slug, rhythm, visibility, timezone, default_game_mode, code';
 const INVITE_COLUMNS = 'id, email, display_name, skill_level, declined_at';
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const SKILL_LEVELS: SkillLevel[] = ['beginner', 'intermediate', 'advanced'];
@@ -405,9 +406,32 @@ export async function fetchPendingInvites(
  * Note there is no `userId` argument: the function reads `auth.uid()` itself,
  * so a caller cannot create a club on someone else's behalf.
  */
+const CODE_PATTERN = /^[A-Z0-9]{4,16}$/;
+export const CODE_TAKEN = 'That code is taken.';
+export const CODE_INVALID = 'Codes are 4–16 letters or numbers.';
+
+/** Uppercase with all whitespace removed — the same normalization the database applies. */
+export function normalizeClubCode(raw: string): string {
+  return raw.replace(/\s+/g, '').toUpperCase();
+}
+
+export function isValidClubCode(code: string): boolean {
+  return CODE_PATTERN.test(code);
+}
+
+type RpcError = { code?: string; message?: string } | null;
+
+function codeError(error: RpcError): string {
+  if (error?.code === '23505') return CODE_TAKEN;
+  if (error?.code === '23514' || error?.message === 'invalid_code') return CODE_INVALID;
+  if (error?.message === 'rate_limited') return 'Too many tries. Try again in an hour.';
+  return GENERIC_ERROR;
+}
+
 export async function createClub(
   name: string,
   rhythm: string,
+  code?: string,
 ): Promise<{ clubId: string | null; error: string | null }> {
   const trimmed = name.trim();
 
@@ -417,21 +441,80 @@ export async function createClub(
   if (slugify(trimmed).length === 0) {
     return { clubId: null, error: 'That name needs at least one letter or number.' };
   }
+  const normalized = normalizeClubCode(code ?? '');
+  if (normalized.length > 0 && !isValidClubCode(normalized)) {
+    return { clubId: null, error: CODE_INVALID };
+  }
 
   try {
     const { data, error } = await supabase.rpc('create_club', {
       club_name: trimmed,
       club_rhythm: rhythm.trim(),
+      club_code: normalized.length > 0 ? normalized : null,
     });
 
     if (error || !data) {
       console.error('createClub failed', error);
-      return { clubId: null, error: GENERIC_ERROR };
+      return { clubId: null, error: codeError(error) };
     }
     return { clubId: data as string, error: null };
   } catch (cause) {
     console.error('createClub failed', cause);
     return { clubId: null, error: GENERIC_ERROR };
+  }
+}
+
+export async function joinClubByCode(
+  raw: string,
+): Promise<{ clubId: string | null; alreadyMember: boolean; error: string | null }> {
+  try {
+    const { data, error } = await supabase.rpc('join_club_by_code', {
+      club_code: normalizeClubCode(raw),
+    });
+    if (error) {
+      if (error.message === 'removed_member') {
+        return {
+          clubId: null,
+          alreadyMember: false,
+          error: 'You left or were removed from this club. Ask a host to invite you back.',
+        };
+      }
+      console.error('joinClubByCode failed', error);
+      return { clubId: null, alreadyMember: false, error: codeError(error) };
+    }
+    if (!data) {
+      return { clubId: null, alreadyMember: false, error: 'No club with that code.' };
+    }
+    const result = data as { club_id: string; already_member: boolean };
+    return { clubId: result.club_id, alreadyMember: result.already_member, error: null };
+  } catch (cause) {
+    console.error('joinClubByCode failed', cause);
+    return { clubId: null, alreadyMember: false, error: GENERIC_ERROR };
+  }
+}
+
+export async function setClubCode(
+  clubId: string,
+  raw: string,
+): Promise<{ code: string | null; error: string | null }> {
+  const normalized = normalizeClubCode(raw);
+  if (!isValidClubCode(normalized)) return { code: null, error: CODE_INVALID };
+  try {
+    const { data, error } = await supabase.rpc('set_club_code', {
+      target_club: clubId,
+      new_code: normalized,
+    });
+    if (error) {
+      console.error('setClubCode failed', error);
+      return { code: null, error: codeError(error) };
+    }
+    // set_club_code returns null (not an error) when another club has the
+    // code, so the attempt still counts against the rate limit.
+    if (!data) return { code: null, error: CODE_TAKEN };
+    return { code: data as string, error: null };
+  } catch (cause) {
+    console.error('setClubCode failed', cause);
+    return { code: null, error: GENERIC_ERROR };
   }
 }
 

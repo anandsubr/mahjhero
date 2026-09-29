@@ -23,6 +23,7 @@ const CLUBS: Club[] = [
     visibility: 'private',
     timezone: 'America/New_York',
     default_game_mode: 'open_play',
+    code: 'TESTCODE',
   },
   {
     id: 'club-2',
@@ -32,6 +33,7 @@ const CLUBS: Club[] = [
     visibility: 'private',
     timezone: 'America/New_York',
     default_game_mode: 'open_play',
+    code: 'TESTCODE',
   },
 ];
 
