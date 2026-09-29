@@ -387,6 +387,15 @@ export default function NewEventScreen() {
       <Screen
         scroll
         contentStyle={formStyles.body}
+        footer={
+          <ActionBar
+            onCancel={requestLeave}
+            primaryLabel="Create game"
+            primaryAccessibilityLabel="Save game"
+            onPrimary={onSave}
+            busy={saving}
+          />
+        }
       >
         <FormHeader clubId={clubId} clubName={club.name} onClose={requestLeave} />
         <FormTitle>New game</FormTitle>
@@ -583,14 +592,6 @@ export default function NewEventScreen() {
             />
           </FormCard>
         </FormSection>
-
-        <ActionBar
-          onCancel={requestLeave}
-          primaryLabel="Create game"
-          primaryAccessibilityLabel="Save game"
-          onPrimary={onSave}
-          busy={saving}
-        />
       </Screen>
 
       {confirmingDiscard ? (

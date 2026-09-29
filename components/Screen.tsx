@@ -27,6 +27,15 @@ type ScreenProps = {
    */
   contentStyle?: StyleProp<ViewStyle>;
   /**
+   * Pinned bottom content — an action bar (Cancel/Save, Cancel/Create),
+   * a live-game round timer, a door list's "Add a walk-in" strip — for
+   * screens that need something fixed below the scroller rather than
+   * flowing as its last child. Rendered outside the scroller: inside, it
+   * would scroll off the bottom of a long screen, which is exactly where
+   * it is most needed.
+   */
+  footer?: ReactNode;
+  /**
    * Forwarded verbatim to the underlying `ScrollView`'s own
    * `stickyHeaderIndices` (only meaningful together with `scroll`). Optional
    * and `undefined` by default, so every existing caller keeps rendering
@@ -75,6 +84,7 @@ export default function Screen({
   center = false,
   background = colors.bg,
   contentStyle,
+  footer,
   stickyHeaderIndices,
   avoidKeyboard = false,
 }: ScreenProps) {
@@ -123,7 +133,22 @@ export default function Screen({
     </View>
   );
 
-  if (!avoidKeyboard || Platform.OS !== 'ios') return body;
+  const shell = !footer ? (
+    body
+  ) : (
+    <View style={[styles.fill, { backgroundColor: background }]}>
+      <View style={styles.footerShellBody}>{body}</View>
+      {/*
+        The footer is capped and centred like the content column rather
+        than running full-bleed. On a desktop browser — a first-class case
+        here, since club invite links open the web build — a 1400px-wide
+        strip under a 440px column reads as a different app's chrome.
+      */}
+      <View style={styles.footerColumn}>{footer}</View>
+    </View>
+  );
+
+  if (!avoidKeyboard || Platform.OS !== 'ios') return shell;
 
   // No offset: every screen fills the window from the very top (there is no
   // navigator header above it), so the keyboard's full height is the lift.
@@ -132,7 +157,7 @@ export default function Screen({
       behavior="padding"
       style={[styles.fill, { backgroundColor: background }]}
     >
-      {body}
+      {shell}
     </KeyboardAvoidingView>
   );
 }
@@ -150,6 +175,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   content: {
+    width: '100%',
+    maxWidth: layout.contentMaxWidth,
+    alignSelf: 'center',
+  },
+  footerShellBody: {
+    flex: 1,
+    minHeight: 0,
+  },
+  footerColumn: {
     width: '100%',
     maxWidth: layout.contentMaxWidth,
     alignSelf: 'center',

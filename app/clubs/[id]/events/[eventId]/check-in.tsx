@@ -1371,11 +1371,10 @@ export default function CheckInScreen() {
 
   return (
     <>
-      <Screen scroll stickyHeaderIndices={[1]}>
+      <Screen scroll stickyHeaderIndices={[1]} footer={footer}>
         {top}
         {pinned}
         {list}
-        {footer}
       </Screen>
 
       {pickerOpen ? (

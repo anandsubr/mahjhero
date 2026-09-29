@@ -990,6 +990,14 @@ export default function EventScreen() {
     <Screen
       scroll
       contentStyle={styles.container}
+      footer={
+        showRoundBar ? (
+          <RoundTimer
+            roundNumber={barRoundNumber}
+            showRecordHint={isOrganizer || myTableId !== null}
+          />
+        ) : null
+      }
     >
       {/*
         Goes to /home, not /clubs/${clubId}: the club management page no
@@ -1723,13 +1731,6 @@ export default function EventScreen() {
 
       {/* "Cancel this game" lives on the Edit screen now (game form
           handoff), behind a confirmation. */}
-
-      {showRoundBar ? (
-        <RoundTimer
-          roundNumber={barRoundNumber}
-          showRecordHint={isOrganizer || myTableId !== null}
-        />
-      ) : null}
     </Screen>
   );
 }

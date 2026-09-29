@@ -797,6 +797,15 @@ export default function EditEventScreen() {
       <Screen
         scroll
         contentStyle={formStyles.body}
+        footer={
+          <ActionBar
+            onCancel={requestLeave}
+            primaryLabel="Save"
+            primaryAccessibilityLabel="Save changes"
+            onPrimary={() => void onSave()}
+            busy={saving}
+          />
+        }
       >
         <FormHeader clubId={clubId} clubName={club.name} onClose={requestLeave} />
         <FormTitle>Edit</FormTitle>
@@ -1057,14 +1066,6 @@ export default function EditEventScreen() {
             disabled={saving}
           />
         ) : null}
-
-        <ActionBar
-          onCancel={requestLeave}
-          primaryLabel="Save"
-          primaryAccessibilityLabel="Save changes"
-          onPrimary={() => void onSave()}
-          busy={saving}
-        />
       </Screen>
 
       {confirming === 'discard' ? (

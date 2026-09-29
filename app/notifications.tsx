@@ -205,6 +205,20 @@ export default function NotificationSettings() {
     <Screen
       scroll
       contentStyle={[formStyles.body, styles.body]}
+      footer={
+        dirty ? (
+          <ActionBar
+            onCancel={onDiscard}
+            cancelLabel="Discard"
+            primaryLabel="Save changes"
+            primaryAccessibilityLabel="Save changes"
+            onPrimary={onSave}
+            // Busy while the write is in flight: a second tap would start
+            // a second overlapping update whose result races the first.
+            busy={saving}
+          />
+        ) : null
+      }
     >
       {/* Without this the screen was a dead end on native: nothing else on
           it navigates away, so a member who opened it had no way off short
@@ -315,18 +329,6 @@ export default function NotificationSettings() {
           <CheckIcon size={14} color={colors.accent2[700]} />
           <Text style={styles.savedText}>Saved</Text>
         </View>
-      ) : null}
-      {dirty ? (
-        <ActionBar
-          onCancel={onDiscard}
-          cancelLabel="Discard"
-          primaryLabel="Save changes"
-          primaryAccessibilityLabel="Save changes"
-          onPrimary={onSave}
-          // Busy while the write is in flight: a second tap would start
-          // a second overlapping update whose result races the first.
-          busy={saving}
-        />
       ) : null}
     </Screen>
   );

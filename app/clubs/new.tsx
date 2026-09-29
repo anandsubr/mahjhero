@@ -67,6 +67,15 @@ export default function NewClubScreen() {
     <Screen
       scroll
       contentStyle={formStyles.body}
+      footer={
+        <ActionBar
+          primaryLabel="Create the club"
+          primaryAccessibilityLabel="Create the club"
+          onPrimary={onCreate}
+          busy={saving}
+          disabled={!canCreate}
+        />
+      }
     >
       <FormHeader
         clubName="Clubs"
@@ -124,14 +133,6 @@ export default function NewClubScreen() {
           inputStyle={styles.description}
         />
       </FormCard>
-
-      <ActionBar
-        primaryLabel="Create the club"
-        primaryAccessibilityLabel="Create the club"
-        onPrimary={onCreate}
-        busy={saving}
-        disabled={!canCreate}
-      />
     </Screen>
   );
 }
