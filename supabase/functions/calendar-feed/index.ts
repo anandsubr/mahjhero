@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.111.0';
 import { buildCalendar, type FeedGame } from './ics.ts';
+import { mergeFeedGames, type BookingRow, type EventRow } from './merge.ts';
 
 // Same local-stub reasoning as deliver-notifications/index.ts: a bare
 // top-level `declare const Deno` in a *script* file leaks globally to
@@ -21,46 +22,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const PAST_DAYS = 30;
 const FUTURE_DAYS = 180;
 
-type EventRow = {
-  id: string;
-  club_id: string;
-  title: string | null;
-  game_mode: FeedGame['gameMode'];
-  starts_at: string;
-  ends_at: string;
-  notes: string | null;
-  club: { name: string } | null;
-  venue: { name: string } | null;
-};
-
-type BookingRow = {
-  status: 'confirmed' | 'waitlisted' | 'invited';
-  event: EventRow | null;
-};
-
 const EVENT_COLUMNS =
   'id, club_id, title, game_mode, starts_at, ends_at, notes, club:clubs(name), venue:venues(name)';
-
-const BOOKING_STATUS: Record<BookingRow['status'], FeedGame['status']> = {
-  confirmed: 'going',
-  waitlisted: 'waitlisted',
-  invited: 'invited',
-};
-
-function toGame(e: EventRow, status: FeedGame['status']): FeedGame {
-  return {
-    eventId: e.id,
-    clubId: e.club_id,
-    title: e.title,
-    gameMode: e.game_mode,
-    clubName: e.club?.name ?? '',
-    startsAt: e.starts_at,
-    endsAt: e.ends_at,
-    venueName: e.venue?.name ?? '',
-    notes: e.notes ?? '',
-    status,
-  };
-}
 
 function text(body: string, status: number): Response {
   return new Response(body, {
@@ -89,7 +52,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
       required('SUPABASE_SERVICE_ROLE_KEY'),
       { auth: { persistSession: false, autoRefreshToken: false } },
     );
-    const appUrl = required('APP_URL');
+    const appUrl = required('PUBLIC_APP_URL');
 
     const { data: feed, error: feedError } = await supabase
       .from('calendar_feeds')
@@ -114,7 +77,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
     if (memberError) throw memberError;
     const clubIds = (memberships ?? []).map((m) => m.club_id as string);
 
-    const games = new Map<string, FeedGame>();
+    let games: FeedGame[] = [];
 
     if (clubIds.length > 0) {
       const [booked, hosted] = await Promise.all([
@@ -141,18 +104,13 @@ Deno.serve(async (request: Request): Promise<Response> => {
 
       // Without a generated Database type, postgrest-js types these to-one
       // embeds as arrays; a single object is what comes back at runtime.
-      for (const b of (booked.data ?? []) as unknown as BookingRow[]) {
-        if (b.event) games.set(b.event.id, toGame(b.event, BOOKING_STATUS[b.status]));
-      }
-      // Second, so hosting wins over any booking the host also holds.
-      for (const e of (hosted.data ?? []) as unknown as EventRow[]) {
-        games.set(e.id, toGame(e, 'hosting'));
-      }
+      games = mergeFeedGames(
+        (booked.data ?? []) as unknown as BookingRow[],
+        (hosted.data ?? []) as unknown as EventRow[],
+      );
     }
 
-    const sorted = [...games.values()].sort((a, b) => a.startsAt.localeCompare(b.startsAt));
-
-    return new Response(buildCalendar(sorted, now, appUrl), {
+    return new Response(buildCalendar(games, now, appUrl), {
       status: 200,
       headers: {
         'Content-Type': 'text/calendar; charset=utf-8',
