@@ -39,7 +39,7 @@ export default function BroadcastRedirect() {
       if (!result.id) {
         // A refusal lands on the club screen rather than leaving somebody on
         // a spinner with nowhere to go.
-        router.replace(`/clubs/${id}`);
+        router.replace(`/clubs/${id}/games`);
         return;
       }
       // A game thread is still a flat chat; a club's is a BOARD of posts.

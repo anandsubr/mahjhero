@@ -62,10 +62,6 @@ const createInvite = vi.fn();
 const sendClubInviteEmail = vi.fn();
 // events-new.test.tsx's own lib/clubs mock: fetchMyRoles, for NewEventScreen.
 const fetchMyRoles = vi.fn();
-// clubs.test.tsx's own club-detail-screen lib/clubs mock: the invite list,
-// for ClubDetailScreen.
-const fetchPendingInvites = vi.fn();
-const deleteInvite = vi.fn();
 
 vi.mock('../../lib/clubs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../lib/clubs')>();
@@ -76,8 +72,6 @@ vi.mock('../../lib/clubs', async (importOriginal) => {
     createInvite: (...args: unknown[]) => createInvite(...args),
     sendClubInviteEmail: (...args: unknown[]) => sendClubInviteEmail(...args),
     fetchMyRoles: (...args: unknown[]) => fetchMyRoles(...args),
-    fetchPendingInvites: (...args: unknown[]) => fetchPendingInvites(...args),
-    deleteInvite: (...args: unknown[]) => deleteInvite(...args),
   };
 });
 
@@ -185,7 +179,6 @@ vi.mock('../../components/VenuePicker', () => ({
 import EventScreen from '../clubs/[id]/events/[eventId]/index';
 import NewEventScreen from '../clubs/[id]/events/new';
 import CheckInScreen from '../clubs/[id]/events/[eventId]/check-in';
-import ClubDetailScreen from '../clubs/[id]/index';
 
 const CLUB = {
   id: 'club-1',
@@ -304,9 +297,6 @@ beforeEach(() => {
   fetchEventPayments.mockResolvedValue([]);
   setPaymentStatus.mockResolvedValue({ error: null });
 
-  // ClubDetailScreen fixtures.
-  fetchPendingInvites.mockResolvedValue([]);
-  deleteInvite.mockResolvedValue({ error: null });
 });
 
 function renderEventAsMember() {
@@ -327,16 +317,6 @@ function renderCheckInAsHost() {
   fetchRoster.mockResolvedValue(HOST_ROLE);
   fetchEvent.mockResolvedValue(CHECK_IN_EVENT);
   return render(<CheckInScreen />);
-}
-
-function renderClubAsHost() {
-  fetchRoster.mockResolvedValue(HOST_ROLE);
-  return render(<ClubDetailScreen />);
-}
-
-function renderClubAsMember() {
-  fetchRoster.mockResolvedValue(MEMBER_ROLE);
-  return render(<ClubDetailScreen />);
 }
 
 describe('event page tip', () => {
@@ -452,28 +432,7 @@ describe('check-in tip', () => {
   });
 });
 
-describe('club page tip', () => {
-  it('explains inviting to an organizer', async () => {
-    renderClubAsHost();
-    expect(await screen.findByText('Bringing people in')).toBeTruthy();
-    // Not the brief's own bare /Invite by email/ and /Import a roster/: the
-    // "Invite by email" TextField label and the "Import a roster" Button's
-    // own label (below the tip) render as their own visible text too, same
-    // ambiguity the "new game tip" describe above hits with "Cost to play"
-    // -- anchored to the fuller phrases, unique to the tip's own copy.
-    expect(screen.getByText(/Use Invite by email for one person/)).toBeTruthy();
-    expect(screen.getByText(/Import a roster for a whole list/)).toBeTruthy();
-  });
-
-  it('is not shown to a member', async () => {
-    renderClubAsMember();
-    await screen.findByText('Leaderboard');
-    expect(screen.queryByText('Bringing people in')).toBeNull();
-  });
-
-  it('dismisses with its key', async () => {
-    renderClubAsHost();
-    fireEvent.click(await screen.findByRole('button', { name: 'Got it: Bringing people in' }));
-    expect(dismiss).toHaveBeenCalledWith('tip:club');
-  });
-});
+// The "club page tip" ("Bringing people in") describe that used to live
+// here moved to components/__tests__/club-members.test.tsx (club-hub phase
+// 2, Task 10), alongside ClubMembers itself -- the tip is that component's
+// now, not legacy.tsx's.

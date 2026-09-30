@@ -191,7 +191,7 @@ describe('Cancel', () => {
     fireEvent.click(screen.getByLabelText('Cancel'));
 
     expect(back).not.toHaveBeenCalled();
-    expect(replace).toHaveBeenCalledWith('/clubs/club-1');
+    expect(replace).toHaveBeenCalledWith('/clubs/club-1/games');
   });
 });
 
@@ -339,7 +339,8 @@ describe('a failed save', () => {
     expect(replace).not.toHaveBeenCalled();
   });
 
-  it('navigates to Home once the save actually succeeds', async () => {
+  it('goes back to the hub Games section once the save actually succeeds', async () => {
+    canGoBack.mockReturnValue(true);
     render(<NewEventScreen />);
     await screen.findByText('New game');
     pickVenue();
@@ -348,13 +349,29 @@ describe('a failed save', () => {
     });
     fireEvent.click(screen.getByText('Create game'));
 
-    // Home, not this specific club's own page -- a newly created game
-    // already shows up there. Different from Cancel above, which
-    // deliberately stays on `/clubs/club-1`.
-    await vi.waitFor(() => expect(replace).toHaveBeenCalledWith('/home'));
+    // Pops back to wherever the host came from (the hub's Games section, or
+    // Home) -- a newly created game already shows up there either way.
+    await vi.waitFor(() => expect(back).toHaveBeenCalled());
+    expect(replace).not.toHaveBeenCalledWith('/clubs/club-1/games');
   });
 
-  it('navigates to Home once a series save succeeds too', async () => {
+  it('falls back to the hub Games section on a cold open once the save succeeds', async () => {
+    canGoBack.mockReturnValue(false);
+    render(<NewEventScreen />);
+    await screen.findByText('New game');
+    pickVenue();
+    fireEvent.change(screen.getByLabelText('Game name'), {
+      target: { value: 'Real game' },
+    });
+    fireEvent.click(screen.getByText('Create game'));
+
+    await vi.waitFor(() =>
+      expect(replace).toHaveBeenCalledWith('/clubs/club-1/games'),
+    );
+  });
+
+  it('goes back to the hub Games section once a series save succeeds too', async () => {
+    canGoBack.mockReturnValue(true);
     render(<NewEventScreen />);
     await screen.findByText('New game');
     fireEvent.click(screen.getByText('Every week'));
@@ -364,7 +381,7 @@ describe('a failed save', () => {
     });
     fireEvent.click(screen.getByText('Create game'));
 
-    await vi.waitFor(() => expect(replace).toHaveBeenCalledWith('/home'));
+    await vi.waitFor(() => expect(back).toHaveBeenCalled());
   });
 });
 
@@ -694,7 +711,7 @@ describe('table levels', () => {
     fireEvent.change(screen.getByLabelText('Game name'), { target: { value: 'Levels' } });
     fireEvent.click(screen.getByText('Create game'));
 
-    await vi.waitFor(() => expect(replace).toHaveBeenCalledWith('/home'));
+    await vi.waitFor(() => expect(back).toHaveBeenCalled());
     expect(createEvent.mock.calls[0][0].tableCount).toBe(2);
     // Table 1 stays "Any level" -- nothing to send for it.
     expect(updateEventTable).toHaveBeenCalledTimes(1);
