@@ -97,7 +97,7 @@ export default function HomeGuides({
           onDismiss={() => guides.dismiss('player-intro')}
         >
           <TipText>1. Join a club with its code, or accept an invite.</TipText>
-          <TipText>2. Open a club to find a game and take a seat.</TipText>
+          <TipText>2. When you’re invited to a game, accept it here on Home.</TipText>
           <TipText>3. Your games show up here under My games.</TipText>
         </TipCard>
       ) : null}
