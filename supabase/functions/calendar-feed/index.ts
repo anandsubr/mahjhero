@@ -38,10 +38,7 @@ function text(body: string, status: number): Response {
  * whole of the authentication. The service-role client below therefore
  * scopes every query to the token's owner by hand — RLS isn't in play.
  */
-Deno.serve(async (request: Request): Promise<Response> => {
-  if (request.method !== 'GET') {
-    return new Response('Method not allowed', { status: 405, headers: { Allow: 'GET' } });
-  }
+async function handle(request: Request): Promise<Response> {
 
   const token = new URL(request.url).searchParams.get('token');
   if (!token) return text('Missing token', 400);
@@ -114,11 +111,26 @@ Deno.serve(async (request: Request): Promise<Response> => {
       status: 200,
       headers: {
         'Content-Type': 'text/calendar; charset=utf-8',
-        'Cache-Control': 'public, max-age=900',
+        // private: keep feeds out of shared caches, so a reset link stops
+        // serving promptly instead of lingering in a CDN.
+        'Cache-Control': 'private, max-age=900',
       },
     });
   } catch (cause) {
     console.error('calendar-feed failed', cause);
     return text('Could not build calendar', 500);
   }
+}
+
+Deno.serve(async (request: Request): Promise<Response> => {
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    return new Response('Method not allowed', { status: 405, headers: { Allow: 'GET, HEAD' } });
+  }
+  const response = await handle(request);
+  // Some calendar clients probe with HEAD first: same status and headers,
+  // no body.
+  if (request.method === 'HEAD') {
+    return new Response(null, { status: response.status, headers: response.headers });
+  }
+  return response;
 });
