@@ -1,14 +1,15 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(23);
+select plan(27);
 
 insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-000000000001', 'host@example.com'),
   ('bbbbbbbb-0000-0000-0000-000000000002', 'joiner@example.com'),
   ('cccccccc-0000-0000-0000-000000000003', 'removed@example.com'),
   ('dddddddd-0000-0000-0000-000000000004', 'spammer@example.com'),
-  ('eeeeeeee-0000-0000-0000-000000000005', 'ratelimited-host@example.com');
+  ('eeeeeeee-0000-0000-0000-000000000005', 'ratelimited-host@example.com'),
+  ('ffffffff-0000-0000-0000-000000000006', 'ratelimited-creator@example.com');
 
 -- A fixture insert with no code gets one from the trigger (existing fixture
 -- files all insert clubs this way, so this is what keeps them working).
@@ -83,10 +84,32 @@ select matches(
   '^FRIDAYTI[0-9]{3}$',
   'create_club without a code generates one'
 );
-select throws_ok(
-  $$select public.create_club('Dupe', '', 'OAKTILES')$$,
-  '23505', null, 'create_club refuses a taken code'
+-- club_code_attempts has no grants for authenticated, so counts are read as
+-- the superuser and captured with \gset.
+reset role;
+select count(*) as host_attempts_before from public.club_code_attempts
+  where profile_id = 'aaaaaaaa-0000-0000-0000-000000000001' \gset
+set local role authenticated;
+
+select is(
+  public.create_club('Dupe', '', 'OAKTILES'),
+  null,
+  'create_club returns null for a taken code, instead of raising'
 );
+
+reset role;
+select is(
+  (select count(*)::int from public.club_code_attempts
+    where profile_id = 'aaaaaaaa-0000-0000-0000-000000000001'),
+  (:host_attempts_before + 1)::int,
+  'a taken-code create_club still records an attempt'
+);
+select is(
+  (select count(*)::int from public.clubs where name = 'Dupe'),
+  0,
+  'a taken-code create_club leaves no club behind'
+);
+set local role authenticated;
 
 -- set_club_code
 select is(
@@ -94,11 +117,26 @@ select is(
   'OAK2',
   'a host can change the code; it comes back normalized'
 );
+
+reset role;
+select count(*) as host_attempts_before from public.club_code_attempts
+  where profile_id = 'aaaaaaaa-0000-0000-0000-000000000001' \gset
+set local role authenticated;
+
 select is(
   public.set_club_code('c2c2c2c2-0000-0000-0000-000000000002', 'NORTHSIDE'),
   null,
   'set_club_code returns null for a code another club has, instead of raising'
 );
+
+reset role;
+select is(
+  (select count(*)::int from public.club_code_attempts
+    where profile_id = 'aaaaaaaa-0000-0000-0000-000000000001'),
+  (:host_attempts_before + 1)::int,
+  'a taken-code set_club_code probe still records an attempt'
+);
+set local role authenticated;
 select throws_ok(
   $$select public.set_club_code('c2c2c2c2-0000-0000-0000-000000000002', 'no!')$$,
   '22023', 'invalid_code', 'set_club_code refuses a malformed code'
@@ -179,6 +217,19 @@ select throws_ok(
   $$select public.set_club_code('c3c3c3c3-0000-0000-0000-000000000003', 'THIRD1')$$,
   'P0001', 'rate_limited',
   'set_club_code is refused once the shared attempt budget is spent'
+);
+reset role;
+
+-- create_club with a chosen code draws on the same budget.
+insert into public.club_code_attempts (profile_id, attempted_at)
+select 'ffffffff-0000-0000-0000-000000000006', now() from generate_series(1, 10);
+
+set local role authenticated;
+set local request.jwt.claims = '{"sub": "ffffffff-0000-0000-0000-000000000006", "role": "authenticated"}';
+select throws_ok(
+  $$select public.create_club('Spam Club', '', 'SPAMCLUB')$$,
+  'P0001', 'rate_limited',
+  'create_club with a code is refused once the shared attempt budget is spent'
 );
 reset role;
 

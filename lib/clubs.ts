@@ -453,6 +453,12 @@ export async function createClub(
       club_code: normalized.length > 0 ? normalized : null,
     });
 
+    // A taken code comes back as a null id rather than an error, so the probe
+    // still counts against the attempt budget (see create_club). 23505 stays
+    // mapped in codeError as a fallback.
+    if (!error && !data && normalized.length > 0) {
+      return { clubId: null, error: CODE_TAKEN };
+    }
     if (error || !data) {
       console.error('createClub failed', error);
       return { clubId: null, error: codeError(error) };

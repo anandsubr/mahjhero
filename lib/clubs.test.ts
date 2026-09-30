@@ -799,8 +799,15 @@ describe('club codes', () => {
     });
   });
 
-  it('createClub maps a taken code', async () => {
+  it('createClub maps a taken code (null result, or 23505 as a fallback)', async () => {
+    rpcMock.mockResolvedValueOnce({ data: null, error: null });
+    expect((await createClub('North', '', 'OAK2')).error).toBe('That code is taken.');
     rpcMock.mockResolvedValueOnce({ data: null, error: { code: '23505', message: 'dup' } });
     expect((await createClub('North', '', 'OAK2')).error).toBe('That code is taken.');
+  });
+
+  it('createClub without a code does not report a null result as a taken code', async () => {
+    rpcMock.mockResolvedValueOnce({ data: null, error: null });
+    expect((await createClub('North', '')).error).not.toBe('That code is taken.');
   });
 });
