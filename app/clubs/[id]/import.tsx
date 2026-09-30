@@ -74,7 +74,7 @@ export default function ImportRosterScreen() {
       );
     }
     setImporting(false);
-    router.replace(`/clubs/${id}?imported=${invites.length}`);
+    router.replace(`/clubs/${id}/members?imported=${invites.length}`);
   }
 
   return (
