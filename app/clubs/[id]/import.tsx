@@ -80,20 +80,19 @@ export default function ImportRosterScreen() {
   return (
     <Screen scroll contentStyle={styles.container}>
       {/*
-        Kept, not dropped: this goes to /clubs/${id}, a specific club, which
-        is a different destination from the Club tab's own /clubs (see
-        app/clubs/[id]/venues.tsx's identical "Back to the club" button for
-        the same reasoning, and app/clubs/[id]/index.tsx for the contrasting
-        case where a back link WAS dropped because its destination and the
-        tab's were the same place).
+        Back to Club settings, the only way into this screen: popping when
+        there is history returns to that same settings screen rather than
+        stacking a second copy; a cold open (a URL, a reload) replaces.
       */}
       <Button
         variant="ghost"
         icon={<ChevronLeftIcon color={colors.accentColor} />}
-        onPress={() => router.push(`/clubs/${id}`)}
-        accessibilityLabel="Back to the club"
+        onPress={() =>
+          router.canGoBack() ? router.back() : router.replace(`/clubs/${id}/settings`)
+        }
+        accessibilityLabel="Back to club settings"
       >
-        Club
+        Club settings
       </Button>
 
       <Text style={styles.heading}>Import a roster</Text>

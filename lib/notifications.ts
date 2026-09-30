@@ -110,7 +110,7 @@ function actor(row: NotificationRow, fallback: string): string {
 function href(row: NotificationRow): string {
   return row.event_id
     ? `/clubs/${row.club_id}/events/${row.event_id}`
-    : `/clubs/${row.club_id}`;
+    : `/clubs/${row.club_id}/games`;
 }
 
 function unhandledKind(kind: never): never {
@@ -176,7 +176,7 @@ export function describeNotification(
       return {
         headline: 'The game is off',
         detail: `${game(row)} has been cancelled. Your seat went with it.`,
-        href: `/clubs/${row.club_id}`,
+        href: `/clubs/${row.club_id}/games`,
       };
 
     case 'need_a_fourth':
@@ -237,7 +237,7 @@ export function describeNotification(
         headline: 'Invite withdrawn',
         detail: `${actor(row, 'The organizer')} withdrew your invite to ${game(row)}.`,
         // The game may no longer be visible to them (invite-only).
-        href: `/clubs/${row.club_id}`,
+        href: `/clubs/${row.club_id}/games`,
       };
 
     case 'booking_cancelled_by_member':

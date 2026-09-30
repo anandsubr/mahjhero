@@ -112,6 +112,13 @@ describe('HomeScreen', () => {
     expect(screen.getByRole('button', { name: /My games/ }).getAttribute('aria-selected')).toBe('true');
   });
 
+  it("opens a club card on the club's Games section", async () => {
+    fetchMyGames.mockResolvedValue([]);
+    render(<HomeScreen />);
+    fireEvent.click(await screen.findByRole('button', { name: /^Test Club\./ }));
+    expect(push).toHaveBeenCalledWith('/clubs/c1/games');
+  });
+
   it('defaults to Clubs when nothing is upcoming', async () => {
     fetchMyGames.mockResolvedValue([]);
     render(<HomeScreen />);

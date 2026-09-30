@@ -191,7 +191,7 @@ describe('Cancel', () => {
     fireEvent.click(screen.getByLabelText('Cancel'));
 
     expect(back).not.toHaveBeenCalled();
-    expect(replace).toHaveBeenCalledWith('/clubs/club-1');
+    expect(replace).toHaveBeenCalledWith('/clubs/club-1/games');
   });
 });
 

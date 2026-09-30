@@ -87,7 +87,7 @@ describe('describeNotification', () => {
       row({ kind: 'event_cancelled', event_id: null }),
     );
     expect(result.headline).toBe('The game is off');
-    expect(result.href).toBe('/clubs/club-1');
+    expect(result.href).toBe('/clubs/club-1/games');
   });
 
   it('need_a_fourth: falls back to "A table" with none named', () => {
@@ -167,7 +167,7 @@ describe('describeNotification', () => {
     const result = describeNotification(row({ kind: 'booking_invite_withdrawn', actor_name: 'Cara' }));
     expect(result.headline).toBe('Invite withdrawn');
     expect(result.detail).toContain('Cara withdrew your invite');
-    expect(result.href).toBe('/clubs/club-1');
+    expect(result.href).toBe('/clubs/club-1/games');
   });
 
   it('booking_cancelled_by_member', () => {

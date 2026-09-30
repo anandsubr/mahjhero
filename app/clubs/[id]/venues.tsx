@@ -177,16 +177,19 @@ export default function VenuesScreen() {
     <Screen scroll contentStyle={styles.container}>
       {/* Generic label, not club.name: the kicker right below already names
           the club, so repeating it here would read as a mistake rather than
-          confirmation. Matches import.tsx. */}
+          confirmation. Back to Club settings, the only way in -- popped when
+          there is history, replaced on a cold open. Matches import.tsx. */}
       <Button
         variant="ghost"
         big={false}
         icon={<ChevronLeftIcon color={colors.accentColor} />}
-        onPress={() => router.push(`/clubs/${clubId}`)}
-        accessibilityLabel="Back to the club"
+        onPress={() =>
+          router.canGoBack() ? router.back() : router.replace(`/clubs/${clubId}/settings`)
+        }
+        accessibilityLabel="Back to club settings"
         style={styles.backButton}
       >
-        Club
+        Club settings
       </Button>
 
       <DashboardHeader

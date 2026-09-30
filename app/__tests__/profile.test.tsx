@@ -35,6 +35,20 @@ vi.mock('../../lib/profile', () => ({
     p.display_name.trim().length > 0 && p.skill_level !== null,
 }));
 
+const resetCalendarFeed = vi.fn();
+vi.mock('../../lib/calendar-feed', () => ({
+  resetCalendarFeed: (...args: unknown[]) => resetCalendarFeed(...args),
+}));
+
+const MEMBER = {
+  id: 'you',
+  display_name: 'Anand',
+  skill_level: null,
+  avatar_url: null,
+  timezone: 'America/New_York',
+  is_admin: false,
+};
+
 describe('profile screen', () => {
   beforeEach(() => vi.clearAllMocks());
 
@@ -248,5 +262,49 @@ describe('profile screen', () => {
     render(<ProfileScreen />);
     fireEvent.click(await screen.findByRole('button', { name: 'Greetings' }));
     expect(push).toHaveBeenCalledWith('/admin/greetings');
+  });
+
+  describe('Reset calendar link', () => {
+    it('explains the row, and asks before resetting', async () => {
+      fetchProfile.mockResolvedValue(MEMBER);
+      render(<ProfileScreen />);
+      expect(await screen.findByText('Reset calendar link')).toBeTruthy();
+      expect(screen.getByText('Your old calendar link will stop working.')).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Reset calendar link' }));
+      expect(screen.getByTestId('confirm-sheet')).toBeTruthy();
+      expect(resetCalendarFeed).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      expect(screen.queryByTestId('confirm-sheet')).toBeNull();
+      expect(resetCalendarFeed).not.toHaveBeenCalled();
+    });
+
+    it('resets on confirm and says what to do next', async () => {
+      fetchProfile.mockResolvedValue(MEMBER);
+      resetCalendarFeed.mockResolvedValue('https://example.com/feed?token=new');
+      render(<ProfileScreen />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Reset calendar link' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Reset link' }));
+      await waitFor(() => expect(resetCalendarFeed).toHaveBeenCalledTimes(1));
+      expect(
+        await screen.findByText(
+          'New calendar link ready. Tap Add to calendar in a club to subscribe again.',
+        ),
+      ).toBeTruthy();
+      expect(screen.queryByTestId('confirm-sheet')).toBeNull();
+    });
+
+    it('shows the generic error when the reset fails', async () => {
+      fetchProfile.mockResolvedValue(MEMBER);
+      resetCalendarFeed.mockResolvedValue(null);
+      render(<ProfileScreen />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Reset calendar link' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Reset link' }));
+      expect(await screen.findByText(/Could not reach MahjHero/)).toBeTruthy();
+      expect(
+        screen.queryByText(
+          'New calendar link ready. Tap Add to calendar in a club to subscribe again.',
+        ),
+      ).toBeNull();
+    });
   });
 });

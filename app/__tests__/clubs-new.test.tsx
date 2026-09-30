@@ -55,7 +55,7 @@ describe('new club screen', () => {
       target: { value: 'Oakfield Tiles' },
     });
     fireEvent.click(screen.getByLabelText('Create the club'));
-    await waitFor(() => expect(replace).toHaveBeenCalledWith('/clubs/club-9'));
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/clubs/club-9/games'));
   });
 
   it('keeps Create the club disabled until the name has more than spaces', async () => {

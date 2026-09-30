@@ -4,10 +4,12 @@ import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { Text } from '../components/Text';
 import ErrorBanner from '../components/ErrorBanner';
 import MahjongTile from '../components/MahjongTile';
-import { FormCard, FormSection, FormTitle, TextRow } from '../components/GameForm';
+import NoticeBanner from '../components/NoticeBanner';
+import { ConfirmSheet, FormCard, FormSection, FormTitle, TextRow } from '../components/GameForm';
 import Screen from '../components/Screen';
 import {
   BellIcon,
+  CalendarIcon,
   CheckIcon,
   ChevronRightIcon,
   CircleHelpIcon,
@@ -15,6 +17,7 @@ import {
   MessageCircleIcon,
   PeopleIcon,
 } from '../components/icons';
+import { resetCalendarFeed } from '../lib/calendar-feed';
 import { GENERIC_ERROR } from '../lib/constants';
 import { fetchProfile, isCompleteProfile, updateProfile } from '../lib/profile';
 import type { SkillLevel } from '../lib/profile';
@@ -38,6 +41,10 @@ export default function ProfileScreen() {
   const [saving, setSaving] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmingReset, setConfirmingReset] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [resetNotice, setResetNotice] = useState<string | null>(null);
+  const [resetError, setResetError] = useState<string | null>(null);
 
   // Keyed on the user id, NOT on `session`. lib/session.tsx hands out a fresh
   // Session object on every onAuthStateChange — including TOKEN_REFRESHED,
@@ -154,6 +161,21 @@ export default function ProfileScreen() {
       setError(GENERIC_ERROR);
     } finally {
       setSigningOut(false);
+    }
+  }
+
+  async function onResetCalendarLink() {
+    setConfirmingReset(false);
+    if (resetting) return;
+    setResetting(true);
+    setResetNotice(null);
+    setResetError(null);
+    const url = await resetCalendarFeed();
+    setResetting(false);
+    if (url) {
+      setResetNotice('New calendar link ready. Tap Add to calendar in a club to subscribe again.');
+    } else {
+      setResetError(GENERIC_ERROR);
     }
   }
 
@@ -288,6 +310,17 @@ export default function ProfileScreen() {
             subtitle="Getting started, and tips you've hidden"
             onPress={() => router.push('/how-it-works')}
           />
+          <SettingsRow
+            icon={<CalendarIcon size={18} color={colors.accent[700]} />}
+            title="Reset calendar link"
+            subtitle="Your old calendar link will stop working."
+            onPress={() => {
+              if (resetting) return;
+              setResetNotice(null);
+              setResetError(null);
+              setConfirmingReset(true);
+            }}
+          />
           {isAdmin ? (
             <SettingsRow
               icon={<MessageCircleIcon size={18} color={colors.accent[700]} />}
@@ -297,6 +330,10 @@ export default function ProfileScreen() {
             />
           ) : null}
         </FormCard>
+        {resetNotice ? (
+          <NoticeBanner message={resetNotice} onDismiss={() => setResetNotice(null)} />
+        ) : null}
+        {resetError ? <ErrorBanner message={resetError} /> : null}
       </FormSection>
 
       <Pressable
@@ -319,6 +356,17 @@ export default function ProfileScreen() {
           </>
         )}
       </Pressable>
+
+      {confirmingReset ? (
+        <ConfirmSheet
+          title="Reset calendar link?"
+          body="Your old calendar link will stop working. Calendars subscribed with it stop updating."
+          confirmLabel="Reset link"
+          cancelLabel="Cancel"
+          onConfirm={onResetCalendarLink}
+          onCancel={() => setConfirmingReset(false)}
+        />
+      ) : null}
     </Screen>
   );
 }

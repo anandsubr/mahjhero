@@ -324,7 +324,7 @@ const ClubMembers = forwardRef<ClubMembersHandle, Props>(function ClubMembers(
           {guides.isVisible('tip:club') ? (
             <TipCard tag="Tip" title="Bringing people in" onDismiss={() => guides.dismiss('tip:club')}>
               <TipText>
-                Use Invite by email for one person, or Import a roster for a whole list.
+                Use Invite by email for one person, or Import a roster in Club settings for a whole list.
               </TipText>
               <TipText>
                 They'll see the invite on their Home screen once they sign in with that email.

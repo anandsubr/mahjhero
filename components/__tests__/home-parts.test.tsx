@@ -144,3 +144,27 @@ describe('ClubCard', () => {
     expect(screen.getByText('3')).toBeTruthy();
   });
 });
+
+describe('HomeGuides', () => {
+  it("sends a host's Invite players step to the club's Members section", async () => {
+    const { default: HomeGuides } = await import('../home/HomeGuides');
+    const push = vi.fn();
+    const club = {
+      id: 'c1', name: 'Test Club', slug: 't', rhythm: '', visibility: 'private' as const,
+      timezone: 'America/New_York', default_game_mode: 'open_play' as const, code: 'TEST1',
+      cover_path: null, cover_color: 'accent2_800' as const,
+    };
+    render(
+      <HomeGuides
+        clubs={[club]}
+        roles={[{ club_id: 'c1', role: 'host' }]}
+        checklist={{ c1: { events: 1, members: 1, pendingInvites: 0, announcements: 0 } }}
+        email="me@example.com"
+        guides={{ isVisible: () => true, dismiss: vi.fn(), reset: vi.fn() } as never}
+        router={{ push } as never}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Invite players' }));
+    expect(push).toHaveBeenCalledWith('/clubs/c1/members');
+  });
+});

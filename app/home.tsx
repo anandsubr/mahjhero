@@ -330,7 +330,7 @@ export default function HomeScreen() {
         </View>
       ) : (
         <View style={styles.section}>
-          <JoinClubCard onJoined={(clubId) => router.push(`/clubs/${clubId}`)} />
+          <JoinClubCard onJoined={(clubId) => router.push(`/clubs/${clubId}/games`)} />
           <HomeGuides
             clubs={clubs}
             roles={roles}
@@ -347,7 +347,7 @@ export default function HomeScreen() {
               role={roleFor(club.id)}
               nextStartsAt={nextGames[club.id] ?? null}
               unread={unreadByClub[club.id] ?? 0}
-              onPress={() => router.push(`/clubs/${club.id}`)}
+              onPress={() => router.push(`/clubs/${club.id}/games`)}
             />
           ))}
           <Pressable

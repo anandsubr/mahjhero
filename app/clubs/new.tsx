@@ -62,7 +62,7 @@ export default function NewClubScreen() {
       setError(createError ?? 'Could not create the club.');
       return;
     }
-    router.replace(`/clubs/${clubId}`);
+    router.replace(`/clubs/${clubId}/games`);
   }
 
   return (

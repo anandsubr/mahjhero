@@ -124,7 +124,7 @@ describe('ClubMembers', () => {
     // "Invite by email" TextField label renders as its own visible text
     // too -- anchored to the fuller phrases, unique to the tip's own copy.
     expect(screen.getByText(/Use Invite by email for one person/)).toBeTruthy();
-    expect(screen.getByText(/Import a roster for a whole list/)).toBeTruthy();
+    expect(screen.getByText(/Import a roster in Club settings for a whole list/)).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Got it: Bringing people in' }));
     expect(dismiss).toHaveBeenCalledWith('tip:club');

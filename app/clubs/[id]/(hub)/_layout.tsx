@@ -1,4 +1,11 @@
-import { Redirect, Slot, useLocalSearchParams, useRouter, useSegments } from 'expo-router';
+import {
+  Redirect,
+  Slot,
+  useFocusEffect,
+  useLocalSearchParams,
+  useRouter,
+  useSegments,
+} from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -76,6 +83,21 @@ export default function ClubHubLayout() {
       loadSeq.current += 1;
     };
   }, [load]);
+
+  // Club settings is pushed over the hub, which stays mounted beneath it,
+  // so a cover, colour or code changed there would otherwise not show when
+  // the organizer comes back. Every focus after the first reloads in the
+  // background; the first is the mount, which the load above covers.
+  const focusedOnce = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (!focusedOnce.current) {
+        focusedOnce.current = true;
+        return;
+      }
+      void reloadClub();
+    }, [reloadClub]),
+  );
 
   const context = useMemo<ClubHubValue | null>(
     () =>

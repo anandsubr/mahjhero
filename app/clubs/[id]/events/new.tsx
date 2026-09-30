@@ -230,7 +230,7 @@ export default function NewEventScreen() {
   // there is no UI yet to grant co_organizer to anyone, so this stays
   // reserved for whoever actually created the club until a real cohost
   // feature exists to extend it deliberately.
-  if (!isHost) return <Redirect href={`/clubs/${clubId}`} />;
+  if (!isHost) return <Redirect href={`/clubs/${clubId}/games`} />;
 
   const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
   // "Monthly" means "the same weekday-of-month as the date you picked" --
@@ -371,7 +371,7 @@ export default function NewEventScreen() {
     if (router.canGoBack()) {
       router.back();
     } else {
-      router.replace(`/clubs/${clubId}`);
+      router.replace(`/clubs/${clubId}/games`);
     }
   }
 
