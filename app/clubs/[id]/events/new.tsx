@@ -325,9 +325,11 @@ export default function NewEventScreen() {
         }
       }
       setSaving(false);
-      // Home, not this specific club's own page -- a newly created game
-      // already shows up there.
-      router.replace('/home');
+      // Back to the hub's Games section, where the newly created game
+      // already shows up -- same fallback `leave()` below uses for a cold
+      // open with nothing to pop.
+      if (router.canGoBack()) router.back();
+      else router.replace(`/clubs/${clubId}/games`);
       return;
     }
 
@@ -359,7 +361,8 @@ export default function NewEventScreen() {
       return;
     }
     // Same destination as the single-event save above, for the same reason.
-    router.replace('/home');
+    if (router.canGoBack()) router.back();
+    else router.replace(`/clubs/${clubId}/games`);
   }
 
   function leave() {

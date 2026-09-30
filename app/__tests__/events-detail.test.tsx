@@ -4,6 +4,8 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 const push = vi.fn();
 const replace = vi.fn();
+const back = vi.fn();
+const canGoBack = vi.fn();
 
 const searchParams: Record<string, string> = { id: 'club-1', eventId: 'event-1' };
 
@@ -14,7 +16,7 @@ vi.mock('expo-router', () => ({
     <div data-testid="redirect" data-href={href} />
   ),
   Link: ({ children }: { children: React.ReactNode }) => children,
-  useRouter: () => ({ push, replace }),
+  useRouter: () => ({ push, replace, back, canGoBack }),
   usePathname: () => pathname,
   useLocalSearchParams: () => searchParams,
   // Wrapped in a real `useEffect` keyed on the callback's identity, not
@@ -301,6 +303,7 @@ function liveEvent() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  canGoBack.mockReturnValue(true);
   for (const key of Object.keys(searchParams)) delete searchParams[key];
   searchParams.id = 'club-1';
   searchParams.eventId = 'event-1';
@@ -391,14 +394,24 @@ describe('essential data missing', () => {
 });
 
 describe('screen chrome', () => {
-  // This screen's back link goes to /home -- not the specific club --
-  // because the club management page no longer lists games
-  // (2026-09-02-club-page-games-and-back-links-design.md): Home is the only
-  // real way into this screen left, so that is where back goes.
-  it('draws a back link to Home', async () => {
+  // Pushed from the hub's Games section (and from Home), so popping returns
+  // to wherever the caller came from.
+  it('draws a back link that pops when there is history', async () => {
+    canGoBack.mockReturnValue(true);
     render(<EventScreen />);
     fireEvent.click(await screen.findByRole('button', { name: 'Back to your clubs' }));
-    expect(push).toHaveBeenCalledWith('/home');
+    expect(back).toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  // A cold open (deep link, web reload) has nothing to pop, so it falls
+  // back to the hub's Games section rather than assuming Home.
+  it('falls back to the hub Games section when there is nothing to pop', async () => {
+    canGoBack.mockReturnValue(false);
+    render(<EventScreen />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Back to your clubs' }));
+    expect(back).not.toHaveBeenCalled();
+    expect(replace).toHaveBeenCalledWith('/clubs/club-1/games');
   });
 
   it("shows the club as a tile with its name in a pill below, matching the Club Dashboard header exactly", async () => {
@@ -2199,16 +2212,18 @@ describe('game invites', () => {
     render(<EventScreen />);
     fireEvent.click(await screen.findByLabelText('Decline the invite'));
     await waitFor(() => expect(declineBooking).toHaveBeenCalledWith('b-inv'));
-    expect(push).not.toHaveBeenCalledWith('/home');
+    expect(replace).not.toHaveBeenCalledWith('/clubs/club-1/games');
   });
 
-  it('declines an invite-only invite and goes back to Home', async () => {
+  it('declines an invite-only invite and goes back to the hub Games section', async () => {
     fetchEvent.mockResolvedValue({ ...EVENT, game_mode: 'invite_only' as const });
     fetchEventSeating.mockResolvedValue([INVITED_ADA]);
     render(<EventScreen />);
     fireEvent.click(await screen.findByLabelText('Decline the invite'));
     await waitFor(() => expect(declineBooking).toHaveBeenCalledWith('b-inv'));
-    await waitFor(() => expect(push).toHaveBeenCalledWith('/home'));
+    await waitFor(() =>
+      expect(replace).toHaveBeenCalledWith('/clubs/club-1/games'),
+    );
   });
 
   it('offers an invitee no seat tap and no waitlist -- the invite is their way in', async () => {

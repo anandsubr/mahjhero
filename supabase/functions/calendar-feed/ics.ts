@@ -67,6 +67,8 @@ export function buildCalendar(games: FeedGame[], now: Date, appUrl: string): str
     'CALSCALE:GREGORIAN',
     'METHOD:PUBLISH',
     'X-WR-CALNAME:MahjHero',
+    'REFRESH-INTERVAL;VALUE=DURATION:PT1H',
+    'X-PUBLISHED-TTL:PT1H',
   ];
   for (const g of games) {
     const link = `${appUrl}/clubs/${g.clubId}/events/${g.eventId}`;

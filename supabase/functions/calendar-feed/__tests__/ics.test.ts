@@ -40,6 +40,10 @@ describe('buildCalendar', () => {
     expect(lines).toContain('VERSION:2.0');
     expect(lines).toContain('PRODID:-//MahjHero//Calendar//EN');
     expect(lines).toContain('X-WR-CALNAME:MahjHero');
+    // Tells subscribed calendar apps to re-poll hourly rather than caching
+    // the feed indefinitely.
+    expect(lines).toContain('REFRESH-INTERVAL;VALUE=DURATION:PT1H');
+    expect(lines).toContain('X-PUBLISHED-TTL:PT1H');
     // No bare LF anywhere: every newline is part of a CRLF.
     expect(ics.replace(/\r\n/g, '')).not.toMatch(/[\r\n]/);
   });

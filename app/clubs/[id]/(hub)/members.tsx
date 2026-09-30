@@ -7,7 +7,7 @@ import { useClubHub } from '../../../../components/hub/ClubHubContext';
 /**
  * The club hub's Members section: the roster, pending invites, and (for a
  * host or co-organizer) the invite-by-email form ClubMembers renders --
- * moved out of app/clubs/[id]/legacy.tsx (club-hub phase 2, Task 10). This
+ * moved out of the old club page (club-hub phase 2, Task 10). This
  * route owns only what a route must: reading `?imported=N` off the URL
  * (app/clubs/[id]/import.tsx redirects here after a successful import) and
  * wiring HubSection's pull-to-refresh to ClubMembers' own reload.

@@ -49,11 +49,11 @@ type Props = {
 
 /**
  * The club hub's Members section: roster, pending invites, and (for a host
- * or co-organizer) the invite-by-email form -- moved out of
- * app/clubs/[id]/legacy.tsx (club-hub phase 2, Task 10), verbatim apart from
- * what that page no longer owns. The club code row, Leaderboard button,
- * "Open the club thread", Import/Venues buttons and the default-game-mode
- * toggle all stayed behind in legacy.tsx; they belong to Settings (Task 11),
+ * or co-organizer) the invite-by-email form -- moved out of the old club
+ * page (club-hub phase 2, Task 10), verbatim apart from what that page no
+ * longer owns. The club code row, Leaderboard button, "Open the club
+ * thread", Import/Venues buttons and the default-game-mode toggle all
+ * stayed behind on the old club page; they belong to Settings (Task 11),
  * not to a plain member/invite list. `role` comes from the hub's own
  * useClubHub(), not a roster lookup of the viewer's own row the way
  * legacy.tsx computed it -- the hub already loaded it once for every
