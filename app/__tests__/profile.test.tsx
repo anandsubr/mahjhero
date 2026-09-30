@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ProfileScreen from '../profile';
 
 const { push } = vi.hoisted(() => ({ push: vi.fn() }));
@@ -305,6 +305,24 @@ describe('profile screen', () => {
           'New calendar link ready. Tap Add to calendar in a club to subscribe again.',
         ),
       ).toBeNull();
+    });
+
+    it('disables the row with a spinner while resetting', async () => {
+      fetchProfile.mockResolvedValue(MEMBER);
+      let finish: (v: string | null) => void = () => {};
+      resetCalendarFeed.mockReturnValue(new Promise((r) => (finish = r)));
+      render(<ProfileScreen />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Reset calendar link' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Reset link' }));
+      const row = screen.getByRole('button', { name: 'Reset calendar link' });
+      await waitFor(() => expect(row.getAttribute('aria-busy')).toBe('true'));
+      expect(row.getAttribute('aria-disabled')).toBe('true');
+      expect(screen.getByTestId('settings-row-spinner')).toBeTruthy();
+      fireEvent.click(row);
+      expect(screen.queryByTestId('confirm-sheet')).toBeNull();
+      await act(async () => finish('https://example.com/feed?token=new'));
+      await waitFor(() => expect(row.getAttribute('aria-busy')).toBe('false'));
+      expect(screen.queryByTestId('settings-row-spinner')).toBeNull();
     });
   });
 });

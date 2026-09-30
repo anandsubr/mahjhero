@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 const push = vi.fn();
 const replace = vi.fn();
@@ -199,6 +199,39 @@ describe('cover', () => {
     render(<ClubSettingsScreen />);
     fireEvent.click(await screen.findByRole('radio', { name: 'Olive' }));
     expect(await screen.findByText('Something went wrong.')).toBeTruthy();
+  });
+});
+
+describe('refresh after a change', () => {
+  it('says so inline when the change saved but the refetch failed', async () => {
+    render(<ClubSettingsScreen />);
+    const olive = await screen.findByRole('radio', { name: 'Olive' });
+    fetchClub.mockResolvedValueOnce(null);
+    fireEvent.click(olive);
+    await waitFor(() => expect(setClubCoverColor).toHaveBeenCalledWith('c1', 'accent2_700'));
+    expect(
+      await screen.findByText('Saved, but the preview could not be refreshed.'),
+    ).toBeTruthy();
+    // The screen itself stays up -- no failure state.
+    expect(screen.getByText('Club settings')).toBeTruthy();
+  });
+
+  it('a code save does not revert a cover refetch that landed while it was saving', async () => {
+    let resolveCode: (v: { code: string; error: null }) => void = () => {};
+    setClubCode.mockReturnValueOnce(new Promise((r) => (resolveCode = r)));
+    render(<ClubSettingsScreen />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Change club code' }));
+    fireEvent.change(screen.getByLabelText('New club code'), { target: { value: 'NEWCODE' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save code' }));
+    // A colour change completes (and refetches) while the code save is pending.
+    fetchClub.mockResolvedValue({ ...CLUB, cover_color: 'accent_700' });
+    fireEvent.click(screen.getByRole('radio', { name: 'Clay' }));
+    await waitFor(() =>
+      expect(screen.getByRole('radio', { name: 'Clay' }).getAttribute('aria-checked')).toBe('true'),
+    );
+    await act(async () => resolveCode({ code: 'NEWCODE', error: null }));
+    expect(await screen.findByText('Club code: NEWCODE')).toBeTruthy();
+    expect(screen.getByRole('radio', { name: 'Clay' }).getAttribute('aria-checked')).toBe('true');
   });
 });
 

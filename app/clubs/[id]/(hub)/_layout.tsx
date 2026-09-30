@@ -86,17 +86,22 @@ export default function ClubHubLayout() {
 
   // Club settings is pushed over the hub, which stays mounted beneath it,
   // so a cover, colour or code changed there would otherwise not show when
-  // the organizer comes back. Every focus after the first reloads in the
-  // background; the first is the mount, which the load above covers.
-  const focusedOnce = useRef(false);
+  // the organizer comes back. A refocus reloads in the background -- but
+  // only once the hub is ready: while the initial load (or Retry) is in
+  // flight, a background reload would supersede it, and a failure there
+  // would leave the skeleton up with no Retry. The callback is stable (it
+  // reads the latest state and reload through refs), so it runs on real
+  // focus changes only, not whenever `reloadClub` changes identity as the
+  // user id arrives on a cold open.
+  const statusRef = useRef(state.status);
+  statusRef.current = state.status;
+  const reloadRef = useRef(reloadClub);
+  reloadRef.current = reloadClub;
   useFocusEffect(
     useCallback(() => {
-      if (!focusedOnce.current) {
-        focusedOnce.current = true;
-        return;
-      }
-      void reloadClub();
-    }, [reloadClub]),
+      if (statusRef.current !== 'ready') return;
+      void reloadRef.current();
+    }, []),
   );
 
   const context = useMemo<ClubHubValue | null>(

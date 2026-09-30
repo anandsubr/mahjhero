@@ -180,4 +180,36 @@ describe('club hub layout', () => {
     await waitFor(() => expect(screen.getByTestId('club-hub-cover-photo')).toBeTruthy());
     expect(fetchClub).toHaveBeenCalledTimes(2);
   });
+
+  it('fetches once on a cold open where the user id arrives late', async () => {
+    useSessionMock.mockReturnValue({ session: null, loading: true });
+    const { rerender } = render(<ClubHubLayout />);
+    expect(fetchClub).not.toHaveBeenCalled();
+    useSessionMock.mockReturnValue({ session: { user: { id: 'me' } }, loading: false });
+    rerender(<ClubHubLayout />);
+    await waitFor(() => expect(screen.getByText('Riverside Mah Jongg')).toBeTruthy());
+    await act(async () => {});
+    expect(fetchClub).toHaveBeenCalledTimes(1);
+  });
+
+  it('still offers Retry when the initial load fails on a late-arriving user id', async () => {
+    useSessionMock.mockReturnValue({ session: null, loading: true });
+    const { rerender } = render(<ClubHubLayout />);
+    fetchClub.mockResolvedValueOnce(null);
+    useSessionMock.mockReturnValue({ session: { user: { id: 'me' } }, loading: false });
+    rerender(<ClubHubLayout />);
+    await waitFor(() => expect(screen.getByText('Could not load this club.')).toBeTruthy());
+    expect(screen.getByLabelText('Retry')).toBeTruthy();
+    expect(fetchClub).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not reload on focus while the hub is still loading', async () => {
+    fetchClub.mockReturnValueOnce(new Promise(() => {}));
+    render(<ClubHubLayout />);
+    await act(async () => {
+      focus.cb?.();
+    });
+    expect(fetchClub).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('club-hub-header-skeleton')).toBeTruthy();
+  });
 });

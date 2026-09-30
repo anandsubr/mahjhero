@@ -314,6 +314,7 @@ export default function ProfileScreen() {
             icon={<CalendarIcon size={18} color={colors.accent[700]} />}
             title="Reset calendar link"
             subtitle="Your old calendar link will stop working."
+            busy={resetting}
             onPress={() => {
               if (resetting) return;
               setResetNotice(null);
@@ -439,15 +440,21 @@ function SettingsRow({
   title,
   subtitle,
   onPress,
+  busy,
 }: {
   icon: ReactNode;
   title: string;
   subtitle: string;
   onPress: () => void;
+  /** Disables the row and swaps the chevron for a spinner while its action runs. */
+  busy?: boolean;
 }) {
   return (
     <Pressable
       onPress={onPress}
+      disabled={busy}
+      aria-disabled={busy === undefined ? undefined : busy}
+      aria-busy={busy === undefined ? undefined : busy}
       accessibilityRole="button"
       accessibilityLabel={title}
       accessibilityHint={subtitle}
@@ -458,7 +465,11 @@ function SettingsRow({
         <Text style={styles.settingsTitle}>{title}</Text>
         <Text style={styles.settingsSubtitle}>{subtitle}</Text>
       </View>
-      <ChevronRightIcon size={16} color={colors.neutral[600]} />
+      {busy ? (
+        <ActivityIndicator testID="settings-row-spinner" size="small" color={colors.accent[700]} />
+      ) : (
+        <ChevronRightIcon size={16} color={colors.neutral[600]} />
+      )}
     </Pressable>
   );
 }

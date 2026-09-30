@@ -54,6 +54,7 @@ export default function ClubSettingsScreen() {
 
   const [coverBusy, setCoverBusy] = useState<'upload' | 'remove' | 'color' | null>(null);
   const [coverError, setCoverError] = useState<string | null>(null);
+  const [refreshFailed, setRefreshFailed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [codeDraft, setCodeDraft] = useState<string | null>(null);
   const [codeError, setCodeError] = useState<string | null>(null);
@@ -68,22 +69,25 @@ export default function ClubSettingsScreen() {
 
   /**
    * `background` is a reload after a change: a failure there keeps the
-   * screen as it is rather than replacing it with the error state.
+   * screen as it is rather than replacing it with the error state, and
+   * resolves `false` so the caller can say so. A load superseded by a newer
+   * one resolves `true` -- the newer one owns the outcome.
    */
   const fetchAll = useCallback(
-    async (background: boolean): Promise<void> => {
-      if (!id || !userId) return;
+    async (background: boolean): Promise<boolean> => {
+      if (!id || !userId) return true;
       const seq = ++loadSeq.current;
       const [club, roles] = await Promise.all([fetchClub(id), fetchMyRoles(userId)]);
-      if (seq !== loadSeq.current) return;
+      if (seq !== loadSeq.current) return true;
       if (!club || !roles) {
         if (!background) setState({ status: 'failed' });
-        return;
+        return false;
       }
       const coverUrl = club.cover_path ? await getClubCoverUrl(club.cover_path) : null;
-      if (seq !== loadSeq.current) return;
+      if (seq !== loadSeq.current) return true;
       const role = roles.find((r) => r.club_id === id)?.role ?? null;
       setState({ status: 'ready', club, role, coverUrl });
+      return true;
     },
     [id, userId],
   );
@@ -142,7 +146,11 @@ export default function ClubSettingsScreen() {
   const { club, role, coverUrl } = state;
   if (!role || !canInvite(role)) return <Redirect href={`/clubs/${id}/games`} />;
 
-  const setClub = (next: Club) => setState({ ...state, club: next });
+  // Functional, and a patch rather than a whole club: a code save or toggle
+  // resolving after a cover refetch landed must not write back the club it
+  // captured before its await, reverting the new cover.
+  const patchClub = (patch: Partial<Club>) =>
+    setState((prev) => (prev.status === 'ready' ? { ...prev, club: { ...prev.club, ...patch } } : prev));
 
   async function runCover(
     kind: 'upload' | 'remove' | 'color',
@@ -152,6 +160,7 @@ export default function ClubSettingsScreen() {
     coverBusyRef.current = true;
     setCoverBusy(kind);
     setCoverError(null);
+    setRefreshFailed(false);
     try {
       const result = await action();
       // `null`: nothing to do (the picker was cancelled).
@@ -160,7 +169,7 @@ export default function ClubSettingsScreen() {
         setCoverError(result.error);
         return;
       }
-      await fetchAll(true);
+      if (!(await fetchAll(true))) setRefreshFailed(true);
     } finally {
       coverBusyRef.current = false;
       setCoverBusy(null);
@@ -197,7 +206,7 @@ export default function ClubSettingsScreen() {
         setError(toggleError);
         return;
       }
-      setClub({ ...club, default_game_mode: nextMode });
+      patchClub({ default_game_mode: nextMode });
     } finally {
       gameModeBusyRef.current = false;
     }
@@ -271,6 +280,9 @@ export default function ClubSettingsScreen() {
             );
           })}
         </View>
+        {refreshFailed ? (
+          <Text style={styles.help}>Saved, but the preview could not be refreshed.</Text>
+        ) : null}
         {coverError ? <ErrorBanner message={coverError} /> : null}
       </View>
 
@@ -309,7 +321,7 @@ export default function ClubSettingsScreen() {
                   setCodeError(saveError);
                   return;
                 }
-                setClub({ ...club, code });
+                patchClub({ code });
                 setCodeDraft(null);
               }}
               accessibilityLabel="Save code"
