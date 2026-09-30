@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(11);
+select plan(16);
 
 insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-000000000001', 'host@example.com'),
@@ -37,6 +37,12 @@ set local request.jwt.claims =
 select lives_ok(
   $$select public.set_club_cover_color('c1c1c1c1-0000-0000-0000-000000000001', 'accent_700')$$,
   'the host can set the cover colour'
+);
+
+select is(
+  (select cover_color from public.clubs where id = 'c1c1c1c1-0000-0000-0000-000000000001'),
+  'accent_700',
+  'the new cover colour is actually stored'
 );
 
 set local request.jwt.claims =
@@ -78,6 +84,12 @@ select is(
   'passing null clears the cover path (and still returns the previous one)'
 );
 
+select is(
+  (select cover_path from public.clubs where id = 'c1c1c1c1-0000-0000-0000-000000000001'),
+  null,
+  'the cover path is actually cleared to null'
+);
+
 select throws_ok(
   $$update public.clubs set cover_color = 'accent_800'
       where id = 'c1c1c1c1-0000-0000-0000-000000000001'$$,
@@ -90,6 +102,38 @@ select throws_ok(
       where id = 'c1c1c1c1-0000-0000-0000-000000000001'$$,
   '42501', null,
   'a host cannot change the cover path with a direct UPDATE'
+);
+
+-- storage write policies (club_covers_insert): organizer-only, folder-scoped.
+set local request.jwt.claims =
+  '{"sub":"bbbbbbbb-0000-0000-0000-000000000002","role":"authenticated"}';
+
+select throws_ok(
+  $$ insert into storage.objects (bucket_id, name, owner)
+     values ('club-covers', 'c1c1c1c1-0000-0000-0000-000000000001/m.jpg',
+             'bbbbbbbb-0000-0000-0000-000000000002') $$,
+  '42501',
+  null,
+  'a plain member cannot insert into the club''s own cover folder'
+);
+
+set local request.jwt.claims =
+  '{"sub":"aaaaaaaa-0000-0000-0000-000000000001","role":"authenticated"}';
+
+select throws_ok(
+  $$ insert into storage.objects (bucket_id, name, owner)
+     values ('club-covers', 'd1d1d1d1-0000-0000-0000-000000000001/x.jpg',
+             'aaaaaaaa-0000-0000-0000-000000000001') $$,
+  '42501',
+  null,
+  'an organizer of one club cannot insert under a different club''s folder'
+);
+
+select lives_ok(
+  $$ insert into storage.objects (bucket_id, name, owner)
+     values ('club-covers', 'c1c1c1c1-0000-0000-0000-000000000001/host-upload.jpg',
+             'aaaaaaaa-0000-0000-0000-000000000001') $$,
+  'an organizer can insert under their own club''s folder'
 );
 
 reset role;
