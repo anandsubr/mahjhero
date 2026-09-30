@@ -135,7 +135,7 @@ export default function AdminGreetingsScreen() {
 
       <Text style={styles.heading}>Greetings</Text>
       <Text style={styles.intro}>
-        Shown once per day at the top of the Dashboard. Use {'{name}'} anywhere
+        Not shown in the app right now. Use {'{name}'} anywhere
         you want the signed-in member's own name.
       </Text>
 

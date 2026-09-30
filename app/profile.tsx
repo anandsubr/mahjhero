@@ -292,7 +292,7 @@ export default function ProfileScreen() {
             <SettingsRow
               icon={<MessageCircleIcon size={18} color={colors.accent[700]} />}
               title="Greetings"
-              subtitle="The dashboard's daily greeting"
+              subtitle="Daily greeting. Not shown in the app right now"
               onPress={() => router.push('/admin/greetings')}
             />
           ) : null}

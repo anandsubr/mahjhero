@@ -1724,7 +1724,7 @@ export default function EventScreen() {
       ) : null}
       {isOrganizer && guestInviteSent ? (
         <Text style={styles.help}>
-          Invited. They'll see it on their dashboard once they sign in, and it'll seat them at this game.
+          Invited. They'll see it on their Home screen once they sign in, and it'll seat them at this game.
         </Text>
       ) : null}
 
