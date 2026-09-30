@@ -20,7 +20,7 @@ export function statusTag(game: MyGame): { label: string; tone: 'going' | 'hosti
     case 'not':
       return { label: 'Not going', tone: 'neutral' };
     case 'invited':
-      return { label: 'Invited', tone: 'neutral' };
+      return { label: 'Invited', tone: 'hosting' };
     case 'going':
       if (game.tableLabel) return { label: game.tableLabel, tone: 'going' };
       if (game.seatingMode === 'open_seating') return { label: 'Open seating', tone: 'going' };
