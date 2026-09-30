@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import MyGamesList from '../home/MyGamesList';
 import MyGamesCalendar from '../home/MyGamesCalendar';
@@ -97,6 +97,24 @@ describe('JoinClubCard', () => {
     fireEvent.change(screen.getByLabelText('Club code'), { target: { value: 'OAK2' } });
     fireEvent.click(screen.getByRole('button', { name: 'Join' }));
     await vi.waitFor(() => expect(onJoined).toHaveBeenCalledWith('c1'));
+  });
+
+  it('sends one join for a double tap', async () => {
+    joinClubByCode.mockReset();
+    joinClubByCode.mockResolvedValue({ clubId: 'c1', alreadyMember: false, error: null });
+    const onJoined = vi.fn();
+    render(<JoinClubCard onJoined={onJoined} />);
+    fireEvent.change(screen.getByLabelText('Club code'), { target: { value: 'OAK2' } });
+    const join = screen.getByRole('button', { name: 'Join' });
+    // Both taps inside one act: no re-render between them, so the disabled
+    // prop can't stop the second one; only the synchronous ref can.
+    act(() => {
+      fireEvent.click(join);
+      fireEvent.click(join);
+    });
+    await vi.waitFor(() => expect(onJoined).toHaveBeenCalledTimes(1));
+    expect(joinClubByCode).toHaveBeenCalledTimes(1);
+    joinClubByCode.mockReset();
   });
 
   it('shows the error inline', async () => {

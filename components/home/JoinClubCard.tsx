@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { Text, TextInput } from '../Text';
 import { joinClubByCode, normalizeClubCode } from '../../lib/clubs';
@@ -9,15 +9,24 @@ import { colors, radius, type } from '../../lib/theme';
 export default function JoinClubCard({ onJoined }: { onJoined: (clubId: string) => void }) {
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
+  // Synchronous guard: `busy` state doesn't update until the next render, so
+  // a double tap (or Enter plus a tap) could otherwise send two joins.
+  const busyRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const disabled = busy || code.length === 0;
 
   async function submit() {
-    if (disabled) return;
+    if (disabled || busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     setError(null);
-    const result = await joinClubByCode(code);
-    setBusy(false);
+    let result: Awaited<ReturnType<typeof joinClubByCode>>;
+    try {
+      result = await joinClubByCode(code);
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
     if (result.error || !result.clubId) {
       setError(result.error ?? GENERIC_ERROR);
       return;
