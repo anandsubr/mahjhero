@@ -3,7 +3,7 @@
     "name": "MahjHero",
     "slug": "mahjhero",
     "scheme": "mahjhero",
-    "version": "0.2.2",
+    "version": "0.2.3",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "icon": "./assets/icon.png",
