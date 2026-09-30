@@ -1,3 +1,4 @@
+import type { CoverColor } from './club-hub';
 import { GENERIC_ERROR } from './constants';
 import type { SkillLevel } from './profile';
 import { supabase } from './supabase';
@@ -15,6 +16,8 @@ export type Club = {
   timezone: string;
   default_game_mode: GameMode;
   code: string;
+  cover_path: string | null;
+  cover_color: CoverColor;
 };
 
 export type ClubMember = {
@@ -45,7 +48,8 @@ export type RosterRow = {
 
 export type RosterError = { row: number; message: string };
 
-const CLUB_COLUMNS = 'id, name, slug, rhythm, visibility, timezone, default_game_mode, code';
+const CLUB_COLUMNS =
+  'id, name, slug, rhythm, visibility, timezone, default_game_mode, code, cover_path, cover_color';
 const INVITE_COLUMNS = 'id, email, display_name, skill_level, declined_at';
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const SKILL_LEVELS: SkillLevel[] = ['beginner', 'intermediate', 'advanced'];

@@ -131,7 +131,8 @@ describe('ClubCard', () => {
     render(
       <ClubCard
         club={{ id: 'c1', name: 'Test Club', slug: 't', rhythm: '', visibility: 'private',
-          timezone: 'UTC', default_game_mode: 'open_play', code: 'TEST1' }}
+          timezone: 'UTC', default_game_mode: 'open_play', code: 'TEST1',
+          cover_path: null, cover_color: 'accent2_800' }}
         role="member"
         nextStartsAt={null}
         unread={3}
