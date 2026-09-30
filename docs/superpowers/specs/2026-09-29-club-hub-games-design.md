@@ -99,9 +99,10 @@ optional `notes` field; `MyStatus` gains `'invited'`.
 
 - **Table `calendar_feeds`** (`profile_id` pk → profiles, `token text unique not null`,
   `created_at`). RLS on, no policies; only definer functions touch it.
-- **`my_calendar_feed_url()`** returns the caller's feed URL, creating a 32-byte random URL-safe
-  token on first call. **`reset_calendar_feed()`** replaces the token and returns the new URL.
-  The URL base comes from the Supabase functions URL of the project.
+- **`my_calendar_feed_token()`** returns the caller's token, creating a 32-char random URL-safe
+  token on first call (24 random bytes, base64, made URL-safe). **`reset_calendar_feed_token()`**
+  replaces the token and returns the new one. Both return the bare token, not a URL; the client
+  builds `${EXPO_PUBLIC_SUPABASE_URL}/functions/v1/calendar-feed?token=…` from it.
 - **Edge function `supabase/functions/calendar-feed`**: `GET ?token=…`, no auth header required
   (`verify_jwt = false` for this function only). Looks up the token with the service role; unknown
   token → 404. Returns `text/calendar; charset=utf-8`, `Cache-Control: max-age=900`.

@@ -867,7 +867,9 @@ select is(
        'public.mark_notifications_read()',
        'public.my_notification_unread_count()',
        'public.set_payment_status(uuid, uuid, boolean)',
-       'public.event_payment_status(uuid)'
+       'public.event_payment_status(uuid)',
+       'public.my_calendar_feed_token()',
+       'public.reset_calendar_feed_token()'
      ]) as f
    ) expected
    where not exists (
@@ -975,7 +977,9 @@ select is(
          'public.mark_notifications_read()',
          'public.my_notification_unread_count()',
          'public.set_payment_status(uuid, uuid, boolean)',
-         'public.event_payment_status(uuid)'
+         'public.event_payment_status(uuid)',
+         'public.my_calendar_feed_token()',
+         'public.reset_calendar_feed_token()'
        ]) as f
        where to_regprocedure(f) = p.oid::regprocedure
      )),
