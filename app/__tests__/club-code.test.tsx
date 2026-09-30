@@ -66,7 +66,7 @@ vi.mock('../../lib/clubs', async (importOriginal) => {
   };
 });
 
-import ClubDetailScreen from '../clubs/[id]/index';
+import ClubDetailScreen from '../clubs/[id]/legacy';
 
 const CLUB = {
   id: 'c1',

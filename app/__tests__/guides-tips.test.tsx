@@ -185,7 +185,7 @@ vi.mock('../../components/VenuePicker', () => ({
 import EventScreen from '../clubs/[id]/events/[eventId]/index';
 import NewEventScreen from '../clubs/[id]/events/new';
 import CheckInScreen from '../clubs/[id]/events/[eventId]/check-in';
-import ClubDetailScreen from '../clubs/[id]/index';
+import ClubDetailScreen from '../clubs/[id]/legacy';
 
 const CLUB = {
   id: 'club-1',
