@@ -93,7 +93,7 @@ export default function ClubHubHeader({
             </Pressable>
           ) : null}
         </View>
-        <View style={styles.codeRow}>
+        <View style={styles.codeRow} testID="club-hub-code-row">
           <Text style={styles.code} numberOfLines={1}>{`Club code: ${club.code}`}</Text>
           <Pressable
             accessibilityRole="button"

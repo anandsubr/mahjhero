@@ -1791,6 +1791,10 @@ export async function seedThreadWithAttachments(
  * badge, because nothing here ever calls `mark_post_read` for either post
  * before the board baseline is shot.
  *
+ * Returns the club's own id too (club-hub phase 2, Task 12), so the hub's
+ * Board section can be reached directly at `/clubs/{clubId}/board` — the
+ * same posts, under the hub header instead of the messages screen's own.
+ *
  * Returns the announcement's own id, not just the thread's, so the post
  * baseline can `page.goto` straight to it (`/messages/club/{threadId}/
  * {announcementId}`) instead of clicking the board row to get there. A
@@ -1812,7 +1816,7 @@ export async function seedThreadWithAttachments(
 export async function seedPopulatedBoard(
   profileId: string,
   suffix: string,
-): Promise<{ threadId: string; announcementId: string }> {
+): Promise<{ clubId: string; threadId: string; announcementId: string }> {
   const admin = adminClient('seed populated board');
 
   const need = <T>(what: string, result: { data: unknown; error: unknown }): T => {
@@ -1971,7 +1975,7 @@ export async function seedPopulatedBoard(
     throw new Error(`seedPopulatedBoard: root2 update failed: ${JSON.stringify(root2UpdateError)}`);
   }
 
-  return { threadId, announcementId: root1.id };
+  return { clubId, threadId, announcementId: root1.id };
 }
 
 /**

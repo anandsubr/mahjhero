@@ -96,6 +96,7 @@ const ClubLeaderboard = forwardRef<ClubLeaderboardHandle, Props>(
                     </Text>
                   </View>
                   <View
+                    testID="leaderboard-avatar"
                     style={[styles.avatar, { backgroundColor: avatarColorFor(entry.profile_id) }]}
                   >
                     <Text style={styles.avatarText}>{initialsFrom(name)}</Text>
