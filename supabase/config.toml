@@ -438,6 +438,11 @@ verify_jwt = false
 [functions.send-club-invite]
 verify_jwt = true
 
+# Calendar apps fetch this with no Supabase session (they can't sign in);
+# the per-member token in the query string is the only key.
+[functions.calendar-feed]
+verify_jwt = false
+
 # ---------------------------------------------------------------------------
 # Production (app.mahjhero.com). Everything above is the LOCAL config; this
 # block overrides it only when `supabase config push` targets the prod
