@@ -40,8 +40,11 @@ change completely, and the global bottom tab bar goes away.
 - `clubs.code text not null`, unique index on `code`, check `code ~ '^[A-Z0-9]{4,16}$'`.
 - Backfill: every existing club gets `<up to 8 uppercase letters/digits from the name><3 random
   digits>`, retrying on collision. A name with fewer than 1 usable character falls back to `CLUB`.
-- `create_club` gains an optional `code` argument; when null, the database generates one with the
-  same rule as the backfill.
+- `create_club` gains an optional `code` argument; when null or blank, the database generates one
+  with the same rule as the backfill and no attempt is recorded. A chosen code spends one attempt
+  from the same 10/hour budget as `join_club_by_code` and `set_club_code` (raising `rate_limited`
+  once it is spent), and a taken code returns null rather than raising, so the probe still costs
+  an attempt instead of being a free "is this code taken?" oracle.
 - `join_club_by_code(code text)` — security definer, `authenticated` only:
   - normalizes: uppercase, strip whitespace;
   - records the attempt in `club_code_attempts(profile_id, attempted_at)`; raises
@@ -71,13 +74,17 @@ table_label`
 - A creator who is also booked gets `my_status = 'hosting'`.
 - Invited (not yet accepted) bookings are excluded — they appear in "Needs you".
 - Cancelled events are excluded.
+- Invite-only games are included only when the caller is a club organizer or has an active booking
+  (the same test as `events_select_member`), so a demoted creator no longer booked on one does not
+  see it.
 - `seats_taken` counts the same holds `capacity` logic already counts (confirmed + held invites).
 - List view requests `[now, now + 120 days)`; the calendar requests the visible month.
 
 ### Club cards
 
 `my_clubs_next_game()` returns `{club_id, next_starts_at, timezone}` for each of the caller's
-clubs that has an upcoming, non-cancelled game. Role comes from `fetchMyRoles`; unread from
+clubs that has an upcoming, non-cancelled game the caller can see (invite-only games count only
+for organizers and people booked on them, so their start times do not leak). Role comes from `fetchMyRoles`; unread from
 `useUnreadCounts().byClub`.
 
 ### "Needs you" sources (existing)
@@ -167,8 +174,8 @@ Grid `56–60px | 1fr | 18px`, padding 12–14, 1px `divider` between rows, pres
 - **Join by code:** no match → "No club with that code."; already a member → go to the club;
   `rate_limited` → "Too many tries. Try again in an hour."; network → generic error.
 - **Code editing** (Start a club, club page): Uniqueness is checked on save and shows "That code
-  is taken." — from `create_club`'s `23505` on Start a club, and from `set_club_code` returning
-  null on the club page.
+  is taken." — from `create_club` returning null on Start a club (a `23505` is also mapped, as a
+  fallback), and from `set_club_code` returning null on the club page.
 - **Calendar:** months fetch on navigation, the previous month stays visible until the new one
   loads; the selected day becomes today if in view, else the 1st of the month.
 - **Stale data:** Home refetches on focus.

@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(12);
+select plan(16);
 
 insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-000000000001', 'me@example.com'),
@@ -54,6 +54,19 @@ values
   ('e8000000-0000-0000-0000-000000000008', 'c2c2c2c2-0000-0000-0000-000000000002', 'Far',
    '11111111-0000-0000-0000-000000000002', now() + interval '200 days', now() + interval '200 days 3 hours',
    'bbbbbbbb-0000-0000-0000-000000000002', 'published', 'open_seating', null);
+
+-- e9: invite-only, sooner than anything else in my club, and I'm not on it.
+-- e10: invite-only, I created it but I'm a plain member now (not an
+-- organizer) and not booked on it.
+insert into public.events
+  (id, club_id, title, venue_id, starts_at, ends_at, created_by, status, seating_mode, capacity, game_mode)
+values
+  ('e9000000-0000-0000-0000-000000000009', 'c1c1c1c1-0000-0000-0000-000000000001', 'Secret',
+   '11111111-0000-0000-0000-000000000001', now() + interval '12 hours', now() + interval '15 hours',
+   'bbbbbbbb-0000-0000-0000-000000000002', 'published', 'open_seating', null, 'invite_only'),
+  ('ea000000-0000-0000-0000-00000000000a', 'c1c1c1c1-0000-0000-0000-000000000001', 'Was mine',
+   '11111111-0000-0000-0000-000000000001', now() + interval '10 days', now() + interval '10 days 3 hours',
+   'aaaaaaaa-0000-0000-0000-000000000001', 'published', 'open_seating', null, 'invite_only');
 
 insert into public.event_tables (id, event_id, club_id, label, capacity, position) values
   ('7a000000-0000-0000-0000-000000000001', 'e1000000-0000-0000-0000-000000000001',
@@ -140,9 +153,47 @@ select ok(
   'next game is the soonest published one'
 );
 
+select is(
+  (select next_starts_at from public.my_clubs_next_game()
+    where club_id = 'c1c1c1c1-0000-0000-0000-000000000001'),
+  now() + interval '1 day',
+  'my_clubs_next_game skips an invite-only game I cannot see and reports the next open one'
+);
+select is(
+  (select count(*)::int from public.my_games(now(), now() + interval '120 days') where title = 'Was mine'),
+  0,
+  'my_games excludes an invite-only game I created but am no longer an organizer of or booked on'
+);
+
 set local role anon;
 select throws_ok($$select * from public.my_games(now(), now() + interval '1 day')$$,
   '42501', null, 'anon cannot call my_games');
+reset role;
+
+-- Once I'm booked on the invite-only game, it is mine to see.
+insert into public.booking_groups (id, event_id, club_id, created_by, status, waitlisted_at) values
+  ('99000000-0000-0000-0000-000000000009', 'e9000000-0000-0000-0000-000000000009',
+   'c1c1c1c1-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000001', 'confirmed', null);
+insert into public.bookings
+  (group_id, event_id, club_id, event_table_id, profile_id, booked_by, status, invite_holds_seat)
+values
+  ('99000000-0000-0000-0000-000000000009', 'e9000000-0000-0000-0000-000000000009',
+   'c1c1c1c1-0000-0000-0000-000000000001', null,
+   'aaaaaaaa-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000001', 'confirmed', null);
+
+set local role authenticated;
+set local request.jwt.claims = '{"sub": "aaaaaaaa-0000-0000-0000-000000000001", "role": "authenticated"}';
+select is(
+  (select next_starts_at from public.my_clubs_next_game()
+    where club_id = 'c1c1c1c1-0000-0000-0000-000000000001'),
+  now() + interval '12 hours',
+  'my_clubs_next_game includes an invite-only game once I am booked on it'
+);
+select is(
+  (select my_status from public.my_games(now(), now() + interval '120 days') where title = 'Secret'),
+  'going',
+  'my_games lists an invite-only game I am booked on'
+);
 reset role;
 
 select * from finish();

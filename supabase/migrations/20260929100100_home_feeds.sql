@@ -6,6 +6,13 @@
  * calendar, replacing the dashboard's per-club fetch. Invited (unanswered)
  * seats are excluded — they are shown in Home's "Needs you" until accepted.
  *
+ * Both functions are security definer (RLS off), so each restates
+ * events_select_member's invite-only test (20260905080000): an invite_only
+ * game is visible only to the club's organizers and to people with an active
+ * booking on it. Without it, my_clubs_next_game would leak the start time of
+ * invite-only games a plain member cannot see, and my_games would list one a
+ * demoted creator is no longer booked on.
+ *
  * seats_taken counts what the capacity gate counts as occupied: confirmed
  * seats plus seat-holding invites (see event_free_seats,
  * 20260924101000_capacity_counts_held_invites.sql).
@@ -70,12 +77,17 @@ as $$
     and e.starts_at < to_ts
     and (m.event_id is not null or e.created_by = auth.uid())
     and public.is_club_member(e.club_id)
+    and (e.game_mode = 'open_play'
+         or public.is_club_organizer(e.club_id)
+         or public.event_has_my_active_booking(e.id))
   order by e.starts_at, c.name;
 $$;
 revoke execute on function public.my_games(timestamptz, timestamptz) from public, anon;
 grant execute on function public.my_games(timestamptz, timestamptz) to authenticated;
 
--- The soonest upcoming published game per club the caller belongs to.
+-- The soonest upcoming published game per club the caller belongs to, among
+-- the games the caller can see (invite-only games only when an organizer or
+-- booked).
 create function public.my_clubs_next_game()
 returns table (club_id uuid, next_starts_at timestamptz)
 language sql
@@ -88,6 +100,9 @@ as $$
   where e.status = 'published'
     and e.starts_at > now()
     and public.is_club_member(e.club_id)
+    and (e.game_mode = 'open_play'
+         or public.is_club_organizer(e.club_id)
+         or public.event_has_my_active_booking(e.id))
   group by e.club_id;
 $$;
 revoke execute on function public.my_clubs_next_game() from public, anon;
