@@ -18,7 +18,6 @@ import ErrorBanner from '../../../../../components/ErrorBanner';
 import RoundTimer from '../../../../../components/RoundTimer';
 import Screen from '../../../../../components/Screen';
 import Tag from '../../../../../components/Tag';
-import TabBar from '../../../../../components/TabBar';
 import TableCard from '../../../../../components/TableCard';
 import TipCard, { TipText } from '../../../../../components/TipCard';
 import WaitlistPanel from '../../../../../components/WaitlistPanel';
@@ -372,16 +371,12 @@ export default function EventScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clubId, eventId, session]);
 
-  // Every state below carries the tab bar, the same rule
-  // app/clubs/[id]/index.tsx and app/clubs/[id]/venues.tsx already follow:
-  // TabBar navigates with router.replace off an entry route that is itself
-  // a <Redirect>, so the history stack is typically one deep, and a state
-  // with no bar strands a member with no way out but relaunching the app.
-  // The <Redirect> branch below is the deliberate exception -- it renders
-  // nothing, and a signed-out visitor belongs at sign-in, not in a tab bar.
+  // The <Redirect> branch below is the deliberate exception among these
+  // early returns -- it renders nothing, and a signed-out visitor belongs at
+  // sign-in.
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="club" />}>
+      <Screen center contentStyle={styles.centered}>
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
     );
@@ -398,7 +393,7 @@ export default function EventScreen() {
 
   if (!ready) {
     return (
-      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="club" />}>
+      <Screen center contentStyle={styles.centered}>
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
     );
@@ -406,7 +401,7 @@ export default function EventScreen() {
 
   if (!club || !event) {
     return (
-      <Screen contentStyle={styles.container} tabBar={<TabBar active="club" />}>
+      <Screen contentStyle={styles.container}>
         <ErrorBanner message="That game could not be loaded." />
       </Screen>
     );
@@ -875,7 +870,7 @@ export default function EventScreen() {
       return;
     }
     if (event?.game_mode === 'invite_only' && !isOrganizer) {
-      router.push('/clubs');
+      router.push('/home');
       return;
     }
     await load();
@@ -974,12 +969,12 @@ export default function EventScreen() {
     void load();
   }
 
-  // The 2a pinned round bar: one per screen, above the tab bar, while the
-  // game is live -- it used to be a row of timer buttons on every table
-  // card, so it shows under the same conditions those did (a live game
-  // with tables this viewer can see). Its "round N" is the viewer's own
-  // table's next round, or the only table's; a viewer at none of several
-  // tables gets the plain "Start round".
+  // The 2a round bar: one per screen, while the game is live -- it used to
+  // be a row of timer buttons on every table card, so it shows under the
+  // same conditions those did (a live game with tables this viewer can
+  // see). Its "round N" is the viewer's own table's next round, or the only
+  // table's; a viewer at none of several tables gets the plain
+  // "Start round".
   const showRoundBar =
     gameLive && canSeeFullRoster && !isOpenSeating && !tablesFailed && tables.length > 0;
   const myTableId =
@@ -995,32 +990,25 @@ export default function EventScreen() {
     <Screen
       scroll
       contentStyle={styles.container}
-      tabBar={
-        <>
-          {showRoundBar ? (
-            <RoundTimer
-              roundNumber={barRoundNumber}
-              showRecordHint={isOrganizer || myTableId !== null}
-            />
-          ) : null}
-          <TabBar active="club" />
-        </>
+      footer={
+        showRoundBar ? (
+          <RoundTimer
+            roundNumber={barRoundNumber}
+            showRecordHint={isOrganizer || myTableId !== null}
+          />
+        ) : null
       }
     >
       {/*
-        Goes to /clubs, not /clubs/${clubId}: the club management page no
+        Goes to /home, not /clubs/${clubId}: the club management page no
         longer lists games (2026-09-02-club-page-games-and-back-links-
-        design.md deleted its own "Upcoming" section), so the dashboard is
-        the only real way into this screen left. The Club tab reaches the
-        same /clubs route but renders as already-active here, which reads
-        as "you are here" rather than "go back", so this explicit link
-        still earns its place — same reasoning every other back link on
-        this branch documents.
+        design.md deleted its own "Upcoming" section), so Home is the only
+        real way into this screen left.
       */}
       <CompactHeader
         variant="inset"
         divider={false}
-        onBack={() => router.push('/clubs')}
+        onBack={() => router.push('/home')}
         backLabel="Back to your clubs"
         kind="club"
         clubId={clubId}
@@ -1736,7 +1724,7 @@ export default function EventScreen() {
       ) : null}
       {isOrganizer && guestInviteSent ? (
         <Text style={styles.help}>
-          Invited. They'll see it on their dashboard once they sign in, and it'll seat them at this game.
+          Invited. They'll see it on their Home screen once they sign in, and it'll seat them at this game.
         </Text>
       ) : null}
 

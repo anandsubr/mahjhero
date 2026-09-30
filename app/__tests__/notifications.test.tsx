@@ -13,46 +13,18 @@ vi.mock('expo-router', () => ({
   Redirect: () => null,
   Link: ({ children }: { children: React.ReactNode }) => children,
   useRouter: () => ({ push, back: vi.fn() }),
-  // This screen is reached only from Profile (see the back button below),
-  // and highlights Profile in the tab bar accordingly -- it is not the
-  // Alerts tab's own route.
   usePathname: () => '/notifications',
   // Wrapped in a real `useEffect` keyed on the callback's identity, not
   // called inline on every render: `(cb) => cb()` fires on every render,
-  // which the real hook never does, and would refire `useUnreadCounts`'s
-  // fetch (now pulled in by TabBar) on every state update it causes.
+  // which the real hook never does.
   useFocusEffect: (cb: () => void | (() => void)) => {
     useEffect(cb, [cb]);
   },
 }));
 
-// Module-scoped constant, not a fresh object per render: TabBar's badge now
-// reads `useSession` too (via `useUnreadCounts`), and a fresh object here
-// breaks the referential stability its `useCallback([session])` depends on,
-// refiring the fetch on every render.
 const SESSION = { session: { user: { id: 'test-user' } }, loading: false };
 vi.mock('../../lib/session', () => ({
   useSession: () => SESSION,
-}));
-
-// TabBar (carried by this screen) now calls `useUnreadCounts`, which reaches
-// `fetchUnreadCounts`.
-// Spread `actual` rather than replacing the module outright: TabBar (carried
-// by this screen) now also calls `unreadSuffix`, a pure helper covered by
-// lib/messages.test.ts -- only `fetchUnreadCounts` needs to be a
-// controllable double here.
-vi.mock('../../lib/messages', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../lib/messages')>();
-  return {
-    ...actual,
-    fetchUnreadCounts: vi.fn(async () => []),
-  };
-});
-
-// TabBar also now calls useNotificationsUnread for its Alerts badge --
-// without this it falls through to a real, unmocked RPC call.
-vi.mock('../../lib/use-notifications-unread', () => ({
-  useNotificationsUnread: () => 0,
 }));
 
 vi.mock('../../lib/profile', () => ({
@@ -102,16 +74,6 @@ describe('notifications screen', () => {
 
     const pushOnly = screen.getByRole('radio', { name: 'Push only' });
     expect(pushOnly.getAttribute('aria-selected')).toBe('false');
-  });
-
-  it('carries the tab bar with Profile marked', async () => {
-    render(<NotificationSettings />);
-    expect(
-      (await screen.findByRole('button', { name: 'Profile' })).getAttribute(
-        'aria-selected',
-      ),
-    ).toBe('true');
-    expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
   });
 
   it('shows each channel with its subtitle', async () => {

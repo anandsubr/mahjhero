@@ -6,7 +6,6 @@ import Button from '../../../components/Button';
 import Card from '../../../components/Card';
 import ErrorBanner from '../../../components/ErrorBanner';
 import Screen from '../../../components/Screen';
-import TabBar from '../../../components/TabBar';
 import TextField from '../../../components/TextField';
 import { ChevronLeftIcon } from '../../../components/icons';
 import {
@@ -30,16 +29,12 @@ export default function ImportRosterScreen() {
   const [error, setError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
 
-  // Every state below carries the tab bar, the same rule
-  // app/clubs/[id]/index.tsx and app/clubs/[id]/venues.tsx already follow:
-  // TabBar navigates with router.replace off an entry route that is itself
-  // a <Redirect>, so the history stack is typically one deep, and a state
-  // with no bar strands a host with no way out but relaunching the app. The
-  // <Redirect> branch below is the deliberate exception -- it renders
-  // nothing, and a signed-out visitor belongs at sign-in, not in a tab bar.
+  // The <Redirect> branch below is the deliberate exception among these
+  // early returns -- it renders nothing, and a signed-out visitor belongs at
+  // sign-in.
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="club" />}>
+      <Screen center contentStyle={styles.centered}>
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
     );
@@ -83,7 +78,7 @@ export default function ImportRosterScreen() {
   }
 
   return (
-    <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="club" />}>
+    <Screen scroll contentStyle={styles.container}>
       {/*
         Kept, not dropped: this goes to /clubs/${id}, a specific club, which
         is a different destination from the Club tab's own /clubs (see

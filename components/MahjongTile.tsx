@@ -15,13 +15,15 @@ export type MahjongSuit =
 
 type Props = {
   suit: MahjongSuit;
-  /** `"tab"`: the bottom tab bar's own tile (70x77), carries `label` (the
-   *  tab's full word). `"section"`: the small tile before a landing
-   *  screen's own heading (30x40) -- no label, ever, even if one is
-   *  passed. `"chip"`: a club's own tile (48x60, `ClubChips.tsx` and the
-   *  large club-header treatment) -- carries `label` too, but as the
-   *  club's initials, not a full word. */
-  size: 'tab' | 'section' | 'chip';
+  /** `"tab"`: 70x77, carries `label` (a full word); no current caller.
+   *  `"section"`: the small tile before a landing screen's own heading
+   *  (30x40) -- no label, ever, even if one is passed. `"chip"`: a club's
+   *  own tile (48x60, components/home/ClubCard.tsx and the large
+   *  club-header treatment) -- carries `label` too, but as the club's
+   *  initials, not a full word. `"mini"`: the club-hub redesign's
+   *  20x20 tile beside a game row's club name (`components/GameRow.tsx`)
+   *  -- no label, ever, smaller than any other size. */
+  size: 'tab' | 'section' | 'chip' | 'mini';
   /** A one-step-darker variant of `TileHero`'s (app/welcome.tsx) own
    *  accent-tile treatment: solid `accent[700]` fill, `accent[800]` lip,
    *  glyph/label in `colors.bg` -- see `styles.selected` below for why
@@ -111,11 +113,8 @@ function Glyph({ suit, color }: { suit: MahjongSuit; color: string }) {
  * Unlike `TileHero`'s three tiles, this one is always upright -- rotation
  * is that hero's own decorative-only treatment, not this shared tile's.
  *
- * Consumers: the bottom tab bar (components/TabBar.tsx, size `"tab"`, one
- * per tab, `selected` on the active one, one of the plan's own fixed
- * 4-glyph section mapping -- not a real club); the clubs dashboard's chip
- * row (components/ClubChips.tsx, size `"chip"`, `selected` on the chosen
- * club, suit from `glyphForClub`); a club thread's own avatar
+ * Consumers: Home's own club cards (components/home/ClubCard.tsx, size
+ * `"chip"`, suit from `glyphForClub`); a club thread's own avatar
  * (components/ThreadAvatar.tsx's `asTile` branch, size `"chip"`, suit
  * from `glyphForClub`); and each of the four landing screens' own headings
  * (size `"section"`, one of the fixed 4-glyph section mapping).
@@ -126,7 +125,10 @@ export default function MahjongTile({ suit, size, selected = false, label }: Pro
   const showsLabel = size === 'tab' || size === 'chip';
 
   const sizeStyle =
-    size === 'tab' ? styles.tab : size === 'chip' ? styles.chip : styles.section;
+    size === 'tab' ? styles.tab
+      : size === 'chip' ? styles.chip
+      : size === 'mini' ? styles.mini
+      : styles.section;
 
   return (
     <View
@@ -172,6 +174,13 @@ const styles = StyleSheet.create({
     paddingBottom: space[1],
     gap: 2,
     borderBottomWidth: 3,
+  },
+  mini: {
+    width: 20,
+    height: 20,
+    borderRadius: 6,
+    borderBottomWidth: 2,
+    justifyContent: 'center',
   },
   // accent[700] fill / accent[800] lip -- one step darker each than
   // TileHero's own accent tile (app/welcome.tsx: accentColor fill,

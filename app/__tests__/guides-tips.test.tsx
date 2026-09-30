@@ -30,9 +30,8 @@ vi.mock('expo-router', () => ({
   usePathname: () => pathname,
   useLocalSearchParams: () => searchParams,
   // Wrapped in a real `useEffect` keyed on the callback's identity, not
-  // called inline on every render -- see events-detail.test.tsx's identical
-  // comment: `(cb) => cb()` would refire `useUnreadCounts`'s fetch (pulled
-  // in by TabBar) on every state update it causes.
+  // called inline on every render: `(cb) => cb()` fires on every render,
+  // which the real hook never does.
   useFocusEffect: (cb: () => void | (() => void)) => {
     useEffect(cb, [cb]);
   },
@@ -174,19 +173,6 @@ vi.mock('../../lib/rounds', async (importOriginal) => {
     deleteRound: (...args: unknown[]) => deleteRound(...args),
   };
 });
-
-const fetchUnreadCounts = vi.fn(async () => []);
-vi.mock('../../lib/messages', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../lib/messages')>();
-  return {
-    ...actual,
-    fetchUnreadCounts: () => fetchUnreadCounts(),
-  };
-});
-
-vi.mock('../../lib/use-notifications-unread', () => ({
-  useNotificationsUnread: () => 0,
-}));
 
 // events-new.test.tsx's own VenuePicker stub -- irrelevant to these tests,
 // but NewEventScreen renders it unconditionally.

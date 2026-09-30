@@ -7,9 +7,6 @@ const replace = vi.fn();
 
 const searchParams: Record<string, string> = { id: 'club-1', eventId: 'event-1' };
 
-// This screen's own route, never TabBar's own /clubs -- the Club tab stays
-// live here the same way it does on the club detail and venues screens (see
-// clubs.test.tsx's and venues.test.tsx's identical comment).
 const pathname = '/clubs/club-1/events/event-1';
 
 vi.mock('expo-router', () => ({
@@ -21,9 +18,8 @@ vi.mock('expo-router', () => ({
   usePathname: () => pathname,
   useLocalSearchParams: () => searchParams,
   // Wrapped in a real `useEffect` keyed on the callback's identity, not
-  // called inline on every render -- see venues.test.tsx's identical
-  // comment: `(cb) => cb()` would refire `useUnreadCounts`'s fetch (now
-  // pulled in by TabBar) on every state update it causes.
+  // called inline on every render: `(cb) => cb()` fires on every render,
+  // which the real hook never does.
   useFocusEffect: (cb: () => void | (() => void)) => {
     useEffect(cb, [cb]);
   },
@@ -132,24 +128,6 @@ vi.mock('../../lib/rounds', async (importOriginal) => {
     fetchTableRounds: (...args: unknown[]) => fetchTableRounds(...args),
   };
 });
-
-// TabBar (now carried by this screen) calls `useUnreadCounts`, which reaches
-// `fetchUnreadCounts` -- `openThreadForEvent` stays real via the spread (the
-// "Open the game thread" button is never clicked in this file).
-const fetchUnreadCounts = vi.fn(async () => []);
-vi.mock('../../lib/messages', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../lib/messages')>();
-  return {
-    ...actual,
-    fetchUnreadCounts: () => fetchUnreadCounts(),
-  };
-});
-
-// TabBar also now calls useNotificationsUnread for its Alerts badge --
-// without this it falls through to a real, unmocked RPC call.
-vi.mock('../../lib/use-notifications-unread', () => ({
-  useNotificationsUnread: () => 0,
-}));
 
 import EventScreen from '../clubs/[id]/events/[eventId]/index';
 

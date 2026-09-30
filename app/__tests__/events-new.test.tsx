@@ -18,8 +18,7 @@ vi.mock('expo-router', () => ({
   usePathname: () => '/clubs/club-1/events/new',
   // Wrapped in a real `useEffect` keyed on the callback's identity, not
   // called inline on every render: `(cb) => cb()` fires on every render,
-  // which the real hook never does, and would refire `useUnreadCounts`'s
-  // fetch (now pulled in by TabBar) on every state update it causes.
+  // which the real hook never does.
   useFocusEffect: (cb: () => void | (() => void)) => {
     useEffect(cb, [cb]);
   },
@@ -42,24 +41,6 @@ const fetchMyRoles = vi.fn();
 vi.mock('../../lib/clubs', () => ({
   fetchClub: (...args: unknown[]) => fetchClub(...args),
   fetchMyRoles: (...args: unknown[]) => fetchMyRoles(...args),
-}));
-
-// TabBar (now carried by this screen) calls `useUnreadCounts`, which reaches
-// `fetchUnreadCounts`. Spread `actual` rather than replacing the module
-// outright, the same pattern app/__tests__/friends.test.tsx uses -- TabBar
-// also calls `unreadSuffix`, a pure helper already covered elsewhere.
-vi.mock('../../lib/messages', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../lib/messages')>();
-  return {
-    ...actual,
-    fetchUnreadCounts: vi.fn(async () => []),
-  };
-});
-
-// TabBar also now calls useNotificationsUnread for its Alerts badge --
-// without this it falls through to a real, unmocked RPC call.
-vi.mock('../../lib/use-notifications-unread', () => ({
-  useNotificationsUnread: () => 0,
 }));
 
 const createEvent = vi.fn();
@@ -358,7 +339,7 @@ describe('a failed save', () => {
     expect(replace).not.toHaveBeenCalled();
   });
 
-  it('navigates to the clubs dashboard once the save actually succeeds', async () => {
+  it('navigates to Home once the save actually succeeds', async () => {
     render(<NewEventScreen />);
     await screen.findByText('New game');
     pickVenue();
@@ -367,13 +348,13 @@ describe('a failed save', () => {
     });
     fireEvent.click(screen.getByText('Create game'));
 
-    // The clubs dashboard, not this specific club's own page -- a newly
-    // created game already shows up there. Different from Cancel above,
-    // which deliberately stays on `/clubs/club-1`.
-    await vi.waitFor(() => expect(replace).toHaveBeenCalledWith('/clubs'));
+    // Home, not this specific club's own page -- a newly created game
+    // already shows up there. Different from Cancel above, which
+    // deliberately stays on `/clubs/club-1`.
+    await vi.waitFor(() => expect(replace).toHaveBeenCalledWith('/home'));
   });
 
-  it('navigates to the clubs dashboard once a series save succeeds too', async () => {
+  it('navigates to Home once a series save succeeds too', async () => {
     render(<NewEventScreen />);
     await screen.findByText('New game');
     fireEvent.click(screen.getByText('Every week'));
@@ -383,7 +364,7 @@ describe('a failed save', () => {
     });
     fireEvent.click(screen.getByText('Create game'));
 
-    await vi.waitFor(() => expect(replace).toHaveBeenCalledWith('/clubs'));
+    await vi.waitFor(() => expect(replace).toHaveBeenCalledWith('/home'));
   });
 });
 
@@ -689,37 +670,12 @@ describe('the duration/table-count/repeat chips reach the DOM with aria-selected
   });
 });
 
-// The loaded form hides the tab bar (game form handoff) -- the header's ✕
-// and the pinned Cancel/Create bar take its place. The loading and error
-// states, which have neither, still carry it.
-describe('the tab bar', () => {
-  it('is hidden on the loaded form, with Cancel and Create game pinned instead', async () => {
+describe('the action bar', () => {
+  it('pins Cancel and Create game at the bottom of the loaded form', async () => {
     render(<NewEventScreen />);
     await screen.findByText('New game');
-    expect(screen.queryByRole('button', { name: 'Club' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Save game' })).toBeTruthy();
     expect(screen.getByLabelText('Cancel')).toBeTruthy();
-  });
-
-  it('is carried while the session is still loading', () => {
-    useSessionMock.mockReturnValueOnce({ session: null, loading: true });
-    render(<NewEventScreen />);
-    expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
-  });
-
-  it('is carried while the club is still loading', () => {
-    // A promise that never settles: the screen stays in its !ready state for
-    // the life of the test.
-    fetchClub.mockReturnValueOnce(new Promise(() => {}));
-    render(<NewEventScreen />);
-    expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
-  });
-
-  it('is carried when the club cannot be loaded', async () => {
-    fetchClub.mockResolvedValueOnce(null);
-    render(<NewEventScreen />);
-    expect(await screen.findByText('That club could not be loaded.')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
   });
 });
 
@@ -738,7 +694,7 @@ describe('table levels', () => {
     fireEvent.change(screen.getByLabelText('Game name'), { target: { value: 'Levels' } });
     fireEvent.click(screen.getByText('Create game'));
 
-    await vi.waitFor(() => expect(replace).toHaveBeenCalledWith('/clubs'));
+    await vi.waitFor(() => expect(replace).toHaveBeenCalledWith('/home'));
     expect(createEvent.mock.calls[0][0].tableCount).toBe(2);
     // Table 1 stays "Any level" -- nothing to send for it.
     expect(updateEventTable).toHaveBeenCalledTimes(1);

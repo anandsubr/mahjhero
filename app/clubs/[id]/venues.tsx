@@ -8,7 +8,6 @@ import DashboardHeader from '../../../components/DashboardHeader';
 import ErrorBanner from '../../../components/ErrorBanner';
 import Screen from '../../../components/Screen';
 import Tag from '../../../components/Tag';
-import TabBar from '../../../components/TabBar';
 import TextField from '../../../components/TextField';
 import { ChevronLeftIcon } from '../../../components/icons';
 import { canInvite, fetchClub, fetchRoster } from '../../../lib/clubs';
@@ -94,7 +93,6 @@ export default function VenuesScreen() {
       <Screen
         center
         contentStyle={styles.centered}
-        tabBar={<TabBar active="club" />}
       >
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
@@ -115,7 +113,6 @@ export default function VenuesScreen() {
       <Screen
         center
         contentStyle={styles.centered}
-        tabBar={<TabBar active="club" />}
       >
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
@@ -124,7 +121,7 @@ export default function VenuesScreen() {
 
   if (loadFailed || !club) {
     return (
-      <Screen contentStyle={styles.container} tabBar={<TabBar active="club" />}>
+      <Screen contentStyle={styles.container}>
         <ErrorBanner message={GENERIC_ERROR} />
       </Screen>
     );
@@ -177,7 +174,7 @@ export default function VenuesScreen() {
   }
 
   return (
-    <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="club" />}>
+    <Screen scroll contentStyle={styles.container}>
       {/* Generic label, not club.name: the kicker right below already names
           the club, so repeating it here would read as a mistake rather than
           confirmation. Matches import.tsx. */}

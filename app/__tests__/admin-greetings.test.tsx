@@ -33,21 +33,6 @@ vi.mock('../../lib/session', () => ({
   useSession: () => sessionState,
 }));
 
-// TabBar (carried by this screen) now calls `useUnreadCounts`, which reaches
-// `fetchUnreadCounts`.
-vi.mock('../../lib/messages', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../lib/messages')>();
-  return {
-    ...actual,
-    fetchUnreadCounts: vi.fn(async () => []),
-  };
-});
-
-// TabBar also now calls useNotificationsUnread for its Alerts badge
-vi.mock('../../lib/use-notifications-unread', () => ({
-  useNotificationsUnread: () => 0,
-}));
-
 import AdminGreetingsScreen from '../admin/greetings';
 
 beforeEach(() => {

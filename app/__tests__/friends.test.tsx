@@ -12,39 +12,15 @@ vi.mock('expo-router', () => ({
   usePathname: () => '/friends',
   // Wrapped in a real `useEffect` keyed on the callback's identity, not
   // called inline on every render: `(cb) => cb()` fires on every render,
-  // which the real hook never does, and would refire `useUnreadCounts`'s
-  // fetch (now pulled in by TabBar) on every state update it causes.
+  // which the real hook never does.
   useFocusEffect: (cb: () => void | (() => void)) => {
     useEffect(cb, [cb]);
   },
 }));
 
-// Module-scoped constant, not a fresh object per render: TabBar's badge now
-// reads `useSession` too (via `useUnreadCounts`), and a fresh object here
-// breaks the referential stability its `useCallback([session])` depends on,
-// refiring the fetch on every render.
 const SESSION = { session: { user: { id: 'me' } }, loading: false };
 vi.mock('../../lib/session', () => ({
   useSession: () => SESSION,
-}));
-
-// TabBar (now carried by this screen) calls `useUnreadCounts`, which reaches
-// `fetchUnreadCounts`. Spread `actual` rather than replacing the module
-// outright: TabBar also calls `unreadSuffix`, a pure helper covered by
-// lib/messages.test.ts -- only `fetchUnreadCounts` needs to be a
-// controllable double here.
-vi.mock('../../lib/messages', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../lib/messages')>();
-  return {
-    ...actual,
-    fetchUnreadCounts: vi.fn(async () => []),
-  };
-});
-
-// TabBar also now calls useNotificationsUnread for its Alerts badge --
-// without this it falls through to a real, unmocked RPC call.
-vi.mock('../../lib/use-notifications-unread', () => ({
-  useNotificationsUnread: () => 0,
 }));
 
 const fetchFriends = vi.fn();
@@ -208,30 +184,6 @@ describe('friends screen', () => {
     fireEvent.click(await screen.findByLabelText('Remove Bob Reyes'));
     await waitFor(() => expect(removeFriend).toHaveBeenCalledWith('p1'));
     await waitFor(() => expect(fetchFriends).toHaveBeenCalledTimes(2));
-  });
-
-  // TabBar navigates with router.replace off an entry route that is itself
-  // a Redirect, so the history stack is typically one deep. A friends screen
-  // with no bar would be a dead end on native short of relaunching the app.
-  // Profile, not Messages -- this screen hangs off Profile.
-  it('carries the tab bar with Profile marked', async () => {
-    render(<FriendsScreen />);
-    await screen.findByText('Friends');
-    expect(
-      screen.getByRole('button', { name: 'Profile' }).getAttribute('aria-selected'),
-    ).toBe('true');
-    expect(
-      screen.getByRole('button', { name: 'Club' }).getAttribute('aria-selected'),
-    ).toBe('false');
-  });
-
-  it('carries the tab bar when the load fails', async () => {
-    fetchFriends.mockResolvedValueOnce(null);
-    render(<FriendsScreen />);
-    expect(await screen.findByText(/Could not reach MahjHero/)).toBeTruthy();
-    expect(
-      screen.getByRole('button', { name: 'Profile' }).getAttribute('aria-selected'),
-    ).toBe('true');
   });
 
 });

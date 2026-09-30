@@ -1,12 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ALL_CLUBS,
-  buildChips,
-  buildDashboardRows,
   glyphForClub,
-  headerScope,
   initialsFrom,
-  inScope,
   needAFourthAlerts,
   pendingGameInvites,
 } from './dashboard';
@@ -23,6 +18,7 @@ const CLUBS: Club[] = [
     visibility: 'private',
     timezone: 'America/New_York',
     default_game_mode: 'open_play',
+    code: 'TESTCODE',
   },
   {
     id: 'club-2',
@@ -32,6 +28,7 @@ const CLUBS: Club[] = [
     visibility: 'private',
     timezone: 'America/New_York',
     default_game_mode: 'open_play',
+    code: 'TESTCODE',
   },
 ];
 
@@ -100,71 +97,6 @@ function booking(over: Partial<MyBooking> = {}): MyBooking {
   };
 }
 
-describe('buildChips', () => {
-  it('makes one chip per club, in order, with no "All clubs" entry', () => {
-    expect(buildChips(CLUBS)).toEqual([
-      { id: 'club-1', label: 'Riverside Mah Jongg' },
-      { id: 'club-2', label: 'Harbour Tiles' },
-    ]);
-  });
-});
-
-describe('headerScope', () => {
-  // No kicker: the name is "Your clubs" now, and a "YOUR CLUBS" kicker above
-  // it is the same words twice. DashboardHeader guards on length, so an
-  // empty string draws nothing. The single-club scope below keeps its
-  // kicker — there "Your club" and the club's own name say different things.
-  it('names the whole list without repeating itself when the scope is all', () => {
-    expect(headerScope(CLUBS, ALL_CLUBS)).toEqual({
-      kicker: '',
-      name: 'Your clubs',
-      meta: '',
-    });
-  });
-
-  // A one-club member used to be auto-scoped into their one club, skipping
-  // the main dashboard (and its greeting) entirely. Landing everyone there
-  // by default, one club or many, was chosen deliberately over that.
-  it('does not auto-scope a lone club into "Your club"', () => {
-    expect(headerScope([CLUBS[0]], ALL_CLUBS)).toEqual({
-      kicker: '',
-      name: 'Your clubs',
-      meta: '',
-    });
-  });
-
-  it('still resolves a lone club when its chip is explicitly picked', () => {
-    expect(headerScope([CLUBS[0]], 'club-1')).toEqual({
-      kicker: 'Your club',
-      name: 'Riverside Mah Jongg',
-      meta: 'Thursdays, 7pm',
-    });
-  });
-
-  it('resolves an empty list to the all-clubs scope rather than nothing', () => {
-    expect(headerScope([], ALL_CLUBS)).toEqual({
-      kicker: '',
-      name: 'Your clubs',
-      meta: '',
-    });
-  });
-
-  it("uses the club's own rhythm when one is picked", () => {
-    expect(headerScope(CLUBS, 'club-1')).toEqual({
-      kicker: 'Your club',
-      name: 'Riverside Mah Jongg',
-      meta: 'Thursdays, 7pm',
-    });
-  });
-
-  it('falls back to the all-clubs scope for an unknown id', () => {
-    expect(headerScope(CLUBS, 'club-gone').name).toBe('Your clubs');
-    // A single-club list is no exception now -- a stale id resolves to the
-    // main dashboard just like an unrecognized id in a longer list does.
-    expect(headerScope([CLUBS[0]], 'club-gone').name).toBe('Your clubs');
-  });
-});
-
 describe('initialsFrom', () => {
   it('takes the first letter of the first two words', () => {
     expect(initialsFrom('Jean Wu')).toBe('JW');
@@ -185,401 +117,6 @@ describe('initialsFrom', () => {
     expect(initialsFrom('\u{1D49C}da Lovelace')).toBe('\u{1D49C}L');
   });
 });
-
-describe('inScope', () => {
-  it('admits everything under all clubs', () => {
-    expect(inScope('club-2', ALL_CLUBS)).toBe(true);
-  });
-
-  it('admits only the picked club otherwise', () => {
-    expect(inScope('club-2', 'club-1')).toBe(false);
-    expect(inScope('club-1', 'club-1')).toBe(true);
-  });
-});
-
-describe('buildDashboardRows', () => {
-  it('carries a booking through as a non-joinable row', () => {
-    const rows = buildDashboardRows({
-      bookings: [booking()],
-      events: [],
-      clubs: CLUBS,
-      userId: 'me',
-      now: NOW,
-    });
-    expect(rows).toHaveLength(1);
-    expect(rows[0].eventId).toBe('event-9');
-    expect(rows[0].joinable).toBe(false);
-    expect(rows[0].booking?.booking_id).toBe('booking-1');
-  });
-
-  it('adds an open event the viewer is not in as joinable', () => {
-    const rows = buildDashboardRows({
-      bookings: [],
-      events: [event()],
-      clubs: CLUBS,
-      userId: 'me',
-      now: NOW,
-    });
-    expect(rows).toHaveLength(1);
-    expect(rows[0].joinable).toBe(true);
-    expect(rows[0].clubName).toBe('Riverside Mah Jongg');
-    expect(rows[0].timezone).toBe('America/New_York');
-  });
-
-  it('never lists an event twice when the viewer is booked into it', () => {
-    const rows = buildDashboardRows({
-      bookings: [booking({ event_id: 'event-1' })],
-      events: [event()],
-      clubs: CLUBS,
-      userId: 'me',
-      now: NOW,
-    });
-    expect(rows).toHaveLength(1);
-    expect(rows[0].joinable).toBe(false);
-  });
-
-  // A full, not-yet-started table used to drop entirely for a plain
-  // member -- the regression covered below ("still lets a plain member
-  // join the waitlist..."). It stays joinable here precisely so tapping
-  // "Join" reaches commit_booking, which lands an over-capacity join on
-  // the waitlist correctly.
-  it('still adds a full, not-yet-started event as joinable, not dropped', () => {
-    const rows = buildDashboardRows({
-      bookings: [],
-      events: [
-        event({
-          id: 'full',
-          bookings: [
-            { profile_id: 'a', status: 'confirmed', event_table_id: 'table-1', group_id: 'g-a' },
-            { profile_id: 'b', status: 'confirmed', event_table_id: 'table-1', group_id: 'g-b' },
-            { profile_id: 'c', status: 'confirmed', event_table_id: 'table-1', group_id: 'g-c' },
-            { profile_id: 'd', status: 'confirmed', event_table_id: 'table-1', group_id: 'g-d' },
-          ],
-        }),
-      ],
-      clubs: CLUBS,
-      userId: 'me',
-      now: NOW,
-    });
-    expect(rows).toHaveLength(1);
-    expect(rows[0].joinable).toBe(true);
-    expect(rows[0].organizing).toBe(false);
-  });
-
-  // Finding #1 of the final review: an open-seating event carries zero
-  // event_tables rows, so summing them (the old, single-branch hasFreeSeat)
-  // always read as zero capacity and dropped every open-seating event here,
-  // capped or uncapped, empty or full. Three cases, mirroring the SQL side's
-  // event_capacity/event_is_capped (20260906110000_capacity_resolution.sql).
-  it('adds an uncapped open-seating event as joinable, with no event_tables at all', () => {
-    const rows = buildDashboardRows({
-      bookings: [],
-      events: [
-        event({
-          id: 'open-uncapped',
-          seating_mode: 'open_seating',
-          capacity: null,
-          event_tables: [],
-        }),
-      ],
-      clubs: CLUBS,
-      userId: 'me',
-      now: NOW,
-    });
-    expect(rows).toHaveLength(1);
-    expect(rows[0].joinable).toBe(true);
-  });
-
-  it('adds a capped open-seating event as joinable while seats remain', () => {
-    const rows = buildDashboardRows({
-      bookings: [],
-      events: [
-        event({
-          id: 'open-capped-free',
-          seating_mode: 'open_seating',
-          capacity: 60,
-          event_tables: [],
-          bookings: [
-            { profile_id: 'a', status: 'confirmed', event_table_id: null, group_id: 'g-a' },
-          ],
-        }),
-      ],
-      clubs: CLUBS,
-      userId: 'me',
-      now: NOW,
-    });
-    expect(rows).toHaveLength(1);
-    expect(rows[0].joinable).toBe(true);
-  });
-
-  // Item 2 of a real QA pass: a member had no way at all to join the
-  // waitlist for a full, capped open-seating night, because the row
-  // dropped out here before they could ever reach it.
-  it('still adds a full, capped open-seating event as joinable, for the waitlist', () => {
-    const rows = buildDashboardRows({
-      bookings: [],
-      events: [
-        event({
-          id: 'open-capped-full',
-          seating_mode: 'open_seating',
-          capacity: 2,
-          event_tables: [],
-          bookings: [
-            { profile_id: 'a', status: 'confirmed', event_table_id: null, group_id: 'g-a' },
-            { profile_id: 'b', status: 'confirmed', event_table_id: null, group_id: 'g-b' },
-          ],
-        }),
-      ],
-      clubs: CLUBS,
-      userId: 'me',
-      now: NOW,
-    });
-    expect(rows).toHaveLength(1);
-    expect(rows[0].joinable).toBe(true);
-  });
-
-  it('drops a cancelled event', () => {
-    const rows = buildDashboardRows({
-      bookings: [],
-      events: [event({ id: 'cancelled', status: 'cancelled' })],
-      clubs: CLUBS,
-      userId: 'me',
-      now: NOW,
-    });
-    expect(rows).toEqual([]);
-  });
-
-  it('drops an event that has already started', () => {
-    const rows = buildDashboardRows({
-      bookings: [],
-      events: [event({ id: 'past', starts_at: '2026-08-01T23:00:00Z' })],
-      clubs: CLUBS,
-      userId: 'me',
-      now: NOW,
-    });
-    expect(rows).toEqual([]);
-  });
-
-  it('adds an in-progress event the viewer organizes but has not booked, as an organizing row', () => {
-    const rows = buildDashboardRows({
-      bookings: [],
-      events: [
-        event({
-          id: 'in-progress',
-          starts_at: '2026-09-01T10:00:00Z',
-          ends_at: '2026-09-01T14:00:00Z',
-        }),
-      ],
-      clubs: CLUBS,
-      userId: 'me',
-      organizerClubIds: new Set(['club-1']),
-      now: NOW,
-    });
-    expect(rows).toHaveLength(1);
-    expect(rows[0].organizing).toBe(true);
-    expect(rows[0].joinable).toBe(false);
-    expect(rows[0].booking).toBeNull();
-  });
-
-  it('does not add an in-progress event for a plain member, even with a free seat', () => {
-    const rows = buildDashboardRows({
-      bookings: [],
-      events: [
-        event({
-          id: 'in-progress',
-          starts_at: '2026-09-01T10:00:00Z',
-          ends_at: '2026-09-01T14:00:00Z',
-        }),
-      ],
-      clubs: CLUBS,
-      userId: 'me',
-      // No organizerClubIds -- a plain member of the club.
-      now: NOW,
-    });
-    expect(rows).toEqual([]);
-  });
-
-  it('drops an in-progress event the viewer organizes once it has ended', () => {
-    const rows = buildDashboardRows({
-      bookings: [],
-      events: [
-        event({
-          id: 'ended',
-          starts_at: '2026-09-01T08:00:00Z',
-          ends_at: '2026-09-01T11:00:00Z',
-        }),
-      ],
-      clubs: CLUBS,
-      userId: 'me',
-      organizerClubIds: new Set(['club-1']),
-      now: NOW,
-    });
-    expect(rows).toEqual([]);
-  });
-
-  it('lets a booking win over the organizing branch when the organizer is also seated', () => {
-    const rows = buildDashboardRows({
-      bookings: [
-        booking({ event_id: 'in-progress', club_id: 'club-1' }),
-      ],
-      events: [
-        event({
-          id: 'in-progress',
-          starts_at: '2026-09-01T10:00:00Z',
-          ends_at: '2026-09-01T14:00:00Z',
-        }),
-      ],
-      clubs: CLUBS,
-      userId: 'me',
-      organizerClubIds: new Set(['club-1']),
-      now: NOW,
-    });
-    expect(rows).toHaveLength(1);
-    expect(rows[0].booking).not.toBeNull();
-    expect(rows[0].organizing).toBe(false);
-  });
-
-  it('still adds an organizing row even when the table is full', () => {
-    const rows = buildDashboardRows({
-      bookings: [],
-      events: [
-        event({
-          id: 'in-progress-full',
-          starts_at: '2026-09-01T10:00:00Z',
-          ends_at: '2026-09-01T14:00:00Z',
-          bookings: [
-            { profile_id: 'a', status: 'confirmed', event_table_id: 'table-1', group_id: 'g-a' },
-            { profile_id: 'b', status: 'confirmed', event_table_id: 'table-1', group_id: 'g-b' },
-            { profile_id: 'c', status: 'confirmed', event_table_id: 'table-1', group_id: 'g-c' },
-            { profile_id: 'd', status: 'confirmed', event_table_id: 'table-1', group_id: 'g-d' },
-          ],
-        }),
-      ],
-      clubs: CLUBS,
-      userId: 'me',
-      organizerClubIds: new Set(['club-1']),
-      now: NOW,
-    });
-    expect(rows).toHaveLength(1);
-    expect(rows[0].organizing).toBe(true);
-  });
-
-  // The regression this covers: a host's own table filled up before it
-  // started, and the game dropped off their dashboard entirely with no way
-  // back in until kickoff -- found on a real dashboard, not from a review.
-  // The organizing branch above (`still adds an organizing row even when
-  // the table is full`) only covers this once the event has already
-  // started; `event()`'s default `starts_at` is in the future relative to
-  // NOW, so this is the pre-kickoff twin of that case.
-  it('adds a not-yet-started, full table as an organizing row for its own host', () => {
-    const rows = buildDashboardRows({
-      bookings: [],
-      events: [
-        event({
-          id: 'full-not-started',
-          bookings: [
-            { profile_id: 'a', status: 'confirmed', event_table_id: 'table-1', group_id: 'g-a' },
-            { profile_id: 'b', status: 'confirmed', event_table_id: 'table-1', group_id: 'g-b' },
-            { profile_id: 'c', status: 'confirmed', event_table_id: 'table-1', group_id: 'g-c' },
-            { profile_id: 'd', status: 'confirmed', event_table_id: 'table-1', group_id: 'g-d' },
-          ],
-        }),
-      ],
-      clubs: CLUBS,
-      userId: 'me',
-      organizerClubIds: new Set(['club-1']),
-      now: NOW,
-    });
-    expect(rows).toHaveLength(1);
-    expect(rows[0].organizing).toBe(true);
-    expect(rows[0].joinable).toBe(false);
-  });
-
-  // The regression this covers: a plain member had zero path to a full,
-  // not-yet-started game at all -- this dashboard is the only place an
-  // upcoming event is listed, so a dropped row here was not a worse "Join"
-  // button, it was no way to reach the event's waitlist whatsoever.
-  it('still lets a plain member join the waitlist for a not-yet-started, full table', () => {
-    const rows = buildDashboardRows({
-      bookings: [],
-      events: [
-        event({
-          id: 'full-not-started',
-          bookings: [
-            { profile_id: 'a', status: 'confirmed', event_table_id: 'table-1', group_id: 'g-a' },
-            { profile_id: 'b', status: 'confirmed', event_table_id: 'table-1', group_id: 'g-b' },
-            { profile_id: 'c', status: 'confirmed', event_table_id: 'table-1', group_id: 'g-c' },
-            { profile_id: 'd', status: 'confirmed', event_table_id: 'table-1', group_id: 'g-d' },
-          ],
-        }),
-      ],
-      clubs: CLUBS,
-      userId: 'me',
-      // No organizerClubIds -- a plain member of the club.
-      now: NOW,
-    });
-    expect(rows).toHaveLength(1);
-    expect(rows[0].joinable).toBe(true);
-    expect(rows[0].organizing).toBe(false);
-  });
-
-  it('drops an event the viewer is waitlisted on, without a booking row', () => {
-    const rows = buildDashboardRows({
-      bookings: [],
-      events: [
-        event({
-          bookings: [
-            { profile_id: 'me', status: 'waitlisted', event_table_id: null, group_id: 'g-me' },
-          ],
-        }),
-      ],
-      clubs: CLUBS,
-      userId: 'me',
-      now: NOW,
-    });
-    expect(rows).toEqual([]);
-  });
-
-  it('sorts soonest first across sources', () => {
-    const rows = buildDashboardRows({
-      bookings: [booking({ event_id: 'later', starts_at: '2026-09-10T23:00:00Z' })],
-      events: [event({ id: 'sooner', starts_at: '2026-09-02T23:00:00Z' })],
-      clubs: CLUBS,
-      userId: 'me',
-      now: NOW,
-    });
-    expect(rows.map((r) => r.eventId)).toEqual(['sooner', 'later']);
-  });
-
-  it('carries fee_cents and min_spend_cents from a booking-sourced row', () => {
-    const rows = buildDashboardRows({
-      bookings: [booking({ fee_cents: 1500, min_spend_cents: 2000 })],
-      events: [],
-      clubs: CLUBS,
-      userId: 'me',
-      now: NOW,
-    });
-    expect(rows[0].feeCents).toBe(1500);
-    expect(rows[0].minSpendCents).toBe(2000);
-  });
-
-  it('carries fee_cents and min_spend_cents from an event-sourced (joinable) row', () => {
-    // Same now/starts_at as the "adds an open event the viewer is not in as
-    // joinable" test above -- event()'s own defaults already satisfy
-    // hasFreeSeat and the not-yet-started window relative to NOW.
-    const rows = buildDashboardRows({
-      bookings: [],
-      events: [event({ fee_cents: 1000, min_spend_cents: 0 })],
-      clubs: CLUBS,
-      userId: 'me',
-      now: NOW,
-    });
-    expect(rows[0].joinable).toBe(true);
-    expect(rows[0].feeCents).toBe(1000);
-    expect(rows[0].minSpendCents).toBe(0);
-  });
-});
-
 describe('needAFourthAlerts', () => {
   const threeSeated = [
     { profile_id: 'a', status: 'confirmed' as const, event_table_id: 'table-1', group_id: 'g-a' },
@@ -657,9 +194,7 @@ describe('needAFourthAlerts', () => {
   });
 
   // The two-table cases, which nothing exercised. `needAFourthAlerts` counts
-  // per table (`confirmedOnTable`) while `hasFreeSeat` — the gate
-  // `buildDashboardRows` uses — sums capacity across the whole event, so the
-  // two disagree in shape by design. These pin what "per table" actually
+  // per table (`confirmedOnTable`), so these pin what "per table" actually
   // means when an event has more than one.
   const twoTables = [
     { id: 'table-1', capacity: 4, label: 'Table 1' },
@@ -777,19 +312,6 @@ describe('game invites', () => {
     { profile_id: 'c', status: 'confirmed' as const, event_table_id: 'table-1', group_id: 'g-c' },
   ];
 
-  it('keeps a pending invite out of "Your games", and its game off the joinable list', () => {
-    const rows = buildDashboardRows({
-      bookings: [
-        booking({ event_id: 'event-1', status: 'invited', invite_holds_seat: true }),
-      ],
-      events: [event()],
-      clubs: CLUBS,
-      userId: 'me',
-      now: NOW,
-    });
-    expect(rows).toEqual([]);
-  });
-
   it('lists pending invites, and only those, for the invite card', () => {
     const invite = booking({
       booking_id: 'inv',
@@ -799,33 +321,6 @@ describe('game invites', () => {
       table_label: null,
     });
     expect(pendingGameInvites([booking(), invite])).toEqual([invite]);
-  });
-
-  it("counts a held invite as a taken seat: an organizer's table full of held seats reads as Hosting", () => {
-    const rows = buildDashboardRows({
-      bookings: [],
-      events: [
-        event({
-          bookings: [
-            ...threeSeated,
-            {
-              profile_id: 'd',
-              status: 'invited',
-              event_table_id: 'table-1',
-              group_id: 'g-a',
-              invite_holds_seat: true,
-            },
-          ],
-        }),
-      ],
-      clubs: CLUBS,
-      userId: 'me',
-      organizerClubIds: new Set(['club-1']),
-      now: NOW,
-    });
-    expect(rows).toHaveLength(1);
-    expect(rows[0].joinable).toBe(false);
-    expect(rows[0].organizing).toBe(true);
   });
 
   it('does not call for a fourth over a held seat', () => {

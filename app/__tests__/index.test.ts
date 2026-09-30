@@ -16,7 +16,7 @@ import { resolveIndexRedirect } from '../index';
 
 /**
  * `app/index.tsx` is the one place that decides where a signed-in member
- * lands — `/clubs`, or the welcome screen if signed out.
+ * lands — `/home`, or the welcome screen if signed out.
  * `app/__tests__/redirect-routes.test.ts` only checks that `Linking.createURL`
  * targets in `lib/` resolve to a route file; it says nothing about which
  * `<Redirect href>` a given auth state actually produces. This is that
@@ -33,8 +33,8 @@ describe('resolveIndexRedirect', () => {
     expect(resolveIndexRedirect(false, false)).toBe('/welcome');
   });
 
-  it('sends a signed-in member to their clubs', () => {
-    expect(resolveIndexRedirect(false, true)).toBe('/clubs');
+  it('sends a signed-in member to Home', () => {
+    expect(resolveIndexRedirect(false, true)).toBe('/home');
   });
 
   it('is undecided while auth is still loading, regardless of session state', () => {

@@ -44,6 +44,7 @@ import {
   acceptClubInvite,
   canAnnounce,
   canInvite,
+  createClub,
   createInvite,
   declineClubInvite,
   deleteInvite,
@@ -51,8 +52,12 @@ import {
   fetchMyRoles,
   fetchPendingInvites,
   importRoster,
+  isValidClubCode,
+  joinClubByCode,
+  normalizeClubCode,
   parseRoster,
   sendClubInviteEmail,
+  setClubCode,
   setDefaultGameMode,
   slugify,
 } from './clubs';
@@ -732,5 +737,77 @@ describe('sendClubInviteEmail', () => {
     functionsInvokeMock.mockResolvedValueOnce({ data: { ok: true }, error: null });
     const result = await sendClubInviteEmail('invite-id-123');
     expect(result).toEqual({ error: null });
+  });
+});
+
+describe('club codes', () => {
+  beforeEach(() => {
+    rpcMock.mockReset();
+  });
+
+  it('normalizes by uppercasing and removing whitespace', () => {
+    expect(normalizeClubCode(' oak  tiles\n')).toBe('OAKTILES');
+  });
+
+  it('validates 4-16 letters or digits', () => {
+    expect(isValidClubCode('OAK2')).toBe(true);
+    expect(isValidClubCode('ABC')).toBe(false);
+    expect(isValidClubCode('A'.repeat(17))).toBe(false);
+    expect(isValidClubCode('OAK-2')).toBe(false);
+  });
+
+  it('joinClubByCode maps a match', async () => {
+    rpcMock.mockResolvedValueOnce({ data: { club_id: 'c1', already_member: false }, error: null });
+    await expect(joinClubByCode(' oak2 ')).resolves.toEqual({
+      clubId: 'c1', alreadyMember: false, error: null,
+    });
+    expect(rpcMock).toHaveBeenCalledWith('join_club_by_code', { club_code: 'OAK2' });
+  });
+
+  it('joinClubByCode maps no match', async () => {
+    rpcMock.mockResolvedValueOnce({ data: null, error: null });
+    await expect(joinClubByCode('NOPE')).resolves.toEqual({
+      clubId: null, alreadyMember: false, error: 'No club with that code.',
+    });
+  });
+
+  it('joinClubByCode maps the rate limit and removed member', async () => {
+    rpcMock.mockResolvedValueOnce({ data: null, error: { code: 'P0001', message: 'rate_limited' } });
+    expect((await joinClubByCode('X1X1')).error).toBe('Too many tries. Try again in an hour.');
+    rpcMock.mockResolvedValueOnce({ data: null, error: { code: 'P0001', message: 'removed_member' } });
+    expect((await joinClubByCode('X1X1')).error).toBe(
+      'You left or were removed from this club. Ask a host to invite you back.',
+    );
+  });
+
+  it('setClubCode maps taken (null result) and invalid', async () => {
+    rpcMock.mockResolvedValueOnce({ data: null, error: null });
+    expect((await setClubCode('c1', 'OAK2')).error).toBe('That code is taken.');
+    expect((await setClubCode('c1', 'no')).error).toBe('Codes are 4–16 letters or numbers.');
+  });
+
+  it('createClub passes a normalized code, or null when blank', async () => {
+    rpcMock.mockResolvedValueOnce({ data: 'c9', error: null });
+    await createClub('North', '', ' north side ');
+    expect(rpcMock).toHaveBeenLastCalledWith('create_club', {
+      club_name: 'North', club_rhythm: '', club_code: 'NORTHSIDE',
+    });
+    rpcMock.mockResolvedValueOnce({ data: 'c9', error: null });
+    await createClub('North', '');
+    expect(rpcMock).toHaveBeenLastCalledWith('create_club', {
+      club_name: 'North', club_rhythm: '', club_code: null,
+    });
+  });
+
+  it('createClub maps a taken code (null result, or 23505 as a fallback)', async () => {
+    rpcMock.mockResolvedValueOnce({ data: null, error: null });
+    expect((await createClub('North', '', 'OAK2')).error).toBe('That code is taken.');
+    rpcMock.mockResolvedValueOnce({ data: null, error: { code: '23505', message: 'dup' } });
+    expect((await createClub('North', '', 'OAK2')).error).toBe('That code is taken.');
+  });
+
+  it('createClub without a code does not report a null result as a taken code', async () => {
+    rpcMock.mockResolvedValueOnce({ data: null, error: null });
+    expect((await createClub('North', '')).error).not.toBe('That code is taken.');
   });
 });

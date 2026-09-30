@@ -7,13 +7,11 @@ import { colors, space, type } from '../lib/theme';
 /**
  * The artboard's dashboard header.
  *
- * Two shapes. The all-clubs scope and app/clubs/[id]/venues.tsx's "Venues"
- * scope draw a flat kicker/name/meta block, with no ⊕ of any kind —
- * starting a club lives in the chip row now (components/ClubChips.tsx's own
- * trailing "New club" tile), not here. The single-club scope —
- * `kicker === 'Your club'`, the one value lib/dashboard.ts's `headerScope`
- * and app/clubs/[id]/index.tsx ever pass for it — instead draws the club's
- * own identity in the compact one-row header (components/CompactHeader.tsx)
+ * Two shapes. app/clubs/[id]/venues.tsx's "Venues" scope draws a flat
+ * kicker/name/meta block, with no ⊕ of any kind. The single-club scope —
+ * `kicker === 'Your club'`, the one value app/clubs/[id]/index.tsx ever
+ * passes for it — instead draws the club's own identity in the compact
+ * one-row header (components/CompactHeader.tsx)
  * the conversation screens and the club board use: chevron, the club's
  * tile, its name over its rhythm, and the ⊕. venues.tsx
  * passes the club's own name as its kicker, never the literal string 'Your

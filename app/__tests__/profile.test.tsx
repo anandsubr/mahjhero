@@ -8,22 +8,15 @@ const { push } = vi.hoisted(() => ({ push: vi.fn() }));
 vi.mock('expo-router', () => ({
   Redirect: () => null,
   useRouter: () => ({ push, back: vi.fn() }),
-  // TabBar's own Profile tab route: this screen IS /profile, so its
-  // highlighted Profile button stays the documented no-op.
   usePathname: () => '/profile',
   // Wrapped in a real `useEffect` keyed on the callback's identity, not
   // called inline on every render: `(cb) => cb()` fires on every render,
-  // which the real hook never does, and would refire `useUnreadCounts`'s
-  // fetch (now pulled in by TabBar) on every state update it causes.
+  // which the real hook never does.
   useFocusEffect: (cb: () => void | (() => void)) => {
     useEffect(cb, [cb]);
   },
 }));
 
-// Module-scoped constant, not a fresh object per render: TabBar's badge now
-// reads `useSession` too (via `useUnreadCounts`), and a fresh object here
-// breaks the referential stability its `useCallback([session])` depends on,
-// refiring the fetch on every render.
 const SESSION = {
   session: { user: { id: 'test-user', email: 'test-user@example.com' } },
   loading: false,
@@ -40,26 +33,6 @@ vi.mock('../../lib/profile', () => ({
   updateProfile: (...args: unknown[]) => updateProfile(...(args as [])),
   isCompleteProfile: (p: { display_name: string; skill_level: string | null }) =>
     p.display_name.trim().length > 0 && p.skill_level !== null,
-}));
-
-// TabBar (carried by this screen) now calls `useUnreadCounts`, which reaches
-// `fetchUnreadCounts`.
-// Spread `actual` rather than replacing the module outright: TabBar (carried
-// by this screen) now also calls `unreadSuffix`, a pure helper covered by
-// lib/messages.test.ts -- only `fetchUnreadCounts` needs to be a
-// controllable double here.
-vi.mock('../../lib/messages', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../lib/messages')>();
-  return {
-    ...actual,
-    fetchUnreadCounts: vi.fn(async () => []),
-  };
-});
-
-// TabBar also now calls useNotificationsUnread for its Alerts badge --
-// without this it falls through to a real, unmocked RPC call.
-vi.mock('../../lib/use-notifications-unread', () => ({
-  useNotificationsUnread: () => 0,
 }));
 
 describe('profile screen', () => {
@@ -108,24 +81,6 @@ describe('profile screen', () => {
 
     const beginner = screen.getByRole('radio', { name: 'Beginner' });
     expect(beginner.getAttribute('aria-selected')).toBe('false');
-  });
-
-  it('carries the tab bar with Profile marked', async () => {
-    // Arrange exactly as the file's existing "renders the form" test does.
-    fetchProfile.mockResolvedValueOnce({
-      id: 'test-user',
-      display_name: 'Pat',
-      skill_level: 'intermediate',
-      avatar_url: null,
-      timezone: 'America/New_York',
-    });
-    render(<ProfileScreen />);
-    expect(
-      (await screen.findByRole('button', { name: 'Profile' })).getAttribute(
-        'aria-selected',
-      ),
-    ).toBe('true');
-    expect(screen.getByRole('button', { name: 'Club' })).toBeTruthy();
   });
 
   // There was previously no place on this screen (or anywhere else) that

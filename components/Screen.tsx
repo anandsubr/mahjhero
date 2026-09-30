@@ -27,11 +27,14 @@ type ScreenProps = {
    */
   contentStyle?: StyleProp<ViewStyle>;
   /**
-   * The app's bottom tab bar, for the four screens that are tabs. Rendered
-   * outside the scroller: inside, it would scroll off the bottom of a long
-   * dashboard, which is exactly where it is most needed.
+   * Pinned bottom content — an action bar (Cancel/Save, Cancel/Create),
+   * a live-game round timer, a door list's "Add a walk-in" strip — for
+   * screens that need something fixed below the scroller rather than
+   * flowing as its last child. Rendered outside the scroller: inside, it
+   * would scroll off the bottom of a long screen, which is exactly where
+   * it is most needed.
    */
-  tabBar?: ReactNode;
+  footer?: ReactNode;
   /**
    * Forwarded verbatim to the underlying `ScrollView`'s own
    * `stickyHeaderIndices` (only meaningful together with `scroll`). Optional
@@ -81,7 +84,7 @@ export default function Screen({
   center = false,
   background = colors.bg,
   contentStyle,
-  tabBar,
+  footer,
   stickyHeaderIndices,
   avoidKeyboard = false,
 }: ScreenProps) {
@@ -130,18 +133,29 @@ export default function Screen({
     </View>
   );
 
-  const shell = !tabBar ? (
-    body
-  ) : (
+  // Always the same wrapper shape around `body`, whether or not `footer` is
+  // given, and regardless of whether it flips between renders (e.g. an
+  // ActionBar or RoundTimer whose caller passes `condition ? <X /> : null`).
+  // `body` previously sat at the tree's root when `footer` was absent and
+  // one level deeper (inside this View, inside `footerShellBody`) once it
+  // appeared -- a different position for the same subtree, which React
+  // reads as "this is a new tree" and remounts `body`'s entire subtree
+  // (the ScrollView included) from scratch. A mid-edit TimeField or scroll
+  // position had no way to survive that. `body`'s wrapper now never moves;
+  // only the footer column beside it appears or disappears, which does not
+  // disturb `body`'s own position.
+  const shell = (
     <View style={[styles.fill, { backgroundColor: background }]}>
-      <View style={styles.tabShellBody}>{body}</View>
+      <View style={styles.footerShellBody}>{body}</View>
       {/*
-        The bar is capped and centred like the content column rather than
-        running full-bleed. On a desktop browser — a first-class case here,
-        since club invite links open the web build — a 1400px-wide tab bar
-        under a 440px column reads as a different app's chrome.
+        The footer is capped and centred like the content column rather
+        than running full-bleed. On a desktop browser — a first-class case
+        here, since club invite links open the web build — a 1400px-wide
+        strip under a 440px column reads as a different app's chrome.
+        Omitted entirely (not just emptied) when there is no footer, so an
+        absent one adds no padding or height of its own.
       */}
-      <View style={styles.tabBarColumn}>{tabBar}</View>
+      {footer ? <View style={styles.footerColumn}>{footer}</View> : null}
     </View>
   );
 
@@ -176,11 +190,11 @@ const styles = StyleSheet.create({
     maxWidth: layout.contentMaxWidth,
     alignSelf: 'center',
   },
-  tabShellBody: {
+  footerShellBody: {
     flex: 1,
     minHeight: 0,
   },
-  tabBarColumn: {
+  footerColumn: {
     width: '100%',
     maxWidth: layout.contentMaxWidth,
     alignSelf: 'center',

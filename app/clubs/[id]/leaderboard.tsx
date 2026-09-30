@@ -6,7 +6,6 @@ import CompactHeader from '../../../components/CompactHeader';
 import ErrorBanner from '../../../components/ErrorBanner';
 import { FormCard, FormTitle } from '../../../components/GameForm';
 import Screen from '../../../components/Screen';
-import TabBar from '../../../components/TabBar';
 import { fetchClub } from '../../../lib/clubs';
 import type { Club } from '../../../lib/clubs';
 import { GENERIC_ERROR } from '../../../lib/constants';
@@ -68,7 +67,7 @@ export default function LeaderboardScreen() {
 
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="club" />}>
+      <Screen center contentStyle={styles.centered}>
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
     );
@@ -82,7 +81,7 @@ export default function LeaderboardScreen() {
 
   if (!ready) {
     return (
-      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="club" />}>
+      <Screen center contentStyle={styles.centered}>
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
     );
@@ -90,7 +89,7 @@ export default function LeaderboardScreen() {
 
   if (loadFailed || !club) {
     return (
-      <Screen contentStyle={styles.container} tabBar={<TabBar active="club" />}>
+      <Screen contentStyle={styles.container}>
         <ErrorBanner message={GENERIC_ERROR} />
       </Screen>
     );
@@ -100,7 +99,7 @@ export default function LeaderboardScreen() {
     entry.display_name.trim().length > 0 ? entry.display_name : 'Member';
 
   return (
-    <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="club" />}>
+    <Screen scroll contentStyle={styles.container}>
       <CompactHeader
         variant="inset"
         divider={false}

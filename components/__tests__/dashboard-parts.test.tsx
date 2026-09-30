@@ -1,29 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { Animated } from 'react-native';
-import DateTile from '../DateTile';
 import Skeleton from '../Skeleton';
-import ClubChips from '../ClubChips';
-
-describe('DateTile', () => {
-  it('shows the weekday and date in the club timezone', () => {
-    // 2026-09-03T01:00:00Z is still Wednesday the 2nd in New York.
-    render(<DateTile startsAt="2026-09-03T01:00:00Z" timezone="America/New_York" />);
-    expect(screen.getByText('WED')).toBeTruthy();
-    expect(screen.getByText('2')).toBeTruthy();
-  });
-
-  it('respects a different timezone for the same instant', () => {
-    render(<DateTile startsAt="2026-09-03T01:00:00Z" timezone="Europe/London" />);
-    expect(screen.getByText('THU')).toBeTruthy();
-    expect(screen.getByText('3')).toBeTruthy();
-  });
-
-  it('renders placeholders rather than throwing when the date cannot be read', () => {
-    render(<DateTile startsAt="not-a-date" timezone="America/New_York" />);
-    expect(screen.getAllByText('--')).toHaveLength(2);
-  });
-});
 
 describe('Skeleton', () => {
   it('renders a block that assistive tech ignores', () => {
@@ -57,101 +35,6 @@ describe('Skeleton', () => {
     );
     expect(delay.mock.calls.map(([ms]) => ms)).toEqual([0, 150, 300]);
     delay.mockRestore();
-  });
-});
-
-const CHIPS = [
-  { id: 'club-1', label: 'Riverside Mah Jongg' },
-  { id: 'club-2', label: 'Harbour Tiles' },
-];
-
-describe('ClubChips', () => {
-  it('marks the selected chip and only that one', () => {
-    render(<ClubChips chips={CHIPS} selected="club-1" onSelect={() => {}} />);
-    expect(
-      screen
-        .getByRole('button', { name: 'Riverside Mah Jongg' })
-        .getAttribute('aria-selected'),
-    ).toBe('true');
-    expect(
-      screen.getByRole('button', { name: 'Harbour Tiles' }).getAttribute('aria-selected'),
-    ).toBe('false');
-  });
-
-  it('reports the chip that was pressed', () => {
-    const onSelect = vi.fn();
-    render(<ClubChips chips={CHIPS} selected="club-1" onSelect={onSelect} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Harbour Tiles' }));
-    expect(onSelect).toHaveBeenCalledWith('club-2');
-  });
-
-  // UnreadBadge's own <Text> never reaches assistive tech: this Pressable's
-  // accessibilityLabel emits aria-label on react-native-web, which REPLACES
-  // the accessible name computed from children (the badge included) rather
-  // than merging with it. The count has to be composed into the chip's own
-  // label for a screen-reader user to ever hear it.
-  it('composes the unread count into the chip’s accessible name', () => {
-    render(
-      <ClubChips
-        chips={CHIPS}
-        selected="club-1"
-        onSelect={() => {}}
-        unreadByClub={{ 'club-1': 4 }}
-      />,
-    );
-    expect(
-      screen.getByRole('button', { name: 'Riverside Mah Jongg, 4 unread' }),
-    ).toBeTruthy();
-  });
-
-  it('shows each club’s initials in its tile', () => {
-    render(<ClubChips chips={CHIPS} selected="club-1" onSelect={() => {}} />);
-    expect(screen.getByText('RM')).toBeTruthy();
-    expect(screen.getByText('HT')).toBeTruthy();
-  });
-
-  it('draws a trailing New club tile when given a way to start one', () => {
-    const onPressNewClub = vi.fn();
-    render(
-      <ClubChips
-        chips={CHIPS}
-        selected="club-1"
-        onSelect={() => {}}
-        onPressNewClub={onPressNewClub}
-      />,
-    );
-    fireEvent.click(screen.getByRole('button', { name: 'Start a club' }));
-    expect(onPressNewClub).toHaveBeenCalled();
-    expect(screen.getByText('New club')).toBeTruthy();
-  });
-
-  it('draws no New club tile unless it is given a way to start one', () => {
-    render(<ClubChips chips={CHIPS} selected="club-1" onSelect={() => {}} />);
-    expect(screen.queryByRole('button', { name: 'Start a club' })).toBeNull();
-    expect(screen.queryByText('New club')).toBeNull();
-  });
-
-  it('shows each club as a mahjong tile, not a circular avatar', () => {
-    render(<ClubChips chips={CHIPS} selected="club-1" onSelect={() => {}} />);
-    // The old circular-avatar testID this replaces.
-    expect(screen.queryByTestId('thread-avatar-club')).toBeNull();
-    // Both initials still read, now on the tile face rather than a circle.
-    expect(screen.getByText('RM')).toBeTruthy();
-    expect(screen.getByText('HT')).toBeTruthy();
-  });
-
-  it("gives the same club the same glyph every time, matching lib/dashboard's own glyphForClub", () => {
-    const { rerender } = render(
-      <ClubChips chips={CHIPS} selected="club-1" onSelect={() => {}} />,
-    );
-    // Re-rendered in place (not remounted) to force a real re-evaluation of
-    // the component, including glyphForClub(chip.id) -- to prove it's not a
-    // fresh random pick per render. A real regression a naive
-    // Math.random()-based glyph pick would pass the single-render version
-    // of this test but fail here.
-    const firstGlyph = screen.getByTestId('chip-glyph-club-1').textContent;
-    rerender(<ClubChips chips={CHIPS} selected="club-1" onSelect={() => {}} />);
-    expect(screen.getByTestId('chip-glyph-club-1').textContent).toBe(firstGlyph);
   });
 });
 

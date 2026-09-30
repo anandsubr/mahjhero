@@ -439,7 +439,6 @@ export function GhostLink({
 export function ActionBar({
   onCancel,
   cancelLabel = 'Cancel',
-  aboveTabBar = false,
   primaryLabel,
   primaryAccessibilityLabel,
   onPrimary,
@@ -448,9 +447,6 @@ export function ActionBar({
 }: {
   onCancel?: () => void;
   cancelLabel?: string;
-  /** Sits over the tab bar (Notifications' save bar) rather than in its
-   *  place, so the bar below already clears the home indicator. */
-  aboveTabBar?: boolean;
   primaryLabel: string;
   primaryAccessibilityLabel: string;
   onPrimary: () => void;
@@ -460,11 +456,7 @@ export function ActionBar({
   const insets = useSafeAreaInsets();
   return (
     <View
-      style={[
-        styles.actionBar,
-        { paddingBottom: aboveTabBar ? 10 : Math.max(16, insets.bottom + 8) },
-        aboveTabBar && styles.actionBarAboveTabs,
-      ]}
+      style={[styles.actionBar, { paddingBottom: Math.max(16, insets.bottom + 8) }]}
     >
       {onCancel ? (
         <Pressable
@@ -737,7 +729,6 @@ const styles = StyleSheet.create({
     borderTopColor: colors.divider,
     backgroundColor: colors.bg,
   },
-  actionBarAboveTabs: { paddingTop: 10 },
   cancelButton: {
     height: 50,
     paddingHorizontal: 22,

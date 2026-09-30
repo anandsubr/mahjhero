@@ -23,7 +23,6 @@ import {
 } from '../../../../components/GameForm';
 import { ClipboardCheckIcon, LockIcon } from '../../../../components/icons';
 import Screen from '../../../../components/Screen';
-import TabBar from '../../../../components/TabBar';
 import TimeField from '../../../../components/TimeField';
 import TipCard, { TipText } from '../../../../components/TipCard';
 import VenuePicker from '../../../../components/VenuePicker';
@@ -194,7 +193,7 @@ export default function NewEventScreen() {
 
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="club" />}>
+      <Screen center contentStyle={styles.centered}>
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
     );
@@ -210,7 +209,7 @@ export default function NewEventScreen() {
 
   if (!ready) {
     return (
-      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="club" />}>
+      <Screen center contentStyle={styles.centered}>
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
     );
@@ -218,7 +217,7 @@ export default function NewEventScreen() {
 
   if (!club) {
     return (
-      <Screen contentStyle={styles.container} tabBar={<TabBar active="club" />}>
+      <Screen contentStyle={styles.container}>
         <ErrorBanner message="That club could not be loaded." />
       </Screen>
     );
@@ -326,9 +325,9 @@ export default function NewEventScreen() {
         }
       }
       setSaving(false);
-      // The clubs dashboard, not this specific club's own page -- a newly
-      // created game already shows up there.
-      router.replace('/clubs');
+      // Home, not this specific club's own page -- a newly created game
+      // already shows up there.
+      router.replace('/home');
       return;
     }
 
@@ -360,7 +359,7 @@ export default function NewEventScreen() {
       return;
     }
     // Same destination as the single-event save above, for the same reason.
-    router.replace('/clubs');
+    router.replace('/home');
   }
 
   function leave() {
@@ -388,7 +387,7 @@ export default function NewEventScreen() {
       <Screen
         scroll
         contentStyle={formStyles.body}
-        tabBar={
+        footer={
           <ActionBar
             onCancel={requestLeave}
             primaryLabel="Create game"

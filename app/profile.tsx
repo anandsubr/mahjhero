@@ -6,7 +6,6 @@ import ErrorBanner from '../components/ErrorBanner';
 import MahjongTile from '../components/MahjongTile';
 import { FormCard, FormSection, FormTitle, TextRow } from '../components/GameForm';
 import Screen from '../components/Screen';
-import TabBar from '../components/TabBar';
 import {
   BellIcon,
   CheckIcon,
@@ -83,17 +82,11 @@ export default function ProfileScreen() {
     };
   }, [userId]);
 
-  // Every early return below carries the tab bar, exactly as
-  // app/clubs/index.tsx does in all of its states — its Club tab is the way
-  // back out. A member whose `fetchProfile` failed would otherwise be left
-  // staring at "Something went wrong" with no bar and, on native, no way out
-  // short of relaunching the app.
-  //
-  // The `<Redirect>` below is the deliberate exception: it renders nothing
-  // and a signed-out member belongs at sign-in, not in a tab bar.
+  // The `<Redirect>` below is the deliberate exception among these early
+  // returns: it renders nothing, and a signed-out member belongs at sign-in.
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="profile" />}>
+      <Screen center contentStyle={styles.centered}>
         <ActivityIndicator />
       </Screen>
     );
@@ -103,7 +96,7 @@ export default function ProfileScreen() {
 
   if (!ready) {
     return (
-      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="profile" />}>
+      <Screen center contentStyle={styles.centered}>
         <ActivityIndicator />
       </Screen>
     );
@@ -111,7 +104,7 @@ export default function ProfileScreen() {
 
   if (loadFailed) {
     return (
-      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="profile" />}>
+      <Screen center contentStyle={styles.centered}>
         <Text style={styles.error}>{GENERIC_ERROR}</Text>
       </Screen>
     );
@@ -176,7 +169,7 @@ export default function ProfileScreen() {
   const shownName = savedName.trim() || 'Your name';
 
   return (
-    <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="profile" />}>
+    <Screen scroll contentStyle={styles.container}>
       <View style={styles.titleRow}>
         <View testID="section-tile">
           <MahjongTile suit="red-dragon" size="section" />
@@ -299,7 +292,7 @@ export default function ProfileScreen() {
             <SettingsRow
               icon={<MessageCircleIcon size={18} color={colors.accent[700]} />}
               title="Greetings"
-              subtitle="The dashboard's daily greeting"
+              subtitle="Daily greeting. Not shown in the app right now"
               onPress={() => router.push('/admin/greetings')}
             />
           ) : null}

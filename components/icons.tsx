@@ -381,3 +381,14 @@ export function UserMinusIcon({ size = 18, color = colors.text }: { size?: numbe
     </Svg>
   );
 }
+
+/** Club-hub redesign (components/GameRow.tsx and Home's "see all" links):
+ *  a plain bullet list, standing for a full schedule/list view. */
+export function ListIcon({ size = 16, color = colors.text }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color}
+      strokeWidth={2.75} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />
+    </Svg>
+  );
+}

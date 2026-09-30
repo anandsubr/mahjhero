@@ -23,10 +23,10 @@ export default function BroadcastRedirect() {
   useEffect(() => {
     if (!session) return;
     if (!id) {
-      // Only reachable via a malformed route -- send it to the dashboard
-      // rather than falling through to the same spinner this screen uses
-      // while loading, which would otherwise never resolve.
-      router.replace('/clubs');
+      // Only reachable via a malformed route -- send it to Home rather than
+      // falling through to the same spinner this screen uses while loading,
+      // which would otherwise never resolve.
+      router.replace('/home');
       return;
     }
     let cancelled = false;

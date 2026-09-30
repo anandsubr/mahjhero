@@ -73,18 +73,20 @@ async function settle(page: Page) {
  *
  * The amount grown is the scroller's OVERFLOW — scrollHeight minus its own
  * clientHeight — not its scrollHeight outright. components/Screen.tsx renders
- * the bottom tab bar as a flex SIBLING of the scroller (`tabShellBody` holds
- * the scroller, `tabBarColumn` holds the bar), not inside it, so on any
- * tab-bar screen the scroller's clientHeight is already short by the bar's
- * height. Growing the viewport to scrollHeight outright reproduces that same
- * shortfall one level up and clips the last of the content — exactly what
- * happened to the committed profile-mobile baseline, which came out missing
- * its Sign out button. Adding the overflow to the CURRENT viewport height
- * instead accounts for whatever space is already spoken for outside the
- * scroller, whatever it is, so it isn't tied to the tab bar specifically. For
- * a screen with nothing outside the scroller, clientHeight already equals the
- * viewport height, so this yields the same number the old content-height
- * check did — those baselines do not move.
+ * an optional footer as a flex SIBLING of the scroller (`footerShellBody`
+ * holds the scroller, `footerColumn` holds the footer), not inside it, so on
+ * any screen with a footer the scroller's clientHeight is already short by
+ * the footer's height. (The global bottom tab bar this used to describe is
+ * gone — every screen now renders through the plain `footer` slot, which is
+ * absent far more often than not.) Growing the viewport to scrollHeight
+ * outright reproduces that same shortfall one level up and clips the last of
+ * the content — exactly what happened to the committed profile-mobile
+ * baseline, which came out missing its Sign out button. Adding the overflow
+ * to the CURRENT viewport height instead accounts for whatever space is
+ * already spoken for outside the scroller, whatever it is, so it isn't tied
+ * to any one footer. For a screen with nothing outside the scroller,
+ * clientHeight already equals the viewport height, so this yields the same
+ * number the old content-height check did — those baselines do not move.
  *
  * A baseline's height is therefore content-dependent. That is intentional:
  * if a screen grows or shrinks, Playwright reports a size mismatch, which is
@@ -143,13 +145,15 @@ async function captureScreen(
     // that would blunt this suite everywhere. A no-op on any screen that
     // doesn't render the tile.
     //
-    // `extraMask` layers in additional per-call CSS selectors (e.g. the
-    // dashboard's club-chip glyphs, components/ClubChips.tsx's
-    // `chip-glyph-<clubId>` tiles) for the same class of sub-pixel SVG
-    // jitter on a screen-specific element, without widening this global
-    // list — a global addition would shift the masked region on every
-    // other baseline that uses captureScreen, forcing a regeneration of
-    // all of them instead of just the one screen that actually needs it.
+    // `extraMask` layers in additional per-call CSS selectors for the same
+    // class of sub-pixel SVG jitter on a screen-specific element, without
+    // widening this global list — a global addition would shift the masked
+    // region on every other baseline that uses captureScreen, forcing a
+    // regeneration of all of them instead of just the one screen that
+    // actually needs it. No current caller needs it (the dashboard's
+    // club-chip glyphs this was added for, components/ClubChips.tsx, no
+    // longer exist), but the mechanism stays for the next screen-specific
+    // jitter case.
     mask: [
       page.locator('[data-testid="thread-avatar-club-tile"]'),
       ...extraMask.map((selector) => page.locator(selector)),
@@ -388,11 +392,11 @@ test.describe('signed in', () => {
       await captureScreen(page, vp, `notifications-${vp.name}.png`);
     });
 
-    // The fourth tab destination. Anchored on the body copy, NOT on the
-    // "Messages" heading: the tab bar this screen renders carries a
-    // "Messages" label too, so the heading is two matches and Playwright's
-    // strict mode would make it a hard failure — the same collision the
-    // `clubs at …` test below hit on "Your clubs".
+    // The empty conversations list. Anchored on the body copy rather than
+    // the "Messages" heading purely because it's the more specific empty-
+    // state text; the global tab bar this comment used to warn about (its
+    // own "Messages" label collided with this screen's heading) is gone, so
+    // the heading is unique here now.
     test(`messages at ${vp.name}`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/messages');
@@ -439,26 +443,19 @@ test.describe('signed in', () => {
     });
 
     // The EMPTY state, and it stays that way: this block's user belongs to no
-    // club. The seeding hook lives in the nested describe below precisely so
-    // that adding populated baselines could not quietly turn this one into a
-    // second picture of the populated list.
-    test(`clubs at ${vp.name}`, async ({ page }) => {
+    // club and has no games, so `homeDefault` (lib/home.ts) picks the Clubs
+    // view by default and this screenshots it directly, no switch click
+    // needed. The seeding hook lives in the nested describe below precisely
+    // so that adding populated baselines could not quietly turn this one
+    // into a second picture of the populated screen. Replaces the old
+    // dashboard's `clubs at …` baseline — `app/clubs/index.tsx` and the
+    // global tab bar it rendered through are both gone; Home
+    // (`app/home.tsx`) is what every signed-in baseline now starts from.
+    test(`home empty at ${vp.name}`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
-      await page.goto('/clubs');
-      // `{ exact: true }` — "Your clubs" is the header's NAME now
-      // (headerScope's all-clubs scope, lib/dashboard.ts), and that scope
-      // draws no kicker: "YOUR CLUBS" above "All your clubs" was the same
-      // words twice. Playwright's getByText does substring matching by
-      // default, so the bare locator would still be worth avoiding if the
-      // longer title ever comes back.
-      await expect(page.getByText('Your clubs', { exact: true })).toBeVisible();
-      // The brief's literal snippet uses `toHaveScreenshot(..., { fullPage:
-      // true })`, but `captureScreen`'s own doc comment above explains why
-      // that option is a no-op against this app's ScrollView-based layout
-      // and previously produced a truncated notifications-mobile baseline
-      // that cut off the Save button. Using captureScreen here instead
-      // keeps the clubs baseline from repeating that exact defect.
-      await captureScreen(page, vp, `clubs-${vp.name}.png`);
+      await page.goto('/home');
+      await expect(page.getByText('Join a club')).toBeVisible();
+      await captureScreen(page, vp, `home-empty-${vp.name}.png`);
     });
   }
 
@@ -471,8 +468,8 @@ test.describe('signed in', () => {
    * the expected state for every future run.
    *
    * The seed runs in a NESTED hook rather than the outer one on purpose: the
-   * `clubs at …` baseline above is deliberately the empty state, and seeding
-   * one level up would have silently replaced it.
+   * `home empty at …` baseline above is deliberately the empty state, and
+   * seeding one level up would have silently replaced it.
    *
    * See `seedClubWithEvent` in e2e/session.ts for what the fixtures are and
    * why — in particular that the club's timezone (America/New_York) is what
@@ -509,66 +506,83 @@ test.describe('signed in', () => {
     });
 
     for (const vp of WIDTHS) {
-      // The populated dashboard: the chip row (the only club list now), the
-      // header's ⊕ and pencil, and "Your games" underneath. This baseline's
-      // existence still traces back to Task 11's spacing fix — "no space
-      // between the last club and the Start another club button" (todo.md)
-      // — which could only regenerate the EMPTY-state baseline, because
-      // nothing seeded a club at that point, so the state that bug was
-      // actually reported against had never been screenshotted. The cards
-      // and that button are both gone from the screen since (the single-list
-      // rework folded the club list into the chip row and moved the action
-      // into the header), but this is still the one baseline that shoots a
-      // member's dashboard with a club on it.
-      test(`clubs list with a club at ${vp.name}`, async ({ page }) => {
+      // The populated My games list — Home's default view once there is at
+      // least one upcoming game (`homeDefault`, lib/home.ts), replacing the
+      // old dashboard's `clubs list with a club at …` baseline
+      // (`clubs-populated-*.png`).
+      //
+      // Anchored on "Offer night" (Thursday Casuals), NOT on any Riverside
+      // game — checked against the real screen rather than assumed, and
+      // worth recording why none of Riverside's own seeded games make this
+      // list. `public.my_games` (20260929100100_home_feeds.sql) windows
+      // every row to `[from_ts, to_ts)`, and Home's own `loadFeed` calls it
+      // with a 120-day window starting at "now" (the page's frozen clock,
+      // 2026-08-22T16:00:00Z). Riverside's own series occurrences
+      // (FIRST_OCCURRENCE/SECOND_OCCURRENCE, e2e/session.ts) are dated 2099
+      // specifically so the OLD dashboard's unbounded `my_upcoming_bookings`
+      // query would never age them out — the same 2099 dates fall outside
+      // this new 120-day window, so neither occurrence renders here. The
+      // only OTHER Riverside event `seedClubWithEvent` seeds,
+      // `checkInEventId` ("Door check-in night"), starts at 15:45 — 15
+      // minutes BEFORE the frozen clock — so `starts_at >= from_ts` excludes
+      // it too. What actually lands in this 120-day window is the
+      // booking-state fixtures under the SECOND club, Thursday Casuals,
+      // which `my_games` includes as "hosting" rows regardless of whether
+      // the signed-in member holds a seat.
+      //
+      // `extraMask`'s selector here (and on every other Home test below that
+      // renders a club's glyph tile — GameRow's club line, ClubCard) masks
+      // the whole MahjongTile (components/MahjongTile.tsx) that DIRECTLY
+      // contains a `glyph-<suit>` testID node, for the same reason
+      // `captureScreen`'s global mask exists for `thread-avatar-club-tile`:
+      // confirmed by reading the diff PNG rather than assumed. The glyph
+      // testID alone was tried first and was not enough — the diff isolated
+      // to a thin ring right at the tile's own rounded corner and
+      // border-bottom "lip", outside the glyph element's own bounding box,
+      // so the CSS `:has()` selector reaches one level up to the tile View
+      // that actually paints that edge. Scoped per-call rather than added to
+      // the global list, same reasoning as that one's own comment: a global
+      // addition would shift the masked region on every baseline that uses
+      // captureScreen, not just the ones that actually render a small club
+      // glyph tile.
+      test(`home my games at ${vp.name}`, async ({ page }) => {
         await page.setViewportSize({ width: vp.width, height: vp.height });
-        await page.goto('/clubs');
-        // `.first()` — there is no club-list card left for this to anchor
-        // on; the club list is the chip row now, and "Riverside Mah Jongg"
-        // is one of its two chip labels (the seeded user belongs to both
-        // Riverside and Thursday Casuals). Task 15's booking fixtures give
-        // the signed-in member a confirmed seat in Riverside's own seeded
-        // game, so the name renders a second time as that booking's club
-        // name inside the "Your games" card below the chip row, and a third
-        // time on the row for Riverside's second occurrence, which
-        // `buildDashboardRows` (lib/dashboard.ts) now also lists as an open,
-        // joinable game the member is not in. All three are real; this line
-        // only needs to know the chip itself still has one.
-        await expect(page.getByText('Riverside Mah Jongg').first()).toBeVisible();
-        // The action lives in the chip row again as a trailing "New club"
-        // tile — the row now wraps rather than scrolls, so unlike the pill
-        // this replaced, it is never clipped off-screen. The header's own ⊕
-        // is gone from this unfiltered view entirely; it only shows once a
-        // specific club is in view, as "Add a game" for that club.
-        await expect(
-          page.getByRole('button', { name: 'Start a club' }),
-        ).toBeVisible();
-        await expect(page.getByText('New club')).toBeVisible();
-        // The "Your games" section below the chip row — the club list, once
-        // the section below it, is the chip row now: one game the member
-        // booked themselves (Riverside's own seeded event above)
-        // and one a friend booked for them (`seedBookings`'s
-        // `friendEventId`, under the second club). This is the same
-        // `/clubs` page in the same seeded state a dedicated `your games`
-        // baseline would have shot — there is no such baseline, since it
-        // could only ever be byte-identical to this one — so its anchors
-        // live here instead. A third card — the held offer — also lands
-        // here via the same `my_upcoming_bookings` query; that is a real
-        // consequence of seeding the offer as the member's OWN group (see
-        // the `event offer` test's own comment on why it has to be), not
-        // a fixture bug, so this only anchors on the two rows the brief
-        // actually asks for.
-        // `.first()`, for the same reason as the club name above. Riverside
-        // seeds TWO occurrences of "Tuesday night mahjong" and the member is
-        // booked on only the first; `buildDashboardRows` (lib/dashboard.ts)
-        // now also lists open events the member is not in, so the second
-        // occurrence renders a second time as a joinable Join row. Both are
-        // real; this line only needs to know the booked row is there.
-        await expect(page.getByText('Tuesday night mahjong').first()).toBeVisible();
-        await expect(
-          page.getByText('Owen Bradley booked this for you'),
-        ).toBeVisible();
-        await captureScreen(page, vp, `clubs-populated-${vp.name}.png`);
+        await page.goto('/home');
+        await expect(page.getByText('Offer night')).toBeVisible();
+        await captureScreen(page, vp, `home-my-games-${vp.name}.png`, [
+          'div:has(> [data-testid^="glyph-"])',
+        ]);
+      });
+
+      // The Calendar half of My games — the month card (dots per club,
+      // today's ring, the selected day highlighted) and the selected day's
+      // games underneath. "Next month" is the anchor because it exists the
+      // moment the calendar mounts, before any month's games have to load.
+      // `extraMask` here masks club glyph jitter — see `home my games`'s own
+      // comment above.
+      test(`home calendar at ${vp.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        await page.goto('/home');
+        await page.getByRole('button', { name: 'Calendar' }).click();
+        await expect(page.getByRole('button', { name: 'Next month' })).toBeVisible();
+        await captureScreen(page, vp, `home-calendar-${vp.name}.png`, [
+          'div:has(> [data-testid^="glyph-"])',
+        ]);
+      });
+
+      // The Clubs view: "Join a club", then a card per club the member
+      // belongs to (Riverside Mah Jongg, Thursday Casuals) — reached via the
+      // switch rather than being the default here, since this block's user
+      // has upcoming games and so lands on My games first. `extraMask` here
+      // masks club glyph jitter — see `home my games`'s own comment above.
+      test(`home clubs at ${vp.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        await page.goto('/home');
+        await page.getByRole('button', { name: /^Clubs/ }).click();
+        await expect(page.getByText('Riverside Mah Jongg')).toBeVisible();
+        await captureScreen(page, vp, `home-clubs-${vp.name}.png`, [
+          'div:has(> [data-testid^="glyph-"])',
+        ]);
       });
 
       test(`club detail at ${vp.name}`, async ({ page }) => {
@@ -904,49 +918,42 @@ test.describe('signed in', () => {
       });
 
       // The unread badge, pictured for the first time. Task 16 shipped it on
-      // the Messages tab and on the dashboard's club chips (components/TabBar.tsx,
-      // components/ClubChips.tsx), and every OTHER baseline in this suite is
-      // shot with a freshly-seeded user who has nothing unread — UnreadBadge
-      // (components/UnreadBadge.tsx) returns null at count 0, so all 32
-      // pre-existing baselines came back byte-identical whether the badge
-      // code was there or not. Its real rendering — whether the pill clips
-      // the icon, overflows the tab, or collides with the label — was
-      // guarded by nothing.
+      // the old dashboard's Messages tab and club chips
+      // (components/TabBar.tsx, components/ClubChips.tsx) — both gone now,
+      // along with the global tab bar itself. Home's `ClubCard`
+      // (components/home/ClubCard.tsx) is the only place this state renders
+      // today, on the Clubs view. Every OTHER baseline in this suite is shot
+      // with a freshly-seeded user who has nothing unread — UnreadBadge
+      // (components/UnreadBadge.tsx) returns null at count 0 — so this is
+      // still the one baseline that pictures the badge's real rendering:
+      // whether the pill clips the tile, overflows the row, or collides
+      // with the name.
       //
       // `seedUnreadClubMessage` (e2e/session.ts) posts as a FRESH filler
       // profile, never the signed-in member: a message you sent yourself is
       // never unread (fetch_my_threads' own lateral join filters on
       // `author_id <> auth.uid()`), so seeding it as the viewer would prove
-      // nothing. The dashboard is the one screen that renders both badge
-      // sites at once — TabBar's own Messages tab and ClubChips' Riverside
-      // chip — so one capture pictures both.
+      // nothing. `extraMask` below masks club glyph jitter — see
+      // `home my games`'s own comment above.
       test(`messages badge at ${vp.name}`, async ({ page }) => {
         await page.setViewportSize({ width: vp.width, height: vp.height });
         await seedUnreadClubMessage(seeded.clubId, userId.slice(0, 8));
-        await page.goto('/clubs');
-        // ClubChips and TabBar compose the unread count straight into their
-        // accessibilityLabel now (components/ClubChips.tsx,
-        // components/TabBar.tsx) rather than leaving it on UnreadBadge's own
-        // nested <Text> — react-native-web's aria-label REPLACES the
-        // accessible name computed from children, it does not merge with
-        // it, so the count never reached assistive tech any other way. That
-        // also settles the trap this comment used to record: whatever else
-        // on the page renders the plain "Riverside Mah Jongg" text, only the
-        // chip's accessible name has "1 unread" composed into it, so that
-        // composed name is unique on its own — `.first()` stays only as a
-        // defensive belt.
-        const clubChip = page
-          .getByRole('button', { name: 'Riverside Mah Jongg, 1 unread', exact: true })
-          .first();
-        await expect(clubChip.getByText('1', { exact: true })).toBeVisible();
-        // The Messages tab's own badge, scoped to its button for the same
-        // reason — TabBar.tsx renders it inside the "Messages" Pressable.
-        const messagesTab = page.getByRole('button', {
-          name: 'Messages, 1 unread',
-          exact: true,
-        });
-        await expect(messagesTab.getByText('1', { exact: true })).toBeVisible();
-        await captureScreen(page, vp, `messages-badge-${vp.name}.png`);
+        await page.goto('/home');
+        await page.getByRole('button', { name: /^Clubs/ }).click();
+        // ClubCard composes the unread count straight into its
+        // accessibilityLabel (components/home/ClubCard.tsx,
+        // `unreadSuffix`, lib/messages.ts) rather than leaving it on
+        // UnreadBadge's own nested <Text> — react-native-web's aria-label
+        // REPLACES the accessible name computed from children, it does not
+        // merge with it, so the count never reaches assistive tech any
+        // other way. `.first()` stays only as a defensive belt: Riverside's
+        // own card is the only one carrying "unread" in its composed name.
+        const clubCard = page.getByRole('button', { name: /Riverside Mah Jongg/ }).first();
+        await expect(clubCard).toHaveAccessibleName(/, 1 unread$/);
+        await expect(clubCard.getByText('1', { exact: true })).toBeVisible();
+        await captureScreen(page, vp, `messages-badge-${vp.name}.png`, [
+          'div:has(> [data-testid^="glyph-"])',
+        ]);
       });
 
       test(`event detail at ${vp.name}`, async ({ page }) => {
@@ -1103,7 +1110,7 @@ test.describe('signed in', () => {
        * NEW baselines below plus two that already existed. There is no
        * dedicated `event booking` or `your games` baseline: both would
        * have visited the exact same URL, in the exact same seeded state,
-       * as `event detail` and `clubs list with a club` respectively — the
+       * as `event detail` and `home my games` respectively — the
        * fixtures are seeded once per `describe`, so two tests hitting the
        * same route in the same state can only ever produce byte-identical
        * PNGs. Their text anchors were folded into those two tests instead
@@ -1339,7 +1346,7 @@ test.describe('signed in', () => {
         await captureScreen(page, vp, `check-in-open-seating-${vp.name}.png`);
       });
 
-      // The dashboard's host checklist, not the player-intro card: this
+      // The Clubs view's host checklist, not the player-intro card: this
       // user hosts Riverside (and Thursday Casuals), and `hostChecklist`
       // (lib/guides.ts) is NOT complete for either — `seedClubWithEvent`
       // only ever adds the host to `club_members` (both clubs read
@@ -1349,27 +1356,29 @@ test.describe('signed in', () => {
       // (Riverside's seeded broadcast) are both done. Checked against the
       // real screen rather than assumed: both cards render, so every
       // assertion below is scoped to Riverside's own card
-      // (`testID="host-checklist-<clubId>"`, app/clubs/index.tsx) — the
-      // bare text queries this test started with hit "Schedule your first
-      // game" and "Invite your players" on BOTH cards and failed Playwright
-      // strict mode.
-      test(`dashboard with host checklist at ${vp.name}`, async ({ page }) => {
+      // (`testID="host-checklist-<clubId>"`, components/home/HomeGuides.tsx)
+      // — the bare text queries this test started with hit "Schedule your
+      // first game" and "Invite your players" on BOTH cards and failed
+      // Playwright strict mode.
+      //
+      // Replaces the old dashboard's `dashboard with host checklist at …`
+      // baseline (`clubs-guides-*.png`) — the checklist card itself carried
+      // over unchanged to Home's Clubs view (`components/home/HomeGuides.tsx`,
+      // still the same `TipCard`), just reached through the switch instead
+      // of being the only thing on the old `/clubs` route. `extraMask` below
+      // masks club glyph jitter — see `home my games`'s own comment above.
+      test(`home guides at ${vp.name}`, async ({ page }) => {
         await setDismissedGuides(userId, []);
         await page.setViewportSize({ width: vp.width, height: vp.height });
-        await page.goto('/clubs');
+        await page.goto('/home');
+        await page.getByRole('button', { name: /^Clubs/ }).click();
         const card = page.getByTestId(`host-checklist-${seeded.clubId}`);
         await expect(card.getByText('Get Riverside Mah Jongg going')).toBeVisible();
         await expect(card.getByText('Schedule your first game')).toBeVisible();
         await expect(card.getByText('Invite your players')).toBeVisible();
         await expect(card.getByRole('button', { name: 'Got it: Get Riverside Mah Jongg going' })).toBeVisible();
-        // Same sub-pixel SVG jitter captureScreen's own thread-avatar mask
-        // exists for, on this screen's dashboard club-chip tiles instead
-        // (components/ClubChips.tsx's `chip-glyph-<clubId>` wrapper around
-        // each MahjongTile glyph) — this dashboard renders two clubs'
-        // chips, so the prefix selector masks both rather than naming one
-        // clubId and missing the other.
-        await captureScreen(page, vp, `clubs-guides-${vp.name}.png`, [
-          '[data-testid^="chip-glyph-"]',
+        await captureScreen(page, vp, `home-guides-${vp.name}.png`, [
+          'div:has(> [data-testid^="glyph-"])',
         ]);
       });
 

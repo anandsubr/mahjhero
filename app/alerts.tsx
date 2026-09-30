@@ -6,7 +6,6 @@ import Card from '../components/Card';
 import ErrorBanner from '../components/ErrorBanner';
 import MahjongTile from '../components/MahjongTile';
 import Screen from '../components/Screen';
-import TabBar from '../components/TabBar';
 import { GENERIC_ERROR } from '../lib/constants';
 import { initialsFrom } from '../lib/dashboard';
 import {
@@ -72,12 +71,13 @@ export default function AlertsScreen() {
     // batch -- fire-and-forget, off the render path: a failed read-mark just
     // means the badge doesn't clear this time, which isn't worth an error
     // banner of its own, and isn't worth making the member wait for either.
-    // TabBar's own badge (useNotificationsUnread) is rendered inside this
-    // very screen's tree, so its child effect fires -- and fetches the
-    // stale, pre-read count -- before this mark-read call even resolves; no
-    // real focus event follows, since the member never left the screen. On
-    // success, notifyNotificationsRead() tells every mounted badge instance
-    // to refetch so it clears without requiring a refocus.
+    // Home's own badge (useNotificationsUnread, on its Alerts button) may
+    // still be mounted underneath this screen, so its child effect fires --
+    // and fetches the stale, pre-read count -- before this mark-read call
+    // even resolves; no real focus event follows, since the member never
+    // left the screen. On success, notifyNotificationsRead() tells every
+    // mounted badge instance to refetch so it clears without requiring a
+    // refocus.
     if (next !== null) {
       void markNotificationsRead().then(({ error: markError }) => {
         if (!markError) notifyNotificationsRead();
@@ -104,7 +104,7 @@ export default function AlertsScreen() {
 
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="alerts" />}>
+      <Screen center contentStyle={styles.centered}>
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
     );
@@ -112,7 +112,7 @@ export default function AlertsScreen() {
   if (!session) return <Redirect href="/sign-in" />;
 
   return (
-    <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="alerts" />}>
+    <Screen scroll contentStyle={styles.container}>
       <View style={styles.titleRow}>
         <View testID="section-tile">
           <MahjongTile suit="green-dragon" size="section" />

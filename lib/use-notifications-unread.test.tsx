@@ -95,7 +95,7 @@ describe('useNotificationsUnread', () => {
     expect(fetchNotificationUnreadCount).toHaveBeenCalledTimes(2);
   });
 
-  // A listener that has already unmounted (e.g. TabBar on a screen the
+  // A listener that has already unmounted (e.g. a badge on a screen the
   // member has since left) must not be notified -- its cleanup removes it
   // from the module-scoped `listeners` set on unmount.
   it('does not refetch an unmounted instance', async () => {

@@ -6,7 +6,6 @@ import Button from '../components/Button';
 import Card from '../components/Card';
 import ErrorBanner from '../components/ErrorBanner';
 import Screen from '../components/Screen';
-import TabBar from '../components/TabBar';
 import { ChevronLeftIcon } from '../components/icons';
 import { GENERIC_ERROR } from '../lib/constants';
 import { useSession } from '../lib/session';
@@ -37,7 +36,7 @@ export default function HowItWorks() {
   }
 
   return (
-    <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="profile" />}>
+    <Screen scroll contentStyle={styles.container}>
       <Button
         variant="ghost"
         big={false}
@@ -53,7 +52,7 @@ export default function HowItWorks() {
 
       <Card style={styles.card}>
         <Text style={styles.section}>Playing</Text>
-        <Text style={styles.body}>1. Find a game on your dashboard.</Text>
+        <Text style={styles.body}>1. Join a club with its code on Home, or accept an invite there. Games you're in show on Home under My games.</Text>
         <Text style={styles.body}>2. Tap Join to take a spot, or Invite to bring someone along.</Text>
         <Text style={styles.body}>3. Game full? Tap Join the waitlist and you'll move up if a seat opens.</Text>
         <Text style={styles.body}>4. On the day, check the game page for your table and messages.</Text>

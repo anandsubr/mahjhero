@@ -6,7 +6,6 @@ import CompactHeader from '../../../../components/CompactHeader';
 import ErrorBanner from '../../../../components/ErrorBanner';
 import PostRow from '../../../../components/messages/PostRow';
 import Screen from '../../../../components/Screen';
-import TabBar from '../../../../components/TabBar';
 import { GENERIC_ERROR } from '../../../../lib/constants';
 import {
   fetchClubPosts,
@@ -142,7 +141,7 @@ export default function ClubBoardScreen() {
 
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered} tabBar={<TabBar active="messages" />}>
+      <Screen center contentStyle={styles.centered}>
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
     );
@@ -158,7 +157,7 @@ export default function ClubBoardScreen() {
   const kind = thread ? threadKindFor(thread, viewerId) : null;
 
   return (
-    <Screen scroll contentStyle={styles.container} tabBar={<TabBar active="messages" />}>
+    <Screen scroll contentStyle={styles.container}>
       {/*
         The compact one-row header (components/CompactHeader.tsx): chevron,
         the club's tile and name, and ⊕ New post on the right. The chevron

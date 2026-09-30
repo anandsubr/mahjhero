@@ -594,14 +594,14 @@ export function unreadLabel(n: number): string {
  * The count, phrased to be composed onto an EXISTING accessibilityLabel
  * rather than read on its own.
  *
- * components/UnreadBadge.tsx renders a bare `<Text>`, and all three of its
- * parents (TabBar, ClubChips, ThreadRow) set `accessibilityLabel` on the
- * surrounding Pressable — which on react-native-web emits `aria-label` and
- * REPLACES the accessible name computed from children entirely, rather than
- * merging with it. The badge's own count never reached assistive tech at any
- * of the three sites. Composing `label + unreadSuffix(n)` into that one
- * label is the fix; a second, competing label on the badge itself would only
- * repeat how this got confusing in the first place.
+ * components/UnreadBadge.tsx renders a bare `<Text>`, and its parents (e.g.
+ * ThreadRow, ClubCard) set `accessibilityLabel` on the surrounding Pressable
+ * — which on react-native-web emits `aria-label` and REPLACES the accessible
+ * name computed from children entirely, rather than merging with it. The
+ * badge's own count never reached assistive tech at those sites. Composing
+ * `label + unreadSuffix(n)` into that one label is the fix; a second,
+ * competing label on the badge itself would only repeat how this got
+ * confusing in the first place.
  *
  * Empty at zero so a caller never needs a conditional, and capped at 99+
  * with `unreadLabel` so the spoken count never disagrees with the pill's

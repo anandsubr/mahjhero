@@ -41,10 +41,6 @@ vi.mock('../../lib/session', () => ({
 
 const fetchMyThreads = vi.fn();
 const openThreadForClub = vi.fn();
-// TabBar (carried by this screen) now calls `useUnreadCounts`, which reaches
-// this — added to the existing factory below rather than a second
-// `vi.mock('../../lib/messages', …)`, since only one survives hoisting.
-const fetchUnreadCounts = vi.fn(async () => []);
 
 vi.mock('../../lib/messages', async () => {
   // The pure helpers are covered in lib/messages.test.ts. Mocking them here
@@ -56,15 +52,8 @@ vi.mock('../../lib/messages', async () => {
     ...actual,
     fetchMyThreads: (...a: unknown[]) => fetchMyThreads(...a),
     openThreadForClub: (...a: unknown[]) => openThreadForClub(...a),
-    fetchUnreadCounts: () => fetchUnreadCounts(),
   };
 });
-
-// TabBar also now calls useNotificationsUnread for its Alerts badge --
-// without this it falls through to a real, unmocked RPC call.
-vi.mock('../../lib/use-notifications-unread', () => ({
-  useNotificationsUnread: () => 0,
-}));
 
 function row(over: Partial<ThreadListRow> = {}): ThreadListRow {
   return {
@@ -231,12 +220,8 @@ describe('messages list', () => {
   });
 
   // The tile is purely decorative -- scoped to a wrapping testID rather than
-  // a bare `[aria-hidden="true"]` query, since TabBar (carried by every
-  // screen) renders its own four `aria-hidden` tiles too, which would let a
-  // bare query pass whether or not this screen's own section tile exists.
-  // Waits on `Riverside` (the fixture row), not the heading text `Messages`
-  // itself -- TabBar's own Messages tab carries that exact label too, which
-  // makes `findByText('Messages')` ambiguous once both are on screen.
+  // a bare `[aria-hidden="true"]` query, which would pass whether or not
+  // this screen's own section tile exists.
   it('shows a decorative bamboo tile before the heading', async () => {
     render(<MessagesScreen />);
     await screen.findByText('Riverside');

@@ -6,10 +6,10 @@ import { useSession } from './session';
 // Every mounted useNotificationsUnread instance's own refetch callback.
 // app/alerts.tsx calls notifyNotificationsRead() right after
 // markNotificationsRead() succeeds so the badge clears immediately, even
-// though TabBar (rendered inside that very screen's own tree) already
-// fetched the stale, pre-read count before the mark-read call resolved --
-// a real focus event never fires in that case, since the member never
-// left the screen.
+// though Home's own badge (mounted underneath this screen) already fetched
+// the stale, pre-read count before the mark-read call resolved -- a real
+// focus event never fires in that case, since the member never left the
+// screen.
 const listeners = new Set<() => void>();
 
 export function notifyNotificationsRead(): void {

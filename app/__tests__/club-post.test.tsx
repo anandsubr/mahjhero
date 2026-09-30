@@ -43,10 +43,6 @@ const postMessage = vi.fn();
 // why it duplicates the board's identical call rather than trusting a
 // value handed down from it.
 const fetchThread = vi.fn();
-// TabBar (carried by this screen via Screen's `tabBar` prop) calls
-// useUnreadCounts, which reaches this -- the same reason every other screen
-// test that renders TabBar mocks it.
-const fetchUnreadCounts = vi.fn(async () => []);
 
 vi.mock('../../lib/messages', async () => {
   const actual =
@@ -57,15 +53,8 @@ vi.mock('../../lib/messages', async () => {
     markPostRead: (...a: unknown[]) => markPostRead(...a),
     postMessage: (...a: unknown[]) => postMessage(...a),
     fetchThread: (...a: unknown[]) => fetchThread(...a),
-    fetchUnreadCounts: () => fetchUnreadCounts(),
   };
 });
-
-// TabBar also now calls useNotificationsUnread for its Alerts badge --
-// without this it falls through to a real, unmocked RPC call.
-vi.mock('../../lib/use-notifications-unread', () => ({
-  useNotificationsUnread: () => 0,
-}));
 
 // Composer now renders AttachmentPicker (Task 10), which imports
 // lib/attachments.ts -- itself pulling in expo-crypto,
@@ -117,7 +106,6 @@ const reply = {
 describe('a club post', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    fetchUnreadCounts.mockResolvedValue([]);
     fetchPostMessages.mockResolvedValue([root]);
     markPostRead.mockResolvedValue({ error: null });
     postMessage.mockResolvedValue({ id: 'm2', error: null });
