@@ -1110,8 +1110,8 @@ export async function seedUnreadClubMessage(
  * it, and delete it.
  *
  * Distinct from `seedUnreadClubMessage` just above, which exists for a
- * narrower job -- pin the unread badge on the DASHBOARD (TabBar's tab and
- * ClubChips' chip), seeding exactly one club row for that. This seeds three
+ * narrower job -- pin the unread badge on Home's Clubs view (ClubCard's own
+ * card), seeding exactly one club row for that. This seeds three
  * kinds at once for the messages LIST itself, so it is its own function
  * rather than a parallel setup path or a change to that one's signature.
  * The game thread rides the event `seedClubWithEvent` already seeded
