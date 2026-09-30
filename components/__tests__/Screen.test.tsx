@@ -14,10 +14,27 @@
  *     wrapper `<div>` appears anywhere, and the single wrapped `content`
  *     column is exactly what encloses `children`.
  */
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { Text } from 'react-native';
+import { useState } from 'react';
+import { Pressable, Text } from 'react-native';
 import Screen from '../Screen';
+
+/** A child that proves whether it survived a rerender: its own local
+ *  state, bumped by a tap, has nowhere to come back from if this
+ *  component was ever unmounted and remounted. */
+function Counter() {
+  const [count, setCount] = useState(0);
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Bump"
+      onPress={() => setCount((c) => c + 1)}
+    >
+      <Text testID="count">{count}</Text>
+    </Pressable>
+  );
+}
 
 describe('Screen', () => {
   it('forwards stickyHeaderIndices to the ScrollView, pinning that child', () => {
@@ -92,5 +109,39 @@ describe('Screen', () => {
     const text = scroller.textContent;
     expect(text?.indexOf('A')).toBeGreaterThanOrEqual(0);
     expect(text?.indexOf('B')).toBeGreaterThan(text?.indexOf('A') ?? -1);
+  });
+
+  // A caller's `footer` is routinely a `condition ? <ActionBar /> : null`
+  // (Notifications' dirty-form save bar, the game screen's RoundTimer while
+  // the game is live) -- it flips between an element and `null` on the same
+  // mounted Screen as state changes elsewhere on the page. `body` used to
+  // sit at the tree's root when `footer` was absent and one level deeper
+  // once it appeared, a different position for the same subtree that made
+  // React remount it (and everything inside, including the ScrollView)
+  // every time `footer` flipped -- silently discarding a mid-edit TimeField
+  // or the current scroll position. This pins that `body`'s own children
+  // never remount across that flip, regardless of which way it flips.
+  it('does not remount children when footer toggles between an element and null', () => {
+    const { rerender } = render(
+      <Screen scroll footer={null}>
+        <Counter />
+      </Screen>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Bump' }));
+    expect(screen.getByTestId('count').textContent).toBe('1');
+
+    rerender(
+      <Screen scroll footer={<Text>Save</Text>}>
+        <Counter />
+      </Screen>,
+    );
+    expect(screen.getByTestId('count').textContent).toBe('1');
+
+    rerender(
+      <Screen scroll footer={null}>
+        <Counter />
+      </Screen>,
+    );
+    expect(screen.getByTestId('count').textContent).toBe('1');
   });
 });

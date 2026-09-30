@@ -27,6 +27,11 @@ vi.mock('../../lib/session', () => ({
 
 const fetchMyNotifications = vi.fn();
 const markNotificationsRead = vi.fn();
+const notifyNotificationsRead = vi.fn();
+
+vi.mock('../../lib/use-notifications-unread', () => ({
+  notifyNotificationsRead: () => notifyNotificationsRead(),
+}));
 
 vi.mock('../../lib/notifications', async () => {
   // describeNotification is pure and already covered in
@@ -140,6 +145,29 @@ describe('alerts screen', () => {
     render(<AlertsScreen />);
     await screen.findByText(/Could not reach MahjHero/);
     expect(markNotificationsRead).not.toHaveBeenCalled();
+  });
+
+  // Replaces the old badge-based assertion (rendering a live TabBar/Home
+  // badge inside this test and watching its label change) now that Alerts
+  // no longer carries any badge of its own -- notifyNotificationsRead is
+  // the pub/sub call that tells whichever badge IS mounted elsewhere to
+  // refetch; lib/use-notifications-unread.test.tsx already covers the
+  // listener side of that pub/sub, so this only needs to pin the publisher
+  // side: called on a successful mark-read, not on a failed one.
+  it('notifies other badges once mark-read succeeds', async () => {
+    fetchMyNotifications.mockResolvedValueOnce([BOOKED_BY_FRIEND]);
+    render(<AlertsScreen />);
+    await screen.findByText('You have a seat');
+    await waitFor(() => expect(notifyNotificationsRead).toHaveBeenCalledTimes(1));
+  });
+
+  it('does not notify other badges when mark-read fails', async () => {
+    fetchMyNotifications.mockResolvedValueOnce([BOOKED_BY_FRIEND]);
+    markNotificationsRead.mockResolvedValueOnce({ error: 'Something broke.' });
+    render(<AlertsScreen />);
+    await screen.findByText('You have a seat');
+    await waitFor(() => expect(markNotificationsRead).toHaveBeenCalledTimes(1));
+    expect(notifyNotificationsRead).not.toHaveBeenCalled();
   });
 
   // The tile is purely decorative -- scoped to a wrapping testID rather than

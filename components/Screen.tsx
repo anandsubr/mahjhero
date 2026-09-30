@@ -133,9 +133,18 @@ export default function Screen({
     </View>
   );
 
-  const shell = !footer ? (
-    body
-  ) : (
+  // Always the same wrapper shape around `body`, whether or not `footer` is
+  // given, and regardless of whether it flips between renders (e.g. an
+  // ActionBar or RoundTimer whose caller passes `condition ? <X /> : null`).
+  // `body` previously sat at the tree's root when `footer` was absent and
+  // one level deeper (inside this View, inside `footerShellBody`) once it
+  // appeared -- a different position for the same subtree, which React
+  // reads as "this is a new tree" and remounts `body`'s entire subtree
+  // (the ScrollView included) from scratch. A mid-edit TimeField or scroll
+  // position had no way to survive that. `body`'s wrapper now never moves;
+  // only the footer column beside it appears or disappears, which does not
+  // disturb `body`'s own position.
+  const shell = (
     <View style={[styles.fill, { backgroundColor: background }]}>
       <View style={styles.footerShellBody}>{body}</View>
       {/*
@@ -143,8 +152,10 @@ export default function Screen({
         than running full-bleed. On a desktop browser — a first-class case
         here, since club invite links open the web build — a 1400px-wide
         strip under a 440px column reads as a different app's chrome.
+        Omitted entirely (not just emptied) when there is no footer, so an
+        absent one adds no padding or height of its own.
       */}
-      <View style={styles.footerColumn}>{footer}</View>
+      {footer ? <View style={styles.footerColumn}>{footer}</View> : null}
     </View>
   );
 
