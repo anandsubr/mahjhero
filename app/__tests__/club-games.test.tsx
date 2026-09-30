@@ -108,7 +108,7 @@ describe('club Games section', () => {
     renderSection();
     expect(await screen.findByText('Strategy night')).toBeTruthy();
     expect(screen.getByText('Bring a card')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Upcoming' }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByRole('tab', { name: 'Upcoming' }).getAttribute('aria-selected')).toBe('true');
 
     const [call] = fetchClubGames.mock.calls;
     expect(call[0]).toBe('c1');
@@ -133,7 +133,7 @@ describe('club Games section', () => {
   it('Past fetches the last 180 days, newest first, and says so when empty', async () => {
     renderSection();
     await waitFor(() => expect(fetchClubGames).toHaveBeenCalledTimes(1));
-    fireEvent.click(screen.getByRole('button', { name: 'Past' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Past' }));
     expect(await screen.findByText('No past games.')).toBeTruthy();
 
     const { from, to } = windowOf(fetchClubGames.mock.calls[1]);
@@ -149,7 +149,7 @@ describe('club Games section', () => {
       game({ eventId: 'old', title: 'Older game', startsAt: new Date(Date.now() - 20 * DAY).toISOString() }),
       game({ eventId: 'new', title: 'Newer game', startsAt: new Date(Date.now() - 2 * DAY).toISOString() }),
     ]);
-    fireEvent.click(screen.getByRole('button', { name: 'Past' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Past' }));
     await screen.findByText('Newer game');
     const rows = screen.getAllByLabelText(/^Open /).map((el) => el.getAttribute('aria-label'));
     expect(rows[0]).toMatch(/Newer game/);
@@ -163,7 +163,7 @@ describe('club Games section', () => {
       game({ eventId: 'p', title: 'Last week', startsAt: new Date(Date.now() - 7 * DAY).toISOString() }),
       game({ eventId: 'u', title: 'Next week', startsAt: new Date(Date.now() + 7 * DAY).toISOString() }),
     ]);
-    fireEvent.click(screen.getByRole('button', { name: 'All' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'All' }));
     await screen.findByText('Next week');
     const { from, to } = windowOf(fetchClubGames.mock.calls[1]);
     expect(Math.round((Date.now() - from) / DAY)).toBe(180);
@@ -178,7 +178,7 @@ describe('club Games section', () => {
     fetchClubGames.mockReturnValueOnce(new Promise<MyGame[]>((r) => { resolveUpcoming = r; }));
     fetchClubGames.mockResolvedValueOnce([]);
     renderSection();
-    fireEvent.click(screen.getByRole('button', { name: 'Past' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Past' }));
     expect(await screen.findByText('No past games.')).toBeTruthy();
     await act(async () => {
       resolveUpcoming([game({ title: 'Stale upcoming' })]);
@@ -257,6 +257,29 @@ describe('club Games section', () => {
       fireEvent.click(within(sheet).getByRole('button', { name: 'Copy link' }));
       await waitFor(() => expect(writeText).toHaveBeenCalledWith(FEED_URL));
       expect(await within(sheet).findByText('Copied')).toBeTruthy();
+      expect(within(sheet).getByRole('button', { name: 'Copied' })).toBeTruthy();
+      expect(within(sheet).getByRole('heading', { name: 'Add to calendar' })).toBeTruthy();
+      // Only the ✕ is announced as Close; the scrim is hidden.
+      expect(screen.getAllByRole('button', { name: 'Close' })).toHaveLength(1);
+      expect(screen.getByTestId('calendar-link-scrim').getAttribute('aria-hidden')).toBe('true');
+    });
+
+    it('fetches the link once when Add to calendar is tapped twice quickly', async () => {
+      renderSection();
+      const button = await screen.findByRole('button', { name: 'Add to calendar' });
+      fireEvent.click(button);
+      fireEvent.click(button);
+      await screen.findByTestId('calendar-link-sheet');
+      expect(getMyCalendarFeedUrl).toHaveBeenCalledTimes(1);
+    });
+
+    it('marks the segments as tabs with the selected one', async () => {
+      renderSection();
+      expect(screen.getByRole('tablist')).toBeTruthy();
+      expect(screen.getAllByRole('tab')).toHaveLength(3);
+      expect(screen.getByRole('tab', { name: 'Upcoming' }).getAttribute('aria-selected')).toBe('true');
+      expect(screen.getByRole('tab', { name: 'Past' }).getAttribute('aria-selected')).toBe('false');
+      await waitFor(() => expect(fetchClubGames).toHaveBeenCalled());
     });
 
     it('on web survives an unavailable clipboard, leaving the link on screen', async () => {

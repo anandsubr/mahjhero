@@ -67,15 +67,19 @@ export default function CalendarLinkSheet({
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.root}>
+        {/* Hidden from assistive tech: the ✕ is the one announced Close. */}
         <Pressable
           style={styles.scrim}
           onPress={onClose}
-          accessibilityRole="button"
-          accessibilityLabel="Close"
+          testID="calendar-link-scrim"
+          accessible={false}
+          focusable={false}
+          aria-hidden
+          importantForAccessibility="no-hide-descendants"
         />
         <View style={styles.sheet} testID="calendar-link-sheet">
           <View style={styles.headRow}>
-            <Text style={styles.heading}>Add to calendar</Text>
+            <Text accessibilityRole="header" style={styles.heading}>Add to calendar</Text>
             <Pressable
               onPress={onClose}
               accessibilityRole="button"
@@ -92,7 +96,7 @@ export default function CalendarLinkSheet({
           <Pressable
             onPress={() => void onAction()}
             accessibilityRole="button"
-            accessibilityLabel={label}
+            accessibilityLabel={copied ? 'Copied' : label}
             style={({ pressed }) => [styles.action, pressed && styles.actionPressed]}
           >
             {web ? <CopyIcon size={18} color="#fff" /> : <ShareIcon size={18} color="#fff" />}

@@ -55,6 +55,8 @@ export default function GamesSection() {
   const [now, setNow] = useState(() => Date.now());
 
   const [calBusy, setCalBusy] = useState(false);
+  // A ref, not the state: two taps in one frame both see stale `calBusy`.
+  const calInFlight = useRef(false);
   const [calFailed, setCalFailed] = useState(false);
   const [sheetUrl, setSheetUrl] = useState<string | null>(null);
   const mounted = useRef(true);
@@ -99,10 +101,12 @@ export default function GamesSection() {
   }
 
   async function addToCalendar() {
-    if (calBusy) return;
+    if (calInFlight.current) return;
+    calInFlight.current = true;
     setCalFailed(false);
     setCalBusy(true);
     const url = await getMyCalendarFeedUrl();
+    calInFlight.current = false;
     if (!mounted.current) return;
     setCalBusy(false);
     if (!url) {
@@ -163,13 +167,13 @@ export default function GamesSection() {
   return (
     <>
       <HubSection footer={footer} onRefresh={load}>
-        <View style={styles.track}>
+        <View style={styles.track} accessibilityRole="tablist">
           {SEGMENTS.map((s) => {
             const selected = s.key === segment;
             return (
               <Pressable
                 key={s.key}
-                accessibilityRole="button"
+                accessibilityRole="tab"
                 accessibilityLabel={s.label}
                 accessibilityState={{ selected }}
                 aria-selected={selected}
