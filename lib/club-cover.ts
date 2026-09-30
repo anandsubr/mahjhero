@@ -42,6 +42,15 @@ export async function uploadClubCover(
     });
     if (error) {
       console.error('uploadClubCover failed', error);
+      // The upload above already succeeded, so the object at `path` is
+      // sitting in storage with nothing pointing at it. Best-effort clean
+      // it up rather than leaving an orphan — same "ignore the remove
+      // error" stance as the previous-cover cleanup below, since the
+      // caller is already getting an error back either way.
+      const { error: removeError } = await supabase.storage.from(BUCKET).remove([path]);
+      if (removeError) {
+        console.error('uploadClubCover: removing the failed upload failed', removeError);
+      }
       return { error: GENERIC_ERROR };
     }
 

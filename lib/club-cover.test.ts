@@ -106,6 +106,27 @@ describe('uploadClubCover', () => {
     const result = await uploadClubCover('c1', IMAGE);
     expect(result.error).toBeTruthy();
   });
+
+  it('removes the just-uploaded object when set_club_cover fails after a successful upload', async () => {
+    uploadMock.mockResolvedValueOnce({ error: null });
+    rpc.mockResolvedValueOnce({ data: null, error: { message: 'nope' } });
+    removeMock.mockResolvedValueOnce({ error: null });
+
+    const result = await uploadClubCover('c1', IMAGE);
+
+    expect(removeMock).toHaveBeenCalledWith(['c1/test-uuid.jpg']);
+    expect(result.error).toBeTruthy();
+  });
+
+  it('still reports the set_club_cover error when the cleanup removal itself fails', async () => {
+    uploadMock.mockResolvedValueOnce({ error: null });
+    rpc.mockResolvedValueOnce({ data: null, error: { message: 'nope' } });
+    removeMock.mockResolvedValueOnce({ error: { message: 'cleanup failed too' } });
+
+    const result = await uploadClubCover('c1', IMAGE);
+
+    expect(result.error).toBeTruthy();
+  });
 });
 
 describe('removeClubCover', () => {

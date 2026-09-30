@@ -2,7 +2,10 @@ import { supabase } from './supabase';
 
 /** The calendar-feed edge function's URL for a given subscription token. */
 export function calendarFeedUrl(token: string): string {
-  return `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/calendar-feed?token=${token}`;
+  return (
+    `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/calendar-feed` +
+    `?token=${encodeURIComponent(token)}`
+  );
 }
 
 /**

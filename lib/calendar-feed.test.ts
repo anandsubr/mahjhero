@@ -18,6 +18,13 @@ describe('calendarFeedUrl', () => {
       `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/calendar-feed?token=tok123`,
     );
   });
+
+  it('percent-encodes a token with URL-significant characters', () => {
+    expect(calendarFeedUrl('a+b/c=d')).toBe(
+      `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/calendar-feed` +
+        `?token=${encodeURIComponent('a+b/c=d')}`,
+    );
+  });
 });
 
 describe('webcalUrl', () => {
