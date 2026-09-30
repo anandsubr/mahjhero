@@ -268,7 +268,13 @@ export default function HomeScreen() {
   const retry = mode === 'list' ? () => void loadFeed() : () => setMonthRetry((n) => n + 1);
 
   return (
-    <Screen scroll contentStyle={styles.container}>
+    <Screen
+      scroll
+      contentStyle={styles.container}
+      onRefresh={async () => {
+        await Promise.all([loadFeed(), loadClubs(), reloadNeeds.current()]);
+      }}
+    >
       {header}
       <NeedsYouStack needs={needs} />
       <HomeSwitch value={view} upcomingCount={games.length} onChange={setView} />

@@ -2,6 +2,34 @@ import { useEffect } from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+// The real Screen renders react-native-web's inert RefreshControl, which
+// never calls `onRefresh` on its own in jsdom (no pull gesture in a
+// browser). Swapping in a button that exposes Home's `onRefresh` prop is
+// the only way here to prove Home wires the right reload into it -- Screen
+// itself (components/__tests__/Screen.test.tsx) already covers that the
+// prop reaches the real RefreshControl and drives `refreshing`.
+vi.mock('../../components/Screen', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../components/Screen')>();
+  return {
+    ...actual,
+    default: (props: Parameters<typeof actual.default>[0]) => {
+      const { onRefresh, ...rest } = props as typeof props & { onRefresh?: () => Promise<void> };
+      return (
+        <>
+          {onRefresh ? (
+            <button
+              type="button"
+              aria-label="refresh-control"
+              onClick={() => void onRefresh()}
+            />
+          ) : null}
+          <actual.default {...rest} />
+        </>
+      );
+    },
+  };
+});
+
 const push = vi.fn();
 vi.mock('expo-router', () => ({
   Redirect: ({ href }: { href: string }) => <div data-testid="redirect" data-href={href} />,
@@ -133,6 +161,22 @@ describe('HomeScreen', () => {
     fetchMyGames.mockResolvedValue([GAME]);
     render(<HomeScreen />);
     expect(await screen.findByRole('button', { name: 'Next month' })).toBeTruthy();
+  });
+
+  it('reloads the feed, clubs and needs-you data on pull to refresh', async () => {
+    fetchMyGames.mockResolvedValue([GAME]);
+    render(<HomeScreen />);
+    await screen.findByText('Tuesday game');
+
+    fetchMyGames.mockClear();
+    fetchClubsNextGame.mockClear();
+    NEEDS.reload.mockClear();
+
+    fireEvent.click(screen.getByLabelText('refresh-control'));
+
+    await waitFor(() => expect(fetchMyGames).toHaveBeenCalled());
+    expect(fetchClubsNextGame).toHaveBeenCalled();
+    expect(NEEDS.reload).toHaveBeenCalled();
   });
 
   it('shows Retry when a calendar month fails, and refetches the month', async () => {
