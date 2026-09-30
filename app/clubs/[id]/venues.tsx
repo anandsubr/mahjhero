@@ -93,7 +93,6 @@ export default function VenuesScreen() {
       <Screen
         center
         contentStyle={styles.centered}
-       
       >
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
@@ -114,7 +113,6 @@ export default function VenuesScreen() {
       <Screen
         center
         contentStyle={styles.centered}
-       
       >
         <ActivityIndicator color={colors.accentColor} />
       </Screen>

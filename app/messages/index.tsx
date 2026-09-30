@@ -137,7 +137,6 @@ export default function MessagesScreen() {
     <Screen
       scroll
       contentStyle={styles.container}
-     
     >
       <View style={styles.header}>
         <View style={styles.titleRow}>

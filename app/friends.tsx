@@ -133,7 +133,6 @@ export default function FriendsScreen() {
     <Screen
       scroll
       contentStyle={[formStyles.body, styles.body]}
-     
     >
       <View style={styles.top}>
         <BackRow

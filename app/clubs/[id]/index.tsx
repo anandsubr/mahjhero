@@ -105,7 +105,6 @@ export default function ClubDetailScreen() {
       <Screen
         center
         contentStyle={styles.centered}
-       
       >
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
@@ -119,7 +118,6 @@ export default function ClubDetailScreen() {
       <Screen
         center
         contentStyle={styles.centered}
-       
       >
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
@@ -491,7 +489,7 @@ export default function ClubDetailScreen() {
                 Use Invite by email for one person, or Import a roster for a whole list.
               </TipText>
               <TipText>
-                They'll see the invite on their dashboard once they sign in with that email.
+                They'll see the invite on their Home screen once they sign in with that email.
               </TipText>
             </TipCard>
           ) : null}
