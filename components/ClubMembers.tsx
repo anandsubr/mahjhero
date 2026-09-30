@@ -198,7 +198,7 @@ const ClubMembers = forwardRef<ClubMembersHandle, Props>(function ClubMembers(
       : roster.filter((member) => memberLabel(member).toLowerCase().includes(trimmedSearch));
 
   return (
-    <>
+    <View style={styles.root}>
       {importedCount !== null && importedCount !== undefined && importedCount > 0 ? (
         <Card>
           <Text style={styles.confirmation}>
@@ -361,13 +361,18 @@ const ClubMembers = forwardRef<ClubMembersHandle, Props>(function ClubMembers(
       ) : null}
 
       {error ? <ErrorBanner message={error} /> : null}
-    </>
+    </View>
   );
 });
 
 export default ClubMembers;
 
 const styles = StyleSheet.create({
+  // The old club page spaced these through its Screen container (gap
+  // space[4]); the section scroller has no gap, so the list carries its own.
+  root: {
+    gap: space[4],
+  },
   loading: { marginTop: space[6] },
   sectionTitle: {
     fontFamily: type.bodyBold,
