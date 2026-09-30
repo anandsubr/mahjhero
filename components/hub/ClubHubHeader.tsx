@@ -105,12 +105,22 @@ export default function ClubHubHeader({
           accessibilityRole="button"
           accessibilityLabel="Share club code"
           onPress={onShare}
-          // The pill is drawn 32pt tall; the slop brings the target to 44pt.
-          hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
-          style={({ pressed }) => [styles.share, pressed && styles.sharePressed]}
+          // A 44pt target with the 32pt pill drawn inside it: hitSlop is
+          // not honoured on react-native-web.
+          style={styles.shareTarget}
         >
-          <ShareIcon size={14} color="#fff" />
-          <Text style={styles.shareLabel}>{copied ? 'Copied' : 'Share'}</Text>
+          {({ pressed }) => (
+            <View style={[styles.share, pressed && styles.sharePressed]}>
+              <ShareIcon size={14} color="#fff" />
+              <Text
+                style={styles.shareLabel}
+                accessibilityLiveRegion="polite"
+                aria-live="polite"
+              >
+                {copied ? 'Copied' : 'Share'}
+              </Text>
+            </View>
+          )}
         </Pressable>
       </View>
       <SectionButtons active={active} onSelect={onSelect} />
@@ -186,6 +196,7 @@ const styles = StyleSheet.create({
     paddingRight: 16,
   },
   code: { flexShrink: 1, fontFamily: type.bodySemiBold, fontSize: 14, color: '#fff' },
+  shareTarget: { minHeight: 44, justifyContent: 'center' },
   share: {
     height: 32,
     paddingHorizontal: 10,

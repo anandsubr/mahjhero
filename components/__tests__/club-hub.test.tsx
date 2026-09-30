@@ -100,6 +100,11 @@ describe('ClubHubHeader', () => {
     expect(screen.getByText('Share')).toBeTruthy();
   });
 
+  it('announces the Share/Copied label politely', () => {
+    renderHeader();
+    expect(screen.getByText('Share').getAttribute('aria-live')).toBe('polite');
+  });
+
   it('keeps "Share" when the native sheet was used', async () => {
     shareClubCode.mockResolvedValue('shared');
     renderHeader();

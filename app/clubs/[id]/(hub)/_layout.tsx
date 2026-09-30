@@ -1,11 +1,12 @@
 import { Redirect, Slot, useLocalSearchParams, useRouter, useSegments } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import BackRow from '../../../../components/BackRow';
 import Button from '../../../../components/Button';
 import Screen from '../../../../components/Screen';
 import { Text } from '../../../../components/Text';
+import { ChevronLeftIcon } from '../../../../components/icons';
 import ClubHubHeader from '../../../../components/hub/ClubHubHeader';
 import { ClubHubContext, type ClubHubValue } from '../../../../components/hub/ClubHubContext';
 import { getClubCoverUrl } from '../../../../lib/club-cover';
@@ -44,13 +45,19 @@ export default function ClubHubLayout() {
   // overwriting a newer one.
   const loadSeq = useRef(0);
 
-  const load = useCallback(async (): Promise<void> => {
+  /**
+   * `background` is a reload of an already-ready hub (pull to refresh,
+   * after a settings change): a failure there keeps what is on screen
+   * rather than replacing the whole hub with the error screen. Only the
+   * initial load (and Retry) can show the failure screen.
+   */
+  const fetchAll = useCallback(async (background: boolean): Promise<void> => {
     if (!id || !userId) return;
     const seq = ++loadSeq.current;
     const [club, roles] = await Promise.all([fetchClub(id), fetchMyRoles(userId)]);
     if (seq !== loadSeq.current) return;
     if (!club || !roles) {
-      setState({ status: 'failed' });
+      if (!background) setState({ status: 'failed' });
       return;
     }
     const coverUrl = club.cover_path ? await getClubCoverUrl(club.cover_path) : null;
@@ -58,6 +65,9 @@ export default function ClubHubLayout() {
     const role = roles.find((r) => r.club_id === id)?.role ?? null;
     setState({ status: 'ready', club, role, coverUrl });
   }, [id, userId]);
+
+  const load = useCallback(() => fetchAll(false), [fetchAll]);
+  const reloadClub = useCallback(() => fetchAll(true), [fetchAll]);
 
   useEffect(() => {
     setState({ status: 'loading' });
@@ -70,9 +80,9 @@ export default function ClubHubLayout() {
   const context = useMemo<ClubHubValue | null>(
     () =>
       state.status === 'ready'
-        ? { club: state.club, role: state.role, reloadClub: load }
+        ? { club: state.club, role: state.role, reloadClub }
         : null,
-    [state, load],
+    [state, reloadClub],
   );
 
   if (!loading && !session) return <Redirect href="/sign-in" />;
@@ -102,8 +112,20 @@ export default function ClubHubLayout() {
       <View style={styles.fill}>
         <View
           testID="club-hub-header-skeleton"
-          style={{ height: insets.top + HEADER_HEIGHT, backgroundColor: COVER_COLORS[0].value }}
-        />
+          style={[
+            styles.skeleton,
+            { height: insets.top + HEADER_HEIGHT, paddingTop: insets.top + 8 },
+          ]}
+        >
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Back to home"
+            onPress={() => router.replace('/home')}
+            style={styles.skeletonBack}
+          >
+            <ChevronLeftIcon size={24} color="#fff" />
+          </Pressable>
+        </View>
       </View>
     );
   }
@@ -128,6 +150,9 @@ export default function ClubHubLayout() {
 
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: colors.bg },
+  skeleton: { backgroundColor: COVER_COLORS[0].value, paddingHorizontal: 8 },
+  // Same 44pt back target, in the same spot, as ClubHubHeader's.
+  skeletonBack: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   failed: { padding: 16, gap: 16, alignItems: 'flex-start' },
   failedText: { fontFamily: type.bodyRegular, fontSize: type.size.body, color: colors.text },
 });

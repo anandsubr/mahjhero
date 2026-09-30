@@ -1,13 +1,15 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const push = vi.fn();
 const replace = vi.fn();
 let segments = ['clubs', '[id]', '(hub)', 'games'];
+// Lets a test swap in a section that reads the hub context.
+const slot = vi.hoisted(() => ({ impl: null as null | (() => React.ReactElement) }));
 
 vi.mock('expo-router', () => ({
   Redirect: ({ href }: { href: string }) => <div data-testid="redirect" data-href={href} />,
-  Slot: () => <div data-testid="slot" />,
+  Slot: () => (slot.impl ? slot.impl() : <div data-testid="slot" />),
   useRouter: () => ({ push, replace, back: vi.fn() }),
   useLocalSearchParams: () => ({ id: 'c1' }),
   useSegments: () => segments,
@@ -39,6 +41,16 @@ vi.mock('../../lib/club-cover', () => ({
 
 import ClubHubLayout from '../clubs/[id]/(hub)/_layout';
 import ClubIndex from '../clubs/[id]/index';
+import { useClubHub } from '../../components/hub/ClubHubContext';
+
+function ReloadProbe() {
+  const { club, reloadClub } = useClubHub();
+  return (
+    <button type="button" data-testid="probe" onClick={() => void reloadClub()}>
+      {club.name}
+    </button>
+  );
+}
 
 const CLUB = {
   id: 'c1',
@@ -55,6 +67,7 @@ const CLUB = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  slot.impl = null;
   segments = ['clubs', '[id]', '(hub)', 'games'];
   useSessionMock.mockReturnValue({ session: { user: { id: 'me' } }, loading: false });
   fetchClub.mockResolvedValue(CLUB);
@@ -112,5 +125,35 @@ describe('club hub layout', () => {
     fireEvent.click(screen.getByLabelText('Retry'));
     await waitFor(() => expect(screen.getByText('Riverside Mah Jongg')).toBeTruthy());
     expect(fetchClub).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows a back button to Home while loading', () => {
+    fetchClub.mockReturnValue(new Promise(() => {}));
+    render(<ClubHubLayout />);
+    expect(screen.getByTestId('club-hub-header-skeleton')).toBeTruthy();
+    fireEvent.click(screen.getByLabelText('Back to home'));
+    expect(replace).toHaveBeenCalledWith('/home');
+  });
+
+  it('keeps the ready hub when a background reload fails', async () => {
+    slot.impl = () => <ReloadProbe />;
+    render(<ClubHubLayout />);
+    await waitFor(() => expect(screen.getByTestId('probe')).toBeTruthy());
+    fetchClub.mockResolvedValueOnce(null);
+    fireEvent.click(screen.getByTestId('probe'));
+    await waitFor(() => expect(fetchClub).toHaveBeenCalledTimes(2));
+    await act(async () => {});
+    expect(screen.queryByText('Could not load this club.')).toBeNull();
+    expect(screen.getByTestId('probe').textContent).toBe('Riverside Mah Jongg');
+  });
+
+  it('a successful background reload updates the club', async () => {
+    slot.impl = () => <ReloadProbe />;
+    render(<ClubHubLayout />);
+    await waitFor(() => expect(screen.getByTestId('probe')).toBeTruthy());
+    fetchClub.mockResolvedValueOnce({ ...CLUB, name: 'Renamed Club' });
+    fireEvent.click(screen.getByTestId('probe'));
+    await waitFor(() => expect(screen.getByTestId('probe').textContent).toBe('Renamed Club'));
+    expect(screen.queryByTestId('club-hub-header-skeleton')).toBeNull();
   });
 });

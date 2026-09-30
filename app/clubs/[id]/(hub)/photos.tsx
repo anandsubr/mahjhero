@@ -7,7 +7,7 @@ import { colors, type } from '../../../../lib/theme';
 export default function PhotosSection() {
   return (
     <HubSection>
-      <Text style={styles.placeholder}>Photos is coming soon.</Text>
+      <Text style={styles.placeholder}>Photos and files are coming soon.</Text>
     </HubSection>
   );
 }
