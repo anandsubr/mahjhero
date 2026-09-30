@@ -11,6 +11,7 @@ import Button from '../../../components/Button';
 import Card from '../../../components/Card';
 import DashboardHeader from '../../../components/DashboardHeader';
 import ErrorBanner from '../../../components/ErrorBanner';
+import ClubCodeField from '../../../components/home/ClubCodeField';
 import Screen from '../../../components/Screen';
 import SkillLevelPips from '../../../components/SkillLevelPips';
 import Tag from '../../../components/Tag';
@@ -26,6 +27,7 @@ import {
   fetchPendingInvites,
   fetchRoster,
   sendClubInviteEmail,
+  setClubCode,
   setDefaultGameMode,
 } from '../../../lib/clubs';
 import type { Club, ClubInvite, ClubMember } from '../../../lib/clubs';
@@ -64,6 +66,9 @@ export default function ClubDetailScreen() {
   // Disables just the one row's icons mid-delete, not the whole screen --
   // deleting one invite has no bearing on any other row.
   const [deletingInviteId, setDeletingInviteId] = useState<string | null>(null);
+  const [codeDraft, setCodeDraft] = useState<string | null>(null);
+  const [codeError, setCodeError] = useState<string | null>(null);
+  const [codeSaving, setCodeSaving] = useState(false);
   // Written synchronously and cleared on every exit path, the same shape
   // app/clubs/index.tsx uses for runBookingAction: `busy` state alone is
   // read from the render closure, so a guard written as `if (busy) return`
@@ -273,6 +278,58 @@ export default function ClubDetailScreen() {
         onPressBack={() => router.push('/home')}
         backLabel="Back to your clubs"
       />
+
+      <View style={styles.codeRow}>
+        <Text style={styles.codeText}>{`Club code: ${club.code}`}</Text>
+        {mayInvite && codeDraft === null ? (
+          <Button
+            variant="ghost"
+            big={false}
+            onPress={() => {
+              setCodeDraft(club.code);
+              setCodeError(null);
+            }}
+            accessibilityLabel="Change club code"
+          >
+            Change
+          </Button>
+        ) : null}
+      </View>
+      {codeDraft !== null ? (
+        <View style={styles.codeEdit}>
+          <ClubCodeField
+            label="New club code"
+            value={codeDraft}
+            onChangeText={setCodeDraft}
+            error={codeError}
+          />
+          <Button
+            disabled={codeSaving}
+            onPress={async () => {
+              setCodeSaving(true);
+              const { code, error: saveError } = await setClubCode(club.id, codeDraft);
+              setCodeSaving(false);
+              if (saveError || !code) {
+                setCodeError(saveError);
+                return;
+              }
+              setClub({ ...club, code });
+              setCodeDraft(null);
+            }}
+            accessibilityLabel="Save code"
+          >
+            Save code
+          </Button>
+          <Button
+            variant="ghost"
+            big={false}
+            onPress={() => setCodeDraft(null)}
+            accessibilityLabel="Cancel"
+          >
+            Cancel
+          </Button>
+        </View>
+      ) : null}
 
       <Button
         variant="secondary"
@@ -586,4 +643,7 @@ const styles = StyleSheet.create({
     gap: space[3],
     marginTop: space[2],
   },
+  codeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  codeText: { fontFamily: type.bodySemiBold, fontSize: 14, color: colors.text },
+  codeEdit: { gap: 8 },
 });

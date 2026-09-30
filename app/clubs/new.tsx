@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { Text } from '../../components/Text';
 import ErrorBanner from '../../components/ErrorBanner';
+import ClubCodeField from '../../components/home/ClubCodeField';
 import {
   ActionBar,
   FormCard,
@@ -33,6 +34,7 @@ export default function NewClubScreen() {
   const router = useRouter();
   const [name, setName] = useState('');
   const [rhythm, setRhythm] = useState('');
+  const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -54,7 +56,7 @@ export default function NewClubScreen() {
     if (!session || saving || !canCreate) return;
     setError(null);
     setSaving(true);
-    const { clubId, error: createError } = await createClub(name, rhythm);
+    const { clubId, error: createError } = await createClub(name, rhythm, code);
     setSaving(false);
     if (createError || !clubId) {
       setError(createError ?? 'Could not create the club.');
@@ -131,6 +133,12 @@ export default function NewClubScreen() {
           multiline
           numberOfLines={3}
           inputStyle={styles.description}
+        />
+        <ClubCodeField
+          label="Club code (optional)"
+          value={code}
+          onChangeText={setCode}
+          helper="People type this on Home to join. Leave blank and we'll make one. You can change it later."
         />
       </FormCard>
     </Screen>

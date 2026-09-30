@@ -30,9 +30,17 @@ vi.mock('../../lib/session', () => ({
 }));
 
 const createClub = vi.fn();
-vi.mock('../../lib/clubs', () => ({
-  createClub: (...a: unknown[]) => createClub(...a),
-}));
+vi.mock('../../lib/clubs', async (importOriginal) => {
+  // Partial mock, not a bare replacement: ClubCodeField (rendered by this
+  // screen since Task 11) imports normalizeClubCode from this same module,
+  // so a full replacement would leave it undefined the moment the field's
+  // TextInput fires onChangeText.
+  const actual = await importOriginal<typeof import('../../lib/clubs')>();
+  return {
+    ...actual,
+    createClub: (...a: unknown[]) => createClub(...a),
+  };
+});
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -72,7 +80,11 @@ describe('new club screen', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Create the club' }));
     await waitFor(() =>
-      expect(createClub).toHaveBeenCalledWith('Oakfield Tiles', 'Thursday evenings at the library'),
+      expect(createClub).toHaveBeenCalledWith(
+        'Oakfield Tiles',
+        'Thursday evenings at the library',
+        '',
+      ),
     );
   });
 
@@ -104,5 +116,29 @@ describe('new club screen', () => {
     await screen.findByText('Start a club');
     fireEvent.click(screen.getByRole('button', { name: 'Back to your clubs' }));
     expect(push).toHaveBeenCalledWith('/home');
+  });
+
+  it('passes the optional club code to createClub', async () => {
+    createClub.mockResolvedValueOnce({ clubId: 'c1', error: null });
+    render(<NewClubScreen />);
+    fireEvent.change(screen.getByLabelText('Club name'), { target: { value: 'North Side' } });
+    fireEvent.change(screen.getByLabelText('Club code (optional)'), {
+      target: { value: 'north side' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Create the club' }));
+    await waitFor(() =>
+      expect(createClub).toHaveBeenCalledWith('North Side', '', 'NORTHSIDE'),
+    );
+  });
+
+  it('shows a taken code error', async () => {
+    createClub.mockResolvedValueOnce({ clubId: null, error: 'That code is taken.' });
+    render(<NewClubScreen />);
+    fireEvent.change(screen.getByLabelText('Club name'), { target: { value: 'North Side' } });
+    fireEvent.change(screen.getByLabelText('Club code (optional)'), {
+      target: { value: 'OAK2' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Create the club' }));
+    expect(await screen.findByText('That code is taken.')).toBeTruthy();
   });
 });
