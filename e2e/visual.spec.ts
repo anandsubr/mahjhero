@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import {
   mintSession,
   seedClubAsMember,
+  seedClubMedia,
   seedClubWithEvent,
   seedEmptyGroupThread,
   seedMessageCandidates,
@@ -759,14 +760,132 @@ test.describe('signed in', () => {
         ]);
       });
 
-      // The hub's Photos section (app/clubs/[id]/(hub)/photos.tsx) -- nothing
-      // built yet but the "coming soon" placeholder (`PhotosSection`'s own
-      // docstring), needing no seeded data beyond the club itself.
-      test(`club photos at ${vp.name}`, async ({ page }) => {
+      // The hub's Photos section (app/clubs/[id]/(hub)/photos.tsx), EMPTY:
+      // the Photos/Files segmented control, the round "+" button and the
+      // photos empty line. `seeded` is reseeded per test by this block's own
+      // `beforeEach`, and only the populated tests below call
+      // `seedClubMedia`, so this club has no media -- no separate club
+      // needed. The "+" button's label is asserted because it is the only
+      // place the empty line's "Tap +" instruction points at.
+      test(`club photos empty at ${vp.name}`, async ({ page }) => {
         await page.setViewportSize({ width: vp.width, height: vp.height });
         await page.goto(`/clubs/${seeded.clubId}/photos`);
-        await expect(page.getByText('Photos and files are coming soon.')).toBeVisible();
+        await expect(page.getByTestId('hub-section-scroll').getByRole('tab', { name: 'Photos', selected: true })).toBeVisible();
+        await expect(page.getByText('No photos yet. Tap + to add the first one.')).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Add photos' })).toBeVisible();
+        await captureScreen(page, vp, `club-photos-empty-${vp.name}.png`, CLUB_HUB_HEADER_CODE_ROW_MASK);
+      });
+
+      // The same section on its Files tab, empty -- reached by the tab, not
+      // a URL, since the segment is local state (`PhotosSection`'s `kind`).
+      // The "+" button's label switches with the tab ("Add a file").
+      test(`club files empty at ${vp.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        await page.goto(`/clubs/${seeded.clubId}/photos`);
+        await page.getByTestId('hub-section-scroll').getByRole('tab', { name: 'Files' }).click();
+        await expect(page.getByTestId('hub-section-scroll').getByRole('tab', { name: 'Files', selected: true })).toBeVisible();
+        await expect(page.getByText('No files yet. Tap + to add one.')).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Add a file' })).toBeVisible();
+        await captureScreen(page, vp, `club-files-empty-${vp.name}.png`, CLUB_HUB_HEADER_CODE_ROW_MASK);
+      });
+
+      // The populated 3-column grid: five real JPEGs (`seedClubMedia`,
+      // e2e/session.ts), so a full row of three plus a row of two and one
+      // spacer cell. Each fixture is its own colour, so a grid showing the
+      // wrong photo in a cell is visible in the PNG.
+      //
+      // The images are fetched through signed URLs AFTER the rows load
+      // (`fetchUrls`), so a screenshot taken once the cells exist can still
+      // catch grey placeholders or half-decoded images. react-native-web's
+      // `Image` paints a background-image div plus a hidden `<img>` with the
+      // same src; waiting until every `<img>` in the grid reports
+      // `complete && naturalWidth > 0` is proof all five actually decoded --
+      // a broken signed URL reports naturalWidth 0 and fails here, not in a
+      // baseline that just shows five grey squares.
+      test(`club photos at ${vp.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        await seedClubMedia(seeded.clubId, userId, userId.slice(0, 8));
+        await page.goto(`/clubs/${seeded.clubId}/photos`);
+        await expect(page.getByRole('button', { name: 'Open photo 1 of 5' })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Open photo 5 of 5' })).toBeVisible();
+        const images = page.locator('[data-testid="photo-grid"] img');
+        await expect(images).toHaveCount(5);
+        await expect
+          .poll(() =>
+            images.evaluateAll((els) =>
+              els.every((el) => (el as HTMLImageElement).complete && (el as HTMLImageElement).naturalWidth > 0),
+            ),
+          )
+          .toBe(true);
         await captureScreen(page, vp, `club-photos-${vp.name}.png`, CLUB_HUB_HEADER_CODE_ROW_MASK);
+      });
+
+      // The populated Files list: three surface-card rows (PDF, CSV, TXT
+      // tiles), newest first. The meta line is `type · size · uploader`
+      // (FileRow), asserted whole for every row -- the sizes are the real
+      // byte lengths of e2e/fixtures/files/, and the uploader alternates
+      // between the filler and the viewer, so a row showing the wrong
+      // uploader or a mis-rounded size fails here, not on pixels (a one-word
+      // swap is under the 120px budget -- docs/testing.md). The viewer's
+      // own rows and an organizer's view both get "More options"; the
+      // viewer hosts this club, so every row has one.
+      //
+      // Another member's rows name them: uploader names come from
+      // `fetch_club_media` (a security definer RPC), because `profiles` is
+      // readable own-row-only (20260822180000_club_roster_narrow_profiles.sql)
+      // and the earlier `profiles(display_name)` embed read "Someone" for
+      // every row but the viewer's own (found by this test, 2026-10-17).
+      test(`club files at ${vp.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        const { uploaderName } = await seedClubMedia(seeded.clubId, userId, userId.slice(0, 8));
+        await page.goto(`/clubs/${seeded.clubId}/photos`);
+        await page.getByTestId('hub-section-scroll').getByRole('tab', { name: 'Files' }).click();
+        await expect(page.getByText('league-rules.pdf')).toBeVisible();
+        await expect(page.getByText(`PDF · 1 KB · ${uploaderName}`)).toBeVisible();
+        await expect(page.getByText('CSV · 3 KB · Wei Chen')).toBeVisible();
+        await expect(page.getByText(`TXT · 1 KB · ${uploaderName}`)).toBeVisible();
+        await expect(page.getByRole('button', { name: 'More options' })).toHaveCount(3);
+        await captureScreen(page, vp, `club-files-${vp.name}.png`, CLUB_HUB_HEADER_CODE_ROW_MASK);
+      });
+
+      // The full-screen viewer, opened on the SECOND photo (not the first)
+      // so this also proves the tapped index is what opens: photo 2 is the
+      // viewer's own teal 600x800 JPEG, a different colour and aspect from
+      // photo 1's red 800x600, and the wait below names those exact
+      // dimensions. The caption's date comes from the seeded `created_at`
+      // read in the pinned America/New_York timezone (2026-08-20T23:00Z is
+      // Thu 20 Aug there). The viewer's OWN photo, not the filler's: this
+      // baseline was taken while another member's caption still read "Added
+      // by Someone" (the uploader-name bug `club files` above covers). The
+      // viewer's backdrop is 92% black, not opaque, so the hub header --
+      // random club code included -- still shows faintly through it; hence
+      // `CLUB_HUB_HEADER_CODE_ROW_MASK` here too (the mask paints over the
+      // backdrop, which is fine: that strip is not what this pictures).
+      test(`club photo viewer at ${vp.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        await seedClubMedia(seeded.clubId, userId, userId.slice(0, 8));
+        await page.goto(`/clubs/${seeded.clubId}/photos`);
+        await page.getByRole('button', { name: 'Open photo 2 of 5' }).click();
+        await expect(page.getByRole('button', { name: 'Close image viewer' })).toBeVisible();
+        await expect(page.getByText('Added by Wei Chen · Thu 20 Aug')).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Previous image' })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Next image' })).toBeVisible();
+        await expect
+          .poll(() =>
+            page.evaluate(() =>
+              Array.from(document.querySelectorAll('img')).some(
+                // Outside the grid: the grid behind the Modal holds the
+                // same teal JPEG, and its `<img>` would satisfy this alone.
+                (el) =>
+                  !el.closest('[data-testid="photo-grid"]') &&
+                  el.complete &&
+                  el.naturalWidth === 600 &&
+                  el.naturalHeight === 800,
+              ),
+            ),
+          )
+          .toBe(true);
+        await captureScreen(page, vp, `club-photo-viewer-${vp.name}.png`, CLUB_HUB_HEADER_CODE_ROW_MASK);
       });
 
       // Club settings (app/clubs/[id]/settings.tsx) -- organizers only,

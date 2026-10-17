@@ -871,7 +871,10 @@ select is(
        'public.set_payment_status(uuid, uuid, boolean)',
        'public.event_payment_status(uuid)',
        'public.my_calendar_feed_token()',
-       'public.reset_calendar_feed_token()'
+       'public.reset_calendar_feed_token()',
+       'public.add_club_media(uuid, text, text, text, text, int, int, int)',
+       'public.remove_club_media(uuid)',
+       'public.fetch_club_media(uuid, text, timestamptz, int)'
      ]) as f
    ) expected
    where not exists (
@@ -983,7 +986,10 @@ select is(
          'public.set_payment_status(uuid, uuid, boolean)',
          'public.event_payment_status(uuid)',
          'public.my_calendar_feed_token()',
-         'public.reset_calendar_feed_token()'
+         'public.reset_calendar_feed_token()',
+         'public.add_club_media(uuid, text, text, text, text, int, int, int)',
+         'public.remove_club_media(uuid)',
+         'public.fetch_club_media(uuid, text, timestamptz, int)'
        ]) as f
        where to_regprocedure(f) = p.oid::regprocedure
      )),
