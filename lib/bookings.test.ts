@@ -518,8 +518,14 @@ describe('BOOKING_REFUSALS (self-audit against the migrations)', () => {
     // The club page only offers the edit-code control to organizers, so
     // this path is believed unreachable in practice, but the client-side
     // mapping itself does not exist.
+    // Also raised by set_club_cover/set_club_cover_color (non-organizer),
+    // and by add_club_media/remove_club_media (20261017110000_club_media.sql)
+    // for a non-member adder, or a remover who is neither the uploader nor an
+    // organizer (or an unknown media id). The Photos & Files client
+    // (lib/club-media.ts) only offers Add to members and Remove to the
+    // uploader/organizers; none of these is this module's.
     'not allowed':
-      'raised by set_club_code for a non-organizer — the club page only offers the edit to organizers, so the client falls back to GENERIC_ERROR',
+      'raised by set_club_code/set_club_cover/set_club_cover_color for a non-organizer and by add_club_media/remove_club_media for a non-member or non-uploader — those screens only offer the controls to callers allowed to use them, so the client falls back to GENERIC_ERROR; not this module’s',
 
     // Club codes (20260929100000_club_codes.sql): unlike the rest of
     // Category 3 above, these ARE mapped client-side — just not by this
@@ -559,8 +565,21 @@ describe('BOOKING_REFUSALS (self-audit against the migrations)', () => {
     // set_club_cover's path guard (20260930100100): new_path is always built
     // client-side from the club id it is uploading under, so a foreign
     // prefix is not a path a real client ever sends.
+    // add_club_media raises the same code when the path is not under the
+    // club's photos/ (or files/) folder; lib/club-media.ts builds every path
+    // from the club id and kind it is uploading, so it is unreachable too.
     'invalid_path':
-      'raised by set_club_cover — the client always builds new_path from the club id it is uploading under, so a foreign prefix is unreachable',
+      'raised by set_club_cover and add_club_media — the client always builds the path from the club id (and kind) it is uploading under, so a foreign prefix is unreachable',
+    // add_club_media's remaining refusals (20261017110000_club_media.sql).
+    // lib/club-media.ts only ever passes 'photo' or 'file', and refuses a
+    // disallowed type or an over-10 MB file client-side with its own copy
+    // before uploading, so these are server-side belts, not this module's.
+    'invalid_kind':
+      'raised by add_club_media — lib/club-media.ts only ever passes photo or file; not this module’s',
+    'file_not_allowed':
+      'raised by add_club_media — lib/club-media.ts refuses disallowed file types client-side with its own copy first; not this module’s',
+    'file_too_large':
+      'raised by add_club_media — lib/club-media.ts refuses files over 10 MB client-side with its own copy first; not this module’s',
     // clubs_validate_timezone is an INSERT/UPDATE trigger on public.clubs;
     // lib/clubs.ts only ever writes a timezone from a fixed picker of valid
     // IANA names, so this is defence in depth, not a reachable client path.
