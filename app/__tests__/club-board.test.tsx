@@ -5,6 +5,9 @@ import ClubBoardScreen from '../messages/club/[threadId]/index';
 import { glyphForClub } from '../../lib/dashboard';
 
 const push = vi.fn();
+const back = vi.fn();
+const replace = vi.fn();
+const canGoBack = vi.fn(() => true);
 
 // Forwards to, rather than replaces, the identity-keyed `useEffect` double
 // below -- a bare `vi.fn()` swapped in for `useFocusEffect` would drop the
@@ -18,7 +21,7 @@ const useFocusEffectSpy = vi.fn();
 
 vi.mock('expo-router', () => ({
   Redirect: () => null,
-  useRouter: () => ({ push, back: vi.fn(), replace: vi.fn() }),
+  useRouter: () => ({ push, back, replace, canGoBack }),
   usePathname: () => '/messages/club/t1',
   useLocalSearchParams: () => ({ threadId: 't1' }),
   // A bare `(cb) => cb()` fires on every render, which the real hook never
@@ -334,11 +337,23 @@ describe('the club board', () => {
       expect(within(tile).getByTestId(`glyph-${glyphForClub('c1')}`)).toBeTruthy();
     });
 
-    it('shows a back chevron that returns to /messages', async () => {
+    it('goes back through history when there is some', async () => {
+      canGoBack.mockReturnValue(true);
       render(<ClubBoardScreen />);
       await screen.findByText('Cedar Falls Mah Jongg');
       fireEvent.click(screen.getByLabelText('Back to Messages'));
-      expect(push).toHaveBeenCalledWith('/messages');
+      expect(back).toHaveBeenCalled();
+      expect(replace).not.toHaveBeenCalled();
+    });
+
+    it('lands on the club Board, not the inbox, with no history', async () => {
+      canGoBack.mockReturnValue(false);
+      render(<ClubBoardScreen />);
+      await screen.findByText('Cedar Falls Mah Jongg');
+      fireEvent.click(screen.getByLabelText('Back to Messages'));
+      expect(replace).toHaveBeenCalledWith('/clubs/c1/board');
+      expect(back).not.toHaveBeenCalled();
+      expect(push).not.toHaveBeenCalledWith('/messages');
     });
 
     // The pill no longer navigates -- matching app/messages/club/new.tsx's

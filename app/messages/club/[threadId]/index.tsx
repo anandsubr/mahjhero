@@ -98,7 +98,12 @@ export default function ClubBoardScreen() {
       */}
       <CompactHeader
         variant="inset"
-        onBack={() => router.push('/messages')}
+        onBack={() => {
+          // The board lives inside the club (hub Board section): with no
+          // history (deep link, cold reload) land there, not on the inbox.
+          if (router.canGoBack()) router.back();
+          else router.replace(thread ? `/clubs/${thread.club_id}/board` : '/messages');
+        }}
         backLabel="Back to Messages"
         kind={thread ? kind : null}
         clubId={kind === 'club' ? thread?.club_id : null}

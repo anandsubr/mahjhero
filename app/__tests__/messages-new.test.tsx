@@ -5,10 +5,12 @@ import NewMessageScreen from '../messages/new';
 
 const push = vi.fn();
 const replace = vi.fn();
+const back = vi.fn();
+const canGoBack = vi.fn(() => true);
 
 vi.mock('expo-router', () => ({
   Redirect: () => null,
-  useRouter: () => ({ push, replace, back: vi.fn() }),
+  useRouter: () => ({ push, replace, back, canGoBack }),
   usePathname: () => '/messages/new',
   // Wrapped in a real `useEffect` keyed on the callback's identity, not
   // called inline on every render: `(cb) => cb()` fires on every render,
@@ -50,6 +52,7 @@ vi.mock('../../lib/messages', async () => {
 describe('new message screen', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    canGoBack.mockReturnValue(true);
     fetchFriends.mockResolvedValue([
       { profile_id: 'p1', display_name: 'Bob Reyes', club_names: [] },
     ]);
@@ -166,10 +169,20 @@ describe('new message screen', () => {
 
   // This screen carries its own explicit back link
   // (2026-09-01-back-links-design.md).
-  it('draws a back link to the messages list', async () => {
+  it('goes back through history when there is some', async () => {
     render(<NewMessageScreen />);
     await screen.findByText('New message');
     fireEvent.click(screen.getByRole('button', { name: 'Back to messages' }));
-    expect(push).toHaveBeenCalledWith('/messages');
+    expect(back).toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the inbox with no history', async () => {
+    canGoBack.mockReturnValue(false);
+    render(<NewMessageScreen />);
+    await screen.findByText('New message');
+    fireEvent.click(screen.getByRole('button', { name: 'Back to messages' }));
+    expect(replace).toHaveBeenCalledWith('/messages');
+    expect(back).not.toHaveBeenCalled();
   });
 });

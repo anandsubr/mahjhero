@@ -12,6 +12,7 @@ import { groupSeparatorLabel } from '../../lib/messages';
 const push = vi.fn();
 const replace = vi.fn();
 const back = vi.fn();
+const canGoBack = vi.fn(() => true);
 
 vi.mock('expo-router', () => ({
   // Renders the href rather than null: this screen redirects a CLUB thread
@@ -21,7 +22,7 @@ vi.mock('expo-router', () => ({
   Redirect: ({ href }: { href: string }) => (
     <div data-testid="redirect" data-href={href} />
   ),
-  useRouter: () => ({ push, back, replace }),
+  useRouter: () => ({ push, back, replace, canGoBack }),
   usePathname: () => '/messages/t1',
   useLocalSearchParams: () => ({ threadId: 't1' }),
   // Wrapped in a real `useEffect` keyed on the callback's identity, not
@@ -296,6 +297,7 @@ const MESSAGES = [
 describe('thread screen', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    canGoBack.mockReturnValue(true);
     // clearAllMocks resets call history but not a mock's configured return
     // value, so both need re-establishing explicitly each test -- otherwise
     // whatever the previous test last set (a reassigned session, a leftover
@@ -1163,7 +1165,7 @@ describe('thread screen', () => {
     render(<ThreadScreen />);
     await screen.findByText('Sara, Peter');
     fireEvent.click(screen.getByLabelText('Back to Messages'));
-    expect(push).toHaveBeenCalledWith('/messages');
+    expect(back).toHaveBeenCalled();
   });
 
   it('still offers the way back when the thread cannot be loaded', async () => {
@@ -1250,6 +1252,45 @@ describe('thread screen', () => {
         screen.queryByRole('button', { name: /Tuesday night mahjong/ }),
       ).toBeNull();
       expect(screen.queryByLabelText('Conversation options')).toBeNull();
+    });
+  });
+
+  describe('back link', () => {
+    const clickBack = () => fireEvent.click(screen.getByLabelText('Back to Messages'));
+
+    it('goes back through history when there is some, for any thread kind', async () => {
+      fetchThread.mockResolvedValueOnce(GAME_THREAD);
+      render(<ThreadScreen />);
+      await screen.findByLabelText('Back to Messages');
+      clickBack();
+      expect(back).toHaveBeenCalled();
+      expect(replace).not.toHaveBeenCalled();
+    });
+
+    it('lands on the game page from a game chat with no history', async () => {
+      canGoBack.mockReturnValue(false);
+      fetchThread.mockResolvedValueOnce(GAME_THREAD);
+      render(<ThreadScreen />);
+      await screen.findByText('Tuesday night mahjong');
+      clickBack();
+      expect(replace).toHaveBeenCalledWith('/clubs/c1/events/e1');
+    });
+
+    it('lands on the inbox from a group chat with no history', async () => {
+      canGoBack.mockReturnValue(false);
+      render(<ThreadScreen />);
+      await screen.findByLabelText('Back to Messages');
+      await waitFor(() => expect(fetchThread).toHaveBeenCalled());
+      clickBack();
+      expect(replace).toHaveBeenCalledWith('/messages');
+    });
+
+    it('lands on the inbox before the thread has loaded, with no history', async () => {
+      canGoBack.mockReturnValue(false);
+      fetchThread.mockReturnValueOnce(new Promise(() => {}));
+      render(<ThreadScreen />);
+      clickBack();
+      expect(replace).toHaveBeenCalledWith('/messages');
     });
   });
 });
