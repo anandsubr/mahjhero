@@ -712,10 +712,18 @@ test.describe('signed in', () => {
         await page.goto(`/clubs/${clubId}/board`);
         await expect(page.getByText('Cedar Falls Mah Jongg', { exact: true })).toBeVisible();
         await expect(
-          page.getByText('Fall tournament signup opens Monday', { exact: true }),
+          page.getByText(/^Fall tournament signup opens Monday/),
         ).toBeVisible();
-        await expect(page.getByText('4 replies')).toBeVisible();
-        await captureScreen(page, vp, `club-hub-board-${vp.name}.png`, CLUB_HUB_HEADER_CODE_ROW_MASK);
+        await expect(page.getByText('Everyone in the club sees posts here')).toBeVisible();
+        await expect(page.getByText('Most recent')).toBeVisible();
+        await expect(page.getByText('4 comments', { exact: true })).toBeVisible();
+        await expect(page.getByText('View all 4 comments')).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Remove your heart' })).toBeVisible();
+        await expect(page.getByLabel('Write to the club')).toBeVisible();
+        await captureScreen(page, vp, `club-hub-board-${vp.name}.png`, [
+          ...CLUB_HUB_HEADER_CODE_ROW_MASK,
+          ...MEMBER_AVATAR_MASK,
+        ]);
       });
 
       // The hub's Ranks section (app/clubs/[id]/(hub)/ranks.tsx) -- the same
@@ -982,13 +990,13 @@ test.describe('signed in', () => {
         await page.setViewportSize({ width: vp.width, height: vp.height });
         const { threadId } = await seedPopulatedBoard(userId, userId.slice(0, 8));
         await page.goto(`/messages/club/${threadId}`);
-        // The announcement's own title (postTitle, lib/messages.ts, takes an
-        // announcement's `subject` verbatim) and the plain post's title (the
-        // body's own first line) -- proof the board rendered more than one
+        // The feed shows each root's full body (no separate title row): the
+        // announcement's body opens with its subject line, and the plain
+        // post is a one-liner -- proof the board rendered more than one
         // row, and that the announcement styling actually reached a real
         // post rather than being asserted against nothing.
         await expect(
-          page.getByText('Fall tournament signup opens Monday', { exact: true }),
+          page.getByText(/^Fall tournament signup opens Monday/),
         ).toBeVisible();
         await expect(
           page.getByText('Anyone free to help set up tables Saturday morning?'),
@@ -998,9 +1006,20 @@ test.describe('signed in', () => {
         // (docs/testing.md). A regression that collapsed every count to the
         // same value would still "pass" a screenshot-only check if both rows
         // happened to read the same text.
-        await expect(page.getByText('4 replies')).toBeVisible();
-        await expect(page.getByText('2 replies')).toBeVisible();
-        await captureScreen(page, vp, `club-board-${vp.name}.png`);
+        await expect(page.getByText('4 comments', { exact: true })).toBeVisible();
+        await expect(page.getByText('2 comments', { exact: true })).toBeVisible();
+        // The comments peek (2 latest of 4) and its "View all" link, plus the
+        // seeded hearts: root1 has two (unfilled), root2 has the viewer's.
+        await expect(page.getByText('View all 4 comments')).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Heart this post' })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Remove your heart' })).toBeVisible();
+        // The compact header's club tile glyph (CompactHeader gives it
+        // testID "thread-header-avatar-club", not the global mask's id) is
+        // chosen from the random club id, so it differs per run.
+        await captureScreen(page, vp, `club-board-${vp.name}.png`, [
+          ...MEMBER_AVATAR_MASK,
+          '[data-testid="thread-header-avatar-club"]',
+        ]);
       });
 
       // The post screen, pictured for the first time -- and, like the board
