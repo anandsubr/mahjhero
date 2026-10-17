@@ -1715,6 +1715,143 @@ export async function seedThreadWithAttachments(
   return { threadId: thread.id };
 }
 
+/** Tiny real documents under e2e/fixtures/files/, with the mime type
+ * `uploadClubFile` (lib/club-media.ts) records for each extension. Sizes are
+ * read off the bytes at upload time, not written here, so `size_bytes` can
+ * never drift from the object it describes. Each is kept just over 512
+ * bytes so `formatBytes` reads "1 KB"/"3 KB" rather than "0 KB". */
+const FILE_FIXTURES = {
+  'league-rules.pdf': 'application/pdf',
+  'standings.csv': 'text/csv',
+  'bring-list.txt': 'text/plain',
+} as const;
+
+const FILE_FIXTURES_DIR = path.join(__dirname, 'fixtures', 'files');
+
+/**
+ * Seeds a club's Photos and Files library (club-hub phase 5,
+ * app/clubs/[id]/(hub)/photos.tsx): five photos and three files, split
+ * between the viewer and a filler member ("Nora Fitzgerald"), so the
+ * 3-column grid has a full row plus a partial one (the spacer cells
+ * `PhotoGrid` pads a short row with), and the file list shows three
+ * different type tiles and both uploaders' names in its meta lines.
+ *
+ * Real objects in the REAL private `club-media` bucket, at the same
+ * `{club}/photos/{uuid}.jpg` and `{club}/files/{uuid}/{name}` paths
+ * `uploadClubPhotos`/`uploadClubFile` write -- for the reason
+ * `uploadAttachmentFixture` above gives: the grid resolves every photo
+ * through a real `createSignedUrls` call, and a row with no object behind it
+ * would picture a broken image. Then direct `club_media` inserts rather than
+ * `add_club_media`, because that RPC checks `auth.uid()` (and that the
+ * object's `owner_id` is the caller), and service_role carries no JWT here
+ * -- the same reason every other row in this file is a direct insert.
+ *
+ * `created_at` is fixed on every row, a day apart and all BEFORE the page's
+ * frozen clock (2026-08-22T16:00:00Z, e2e/visual.spec.ts), because the
+ * section orders newest first and the viewer's caption prints the day
+ * (`mediaCaption`) -- left at its default, the order would depend on insert
+ * timing and the caption on the day the suite runs. Photos and files use
+ * the fixtures' real width/height (`ATTACHMENT_FIXTURES`) and byte length.
+ *
+ * Nora is added to the club's roster too: only a member can add media in
+ * the real app, so a non-member uploader would picture a state the app
+ * cannot reach.
+ *
+ * Seeds INTO the caller's club rather than a club of its own: the
+ * `with a seeded club` describe in e2e/visual.spec.ts reseeds that club per
+ * test, so the empty-state baselines (which never call this) get a club
+ * with no media, and nothing seeded here reaches another test.
+ */
+export async function seedClubMedia(
+  clubId: string,
+  viewerId: string,
+  suffix: string,
+): Promise<{ uploaderName: string }> {
+  const admin = adminClient('seed club media');
+  const uploaderName = 'Nora Fitzgerald';
+  const nora = await seedFillerProfile(admin, uploaderName, 'club-media', suffix);
+
+  const { error: memberError } = await admin.from('club_members').insert({
+    club_id: clubId,
+    profile_id: nora,
+    role: 'member',
+    joined_at: '2026-08-01T00:00:00Z',
+  });
+  if (memberError) {
+    throw new Error(`seedClubMedia: roster insert failed: ${JSON.stringify(memberError)}`);
+  }
+
+  const upload = async (storagePath: string, bytes: Buffer, contentType: string) => {
+    const { error } = await admin.storage
+      .from('club-media')
+      .upload(storagePath, bytes, { contentType });
+    if (error) {
+      throw new Error(`seedClubMedia: upload of ${storagePath} failed: ${JSON.stringify(error)}`);
+    }
+  };
+
+  // Newest first, as the grid shows them: Nora's red photo lands top-left
+  // and is what the viewer baseline opens on.
+  const photos: { fixture: keyof typeof ATTACHMENT_FIXTURES; by: string; at: string }[] = [
+    { fixture: 'img-red.jpg', by: nora, at: '2026-08-21T23:00:00Z' },
+    { fixture: 'img-teal.jpg', by: viewerId, at: '2026-08-20T23:00:00Z' },
+    { fixture: 'img-gold.jpg', by: nora, at: '2026-08-19T23:00:00Z' },
+    { fixture: 'img-purple.jpg', by: viewerId, at: '2026-08-18T23:00:00Z' },
+    { fixture: 'img-green.jpg', by: nora, at: '2026-08-17T23:00:00Z' },
+  ];
+  const photoRows = await Promise.all(
+    photos.map(async ({ fixture, by, at }) => {
+      const bytes = readFileSync(path.join(ATTACHMENT_FIXTURES_DIR, fixture));
+      const storage_path = `${clubId}/photos/${randomUUID()}.jpg`;
+      await upload(storage_path, bytes, 'image/jpeg');
+      return {
+        club_id: clubId,
+        kind: 'photo',
+        storage_path,
+        file_name: fixture,
+        mime_type: 'image/jpeg',
+        size_bytes: bytes.length,
+        width: ATTACHMENT_FIXTURES[fixture].width,
+        height: ATTACHMENT_FIXTURES[fixture].height,
+        uploaded_by: by,
+        created_at: at,
+      };
+    }),
+  );
+
+  const files: { fixture: keyof typeof FILE_FIXTURES; by: string; at: string }[] = [
+    { fixture: 'league-rules.pdf', by: nora, at: '2026-08-21T22:00:00Z' },
+    { fixture: 'standings.csv', by: viewerId, at: '2026-08-20T22:00:00Z' },
+    { fixture: 'bring-list.txt', by: nora, at: '2026-08-19T22:00:00Z' },
+  ];
+  const fileRows = await Promise.all(
+    files.map(async ({ fixture, by, at }) => {
+      const bytes = readFileSync(path.join(FILE_FIXTURES_DIR, fixture));
+      const storage_path = `${clubId}/files/${randomUUID()}/${fixture}`;
+      await upload(storage_path, bytes, FILE_FIXTURES[fixture]);
+      return {
+        club_id: clubId,
+        kind: 'file',
+        storage_path,
+        file_name: fixture,
+        mime_type: FILE_FIXTURES[fixture],
+        size_bytes: bytes.length,
+        width: null,
+        height: null,
+        uploaded_by: by,
+        created_at: at,
+      };
+    }),
+  );
+
+  const { error: mediaError } = await admin.from('club_media').insert([...photoRows, ...fileRows]);
+  if (mediaError) {
+    throw new Error(`seedClubMedia: club_media insert failed: ${JSON.stringify(mediaError)}`);
+  }
+
+  return { uploaderName };
+}
+
 /**
  * Seeds a POPULATED board — a club of its own, with a club thread carrying
  * two posts that each have real replies, so the board and post screens
