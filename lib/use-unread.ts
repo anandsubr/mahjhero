@@ -3,9 +3,10 @@ import { useFocusEffect } from 'expo-router';
 import { fetchUnreadCounts } from './messages';
 import { useSession } from './session';
 
-export type UnreadCounts = { total: number; byClub: Record<string, number> };
+/** `personal` is the null-club row: direct + group unread, exactly. */
+export type UnreadCounts = { total: number; byClub: Record<string, number>; personal: number };
 
-const EMPTY: UnreadCounts = { total: 0, byClub: {} };
+const EMPTY: UnreadCounts = { total: 0, byClub: {}, personal: 0 };
 
 /**
  * One RPC serving both badges: a total for the Messages tab and a per-club
@@ -51,11 +52,13 @@ export function useUnreadCounts(): UnreadCounts {
         }
         const byClub: Record<string, number> = {};
         let total = 0;
+        let personal = 0;
         for (const row of rows) {
           total += row.unread;
           if (row.club_id) byClub[row.club_id] = row.unread;
+          else personal = row.unread;
         }
-        setCounts({ total, byClub });
+        setCounts({ total, byClub, personal });
       });
 
       return () => {

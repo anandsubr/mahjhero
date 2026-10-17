@@ -50,7 +50,7 @@ export default function HomeScreen() {
   const email = session?.user.email;
   const router = useRouter();
   const guides = useGuides();
-  const { byClub: unreadByClub } = useUnreadCounts();
+  const { byClub: unreadByClub, personal: personalUnread } = useUnreadCounts();
   const alertsUnread = useNotificationsUnread();
 
   const [clubs, setClubs] = useState<Club[] | null>(null);
@@ -245,6 +245,8 @@ export default function HomeScreen() {
       // The email's first letter until the profile's display name arrives.
       initial={initial || (email ?? '').charAt(0).toUpperCase()}
       unread={alertsUnread > 0}
+      messagesUnread={personalUnread > 0}
+      onMessages={() => router.push('/messages')}
       onAlerts={() => router.push('/alerts')}
       onProfile={() => router.push('/profile')}
     />

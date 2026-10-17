@@ -272,8 +272,16 @@ export default function ThreadScreen() {
         and says nothing.
       */}
       <CompactHeader
-        onBack={() => router.push('/messages')}
-        backLabel="Back to Messages"
+        onBack={() => {
+          // Game chats live inside the club: with no history, land on the
+          // game page. Direct/group chats (and an unloaded thread) fall
+          // back to the inbox.
+          if (router.canGoBack()) router.back();
+          else if (thread?.club_id && thread.event_id) {
+            router.replace(`/clubs/${thread.club_id}/events/${thread.event_id}`);
+          } else router.replace('/messages');
+        }}
+        backLabel="Back"
         kind={thread ? kind : null}
         title={title}
         subtitle={kind === 'group' ? memberCountText : null}

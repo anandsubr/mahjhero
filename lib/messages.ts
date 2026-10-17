@@ -10,8 +10,8 @@ export type ThreadKind = 'club' | 'game' | 'group' | 'direct';
  * `thread_id` is null for a club thread nobody has opened yet — the row is
  * still listed regardless, because every active membership gets a club
  * thread row whether it has ever been opened or not, and the client calls
- * `openThreadForClub(club_id)` on tap. Every caller navigates that way,
- * existing row or not, so there is one path rather than two.
+ * `openThreadForClub(club_id)` before opening the board (the Board section
+ * and club entry points do this; the inbox no longer lists club rows).
  */
 export type ThreadListRow = {
   thread_id: string | null;
@@ -679,26 +679,6 @@ export function sortThreads(rows: ThreadListRow[]): ThreadListRow[] {
     if (b.last_message_at === null) return -1;
     return a.last_message_at < b.last_message_at ? 1 : -1;
   });
-}
-
-/**
- * The messages screen's one and only order, replacing the old "Recent | By
- * club" choice. Club threads first -- there is exactly one per club the
- * member belongs to, and `fetch_my_threads` always lists it, empty or not --
- * then everything else (game, group and direct) interleaved, newest first.
- *
- * Sorting the whole list by recency FIRST and then partitioning by kind
- * (rather than filtering first and sorting each half separately) keeps the
- * partition stable: a club band still reads newest-active-club-first among
- * itself, for free, from the one sort. Pinning clubs at the top is what
- * makes a separate sort control redundant -- it already does the grouping
- * "By club" did and the recency "Recent" did, in the one list.
- */
-export function orderThreadsForList(rows: ThreadListRow[]): ThreadListRow[] {
-  const sorted = sortThreads(rows);
-  const clubs = sorted.filter((r) => r.kind === 'club');
-  const rest = sorted.filter((r) => r.kind !== 'club');
-  return [...clubs, ...rest];
 }
 
 /**

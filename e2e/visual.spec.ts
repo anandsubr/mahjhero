@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { createClient } from '@supabase/supabase-js';
 import {
   mintSession,
+  seedClubAsMember,
   seedClubWithEvent,
   seedEmptyGroupThread,
   seedMessageCandidates,
@@ -58,6 +59,16 @@ const CLUB_CODE_MASK = ['text=/Club code:/'];
  * components/hub/ClubHubHeader.tsx) rather than only the code text.
  */
 const CLUB_HUB_HEADER_CODE_ROW_MASK = ['[data-testid="club-hub-code-row"]'];
+
+/**
+ * The Members rows' initials avatar (components/hub/MemberRow.tsx) is filled
+ * by `avatarColorFor(profile_id)`, and every seeded profile id is random per
+ * run -- so the circle's colour differs run to run (same class as the
+ * leaderboard avatar). The circle is the View whose only child is the
+ * two-letter initials Text; masking it hides the colour but the
+ * name, tag and skill beside it still pin the row.
+ */
+const MEMBER_AVATAR_MASK = ['div:has(> div[dir="auto"]:text-matches("^[A-Z]{2}$"))'];
 
 /** Fonts are fetched, so a screenshot taken before they land is a false diff. */
 async function settle(page: Page) {
@@ -664,11 +675,27 @@ test.describe('signed in', () => {
       test(`club members at ${vp.name}`, async ({ page }) => {
         await page.setViewportSize({ width: vp.width, height: vp.height });
         await page.goto(`/clubs/${seeded.clubId}/members`);
-        await expect(page.getByText('1 member', { exact: true })).toBeVisible();
-        await expect(page.getByText('Wei Chen')).toBeVisible();
+        await expect(page.getByPlaceholder('Search 1 member')).toBeVisible();
+        await expect(page.getByText('Wei Chen (you)')).toBeVisible();
         await expect(page.getByText('Host', { exact: true })).toBeVisible();
-        await expect(page.getByLabel('Search members')).toBeVisible();
-        await captureScreen(page, vp, `club-members-${vp.name}.png`, CLUB_HUB_HEADER_CODE_ROW_MASK);
+        await expect(page.getByLabel('Invite someone by email')).toBeVisible();
+        await captureScreen(page, vp, `club-members-${vp.name}.png`, [...CLUB_HUB_HEADER_CODE_ROW_MASK, ...MEMBER_AVATAR_MASK]);
+      });
+
+      // The same Members screen as a plain member sees it (club-hub phase 3):
+      // no round invite button, Add friend + Message on the other rows,
+      // "(you)" on their own. Own club (seedClubAsMember) with a host and
+      // one other member.
+      test(`club members as member at ${vp.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        const { clubId } = await seedClubAsMember(userId);
+        await page.goto(`/clubs/${clubId}/members`);
+        await expect(page.getByPlaceholder('Search 3 members')).toBeVisible();
+        await expect(page.getByText('Mara Ellison')).toBeVisible();
+        await expect(page.getByText('Devon Cole')).toBeVisible();
+        await expect(page.getByText(/\(you\)/)).toBeVisible();
+        await expect(page.getByLabel('Invite someone by email')).toHaveCount(0);
+        await captureScreen(page, vp, `club-members-as-member-${vp.name}.png`, [...CLUB_HUB_HEADER_CODE_ROW_MASK, ...MEMBER_AVATAR_MASK]);
       });
 
       // The hub's Board section (app/clubs/[id]/(hub)/board.tsx) -- the SAME
@@ -774,26 +801,10 @@ test.describe('signed in', () => {
 
       test(`flat thread empty at ${vp.name}`, async ({ page }) => {
         await page.setViewportSize({ width: vp.width, height: vp.height });
-        await page.goto('/messages');
-        // Through the row, not a guessed id: thread ids are generated and
-        // the club thread has none at all until it is opened. Named exactly
-        // rather than a loose pattern on the club's own name — Task 15's
-        // booking-state fixtures (e2e/session.ts) seed a SECOND club,
-        // "Thursday Casuals", so this list carries two club-thread rows and
-        // a loose pattern is a strict-mode hard failure now, the same
-        // "Your clubs" trap this file's other comments record. The row's
-        // title is the club's bare name now, not "Everyone at <club>" — see
-        // lib/messages.ts's `threadTitleFor` for why.
-        //
-        // The club row still goes through open_thread_for_club, and that RPC
-        // path — a club thread that has never been opened and so has no id
-        // to guess — is why the click, rather than a goto, stays here. It
-        // lands on the BOARD now, and this asserts that: the flat screen is
-        // no longer somewhere a club thread can end up, from a row or from
-        // anywhere else (app/messages/[threadId].tsx redirects one itself).
-        await page.getByRole('button', { name: 'Riverside Mah Jongg' }).click();
-        await page.waitForURL(/\/messages\/club\/.+/);
-
+        // /messages lists one-to-one and group chats only now (club and game
+        // chats stay inside the club), so this no longer opens the club
+        // thread through an inbox row; the board redirect it used to assert
+        // is covered by the component layer.
         // The flat screen's own empty state is still real — game, group and
         // direct conversations all live there — so it keeps its baseline, on
         // a kind that still belongs to it. `seedEmptyGroupThread`
@@ -830,22 +841,10 @@ test.describe('signed in', () => {
           userId.slice(0, 8),
         );
         await page.goto('/messages');
-        // The club row, pinned first by lib/messages.ts's
-        // `orderThreadsForList`. Same anchor the `club thread at …` test
-        // above uses -- `getByRole`'s `name` option is a substring match,
-        // which is what keeps this robust regardless of whether the row's
-        // composed accessibilityLabel (`unreadSuffix`, lib/messages.ts)
-        // carries a ", N unread" tail.
-        await expect(
-          page.getByRole('button', { name: 'Riverside Mah Jongg' }),
-        ).toBeVisible();
-        // The game thread's own title -- unique to this fixture on this
-        // screen (no other row's title or subtitle contains it) -- proves a
-        // NON-club row survived the club pin, not just the club one. This
-        // is exactly the assertion this task exists to add: a future
-        // regression that empties the list fails loudly here instead of
-        // quietly matching the empty-state baseline above.
-        await expect(page.getByText('Tuesday night mahjong')).toBeVisible();
+        // The inbox lists one-to-one and group chats only now: the seeded
+        // club and game threads stay inside the club and no longer appear,
+        // so the direct thread (unread, with its inline badge) is the row.
+        await expect(page.getByText('Yusuf Ahmed').first()).toBeVisible();
         await captureScreen(page, vp, `messages-populated-${vp.name}.png`);
       });
 

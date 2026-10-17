@@ -6,10 +6,12 @@ import { glyphForClub } from '../../lib/dashboard';
 
 const replace = vi.fn();
 const push = vi.fn();
+const back = vi.fn();
+const canGoBack = vi.fn(() => true);
 
 vi.mock('expo-router', () => ({
   Redirect: () => null,
-  useRouter: () => ({ push, back: vi.fn(), replace }),
+  useRouter: () => ({ push, back, replace, canGoBack }),
   usePathname: () => '/messages/club/new',
   useLocalSearchParams: () => ({ threadId: 't1', clubId: 'c1' }),
   // A bare `(cb) => cb()` fires on every render, which the real hook never
@@ -408,6 +410,7 @@ describe('backing out of a post', () => {
     vi.clearAllMocks();
     fetchRoster.mockResolvedValue(member('member'));
     fetchClub.mockResolvedValue(CLUB);
+    canGoBack.mockReturnValue(true);
   });
 
   it('has a back control labelled for the board it came from', async () => {
@@ -418,7 +421,17 @@ describe('backing out of a post', () => {
   it('backs out to the board on the first tap when the draft is empty', async () => {
     render(<NewPostScreen />);
     fireEvent.click(await screen.findByLabelText('Back to board'));
-    expect(push).toHaveBeenCalledWith('/messages/club/t1');
+    expect(back).toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it('replaces to the board when there is no history', async () => {
+    canGoBack.mockReturnValue(false);
+    render(<NewPostScreen />);
+    fireEvent.click(await screen.findByLabelText('Back to board'));
+    expect(replace).toHaveBeenCalledWith('/messages/club/t1');
+    expect(back).not.toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
   });
 
   it('arms a confirm, without navigating, on the first tap with a typed draft', async () => {
@@ -441,7 +454,8 @@ describe('backing out of a post', () => {
     });
     fireEvent.click(screen.getByLabelText('Back to board'));
     fireEvent.click(await screen.findByLabelText('Discard post and go back to board'));
-    expect(push).toHaveBeenCalledWith('/messages/club/t1');
+    expect(back).toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
   });
 
   it('disarms the confirm when the draft changes after arming', async () => {
@@ -467,6 +481,7 @@ describe('backing out of a post', () => {
     );
     fireEvent.change(input, { target: { value: '' } });
     fireEvent.click(screen.getByLabelText('Back to board'));
-    expect(push).toHaveBeenCalledWith('/messages/club/t1');
+    expect(back).toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
   });
 });

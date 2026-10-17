@@ -38,7 +38,6 @@ import {
   leaveGroupThread,
   markPostRead,
   messagePreview,
-  orderThreadsForList,
   postMessage,
   postTitle,
   quoteStub,
@@ -506,83 +505,6 @@ describe('sortThreads', () => {
       'b',
       'c',
     ]);
-  });
-});
-
-describe('orderThreadsForList', () => {
-  // Replaces the old "Recent | By club" choice with the one order the
-  // messages screen now uses: clubs first, then everything else newest
-  // first. Pinning clubs at the top does both jobs the sort control used to
-  // -- grouping ("By club") and floating active conversations up
-  // ("Recent") -- so a member never sees a non-club thread ahead of a club
-  // one, no matter how old the club thread is.
-  it('puts every club thread ahead of every non-club thread, regardless of recency', () => {
-    const staleClub = row({
-      thread_id: 'club-old',
-      kind: 'club',
-      last_message_at: '2020-01-01T00:00:00Z',
-    });
-    const freshDirect = row({
-      thread_id: 'direct-new',
-      kind: 'direct',
-      club_id: null,
-      club_name: null,
-      last_message_at: '2026-08-28T00:00:00Z',
-    });
-    expect(
-      orderThreadsForList([freshDirect, staleClub]).map((r) => r.thread_id),
-    ).toEqual(['club-old', 'direct-new']);
-  });
-
-  // Within the second band, newest last_message_at first and never-posted
-  // (null) last -- sortThreads' own rule, reused rather than reimplemented.
-  it('orders the non-club band newest first, nulls last', () => {
-    const game = row({
-      thread_id: 'game',
-      kind: 'game',
-      club_id: null,
-      club_name: null,
-      last_message_at: '2026-08-20T00:00:00Z',
-    });
-    const group = row({
-      thread_id: 'group',
-      kind: 'group',
-      club_id: null,
-      club_name: null,
-      last_message_at: '2026-08-27T00:00:00Z',
-    });
-    const neverPosted = row({
-      thread_id: 'direct-never',
-      kind: 'direct',
-      club_id: null,
-      club_name: null,
-      last_message_at: null,
-    });
-    expect(
-      orderThreadsForList([game, neverPosted, group]).map((r) => r.thread_id),
-    ).toEqual(['group', 'game', 'direct-never']);
-  });
-
-  // Club threads are always listed (one per club, empty or not), and among
-  // themselves they still read newest-active-first -- a side effect of
-  // sorting the whole list by recency before partitioning by kind, not a
-  // second sort.
-  it('keeps club threads newest first among themselves too', () => {
-    const quietClub = row({
-      thread_id: 'club-quiet',
-      kind: 'club',
-      club_id: 'c1',
-      last_message_at: null,
-    });
-    const activeClub = row({
-      thread_id: 'club-active',
-      kind: 'club',
-      club_id: 'c2',
-      last_message_at: '2026-08-27T00:00:00Z',
-    });
-    expect(
-      orderThreadsForList([quietClub, activeClub]).map((r) => r.thread_id),
-    ).toEqual(['club-active', 'club-quiet']);
   });
 });
 

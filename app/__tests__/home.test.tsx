@@ -44,7 +44,10 @@ vi.mock('../../lib/session', () => ({ useSession: () => SESSION }));
 
 const GUIDES = { isVisible: (_k: string) => false, dismiss: vi.fn() };
 vi.mock('../../lib/use-guides', () => ({ useGuides: () => GUIDES }));
-vi.mock('../../lib/use-unread', () => ({ useUnreadCounts: () => ({ total: 0, byClub: {} }) }));
+let personalUnread = 0;
+vi.mock('../../lib/use-unread', () => ({
+  useUnreadCounts: () => ({ total: personalUnread, byClub: {}, personal: personalUnread }),
+}));
 vi.mock('../../lib/use-notifications-unread', () => ({ useNotificationsUnread: () => 2 }));
 
 const store = new Map<string, string>();
@@ -144,6 +147,27 @@ describe('HomeScreen', () => {
     expect(push).toHaveBeenCalledWith('/alerts');
     fireEvent.click(screen.getByRole('button', { name: 'Profile' }));
     expect(push).toHaveBeenCalledWith('/profile');
+  });
+
+  it('has a Messages button before Alerts that opens the inbox', async () => {
+    render(<HomeScreen />);
+    const messages = await screen.findByRole('button', { name: 'Messages' });
+    const alerts = screen.getByRole('button', { name: /Alerts/ });
+    expect(
+      messages.compareDocumentPosition(alerts) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    fireEvent.click(messages);
+    expect(push).toHaveBeenCalledWith('/messages');
+  });
+
+  it('labels the Messages button unread only when personal chats are unread', async () => {
+    personalUnread = 3;
+    try {
+      render(<HomeScreen />);
+      expect(await screen.findByRole('button', { name: 'Messages, unread' })).toBeTruthy();
+    } finally {
+      personalUnread = 0;
+    }
   });
 
   it('switches to Calendar and remembers it', async () => {

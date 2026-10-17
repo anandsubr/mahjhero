@@ -1,6 +1,6 @@
 import { Image, Pressable, StyleSheet, View } from 'react-native';
 import { Text } from '../Text';
-import { BellIcon } from '../icons';
+import { BellIcon, MessageCircleIcon } from '../icons';
 import { colors, type } from '../../lib/theme';
 
 /**
@@ -10,11 +10,15 @@ import { colors, type } from '../../lib/theme';
 export default function HomeHeader({
   initial,
   unread,
+  messagesUnread,
+  onMessages,
   onAlerts,
   onProfile,
 }: {
   initial: string;
   unread: boolean;
+  messagesUnread: boolean;
+  onMessages: () => void;
   onAlerts: () => void;
   onProfile: () => void;
 }) {
@@ -27,6 +31,15 @@ export default function HomeHeader({
       />
       <Text style={styles.wordmark} accessibilityRole="header">MahjHero</Text>
       <View style={styles.spacer} />
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={messagesUnread ? 'Messages, unread' : 'Messages'}
+        onPress={onMessages}
+        style={styles.alerts}
+      >
+        <MessageCircleIcon size={20} color={colors.text} />
+        {messagesUnread ? <View style={styles.dot} /> : null}
+      </Pressable>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={unread ? 'Alerts, unread' : 'Alerts'}

@@ -5,11 +5,12 @@ import MessagesScreen from '../messages/index';
 import type { ThreadListRow } from '../../lib/messages';
 
 const push = vi.fn();
+const replace = vi.fn();
 
 vi.mock('expo-router', () => ({
   Redirect: () => null,
   Link: ({ children }: { children: React.ReactNode }) => children,
-  useRouter: () => ({ push, back: vi.fn(), replace: vi.fn() }),
+  useRouter: () => ({ push, back: vi.fn(), replace }),
   usePathname: () => '/messages',
   // The real useFocusEffect (node_modules/expo-router/build/useFocusEffect.js)
   // wraps the callback in a React.useEffect keyed on
@@ -40,7 +41,6 @@ vi.mock('../../lib/session', () => ({
 }));
 
 const fetchMyThreads = vi.fn();
-const openThreadForClub = vi.fn();
 
 vi.mock('../../lib/messages', async () => {
   // The pure helpers are covered in lib/messages.test.ts. Mocking them here
@@ -51,7 +51,6 @@ vi.mock('../../lib/messages', async () => {
   return {
     ...actual,
     fetchMyThreads: (...a: unknown[]) => fetchMyThreads(...a),
-    openThreadForClub: (...a: unknown[]) => openThreadForClub(...a),
   };
 });
 
@@ -93,36 +92,34 @@ const DIRECT = row({
   last_message_at: '2026-08-24T09:00:00Z',
 });
 
+const GROUP = row({
+  thread_id: 't4',
+  kind: 'group',
+  title: 'Mahjong crew',
+  club_id: null,
+  club_name: null,
+  last_message_at: '2026-08-27T09:00:00Z',
+});
+
 describe('messages list', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    fetchMyThreads.mockResolvedValue([row(), GAME, DIRECT]);
-    openThreadForClub.mockResolvedValue({ id: 't1', error: null });
+    fetchMyThreads.mockResolvedValue([row(), GAME, DIRECT, GROUP]);
   });
 
-  // The club thread heads the list regardless of recency -- GAME's own
-  // last_message_at (Aug 26) is newer than the club thread's (Aug 25), and
-  // it still sorts second. Pinning clubs at the top is what makes the old
-  // "Recent | By club" sort control redundant: it already does the grouping
-  // "By club" did and the recency "Recent" did, in the one order.
-  it('lists the club thread first, then everything else newest first', async () => {
+  // Club boards and game chats live inside their club now; the inbox is
+  // one-to-one and group chats only, newest first.
+  it('lists only direct and group chats, newest first', async () => {
     render(<MessagesScreen />);
-    const titles = await screen.findAllByText(
-      /^Riverside$|Tuesday Night|Bob Reyes/,
-    );
-    expect(titles.map((n) => n.textContent)).toEqual([
-      'Riverside',
-      'Tuesday Night',
-      'Bob Reyes',
-    ]);
+    const titles = await screen.findAllByText(/^Riverside$|Tuesday Night|Bob Reyes|Mahjong crew/);
+    expect(titles.map((n) => n.textContent)).toEqual(['Mahjong crew', 'Bob Reyes']);
+    expect(screen.queryByText('Riverside')).toBeNull();
+    expect(screen.queryByText('Tuesday Night')).toBeNull();
   });
 
-  // The sort control this screen used to carry is gone entirely -- pinning
-  // clubs at the top does both jobs it did, so there is nothing left for it
-  // to choose between.
   it('carries no Recent/By club sort control', async () => {
     render(<MessagesScreen />);
-    await screen.findByText('Riverside');
+    await screen.findByText('Bob Reyes');
     expect(screen.queryByText('Recent')).toBeNull();
     expect(screen.queryByText('By club')).toBeNull();
   });
@@ -142,75 +139,22 @@ describe('messages list', () => {
     expect(await screen.findByText(/No conversations yet/)).toBeTruthy();
   });
 
-  // A club thread nobody has posted in has no id yet. Tapping it goes
-  // through open_thread_for_club, which creates the row and returns the id.
-  it('opens a never-used club thread through the RPC', async () => {
-    fetchMyThreads.mockResolvedValueOnce([
-      row({ thread_id: null, last_message_at: null, last_body: null, last_author: null }),
-    ]);
+  it('shows the empty state when only club and game threads exist', async () => {
+    fetchMyThreads.mockResolvedValueOnce([row(), GAME]);
     render(<MessagesScreen />);
-    fireEvent.click(await screen.findByLabelText('Riverside'));
-    await waitFor(() => expect(openThreadForClub).toHaveBeenCalledWith('c1'));
-    await waitFor(() => expect(push).toHaveBeenCalledWith('/messages/club/t1'));
+    expect(await screen.findByText(/No conversations yet/)).toBeTruthy();
   });
 
-  it('navigates straight to a thread that already has an id', async () => {
+  it('navigates to a conversation by its id', async () => {
     render(<MessagesScreen />);
-    fireEvent.click(await screen.findByLabelText('Tuesday Night'));
-    await waitFor(() => expect(push).toHaveBeenCalledWith('/messages/t2'));
-    expect(openThreadForClub).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByLabelText('Bob Reyes'));
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/messages/t3'));
   });
 
-  // A club thread already posted in has an id like any other -- this row
-  // still goes to the board rather than the flat thread screen, and it
-  // never needs the open_thread_for_club RPC to get there.
-  it('sends a club thread that already has an id to its board, not the flat thread screen', async () => {
+  it('goes back to Home', async () => {
     render(<MessagesScreen />);
-    fireEvent.click(await screen.findByLabelText('Riverside'));
-    await waitFor(() => expect(push).toHaveBeenCalledWith('/messages/club/t1'));
-    expect(openThreadForClub).not.toHaveBeenCalled();
-  });
-
-  it('surfaces a refusal from open_thread_for_club instead of navigating', async () => {
-    fetchMyThreads.mockResolvedValueOnce([row({ thread_id: null })]);
-    openThreadForClub.mockResolvedValueOnce({
-      id: null,
-      error: 'you are not a member of this club',
-    });
-    render(<MessagesScreen />);
-    fireEvent.click(await screen.findByLabelText('Riverside'));
-    expect(
-      await screen.findByText('you are not a member of this club'),
-    ).toBeTruthy();
-    expect(push).not.toHaveBeenCalled();
-  });
-
-  // open()'s own guard reads `opening` from the render closure, which is
-  // blind to a second activation landing before that render has committed —
-  // a queued tap, a screen-reader activation, a native double-tap. Firing
-  // both clicks inside one `act()` reproduces exactly that: neither click
-  // gets a re-render in between, so both run against the same stale
-  // `opening === false` closure. See the identical guard in
-  // app/clubs/index.tsx and app/friends.tsx.
-  it('opens a club thread only once when tapped twice before openThreadForClub resolves', async () => {
-    fetchMyThreads.mockResolvedValueOnce([row({ thread_id: null })]);
-    let resolveOpen: (v: { id: string | null; error: string | null }) => void;
-    openThreadForClub.mockReturnValueOnce(
-      new Promise((resolve) => {
-        resolveOpen = resolve;
-      }),
-    );
-    render(<MessagesScreen />);
-    const target = await screen.findByLabelText('Riverside');
-
-    act(() => {
-      fireEvent.click(target);
-      fireEvent.click(target);
-    });
-
-    resolveOpen!({ id: 't1', error: null });
-    await waitFor(() => expect(push).toHaveBeenCalledWith('/messages/club/t1'));
-    expect(openThreadForClub).toHaveBeenCalledTimes(1);
+    fireEvent.click(await screen.findByLabelText('Back to home'));
+    expect(replace).toHaveBeenCalledWith('/home');
   });
 
   it('reaches the compose screen', async () => {
@@ -224,7 +168,7 @@ describe('messages list', () => {
   // this screen's own section tile exists.
   it('shows a decorative bamboo tile before the heading', async () => {
     render(<MessagesScreen />);
-    await screen.findByText('Riverside');
+    await screen.findByText('Bob Reyes');
     expect(
       screen.getByTestId('section-tile').querySelector('[aria-hidden="true"]'),
     ).toBeTruthy();

@@ -221,7 +221,10 @@ export default function NewMessageScreen() {
         variant="ghost"
         big={false}
         icon={<ChevronLeftIcon color={colors.accentColor} />}
-        onPress={() => router.push('/messages')}
+        onPress={() => {
+          if (router.canGoBack()) router.back();
+          else router.replace('/messages');
+        }}
         accessibilityLabel="Back to messages"
         style={styles.backButton}
       >
