@@ -73,7 +73,10 @@ the comments, and a composer always at the bottom.
   and the Post button keeps its "Post" label (accessibility label "Post and email everyone" — the
   longer visible label squeezed the input at 375pt; user decision 2026-10-17). An announcement needs
   text (its first line is the email subject), so with the toggle on and no text Post is disabled and
-  "Add a line of text — it becomes the email subject." shows under the recipient line. Posting then
+  "Add a line of text — it becomes the email subject." shows under the recipient line; with text,
+  the recipient line ends " · Subject: <first line>" (the subject the email will carry). While
+  announcing, Enter never posts (it inserts a newline even on web) so an accidental Enter can't email
+  the club mid-sentence; only the Post button sends. Posting then
   sends an announcement (Announcement tag on the Board, emails fanned out as today); the toggle turns
   off after posting. Members never see it.
 - Posting clears the composer and shows the new post at the top. On failure the draft stays and an

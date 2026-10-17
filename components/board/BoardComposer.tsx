@@ -6,7 +6,12 @@ import AttachmentPicker from '../messages/AttachmentPicker';
 import { MegaphoneIcon } from '../icons';
 import { countBroadcastRecipients } from '../../lib/broadcasts';
 import { GENERIC_ERROR } from '../../lib/constants';
-import { BODY_MAX, postMessage, type MessageAttachmentInput } from '../../lib/messages';
+import {
+  BODY_MAX,
+  deriveSubject,
+  postMessage,
+  type MessageAttachmentInput,
+} from '../../lib/messages';
 import { colors, radius, space, type } from '../../lib/theme';
 
 const FIELD_HEIGHT = 44;
@@ -34,19 +39,22 @@ type KeyEvent = {
 /**
  * The composer pinned to the bottom of the club Board: photo button, pill
  * input, Post. Organizers also get a megaphone toggle ("Email everyone in
- * the club") beside the photo button; with it on, a line above the row says
+ * the club") beside the photo button. With it on, a line above the row says
  * how many people will be emailed (`countBroadcastRecipients`, the same
- * count `send_broadcast` resolves its recipients through), the button still
- * reads "Post" (screen readers hear "Post and email everyone"), and the post
- * goes out as an announcement -- which needs text, so a photo-only draft
- * can't post while it's on. The toggle turns
- * off after a successful post. This is the app's only way to email a whole
- * club. Photos reuse
- * AttachmentPicker (pick -> compress -> upload), shown as removable
- * thumbnails above the row, up to MAX_ATTACHMENTS.
+ * count `send_broadcast` resolves its recipients through) and the email's
+ * subject (`deriveSubject`, mirroring post_message); the button still reads
+ * "Post" (screen readers hear "Post and email everyone"), and the post goes
+ * out as an announcement. An announcement needs text, so a photo-only draft
+ * can't post while the toggle is on. The toggle turns off after a successful
+ * post. This is the app's only way to email a whole club.
+ *
+ * Photos reuse AttachmentPicker (pick -> compress -> upload), shown as
+ * removable thumbnails above the row, up to MAX_ATTACHMENTS.
  *
  * Enter posts on web (Shift+Enter breaks the line); on phones Enter inserts
- * a newline and the Post button posts.
+ * a newline and the Post button posts. While announcing, Enter never posts
+ * on any platform -- an accidental Enter would email the whole club
+ * mid-sentence -- so only the Post button sends.
  */
 export default function BoardComposer({
   threadId,
@@ -156,12 +164,13 @@ export default function BoardComposer({
       if (Platform.OS !== 'web') return;
       const { key, shiftKey, isComposing } = e.nativeEvent;
       if (key !== 'Enter' || shiftKey || isComposing) return;
+      // Announcing: let Enter insert a newline; only the button sends.
+      if (latest.current.announce) return;
       e.preventDefault?.();
       void submit();
     },
     [submit],
   );
-
 
   return (
     <View style={[styles.wrap, { paddingBottom: keyboardUp ? 8 : Math.max(insets.bottom, 8) }]}>
@@ -183,9 +192,10 @@ export default function BoardComposer({
             {strip}
             {announce ? (
               <Text style={styles.announceNote}>
-                {recipients !== null
+                {(recipients !== null
                   ? `Will also email ${recipients} ${recipients === 1 ? 'person' : 'people'} in the club`
-                  : 'Will also email everyone in the club'}
+                  : 'Will also email everyone in the club') +
+                  (hasText ? ` · Subject: ${deriveSubject(body.trim())}` : '')}
               </Text>
             ) : null}
             {needsText ? (
@@ -204,7 +214,6 @@ export default function BoardComposer({
                   // accessibilityState entirely (see components/Toggle.tsx),
                   // and RN's Pressable reads aria-checked natively too.
                   aria-checked={announce}
-                  aria-selected={announce}
                   style={[styles.announce, announce ? styles.announceOnBg : null]}
                 >
                   <MegaphoneIcon size={22} color={announce ? colors.bg : colors.text} />

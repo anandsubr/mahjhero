@@ -58,12 +58,12 @@ export default function ClubBoardScreen() {
     // A best-effort read, kept separate from `load()`'s own `loadingRef`
     // guard: this must run once per thread, not on every realtime refetch
     // `load()` also answers, and a failure here must not blank the board
-    // the way a failed feed load (lib/board.ts) does -- the posts are the thing
-    // this screen exists to show. `thread` staying null on a failure (or
+    // the way a failed feed load (lib/board.ts) does -- the posts are the
+    // thing this screen exists to show. `thread` staying null on a failure (or
     // while still in flight) degrades the same way in both places that
     // read it below: the composer gets no `clubId` (and no megaphone, since
-    // `mayAnnounce` waits on it), and the header renders its chevron alone, with no half-built avatar
-    // or pill guessing at a name it does not have.
+    // `mayAnnounce` waits on it), and the header renders its chevron alone,
+    // with no half-built avatar or pill guessing at a name it does not have.
     void fetchThread(threadId).then((detail) => {
       if (!cancelled) setThread(detail);
     });

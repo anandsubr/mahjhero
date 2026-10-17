@@ -246,6 +246,40 @@ describe('BoardComposer', () => {
       );
     });
 
+    it('on web, Enter inserts a newline instead of posting while announcing', async () => {
+      postMessage.mockResolvedValue({ id: 'p8', error: null });
+      render(<BoardComposer threadId="t1" clubId="c1" canAnnounce onPosted={() => {}} />);
+      fireEvent.click(megaphone());
+      type('Doors at seven');
+      const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+      field().dispatchEvent(enter);
+      expect(enter.defaultPrevented).toBe(false);
+      expect(postMessage).not.toHaveBeenCalled();
+      // Turning the megaphone off restores Enter-to-post.
+      fireEvent.click(megaphone());
+      fireEvent.keyDown(field(), { key: 'Enter' });
+      await waitFor(() =>
+        expect(postMessage).toHaveBeenCalledWith('t1', 'Doors at seven', false, null, null, []),
+      );
+    });
+
+    it('shows the email subject (the first line) on the recipient line once there is text', async () => {
+      render(<BoardComposer threadId="t1" clubId="c1" canAnnounce onPosted={() => {}} />);
+      fireEvent.click(megaphone());
+      expect(await screen.findByText('Will also email 23 people in the club')).toBeTruthy();
+      type('\n  Doors at seven  \nBring snacks');
+      expect(
+        screen.getByText('Will also email 23 people in the club · Subject: Doors at seven'),
+      ).toBeTruthy();
+      type('   ');
+      expect(screen.getByText('Will also email 23 people in the club')).toBeTruthy();
+    });
+
+    it('the toggle is a switch with aria-checked only', () => {
+      render(<BoardComposer threadId="t1" clubId="c1" canAnnounce onPosted={() => {}} />);
+      expect(megaphone().hasAttribute('aria-selected')).toBe(false);
+    });
+
     it('does not show the text hint while the toggle is off', () => {
       render(<BoardComposer threadId="t1" clubId="c1" canAnnounce onPosted={() => {}} />);
       expect(screen.queryByText(/it becomes the email subject/)).toBeNull();
