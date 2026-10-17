@@ -36,8 +36,10 @@ type KeyEvent = {
  * input, Post. Organizers also get a megaphone toggle ("Email everyone in
  * the club") beside the photo button; with it on, a line above the row says
  * how many people will be emailed (`countBroadcastRecipients`, the same
- * count `send_broadcast` resolves its recipients through), the button reads
- * "Post & email", and the post goes out as an announcement. The toggle turns
+ * count `send_broadcast` resolves its recipients through), the button still
+ * reads "Post" (screen readers hear "Post and email everyone"), and the post
+ * goes out as an announcement -- which needs text, so a photo-only draft
+ * can't post while it's on. The toggle turns
  * off after a successful post. This is the app's only way to email a whole
  * club. Photos reuse
  * AttachmentPicker (pick -> compress -> upload), shown as removable
@@ -113,13 +115,17 @@ export default function BoardComposer({
   const latest = useRef({ body, attachments, attachmentsPending, announce });
   latest.current = { body, attachments, attachmentsPending, announce };
 
+  const hasText = body.trim().length > 0;
+  // post_message refuses an announcement with no text: its first line is
+  // the email subject. So a photo-only draft can't post while announcing.
+  const needsText = announce && !hasText;
   const canPost =
-    !busy && !attachmentsPending && (body.trim().length > 0 || attachments.length > 0);
+    !busy && !attachmentsPending && !needsText && (hasText || attachments.length > 0);
 
   const submit = useCallback(async () => {
     const cur = latest.current;
     if (busyRef.current || cur.attachmentsPending) return;
-    if (cur.body.trim().length === 0 && cur.attachments.length === 0) return;
+    if (cur.body.trim().length === 0 && (cur.attachments.length === 0 || cur.announce)) return;
     busyRef.current = true;
     setBusy(true);
     setError(null);
@@ -156,7 +162,6 @@ export default function BoardComposer({
     [submit],
   );
 
-  const postLabel = announce ? 'Post & email' : 'Post';
 
   return (
     <View style={[styles.wrap, { paddingBottom: keyboardUp ? 8 : Math.max(insets.bottom, 8) }]}>
@@ -181,6 +186,11 @@ export default function BoardComposer({
                 {recipients !== null
                   ? `Will also email ${recipients} ${recipients === 1 ? 'person' : 'people'} in the club`
                   : 'Will also email everyone in the club'}
+              </Text>
+            ) : null}
+            {needsText ? (
+              <Text style={styles.announceHint}>
+                Add a line of text — it becomes the email subject.
               </Text>
             ) : null}
             <View style={styles.row}>
@@ -217,13 +227,13 @@ export default function BoardComposer({
                 onPress={() => void submit()}
                 disabled={!canPost}
                 accessibilityRole="button"
-                accessibilityLabel={postLabel}
+                // The visible label stays "Post" (the line above already
+                // says it will email); a screen reader hears the difference.
+                accessibilityLabel={announce ? 'Post and email everyone' : 'Post'}
                 accessibilityState={{ disabled: !canPost, busy }}
                 style={[styles.post, canPost ? styles.postOn : null]}
               >
-                <Text style={[styles.postText, canPost ? styles.postTextOn : null]}>
-                  {postLabel}
-                </Text>
+                <Text style={[styles.postText, canPost ? styles.postTextOn : null]}>Post</Text>
               </Pressable>
             </View>
           </>
@@ -278,6 +288,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   announceOnBg: { backgroundColor: colors.accent[700] },
+  announceHint: {
+    fontFamily: type.bodyRegular,
+    fontSize: type.size.helper,
+    color: colors.neutral[700],
+  },
   announceNote: {
     fontFamily: type.bodyBold,
     fontSize: type.size.helper,

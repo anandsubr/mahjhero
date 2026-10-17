@@ -481,7 +481,7 @@ describe('the club board', () => {
       fireEvent.change(screen.getByPlaceholderText('Write to the club'), {
         target: { value: 'Tables at seven' },
       });
-      fireEvent.click(screen.getByRole('button', { name: 'Post & email' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Post and email everyone' }));
       await waitFor(() =>
         expect(postMessage).toHaveBeenCalledWith('t1', 'Tables at seven', true, null, null, []),
       );

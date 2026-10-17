@@ -160,14 +160,16 @@ describe('BoardComposer', () => {
       expect(countBroadcastRecipients).not.toHaveBeenCalled();
     });
 
-    it('when on, shows the recipient count and "Post & email"', async () => {
+    it('when on, shows the recipient count; the button still reads Post but is labelled for email', async () => {
       render(<BoardComposer threadId="t1" clubId="c1" canAnnounce onPosted={() => {}} />);
       fireEvent.click(megaphone());
       expect(megaphone().getAttribute('aria-checked')).toBe('true');
       expect(await screen.findByText('Will also email 23 people in the club')).toBeTruthy();
       expect(countBroadcastRecipients).toHaveBeenCalledWith('c1', null);
-      expect(screen.getByRole('button', { name: 'Post & email' })).toBeTruthy();
+      const btn = screen.getByRole('button', { name: 'Post and email everyone' });
+      expect(btn.textContent).toBe('Post');
       expect(screen.queryByRole('button', { name: 'Post' })).toBeNull();
+      expect(screen.queryByText(/Post & email/)).toBeNull();
       fireEvent.click(megaphone());
       expect(screen.queryByText(/Will also email/)).toBeNull();
       expect(postBtn()).toBeTruthy();
@@ -195,7 +197,7 @@ describe('BoardComposer', () => {
       render(<BoardComposer threadId="t1" clubId="c1" canAnnounce onPosted={onPosted} />);
       fireEvent.click(megaphone());
       type('Doors at seven');
-      const btn = screen.getByRole('button', { name: 'Post & email' });
+      const btn = screen.getByRole('button', { name: 'Post and email everyone' });
       fireEvent.click(btn);
       fireEvent.click(btn);
       expect(postMessage).toHaveBeenCalledTimes(1);
@@ -212,10 +214,41 @@ describe('BoardComposer', () => {
       render(<BoardComposer threadId="t1" clubId="c1" canAnnounce onPosted={() => {}} />);
       fireEvent.click(megaphone());
       type('Doors at seven');
-      fireEvent.click(screen.getByRole('button', { name: 'Post & email' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Post and email everyone' }));
       expect(await screen.findByText('only an organizer can announce')).toBeTruthy();
       expect((field() as HTMLTextAreaElement).value).toBe('Doors at seven');
       expect(megaphone().getAttribute('aria-checked')).toBe('true');
+    });
+
+    it('with no text, disables Post and asks for a line; a photo alone cannot announce', async () => {
+      postMessage.mockResolvedValue({ id: 'p7', error: null });
+      render(<BoardComposer threadId="t1" clubId="c1" canAnnounce onPosted={() => {}} />);
+      await addPhoto();
+      await waitFor(() => expect((postBtn() as HTMLButtonElement).disabled).toBe(false));
+      fireEvent.click(megaphone());
+      const hint = 'Add a line of text — it becomes the email subject.';
+      expect(screen.getByText(hint)).toBeTruthy();
+      const btn = screen.getByRole('button', { name: 'Post and email everyone' }) as HTMLButtonElement;
+      expect(btn.disabled).toBe(true);
+      fireEvent.click(btn);
+      fireEvent.keyDown(field(), { key: 'Enter' });
+      expect(postMessage).not.toHaveBeenCalled();
+      type('   ');
+      expect(screen.getByText(hint)).toBeTruthy();
+      type('Doors at seven');
+      expect(screen.queryByText(hint)).toBeNull();
+      expect(btn.disabled).toBe(false);
+      fireEvent.click(btn);
+      await waitFor(() =>
+        expect(postMessage).toHaveBeenCalledWith('t1', 'Doors at seven', true, null, null, [
+          { storage_path: 't1/0.jpg', width: 40, height: 30 },
+        ]),
+      );
+    });
+
+    it('does not show the text hint while the toggle is off', () => {
+      render(<BoardComposer threadId="t1" clubId="c1" canAnnounce onPosted={() => {}} />);
+      expect(screen.queryByText(/it becomes the email subject/)).toBeNull();
     });
 
     it('a plain post from an organizer still sends announce=false', async () => {
