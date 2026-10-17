@@ -116,6 +116,38 @@ describe('PostCard', () => {
     expect(screen.getByText('More')).toBeTruthy();
   });
 
+  it('shows More when a short single paragraph overflows its clamp', () => {
+    const sh = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(300);
+    const ch = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(192);
+    render(<PostCard post={post({ body: 'short but wraps a lot' })} {...baseProps} />);
+    expect(screen.getByRole('button', { name: 'Read full post' })).toBeTruthy();
+    sh.mockRestore();
+    ch.mockRestore();
+  });
+
+  it('hides More when measured text fits, even if the body is long by chars', () => {
+    const sh = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(100);
+    const ch = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(100);
+    render(<PostCard post={post({ body: 'y'.repeat(700) })} {...baseProps} />);
+    expect(screen.queryByText('More')).toBeNull();
+    sh.mockRestore();
+    ch.mockRestore();
+  });
+
+  it('handles a null author role (no Host tag)', () => {
+    render(<PostCard post={post({ authorRole: null })} {...baseProps} />);
+    expect(screen.getByText('Ann Lee')).toBeTruthy();
+    expect(screen.queryByText('Host')).toBeNull();
+  });
+
+  it('labels the comment link and peek', () => {
+    const { rerender } = render(<PostCard post={post()} {...baseProps} />);
+    expect(screen.getByRole('button', { name: 'Comment on this post' })).toBeTruthy();
+    rerender(<PostCard post={post({ replyCount: 3, recentComments: [comment(1)] })} {...baseProps} />);
+    expect(screen.getByRole('button', { name: 'Open comments' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Open post, 3 comments' })).toBeTruthy();
+  });
+
   it('renders the attachment grid when attachments exist', () => {
     const attachments = [{ id: 'm1', storage_path: 'p/1.jpg', width: 4, height: 3 }];
     render(<PostCard post={post({ attachments })} {...baseProps} attachmentUrls={{ 'p/1.jpg': 'http://x/1.jpg' }} />);

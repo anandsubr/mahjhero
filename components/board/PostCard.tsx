@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { Text } from '../Text';
 import Tag from '../Tag';
@@ -32,7 +32,20 @@ function looksLong(body: string): boolean {
 
 export default function PostCard({ post, attachmentUrls, onOpen, onToggleHeart, hearting }: Props) {
   const [measuredLong, setMeasuredLong] = useState(false);
-  const long = measuredLong || looksLong(post.body);
+  // null = the DOM overflow check isn't available (native, or no layout
+  // engine), so the text heuristic is the fallback.
+  const [overflow, setOverflow] = useState<boolean | null>(null);
+  const bodyRef = useRef<unknown>(null);
+  const measure = useCallback(() => {
+    const el = bodyRef.current as { scrollHeight?: number; clientHeight?: number } | null;
+    if (el && typeof el.scrollHeight === 'number' && typeof el.clientHeight === 'number' && el.clientHeight > 0) {
+      setOverflow(el.scrollHeight > el.clientHeight + 1);
+    } else {
+      setOverflow(null);
+    }
+  }, []);
+  useLayoutEffect(measure, [measure, post.body]);
+  const long = measuredLong || (overflow ?? looksLong(post.body));
   const showHost = post.authorRole !== null && isHostRole(post.authorRole);
 
   return (
@@ -53,16 +66,20 @@ export default function PostCard({ post, attachmentUrls, onOpen, onToggleHeart, 
               </Tag>
             ) : null}
           </View>
-          <Text style={styles.time}>{postTimeLabel(post.createdAt)}</Text>
+          <View style={styles.timeRow}>
+            <Text style={styles.time}>{postTimeLabel(post.createdAt)}</Text>
+            {post.unread ? <View style={styles.dot} testID="unread-dot" accessibilityLabel="Unread" /> : null}
+          </View>
         </View>
-        {post.unread ? <View style={styles.dot} testID="unread-dot" accessibilityLabel="Unread" /> : null}
       </View>
 
       {post.body.trim() !== '' ? (
         <View>
           <Text
+            ref={bodyRef as never}
             style={styles.body}
             numberOfLines={MAX_LINES}
+            onLayout={measure}
             onTextLayout={(e) => {
               if (e.nativeEvent.lines.length > MAX_LINES) setMeasuredLong(true);
             }}
@@ -70,7 +87,7 @@ export default function PostCard({ post, attachmentUrls, onOpen, onToggleHeart, 
             {post.body}
           </Text>
           {long ? (
-            <Pressable onPress={onOpen} accessibilityRole="button" style={styles.more}>
+            <Pressable onPress={onOpen} accessibilityRole="button" accessibilityLabel="Read full post" style={styles.more}>
               <Text style={styles.moreText}>More</Text>
             </Pressable>
           ) : null}
@@ -83,7 +100,12 @@ export default function PostCard({ post, attachmentUrls, onOpen, onToggleHeart, 
 
       <View style={styles.footer}>
         <HeartPill count={post.heartCount} hearted={post.heartedByMe} busy={hearting} onPress={onToggleHeart} />
-        <Pressable onPress={onOpen} accessibilityRole="button" style={styles.commentLink}>
+        <Pressable
+          onPress={onOpen}
+          accessibilityRole="button"
+          accessibilityLabel={post.replyCount > 0 ? 'Open comments' : 'Comment on this post'}
+          style={styles.commentLink}
+        >
           <Text style={styles.commentText}>{commentCountLabel(post.replyCount)}</Text>
         </Pressable>
       </View>
@@ -102,10 +124,11 @@ const styles = StyleSheet.create({
   initials: { fontFamily: type.bodyBold, fontSize: 16, color: '#fff' },
   headerText: { flex: 1, minWidth: 0 },
   nameRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 },
-  name: { fontFamily: type.bodyBold, fontSize: 17, color: colors.text, flexShrink: 1 },
-  time: { fontFamily: type.bodyRegular, fontSize: 14, color: colors.textMuted },
+  name: { fontFamily: type.bodyBold, fontSize: 16, color: colors.accent[700], flexShrink: 1 },
+  timeRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  time: { fontFamily: type.bodyRegular, fontSize: 13, color: colors.neutral[700] },
   dot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.accent[600] },
-  body: { fontFamily: type.bodyRegular, fontSize: 17, lineHeight: 24, color: colors.text },
+  body: { fontFamily: type.bodyRegular, fontSize: 16, lineHeight: 24, color: colors.text },
   more: { minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start' },
   moreText: { fontFamily: type.bodyBold, fontSize: 16, color: colors.accent[700] },
   footer: { flexDirection: 'row', alignItems: 'center', gap: 12 },

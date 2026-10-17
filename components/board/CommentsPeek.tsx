@@ -15,7 +15,12 @@ type Props = {
 /** The last couple of replies under a post; pressing opens the post. */
 export default function CommentsPeek({ comments, total, onPress }: Props) {
   return (
-    <Pressable onPress={onPress} accessibilityRole="button" style={styles.block}>
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`Open post, ${total} ${total === 1 ? 'comment' : 'comments'}`}
+      style={styles.block}
+    >
       {comments.map((c) => (
         <View key={c.id} style={styles.row}>
           <View style={[styles.avatar, { backgroundColor: avatarColorFor(c.authorId) }]}>
