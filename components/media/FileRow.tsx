@@ -111,7 +111,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     justifyContent: 'center',
     borderRadius: 12,
-    backgroundColor: colors.surface,
+    // The page background, so the chip stands out on the surface card it sits in.
+    backgroundColor: colors.bg,
+    borderWidth: 1,
+    borderColor: colors.divider,
   },
   menuText: { fontSize: 15, fontWeight: '700', color: colors.accent[700] },
 });

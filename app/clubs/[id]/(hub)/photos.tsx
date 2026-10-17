@@ -33,8 +33,6 @@ const SEGMENTS: { key: Kind; label: string }[] = [
 ];
 
 const PAGE = 60;
-/** A refresh reloads what is already on screen, up to this many. */
-const REFRESH_CAP = 120;
 
 /**
  * The club hub's Photos section: a Photos / Files segmented control with an
@@ -54,6 +52,8 @@ export default function PhotosSection() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [urls, setUrls] = useState<Record<string, string>>({});
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
+  // Errors for the photo viewer, which covers the section's own error lines.
+  const [viewerError, setViewerError] = useState<string | null>(null);
 
   const [uploading, setUploading] = useState(false);
   // A ref as well as state: two taps in one frame both see stale state.
@@ -91,7 +91,9 @@ export default function PhotosSection() {
   const loadSeq = useRef(0);
   const load = useCallback(async () => {
     const seq = ++loadSeq.current;
-    const limit = Math.min(Math.max(loadedCount.current, PAGE), REFRESH_CAP);
+    // Reload everything already on screen (at least a page), so a refresh
+    // after "Show more" never collapses the list back to its first page.
+    const limit = Math.max(loadedCount.current, PAGE);
     const result = await fetchClubMedia(club.id, kind, undefined, limit);
     if (seq !== loadSeq.current || !mounted.current) return;
     setFailed(result === null);
@@ -141,6 +143,8 @@ export default function PhotosSection() {
     setFailed(false);
     setLoadingMore(false);
     setViewerIndex(null);
+    setViewerError(null);
+    setErrors([]);
     setKind(next);
   }
 
@@ -180,14 +184,18 @@ export default function PhotosSection() {
 
   const canRemove = (item: ClubMedia) => item.uploadedBy === me || isOrganizer;
 
-  async function remove(item: ClubMedia) {
+  async function remove(item: ClubMedia, fromViewer = false) {
     setErrors([]);
+    setViewerError(null);
     const { error } = await removeClubMedia(item);
     if (!mounted.current) return;
     if (error) {
-      setErrors([error]);
+      if (fromViewer) setViewerError(error);
+      else setErrors([error]);
       return;
     }
+    // A reload that started before the delete would bring the item back.
+    loadSeq.current += 1;
     const current = itemsRef.current;
     if (!current) return;
     const next = current.filter((m) => m.id !== item.id);
@@ -311,7 +319,14 @@ export default function PhotosSection() {
             </Text>
           )
         ) : kind === 'photo' ? (
-          <PhotoGrid photos={items} urls={urls} onOpen={setViewerIndex} />
+          <PhotoGrid
+            photos={items}
+            urls={urls}
+            onOpen={(i) => {
+              setViewerError(null);
+              setViewerIndex(i);
+            }}
+          />
         ) : (
           <View style={styles.files}>
             {items.map((f) => (
@@ -345,11 +360,16 @@ export default function PhotosSection() {
         <MediaViewer
           items={photosList.map((p) => ({ url: urls[p.storagePath] ?? null, caption: mediaCaption(p) }))}
           startIndex={viewerIndex}
-          onClose={() => setViewerIndex(null)}
+          onClose={() => {
+            setViewerError(null);
+            setViewerIndex(null);
+          }}
+          error={viewerError}
+          onNavigate={() => setViewerError(null)}
           canRemove={(i) => (photosList[i] ? canRemove(photosList[i]) : false)}
           onRemove={(i) => {
             const p = photosList[i];
-            if (p) void remove(p);
+            if (p) void remove(p, true);
           }}
         />
       ) : null}

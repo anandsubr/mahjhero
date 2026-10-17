@@ -5,6 +5,7 @@ import { ConfirmSheet } from '../GameForm';
 import { ChevronLeftIcon, ChevronRightIcon, XIcon } from '../icons';
 import type { ClubMedia } from '../../lib/club-media';
 import { MONTHS } from '../../lib/home';
+import { colors } from '../../lib/theme';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
 
@@ -20,10 +21,22 @@ type Props = {
   onClose: () => void;
   canRemove: (index: number) => boolean;
   onRemove: (index: number) => void;
+  /** Shown in the footer, e.g. a failed Remove; the parent clears it. */
+  error?: string | null;
+  /** Called when the user moves to the previous or next photo. */
+  onNavigate?: () => void;
 };
 
 /** Full-screen dark photo viewer with prev/next, a caption and a confirmed Remove. */
-export default function MediaViewer({ items, startIndex, onClose, canRemove, onRemove }: Props) {
+export default function MediaViewer({
+  items,
+  startIndex,
+  onClose,
+  canRemove,
+  onRemove,
+  error = null,
+  onNavigate,
+}: Props) {
   const [index, setIndex] = useState(startIndex);
   const [confirming, setConfirming] = useState(false);
   const { width, height } = useWindowDimensions();
@@ -52,7 +65,10 @@ export default function MediaViewer({ items, startIndex, onClose, canRemove, onR
         {items.length > 1 ? (
           <View style={styles.nav} pointerEvents="box-none">
             <Pressable
-              onPress={() => setIndex(Math.max(0, safeIndex - 1))}
+              onPress={() => {
+                setIndex(Math.max(0, safeIndex - 1));
+                onNavigate?.();
+              }}
               accessibilityRole="button"
               accessibilityLabel="Previous image"
               disabled={atStart}
@@ -61,7 +77,10 @@ export default function MediaViewer({ items, startIndex, onClose, canRemove, onR
               <ChevronLeftIcon size={28} color="#fff" />
             </Pressable>
             <Pressable
-              onPress={() => setIndex(Math.min(items.length - 1, safeIndex + 1))}
+              onPress={() => {
+                setIndex(Math.min(items.length - 1, safeIndex + 1));
+                onNavigate?.();
+              }}
               accessibilityRole="button"
               accessibilityLabel="Next image"
               disabled={atEnd}
@@ -72,7 +91,14 @@ export default function MediaViewer({ items, startIndex, onClose, canRemove, onR
           </View>
         ) : null}
         <View style={styles.footer}>
-          <Text style={styles.caption}>{current.caption}</Text>
+          <View style={styles.footerText}>
+            {error ? (
+              <Text testID="media-viewer-error" accessibilityRole="alert" style={styles.error}>
+                {error}
+              </Text>
+            ) : null}
+            <Text style={styles.caption}>{current.caption}</Text>
+          </View>
           {canRemove(safeIndex) && !confirming ? (
             <Pressable
               onPress={() => setConfirming(true)}
@@ -137,7 +163,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 12,
   },
-  caption: { flex: 1, color: '#fff', fontSize: 14 },
+  footerText: { flex: 1, gap: 4 },
+  caption: { color: '#fff', fontSize: 14 },
+  error: { color: colors.accent[300], fontSize: 14, fontWeight: '700' },
   remove: { minHeight: 44, minWidth: 44, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center' },
   removeText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 });

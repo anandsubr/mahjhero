@@ -73,6 +73,7 @@ vi.mock('../../lib/attachments', async (importOriginal) => {
 import PhotosSection from '../clubs/[id]/(hub)/photos';
 import { ClubHubContext } from '../../components/hub/ClubHubContext';
 import { FILE_TYPE_ERROR } from '../../lib/club-media';
+import { GENERIC_ERROR } from '../../lib/constants';
 
 const CLUB: Club = {
   id: 'c1',
@@ -244,6 +245,32 @@ describe('club hub Photos & Files section', () => {
     expect(fetchClubMedia).toHaveBeenCalledTimes(2);
   });
 
+  it('an oversized file shows "Files can be up to 10 MB." and + is usable again', async () => {
+    pickClubFile.mockResolvedValue({ uri: 'u', name: 'big.pdf', mimeType: 'application/pdf', size: 11 * 1024 * 1024 });
+    uploadClubFile.mockResolvedValue({ error: 'Files can be up to 10 MB.' });
+    renderSection();
+    await screen.findByText('No photos yet. Tap + to add the first one.');
+    fireEvent.click(screen.getByRole('tab', { name: 'Files' }));
+    await screen.findByText('No files yet. Tap + to add one.');
+    fireEvent.click(screen.getByRole('button', { name: 'Add a file' }));
+    expect(await screen.findByText('Files can be up to 10 MB.')).toBeTruthy();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Add a file' }).getAttribute('aria-disabled')).not.toBe('true'),
+    );
+  });
+
+  it('switching tabs clears an upload error', async () => {
+    pickImages.mockResolvedValue([{ uri: 'a', width: 1, height: 1 }]);
+    uploadClubPhotos.mockResolvedValue({ added: 0, errors: ['Something went wrong.'] });
+    renderSection();
+    await screen.findByText('No photos yet. Tap + to add the first one.');
+    fireEvent.click(screen.getByRole('button', { name: 'Add photos' }));
+    await screen.findByText('Something went wrong.');
+    fireEvent.click(screen.getByRole('tab', { name: 'Files' }));
+    await screen.findByText('No files yet. Tap + to add one.');
+    expect(screen.queryByText('Something went wrong.')).toBeNull();
+  });
+
   it('a successful file upload reloads the Files list', async () => {
     pickClubFile.mockResolvedValue({ uri: 'u', name: 'rules.pdf', mimeType: 'application/pdf', size: 5 });
     uploadClubFile.mockResolvedValue({ error: null });
@@ -274,7 +301,24 @@ describe('club hub Photos & Files section', () => {
     expect(screen.queryByRole('button', { name: 'Show more' })).toBeNull();
   });
 
-  it('pull-to-refresh reloads the loaded count (capped at 120) so pages do not collapse', async () => {
+  it('refresh after three pages reloads all 180, not a capped count', async () => {
+    fetchClubMedia.mockResolvedValueOnce(photos(60));
+    fetchClubMedia.mockResolvedValueOnce(photos(60, 60));
+    fetchClubMedia.mockResolvedValueOnce(photos(60, 120));
+    renderSection();
+    fireEvent.click(await screen.findByRole('button', { name: 'Show more' }));
+    await screen.findByRole('button', { name: 'Open photo 120 of 120' });
+    fireEvent.click(screen.getByRole('button', { name: 'Show more' }));
+    await screen.findByRole('button', { name: 'Open photo 180 of 180' });
+    fetchClubMedia.mockResolvedValueOnce(photos(180));
+    fireEvent.click(screen.getByLabelText('refresh-control'));
+    await waitFor(() =>
+      expect(fetchClubMedia).toHaveBeenLastCalledWith('c1', 'photo', undefined, 180),
+    );
+    expect(await screen.findByRole('button', { name: 'Open photo 180 of 180' })).toBeTruthy();
+  });
+
+  it('pull-to-refresh reloads the loaded count so pages do not collapse', async () => {
     fetchClubMedia.mockResolvedValueOnce(photos(60));
     fetchClubMedia.mockResolvedValueOnce(photos(60, 60));
     renderSection();
@@ -354,6 +398,47 @@ describe('club hub Photos & Files section', () => {
     });
   });
 
+  it('a failed Remove in the photo viewer shows the error inside the viewer, cleared on navigate and close', async () => {
+    removeClubMedia.mockResolvedValue({ error: 'Something went wrong.' });
+    fetchClubMedia.mockResolvedValue([media(1, { uploadedBy: 'me' }), media(2)]);
+    renderSection('member');
+    fireEvent.click(await screen.findByRole('button', { name: 'Open photo 1 of 2' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove' }));
+    fireEvent.click(within(screen.getByTestId('confirm-sheet')).getByRole('button', { name: 'Remove' }));
+    const err = await screen.findByTestId('media-viewer-error');
+    expect(err.textContent).toBe('Something went wrong.');
+    fireEvent.click(screen.getByRole('button', { name: 'Next image' }));
+    expect(screen.queryByTestId('media-viewer-error')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Previous image' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    fireEvent.click(within(screen.getByTestId('confirm-sheet')).getByRole('button', { name: 'Remove' }));
+    await screen.findByTestId('media-viewer-error');
+    fireEvent.click(screen.getByRole('button', { name: 'Close image viewer' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open photo 1 of 2' }));
+    expect(screen.queryByTestId('media-viewer-error')).toBeNull();
+    expect(screen.queryByText('Something went wrong.')).toBeNull();
+  });
+
+  it('a reload already in flight cannot bring a removed item back', async () => {
+    fetchClubMedia.mockResolvedValueOnce([]);
+    fetchClubMedia.mockResolvedValueOnce([media(3, { kind: 'file', uploadedBy: 'me' })]);
+    renderSection('member');
+    await screen.findByText('No photos yet. Tap + to add the first one.');
+    fireEvent.click(screen.getByRole('tab', { name: 'Files' }));
+    await screen.findByText('doc3.pdf');
+    let resolveStale: (v: ClubMedia[]) => void = () => {};
+    fetchClubMedia.mockImplementationOnce(
+      () => new Promise<ClubMedia[]>((r) => { resolveStale = r; }),
+    );
+    fireEvent.click(screen.getByLabelText('refresh-control'));
+    fireEvent.click(screen.getByRole('button', { name: 'More options' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    fireEvent.click(within(screen.getByTestId('confirm-sheet')).getByRole('button', { name: 'Remove' }));
+    expect(await screen.findByText('No files yet. Tap + to add one.')).toBeTruthy();
+    await act(async () => resolveStale([media(3, { kind: 'file', uploadedBy: 'me' })]));
+    expect(screen.queryByText('doc3.pdf')).toBeNull();
+  });
+
   describe('opening a file', () => {
     it('native: opens the signed URL with Linking', async () => {
       setOS('ios');
@@ -382,6 +467,23 @@ describe('club hub Photos & Files section', () => {
       await waitFor(() => expect(tab.location.href).toBe('https://signed/c1/files/u4/doc4.pdf'));
       expect(open).toHaveBeenCalledWith('', '_blank');
       expect(tab.opener).toBeNull();
+      open.mockRestore();
+    });
+
+    it('web: closes the blank tab and says so when no signed URL comes back', async () => {
+      setOS('web');
+      getMediaUrls.mockResolvedValue({});
+      const tab = { location: { href: '' }, opener: {} as unknown, close: vi.fn() };
+      const open = vi.spyOn(window, 'open').mockReturnValue(tab as unknown as Window);
+      fetchClubMedia.mockResolvedValueOnce([]);
+      fetchClubMedia.mockResolvedValueOnce([media(4, { kind: 'file' })]);
+      renderSection();
+      await screen.findByText('No photos yet. Tap + to add the first one.');
+      fireEvent.click(screen.getByRole('tab', { name: 'Files' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Open doc4.pdf' }));
+      await waitFor(() => expect(tab.close).toHaveBeenCalled());
+      expect(await screen.findByText(GENERIC_ERROR)).toBeTruthy();
+      expect(tab.location.href).toBe('');
       open.mockRestore();
     });
   });
