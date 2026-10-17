@@ -135,7 +135,7 @@ describe('the club board', () => {
     // PostCard's own heart pill and comment link.
     expect(screen.getByRole('button', { name: 'Heart this post' })).toBeTruthy();
     expect(screen.getByText('Comment')).toBeTruthy();
-    expect(fetchClubFeed).toHaveBeenCalledWith('t1', 'recent');
+    expect(fetchClubFeed).toHaveBeenCalledWith('t1', 'recent', undefined, 30);
   });
 
   it('says so when the board is empty', async () => {
@@ -165,7 +165,7 @@ describe('the club board', () => {
       expect(screen.getByText('Most recent')).toBeTruthy();
       fireEvent.click(screen.getByRole('button', { name: 'Sort posts: Most recent' }));
       fireEvent.click(screen.getByRole('button', { name: 'Latest activity' }));
-      await waitFor(() => expect(fetchClubFeed).toHaveBeenCalledWith('t1', 'activity'));
+      await waitFor(() => expect(fetchClubFeed).toHaveBeenCalledWith('t1', 'activity', undefined, 30));
       expect(saveFeedOrder).toHaveBeenCalledWith('activity');
       expect(await screen.findByRole('button', { name: 'Sort posts: Latest activity' })).toBeTruthy();
     });
@@ -173,8 +173,8 @@ describe('the club board', () => {
     it('starts in the remembered order', async () => {
       loadFeedOrder.mockResolvedValue('activity');
       render(<ClubBoardScreen />);
-      await waitFor(() => expect(fetchClubFeed).toHaveBeenCalledWith('t1', 'activity'));
-      expect(fetchClubFeed).not.toHaveBeenCalledWith('t1', 'recent');
+      await waitFor(() => expect(fetchClubFeed).toHaveBeenCalledWith('t1', 'activity', undefined, 30));
+      expect(fetchClubFeed).not.toHaveBeenCalledWith('t1', 'recent', undefined, 30);
     });
   });
 
@@ -237,6 +237,63 @@ describe('the club board', () => {
     });
   });
 
+  describe('hearts vs a refresh landing mid-flight', () => {
+    it('settles relative to the refreshed row, not the tap-time count', async () => {
+      fetchClubFeed
+        .mockResolvedValueOnce([post('p1', { heartCount: 2 })])
+        // Read before the toggle committed: others hearted meanwhile (5), mine not yet.
+        .mockResolvedValueOnce([post('p1', { heartCount: 5, heartedByMe: false })]);
+      const call = deferred<{ hearted: boolean | null; error: string | null }>();
+      togglePostHeart.mockReturnValue(call.promise);
+      render(<ClubBoardScreen />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Heart this post' }));
+      const onInsert = useThreadRealtime.mock.calls.at(-1)![2] as () => void;
+      await act(async () => {
+        onInsert();
+      });
+      await waitFor(() => expect(fetchClubFeed).toHaveBeenCalledTimes(2));
+      await act(async () => call.resolve({ hearted: true, error: null }));
+      const pill = await screen.findByRole('button', { name: 'Remove your heart' });
+      expect(within(pill).getByText('6')).toBeTruthy();
+    });
+
+    it('does not double-count when the refreshed row already has my heart', async () => {
+      fetchClubFeed
+        .mockResolvedValueOnce([post('p1', { heartCount: 2 })])
+        .mockResolvedValueOnce([post('p1', { heartCount: 5, heartedByMe: true })]);
+      const call = deferred<{ hearted: boolean | null; error: string | null }>();
+      togglePostHeart.mockReturnValue(call.promise);
+      render(<ClubBoardScreen />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Heart this post' }));
+      const onInsert = useThreadRealtime.mock.calls.at(-1)![2] as () => void;
+      await act(async () => {
+        onInsert();
+      });
+      await waitFor(() => expect(fetchClubFeed).toHaveBeenCalledTimes(2));
+      await act(async () => call.resolve({ hearted: true, error: null }));
+      const pill = await screen.findByRole('button', { name: 'Remove your heart' });
+      expect(within(pill).getByText('5')).toBeTruthy();
+    });
+
+    it('on failure leaves a refreshed row alone when it no longer shows the optimistic state', async () => {
+      fetchClubFeed
+        .mockResolvedValueOnce([post('p1', { heartCount: 2 })])
+        .mockResolvedValueOnce([post('p1', { heartCount: 7, heartedByMe: false })]);
+      const call = deferred<{ hearted: boolean | null; error: string | null }>();
+      togglePostHeart.mockReturnValue(call.promise);
+      render(<ClubBoardScreen />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Heart this post' }));
+      const onInsert = useThreadRealtime.mock.calls.at(-1)![2] as () => void;
+      await act(async () => {
+        onInsert();
+      });
+      await waitFor(() => expect(fetchClubFeed).toHaveBeenCalledTimes(2));
+      await act(async () => call.resolve({ hearted: null, error: 'nope' }));
+      const pill = await screen.findByRole('button', { name: 'Heart this post' });
+      expect(within(pill).getByText('7')).toBeTruthy();
+    });
+  });
+
   describe('paging', () => {
     const page1 = Array.from({ length: 30 }, (_, i) =>
       post(`p${i}`, {
@@ -275,6 +332,76 @@ describe('the club board', () => {
           id: 'p29',
         }),
       );
+    });
+
+    it('a realtime refetch keeps loaded older pages, requesting the loaded count', async () => {
+      const older = post('p30', { body: 'An older post' });
+      fetchClubFeed
+        .mockResolvedValueOnce(page1)
+        .mockResolvedValueOnce([older])
+        .mockResolvedValueOnce([...page1, older]);
+      render(<ClubBoardScreen />);
+      await screen.findByText('Body of p0');
+      fireEvent.click(screen.getByRole('button', { name: 'Show older posts' }));
+      await screen.findByText('An older post');
+      const onInsert = useThreadRealtime.mock.calls.at(-1)![2] as () => void;
+      await act(async () => {
+        onInsert();
+      });
+      await waitFor(() => expect(fetchClubFeed).toHaveBeenCalledTimes(3));
+      expect(fetchClubFeed).toHaveBeenLastCalledWith('t1', 'recent', undefined, 31);
+      expect(screen.getByText('An older post')).toBeTruthy();
+      expect(screen.getByText('Body of p0')).toBeTruthy();
+    });
+
+    it('a refocus keeps loaded older pages and Show older posts', async () => {
+      const page2 = Array.from({ length: 30 }, (_, i) => post(`o${i}`, { body: `Older ${i}` }));
+      fetchClubFeed
+        .mockResolvedValueOnce(page1)
+        .mockResolvedValueOnce(page2)
+        .mockResolvedValueOnce([...page1, ...page2]);
+      render(<ClubBoardScreen />);
+      await screen.findByText('Body of p0');
+      fireEvent.click(screen.getByRole('button', { name: 'Show older posts' }));
+      await screen.findByText('Older 29');
+      const latest = useFocusEffectSpy.mock.calls.at(-1)![0] as () => void;
+      await act(async () => {
+        latest();
+      });
+      await waitFor(() => expect(fetchClubFeed).toHaveBeenCalledTimes(3));
+      expect(fetchClubFeed).toHaveBeenLastCalledWith('t1', 'recent', undefined, 60);
+      expect(screen.getByText('Older 29')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Show older posts' })).toBeTruthy();
+    });
+
+    it('past 100 loaded, a refresh asks for 100 and keeps the older tail', async () => {
+      const pages = [0, 1, 2, 3].map((n) =>
+        Array.from({ length: 30 }, (_, i) => post(`k${n * 30 + i}`, { body: `Post ${n * 30 + i}` })),
+      );
+      const all = pages.flat();
+      fetchClubFeed
+        .mockResolvedValueOnce(pages[0])
+        .mockResolvedValueOnce(pages[1])
+        .mockResolvedValueOnce(pages[2])
+        .mockResolvedValueOnce(pages[3])
+        // Refresh: a brand-new post on top, then the newest 99 already loaded.
+        .mockResolvedValueOnce([post('new', { body: 'Brand new' }), ...all.slice(0, 99)]);
+      render(<ClubBoardScreen />);
+      await screen.findByText('Post 0');
+      for (const last of ['Post 59', 'Post 89', 'Post 119']) {
+        fireEvent.click(screen.getByRole('button', { name: 'Show older posts' }));
+        await screen.findByText(last);
+      }
+      const onInsert = useThreadRealtime.mock.calls.at(-1)![2] as () => void;
+      await act(async () => {
+        onInsert();
+      });
+      await screen.findByText('Brand new');
+      expect(fetchClubFeed).toHaveBeenLastCalledWith('t1', 'recent', undefined, 100);
+      expect(screen.getByText('Post 119')).toBeTruthy();
+      expect(screen.getAllByText('Post 50')).toHaveLength(1);
+      const bodies = screen.getAllByText(/^(Brand new|Post 0|Post 119)$/).map((n) => n.textContent);
+      expect(bodies).toEqual(['Brand new', 'Post 0', 'Post 119']);
     });
 
     it('hides Show older posts when the first page is short', async () => {

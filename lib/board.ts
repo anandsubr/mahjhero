@@ -82,11 +82,15 @@ function mapRow(r: FeedRow): FeedPost {
   };
 }
 
-/** One page (30) of the club board. `before` is the last row's sort key + id. */
+/**
+ * One page of the club board (30 rows unless `limit` is given; the server
+ * caps it at 100). `before` is the last row's sort key + id.
+ */
 export async function fetchClubFeed(
   threadId: string,
   order: FeedOrder,
   before?: { at: string; id: string },
+  limit?: number,
 ): Promise<FeedPost[] | null> {
   try {
     const { data, error } = await supabase.rpc('fetch_club_feed', {
@@ -94,6 +98,7 @@ export async function fetchClubFeed(
       p_order: order,
       p_before: before?.at ?? null,
       p_before_id: before?.id ?? null,
+      ...(limit !== undefined ? { p_limit: limit } : {}),
     });
     if (error) return null;
     return ((data ?? []) as FeedRow[]).map(mapRow);

@@ -50,6 +50,8 @@ type Props = {
 
 /** fetch_club_feed's page size. A shorter page means nothing older is left. */
 const PAGE_SIZE = 30;
+/** fetch_club_feed's server-side cap on p_limit. */
+const MAX_REFRESH = 100;
 
 const ORDER_LABEL: Record<FeedOrder, string> = {
   recent: 'Most recent',
@@ -102,6 +104,10 @@ const ClubBoard = forwardRef<ClubBoardHandle, Props>(function ClubBoard(
   // landing before the next commit.
   const loadingMoreRef = useRef(false);
   const heartingRef = useRef(new Set<string>());
+  // How many posts are loaded, read by `load` without making it depend on
+  // `posts` (which would re-run the focus effect on every heart/page).
+  const loadedCountRef = useRef(0);
+  loadedCountRef.current = posts.length;
 
   useEffect(() => {
     let cancelled = false;
@@ -116,7 +122,10 @@ const ClubBoard = forwardRef<ClubBoardHandle, Props>(function ClubBoard(
   const load = useCallback(async () => {
     if (!threadId || !order) return;
     const seq = ++seqRef.current;
-    const rows = await fetchClubFeed(threadId, order);
+    // A refresh re-reads everything already loaded (up to the server cap),
+    // so focus/realtime/pull never collapse older pages back to the first 30.
+    const requested = Math.min(Math.max(PAGE_SIZE, loadedCountRef.current), MAX_REFRESH);
+    const rows = await fetchClubFeed(threadId, order, undefined, requested);
     if (seq !== seqRef.current) return;
     // null means "we could not ask", [] means "there is nothing" -- an empty
     // state for a failed read would tell a member something false.
@@ -126,8 +135,11 @@ const ClubBoard = forwardRef<ClubBoardHandle, Props>(function ClubBoard(
       return;
     }
     setError(null);
-    setPosts(rows);
-    setHasMore(rows.length >= PAGE_SIZE);
+    // Past the cap, the refreshed head goes ahead of the already-loaded
+    // tail (de-duped by id, fresh rows win) so nothing older disappears.
+    setPosts((cur) => (cur.length > MAX_REFRESH ? mergeFeedPages(rows, cur) : rows));
+    // Once older posts were known to exist, a refresh doesn't hide the button.
+    setHasMore((had) => had || rows.length >= requested);
     setReady(true);
   }, [threadId, order]);
 
@@ -193,23 +205,31 @@ const ClubBoard = forwardRef<ClubBoardHandle, Props>(function ClubBoard(
     heartingRef.current.add(postId);
     setHearting(new Set(heartingRef.current));
     const prevHearted = before.heartedByMe;
-    const prevCount = before.heartCount;
-    const apply = (hearted: boolean) =>
+    // Every change is applied to the row as it is NOW, not as it was at tap
+    // time: a refresh landing mid-flight may have replaced it with a newer
+    // count, and only my own heart's +/-1 is ours to adjust.
+    const setMine = (hearted: boolean, onlyIfShowing?: boolean) =>
       setPosts((cur) =>
-        cur.map((p) =>
-          p.id === postId
-            ? {
-                ...p,
-                heartedByMe: hearted,
-                heartCount: Math.max(0, prevCount + (hearted ? 1 : 0) - (prevHearted ? 1 : 0)),
-              }
-            : p,
-        ),
+        cur.map((p) => {
+          if (p.id !== postId) return p;
+          if (onlyIfShowing !== undefined && p.heartedByMe !== onlyIfShowing) return p;
+          if (p.heartedByMe === hearted) return p;
+          return {
+            ...p,
+            heartedByMe: hearted,
+            heartCount: Math.max(0, p.heartCount + (hearted ? 1 : -1)),
+          };
+        }),
       );
-    apply(!prevHearted);
+    setMine(!prevHearted);
     const { hearted, error: refusal } = await togglePostHeart(postId);
-    // A failure rolls back; a success settles on what the server says.
-    apply(refusal || hearted === null ? prevHearted : hearted);
+    if (refusal || hearted === null) {
+      // Roll back only if the row still shows the optimistic state; a
+      // refreshed row already carries the server's truth.
+      setMine(prevHearted, !prevHearted);
+    } else {
+      setMine(hearted);
+    }
     heartingRef.current.delete(postId);
     setHearting(new Set(heartingRef.current));
   }, [posts]);

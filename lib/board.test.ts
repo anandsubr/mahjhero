@@ -52,6 +52,14 @@ describe('fetchClubFeed', () => {
     });
   });
 
+  it('sends p_limit only when a limit is given', async () => {
+    rpc.mockResolvedValueOnce({ data: [], error: null });
+    await fetchClubFeed('t1', 'recent', undefined, 75);
+    expect(rpc).toHaveBeenCalledWith('fetch_club_feed', {
+      target_thread: 't1', p_order: 'recent', p_before: null, p_before_id: null, p_limit: 75,
+    });
+  });
+
   it('tolerates null jsonb arrays and missing names', async () => {
     rpc.mockResolvedValueOnce({
       data: [{ ...ROW, author_name: null, author_role: null, attachments: null, recent_comments: null }],

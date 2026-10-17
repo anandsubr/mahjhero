@@ -112,7 +112,7 @@ describe('club hub Board section', () => {
     renderSection();
     expect(await screen.findByText('Anyone free Thursday?')).toBeTruthy();
     expect(openThreadForClub).toHaveBeenCalledWith('c1');
-    expect(fetchClubFeed).toHaveBeenCalledWith('t1', 'recent');
+    expect(fetchClubFeed).toHaveBeenCalledWith('t1', 'recent', undefined, 30);
   });
 
   it('shows hosts an Announcement button to the full composer for this club and thread', async () => {
