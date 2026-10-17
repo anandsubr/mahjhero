@@ -42,8 +42,9 @@ export type PickedImage = {
 export async function pickImages(
   source: 'camera' | 'library',
   alreadyPicked: number,
+  max: number = MAX_ATTACHMENTS,
 ): Promise<PickedImage[] | null> {
-  const remaining = MAX_ATTACHMENTS - alreadyPicked;
+  const remaining = max - alreadyPicked;
   if (remaining <= 0) return null;
 
   try {
