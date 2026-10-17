@@ -1,10 +1,14 @@
-import { useCallback, useRef, useState } from 'react';
-import { Platform, Pressable, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Keyboard, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { Text, TextInput } from '../Text';
 import AttachmentPicker from '../messages/AttachmentPicker';
 import { GENERIC_ERROR } from '../../lib/constants';
 import { BODY_MAX, postMessage, type MessageAttachmentInput } from '../../lib/messages';
 import { colors, radius, space, type } from '../../lib/theme';
+
+const FIELD_HEIGHT = 44;
+const INPUT_MAX_HEIGHT = 112;
 
 type Props = {
   threadId: string;
@@ -36,6 +40,33 @@ export default function BoardComposer({ threadId, onPosted }: Props) {
   // Written synchronously with the call it guards: `busy` from the render
   // closure cannot see a second tap landing before the next render.
   const busyRef = useRef(false);
+  // Grows with the draft up to ~4 lines. react-native-web leaves a multiline
+  // textarea at its row height, so the height is driven from the measured
+  // content size, clamped like messages/Composer.
+  const [inputHeight, setInputHeight] = useState(FIELD_HEIGHT);
+  const insets = useSafeAreaInsets();
+  // The keyboard covers the home indicator, so the inset padding would only
+  // float the composer a gap above the keys.
+  const [keyboardUp, setKeyboardUp] = useState(false);
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardWillShow', () => setKeyboardUp(true));
+    const hide = Keyboard.addListener('keyboardWillHide', () => setKeyboardUp(false));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+  useEffect(() => {
+    if (body === '') setInputHeight(FIELD_HEIGHT);
+  }, [body]);
+  const handleSize = useCallback(
+    (e: { nativeEvent: { contentSize: { height: number } } }) => {
+      setInputHeight(
+        Math.min(INPUT_MAX_HEIGHT, Math.max(FIELD_HEIGHT, e.nativeEvent.contentSize.height)),
+      );
+    },
+    [],
+  );
   // Latest values for the keyboard handler / submit, which must not act on a
   // stale closure.
   const latest = useRef({ body, attachments, attachmentsPending });
@@ -84,7 +115,7 @@ export default function BoardComposer({ threadId, onPosted }: Props) {
   );
 
   return (
-    <View style={styles.wrap}>
+    <View style={[styles.wrap, { paddingBottom: keyboardUp ? 8 : Math.max(insets.bottom, 8) }]}>
       {error ? (
         <Text style={styles.error} accessibilityRole="alert">
           {error}
@@ -104,9 +135,10 @@ export default function BoardComposer({ threadId, onPosted }: Props) {
             <View style={styles.row}>
               {trigger}
               <TextInput
-                style={styles.input}
+                style={[styles.input, { height: inputHeight }]}
                 value={body}
                 onChangeText={setBody}
+                onContentSizeChange={handleSize}
                 placeholder="Write to the club"
                 placeholderTextColor={colors.neutral[600]}
                 accessibilityLabel="Write to the club"
@@ -144,8 +176,8 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     minWidth: 0,
-    minHeight: 44,
-    maxHeight: 112,
+    minHeight: FIELD_HEIGHT,
+    maxHeight: INPUT_MAX_HEIGHT,
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 22,

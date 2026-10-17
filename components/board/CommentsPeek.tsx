@@ -31,7 +31,7 @@ export default function CommentsPeek({ comments, total, onPress }: Props) {
               {c.authorName}
             </Text>
             <Text style={styles.body} numberOfLines={2}>
-              {c.body}
+              {c.body.trim() !== '' ? c.body : 'Photo'}
             </Text>
           </View>
         </View>

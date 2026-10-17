@@ -132,6 +132,6 @@ const styles = StyleSheet.create({
   more: { minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start' },
   moreText: { fontFamily: type.bodyBold, fontSize: 16, color: colors.accent[700] },
   footer: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  commentLink: { minHeight: 44, justifyContent: 'center' },
+  commentLink: { minHeight: 44, justifyContent: 'center', marginLeft: 'auto' },
   commentText: { fontFamily: type.bodyBold, fontSize: 16, color: colors.accent[700] },
 });

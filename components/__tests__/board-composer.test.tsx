@@ -2,6 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import BoardComposer from '../board/BoardComposer';
 
+const insets = vi.hoisted(() => ({ bottom: 0 }));
+vi.mock('react-native-safe-area-context', () => ({
+  useSafeAreaInsets: () => ({ top: 0, left: 0, right: 0, bottom: insets.bottom }),
+}));
+
 const pickImages = vi.fn();
 const compressImage = vi.fn();
 const uploadAttachment = vi.fn();
@@ -19,6 +24,7 @@ vi.mock('../../lib/messages', async (orig) => ({
 }));
 
 beforeEach(() => {
+  insets.bottom = 0;
   pickImages.mockReset();
   compressImage.mockReset();
   uploadAttachment.mockReset();
@@ -117,5 +123,15 @@ describe('BoardComposer', () => {
     fireEvent.click(screen.getAllByLabelText('Remove image')[0]);
     expect(screen.getAllByLabelText('Remove image')).toHaveLength(3);
     expect((screen.getByLabelText('Attach an image') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('pads the bottom by the safe-area inset, at least 8', () => {
+    insets.bottom = 34;
+    const { container, unmount } = render(<BoardComposer threadId="t1" onPosted={() => {}} />);
+    expect((container.firstChild as HTMLElement).style.paddingBottom).toBe('34px');
+    unmount();
+    insets.bottom = 0;
+    const second = render(<BoardComposer threadId="t1" onPosted={() => {}} />);
+    expect((second.container.firstChild as HTMLElement).style.paddingBottom).toBe('8px');
   });
 });

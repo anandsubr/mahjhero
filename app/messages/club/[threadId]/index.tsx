@@ -59,7 +59,7 @@ export default function ClubBoardScreen() {
     // A best-effort read, kept separate from `load()`'s own `loadingRef`
     // guard: this must run once per thread, not on every realtime refetch
     // `load()` also answers, and a failure here must not blank the board
-    // the way a failed `fetchClubPosts` does -- the posts are the thing
+    // the way a failed feed load (lib/board.ts) does -- the posts are the thing
     // this screen exists to show. `thread` staying null on a failure (or
     // while still in flight) degrades the same way in both places that
     // read it below: the New-post link falls back to an empty `clubId`,

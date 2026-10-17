@@ -161,3 +161,10 @@ describe('PostCard', () => {
     expect(onToggleHeart).toHaveBeenCalled();
   });
 });
+
+describe('CommentsPeek photo-only reply', () => {
+  it('shows "Photo" for a reply with an empty body', () => {
+    render(<CommentsPeek comments={[{ ...comment(1), body: '' }]} total={1} onPress={() => {}} />);
+    expect(screen.getByText('Photo')).toBeTruthy();
+  });
+});

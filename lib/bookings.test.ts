@@ -755,14 +755,14 @@ describe('BOOKING_REFUSALS (self-audit against the migrations)', () => {
     // is not a root post of a club board — a reply, a group/game message, or
     // no message at all. The heart control only renders on feed post cards,
     // so a caller hitting this is malicious or buggy. The Board's heart
-    // toggle (lib/messages.ts) owns it and rolls back on any failure.
+    // toggle (lib/board.ts) owns it and rolls back on any failure.
     'not_a_post':
-      'raised by toggle_post_heart — the Board heart toggle (lib/messages.ts) is responsible, not this module',
+      'raised by toggle_post_heart — the Board heart toggle (lib/board.ts) is responsible, not this module',
     // Raised by fetch_club_feed when p_order is neither 'recent' nor
     // 'activity'. The client only ever passes one of those two constants, so
-    // this is a caller bug. lib/messages.ts owns it.
+    // this is a caller bug. lib/board.ts owns it.
     'unknown feed order':
-      'raised by fetch_club_feed — lib/messages.ts is the module responsible, and by design relays error.message rather than mapping through a refusal table',
+      'raised by fetch_club_feed — lib/board.ts is the module responsible, and by design relays error.message rather than mapping through a refusal table',
     // Raised by post_message (20260905040000_post_message_attachments.sql)
     // when p_attachments carries more than 4 entries. The picker caps
     // selection at 4 images client-side, so a caller hitting this is

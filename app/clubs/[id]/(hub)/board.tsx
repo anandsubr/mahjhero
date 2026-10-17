@@ -82,6 +82,7 @@ export default function BoardSection() {
 
   return (
     <HubSection
+      avoidKeyboard
       onRefresh={onRefresh}
       footer={<BoardComposer threadId={threadId} onPosted={onPosted} />}
     >
