@@ -1,6 +1,7 @@
 import {
   forwardRef,
   useCallback,
+  useEffect,
   useImperativeHandle,
   useRef,
   useState,
@@ -9,103 +10,133 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { Text } from './Text';
 import ErrorBanner from './ErrorBanner';
-import PostRow from './messages/PostRow';
-import { PlusIcon } from './icons';
+import PostCard from './board/PostCard';
+import { ChevronDownIcon } from './icons';
 import { GENERIC_ERROR } from '../lib/constants';
-import { fetchClubPosts, type ClubPost } from '../lib/messages';
+import { getSignedUrls } from '../lib/attachments';
+import {
+  fetchClubFeed,
+  loadFeedOrder,
+  mergeFeedPages,
+  saveFeedOrder,
+  togglePostHeart,
+  type FeedOrder,
+  type FeedPost,
+} from '../lib/board';
 import { useSession } from '../lib/session';
 import { colors, radius, space, type } from '../lib/theme';
 import { useThreadRealtime } from '../lib/use-thread-realtime';
 
 export type ClubBoardHandle = {
-  /** Refetches the board's posts -- what HubSection's pull-to-refresh calls. */
+  /**
+   * Refetches the first page of the board in the current order -- what
+   * HubSection's pull-to-refresh and the pinned composer's `onPosted` call.
+   */
   reload: () => Promise<void>;
 };
 
 type Props = {
   threadId: string;
-  /** The New-post link's `clubId` query param; see `showNewPost` below. */
+  /** The Announcement link's `clubId` query param. */
   clubId: string;
   /**
-   * Renders a "New post" pill above the list, ungated -- the same
-   * availability the messages screen's CompactHeader ⊕ always had (it never
-   * checked role; whoever could open a club's board could post to it).
-   * Left off by app/messages/club/[threadId]/index.tsx, whose own header
-   * already carries that ⊕ wired to this exact destination; the Board hub
-   * section has no header of its own, so it turns this on instead.
+   * Hosts and co-organizers (`canAnnounce` in lib/clubs.ts) get an
+   * "Announcement" text button beside the sort control, opening the full
+   * composer screen (app/messages/club/new.tsx). The pinned BoardComposer
+   * the mount site renders stays a plain post.
    */
-  showNewPost?: boolean;
+  canAnnounce?: boolean;
 };
 
+/** fetch_club_feed's page size. A shorter page means nothing older is left. */
+const PAGE_SIZE = 30;
+
+const ORDER_LABEL: Record<FeedOrder, string> = {
+  recent: 'Most recent',
+  activity: 'Latest activity',
+};
+
+/** Keyset cursor for the post: its sort key in `order`, plus its id. */
+function cursorFor(post: FeedPost, order: FeedOrder): { at: string; id: string } {
+  return { at: order === 'activity' ? post.lastActivityAt : post.createdAt, id: post.id };
+}
+
 /**
- * A club's board: its root posts, most recent activity first --
- * `last_activity_at` is the sort key and `fetch_club_posts` already returns
- * them in that order, so there is nothing to sort here.
+ * A club's Board feed (Design V3, club-hub phase 4): caption, sort control
+ * ("Most recent" / "Latest activity", remembered per device), organizer
+ * "Announcement" button, then PostCards with hearts and a comments peek,
+ * paged 30 at a time with "Show older posts".
  *
- * Moved out of app/messages/club/[threadId]/index.tsx (club-hub phase 2,
- * Task 9) so the Board hub section can render the same list the messages
- * route always has, rather than a second copy of this logic. The messages
- * screen keeps owning the thread fetch and header (title, avatar, back
- * chevron) -- neither of those is specific to the list itself, and the
- * Board section gets its own club identity from the hub header above it.
+ * Mounted by the hub Board section and by app/messages/club/[threadId]; both
+ * pin BoardComposer in their own footer (outside the scroller) and call
+ * `reload()` from its `onPosted`, which brings the new post to the top in
+ * either order (it is both the newest post and the newest activity).
  *
- * Every post itself opens a separate post screen (Task 11), which is where
- * replying and `mark_post_read` live -- opening the board is not reading
- * what's on it. Marking anything read from here would mean every post's dot
- * goes dark the moment a member glances at the board, which defeats the
- * reason a board of separately-readable posts exists at all.
+ * Opening the board does not mark anything read -- the post screen owns
+ * `mark_post_read`.
  */
 const ClubBoard = forwardRef<ClubBoardHandle, Props>(function ClubBoard(
-  { threadId, clubId, showNewPost = false },
+  { threadId, clubId, canAnnounce = false },
   ref,
 ) {
   const { session } = useSession();
   const router = useRouter();
 
-  const [posts, setPosts] = useState<ClubPost[]>([]);
+  // null until the remembered order is read, so the first fetch is already
+  // in the right order rather than fetching 'recent' and then refetching.
+  const [order, setOrder] = useState<FeedOrder | null>(null);
+  const [sortOpen, setSortOpen] = useState(false);
+  const [posts, setPosts] = useState<FeedPost[]>([]);
+  const [hasMore, setHasMore] = useState(false);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Written synchronously alongside the async call it guards, the same
-  // pattern app/messages/index.tsx's `openingRef` and app/messages/
-  // [threadId].tsx's `sendingRef` both record: a boolean read from render
-  // state is blind to a second call landing before that render commits.
-  const loadingRef = useRef(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hearting, setHearting] = useState<ReadonlySet<string>>(new Set());
+  const [urls, setUrls] = useState<Record<string, string>>({});
+
+  // Every first-page load bumps this; a response (first page or older page)
+  // whose sequence is no longer current is dropped, so an order switch or a
+  // refresh landing mid-request can never be overwritten by the stale answer.
+  const seqRef = useRef(0);
+  // Synchronous in-flight guards: render state cannot see a second tap
+  // landing before the next commit.
+  const loadingMoreRef = useRef(false);
+  const heartingRef = useRef(new Set<string>());
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadFeedOrder().then((o) => {
+      if (!cancelled) setOrder((cur) => cur ?? o);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const load = useCallback(async () => {
-    if (!threadId || loadingRef.current) return;
-    loadingRef.current = true;
-    const rows = await fetchClubPosts(threadId);
-    // `fetchClubPosts` never rejects: null means "we could not ask", []
-    // means "there is nothing". Showing the empty state for a failed read
-    // tells a member something false about their club's board.
+    if (!threadId || !order) return;
+    const seq = ++seqRef.current;
+    const rows = await fetchClubFeed(threadId, order);
+    if (seq !== seqRef.current) return;
+    // null means "we could not ask", [] means "there is nothing" -- an empty
+    // state for a failed read would tell a member something false.
     if (rows === null) {
       setError(GENERIC_ERROR);
       setReady(true);
-      loadingRef.current = false;
       return;
     }
     setError(null);
     setPosts(rows);
+    setHasMore(rows.length >= PAGE_SIZE);
     setReady(true);
-    loadingRef.current = false;
-  }, [threadId]);
+  }, [threadId, order]);
 
-  // Exposes a way for HubSection's pull-to-refresh (in the Board section) to
-  // trigger the same `load` this component already runs on focus/realtime --
-  // the simplest handle that keeps this move verbatim, rather than adding a
-  // `refreshKey` prop this component would need its own effect to watch.
   useImperativeHandle(ref, () => ({ reload: load }), [load]);
 
-  /*
-   * On FOCUS, not only on mount -- the same call app/messages/index.tsx
-   * already makes for the list, and for a sharper reason here. Opening a
-   * post pushes a screen ON TOP of this one; the board stays mounted, so a
-   * mount-only effect never runs again. `markPostRead` writes post_reads,
-   * and post_reads is not in the realtime publication (20260829070000
-   * publishes `messages`), so nothing tells this screen the dot it is
-   * drawing is stale. Reading a post and pressing back left the dot lit
-   * until the app was restarted.
-   */
+  // On FOCUS, not only on mount: opening a post pushes a screen on top of
+  // this one, and post_reads is not in the realtime publication, so only a
+  // refocus can clear an unread dot the member just read. `load` changes
+  // identity with `order`, so switching the sort refetches through here too.
   useFocusEffect(
     useCallback(() => {
       if (!session?.user.id) return;
@@ -117,51 +148,184 @@ const ClubBoard = forwardRef<ClubBoardHandle, Props>(function ClubBoard(
     threadId,
     session?.user.id,
     useCallback(() => {
-      // Refetch rather than appending the payload row: a `postgres_changes`
-      // INSERT carries author_id but not the joined author_name, and the
-      // board's reply_count/last_activity_at/unread columns are all
-      // computed server-side -- there is nothing here to patch a payload
-      // row into that wouldn't already need the full row back anyway.
+      // Refetch rather than patching the payload row in: author name, role,
+      // hearts, comment peek and unread are all computed server-side.
       void load();
     }, [load]),
   );
 
+  const loadOlder = useCallback(async () => {
+    if (!order || loadingMoreRef.current || posts.length === 0) return;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    const seq = seqRef.current;
+    const page = await fetchClubFeed(threadId, order, cursorFor(posts[posts.length - 1], order));
+    loadingMoreRef.current = false;
+    setLoadingMore(false);
+    if (seq !== seqRef.current) return;
+    if (page === null) {
+      setError(GENERIC_ERROR);
+      return;
+    }
+    setError(null);
+    setPosts((cur) => mergeFeedPages(cur, page));
+    setHasMore(page.length >= PAGE_SIZE);
+  }, [threadId, order, posts]);
+
+  const chooseOrder = useCallback(
+    (next: FeedOrder) => {
+      setSortOpen(false);
+      if (next === order) return;
+      // Reset the list: the loaded pages belong to the old order.
+      setPosts([]);
+      setHasMore(false);
+      setReady(false);
+      setOrder(next);
+      void saveFeedOrder(next);
+    },
+    [order],
+  );
+
+  const toggleHeart = useCallback(async (postId: string) => {
+    if (heartingRef.current.has(postId)) return;
+    const before = posts.find((p) => p.id === postId);
+    if (!before) return;
+    heartingRef.current.add(postId);
+    setHearting(new Set(heartingRef.current));
+    const prevHearted = before.heartedByMe;
+    const prevCount = before.heartCount;
+    const apply = (hearted: boolean) =>
+      setPosts((cur) =>
+        cur.map((p) =>
+          p.id === postId
+            ? {
+                ...p,
+                heartedByMe: hearted,
+                heartCount: Math.max(0, prevCount + (hearted ? 1 : 0) - (prevHearted ? 1 : 0)),
+              }
+            : p,
+        ),
+      );
+    apply(!prevHearted);
+    const { hearted, error: refusal } = await togglePostHeart(postId);
+    // A failure rolls back; a success settles on what the server says.
+    apply(refusal || hearted === null ? prevHearted : hearted);
+    heartingRef.current.delete(postId);
+    setHearting(new Set(heartingRef.current));
+  }, [posts]);
+
+  // Sign every loaded attachment path not yet signed, in one batch per
+  // change to the loaded set (getSignedUrls also caches across calls).
+  useEffect(() => {
+    const missing = Array.from(
+      new Set(posts.flatMap((p) => p.attachments.map((a) => a.storage_path))),
+    ).filter((path) => !(path in urls));
+    if (missing.length === 0) return;
+    let cancelled = false;
+    void getSignedUrls(missing).then((resolved) => {
+      if (cancelled || Object.keys(resolved).length === 0) return;
+      setUrls((cur) => ({ ...cur, ...resolved }));
+    });
+    return () => {
+      cancelled = true;
+    };
+    // `urls` deliberately left out: adding resolved urls must not re-run
+    // this for paths that failed to sign.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [posts]);
+
+  const openPost = (postId: string) => router.push(`/messages/club/${threadId}/${postId}`);
+  const orderLabel = ORDER_LABEL[order ?? 'recent'];
+
   return (
     <>
-      {showNewPost ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="New post"
-          onPress={() =>
-            router.push(`/messages/club/new?threadId=${threadId}&clubId=${clubId}`)
-          }
-          style={({ pressed }) => [styles.newPost, pressed && styles.newPostPressed]}
-        >
-          <PlusIcon size={18} color="#fff" />
-          <Text style={styles.newPostText}>New post</Text>
-        </Pressable>
+      <View style={styles.topRow}>
+        <Text style={styles.caption}>Everyone in the club sees posts here</Text>
+        <View style={styles.controls}>
+          {canAnnounce ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Announcement"
+              onPress={() =>
+                router.push(`/messages/club/new?threadId=${threadId}&clubId=${clubId}`)
+              }
+              style={styles.textButton}
+            >
+              <Text style={styles.textButtonLabel}>Announcement</Text>
+            </Pressable>
+          ) : null}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Sort posts: ${orderLabel}`}
+            accessibilityState={{ expanded: sortOpen }}
+            onPress={() => setSortOpen((o) => !o)}
+            style={styles.sortButton}
+          >
+            <View style={styles.sortPill}>
+              <Text style={styles.sortLabel}>{orderLabel}</Text>
+              <ChevronDownIcon size={14} color={colors.text} />
+            </View>
+          </Pressable>
+        </View>
+      </View>
+
+      {sortOpen ? (
+        <View style={styles.sortMenu}>
+          {(['recent', 'activity'] as const).map((o) => (
+            <Pressable
+              key={o}
+              accessibilityRole="button"
+              accessibilityLabel={ORDER_LABEL[o]}
+              accessibilityState={{ selected: o === (order ?? 'recent') }}
+              onPress={() => chooseOrder(o)}
+              style={({ pressed }) => [styles.sortOption, pressed && styles.sortOptionPressed]}
+            >
+              <Text
+                style={[styles.sortOptionText, o === (order ?? 'recent') && styles.sortOptionOn]}
+              >
+                {ORDER_LABEL[o]}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
       ) : null}
 
-      {/* The alert role lives inside ErrorBanner now -- see its docstring. */}
       {error ? <ErrorBanner message={error} /> : null}
 
       {!ready ? (
         <ActivityIndicator color={colors.accentColor} />
       ) : posts.length === 0 && !error ? (
         <View style={styles.emptyCard}>
-          <Text style={styles.emptyText}>
-            Nothing here yet. Start the first post.
-          </Text>
+          <Text style={styles.emptyText}>Nothing here yet. Start the first post.</Text>
         </View>
       ) : (
-        <View style={styles.list}>
+        <View>
           {posts.map((post) => (
-            <PostRow
+            <PostCard
               key={post.id}
               post={post}
-              onPress={() => router.push(`/messages/club/${threadId}/${post.id}`)}
+              attachmentUrls={urls}
+              onOpen={() => openPost(post.id)}
+              onToggleHeart={() => void toggleHeart(post.id)}
+              hearting={hearting.has(post.id)}
             />
           ))}
+          {hasMore ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Show older posts"
+              accessibilityState={{ busy: loadingMore }}
+              disabled={loadingMore}
+              onPress={() => void loadOlder()}
+              style={({ pressed }) => [styles.older, pressed && styles.olderPressed]}
+            >
+              {loadingMore ? (
+                <ActivityIndicator color={colors.accentColor} />
+              ) : (
+                <Text style={styles.olderText}>Show older posts</Text>
+              )}
+            </Pressable>
+          ) : null}
         </View>
       )}
     </>
@@ -171,16 +335,51 @@ const ClubBoard = forwardRef<ClubBoardHandle, Props>(function ClubBoard(
 export default ClubBoard;
 
 const styles = StyleSheet.create({
-  list: { gap: space[3] },
-  // The same dashed-border empty card app/messages/index.tsx and
-  // app/messages/[threadId].tsx already use, reused rather than a third
-  // near-identical pair of styles.
+  topRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: space[2],
+  },
+  caption: {
+    flex: 1,
+    fontFamily: type.bodyRegular,
+    fontSize: 13,
+    color: colors.neutral[700],
+  },
+  controls: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  textButton: { minHeight: 44, paddingHorizontal: 8, justifyContent: 'center' },
+  textButtonLabel: { fontFamily: type.bodyBold, fontSize: 14, color: colors.accent[700] },
+  // 44pt hit target around a smaller visual pill, as in the frame.
+  sortButton: { minHeight: 44, justifyContent: 'center' },
+  sortPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+  },
+  sortLabel: { fontFamily: type.bodyBold, fontSize: 13, color: colors.text },
+  sortMenu: {
+    alignSelf: 'flex-end',
+    borderRadius: radius.card,
+    backgroundColor: colors.surface,
+    paddingVertical: 4,
+    marginBottom: space[2],
+  },
+  sortOption: { minHeight: 44, paddingHorizontal: 16, justifyContent: 'center' },
+  sortOptionPressed: { backgroundColor: colors.neutral[300] },
+  sortOptionText: { fontFamily: type.bodyRegular, fontSize: 15, color: colors.text },
+  sortOptionOn: { fontFamily: type.bodyBold, color: colors.accent[700] },
   emptyCard: {
     padding: space[4],
     borderRadius: radius.card,
     borderWidth: 2,
     borderStyle: 'dashed',
     borderColor: colors.neutral[400],
+    marginTop: space[3],
   },
   emptyText: {
     fontFamily: type.bodyRegular,
@@ -188,17 +387,15 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     color: colors.textMuted,
   },
-  newPost: {
-    flexDirection: 'row',
-    alignSelf: 'flex-start',
-    alignItems: 'center',
-    gap: 8,
+  older: {
     minHeight: 44,
+    marginTop: space[3],
     paddingHorizontal: 16,
     borderRadius: radius.pill,
-    backgroundColor: colors.accent[700],
-    marginBottom: space[3],
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  newPostPressed: { backgroundColor: colors.accent[800] },
-  newPostText: { fontFamily: type.bodyBold, fontSize: 15, color: '#fff' },
+  olderPressed: { backgroundColor: colors.neutral[300] },
+  olderText: { fontFamily: type.bodyBold, fontSize: 15, color: colors.accent[700] },
 });
