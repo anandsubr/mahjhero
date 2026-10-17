@@ -87,7 +87,8 @@ export function fileTypeLabel(name: string): string {
 
 export function formatBytes(n: number): string {
   const mb = 1024 * 1024;
-  if (n < mb) return `${Math.round(n / 1024)} KB`;
+  // A non-empty file never reads as "0 KB".
+  if (n < mb) return `${n > 0 ? Math.max(1, Math.round(n / 1024)) : 0} KB`;
   return `${Number((n / mb).toFixed(1))} MB`;
 }
 

@@ -99,6 +99,7 @@ describe('pure helpers', () => {
   });
   it('formatBytes', () => {
     expect(formatBytes(0)).toBe('0 KB');
+    expect(formatBytes(220)).toBe('1 KB');
     expect(formatBytes(120 * 1024)).toBe('120 KB');
     expect(formatBytes(1.4 * MB)).toBe('1.4 MB');
     expect(formatBytes(10 * MB)).toBe('10 MB');
