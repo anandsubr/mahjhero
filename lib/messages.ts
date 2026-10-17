@@ -682,26 +682,6 @@ export function sortThreads(rows: ThreadListRow[]): ThreadListRow[] {
 }
 
 /**
- * The messages screen's one and only order, replacing the old "Recent | By
- * club" choice. Club threads first -- there is exactly one per club the
- * member belongs to, and `fetch_my_threads` always lists it, empty or not --
- * then everything else (game, group and direct) interleaved, newest first.
- *
- * Sorting the whole list by recency FIRST and then partitioning by kind
- * (rather than filtering first and sorting each half separately) keeps the
- * partition stable: a club band still reads newest-active-club-first among
- * itself, for free, from the one sort. Pinning clubs at the top is what
- * makes a separate sort control redundant -- it already does the grouping
- * "By club" did and the recency "Recent" did, in the one list.
- */
-export function orderThreadsForList(rows: ThreadListRow[]): ThreadListRow[] {
-  const sorted = sortThreads(rows);
-  const clubs = sorted.filter((r) => r.kind === 'club');
-  const rest = sorted.filter((r) => r.kind !== 'club');
-  return [...clubs, ...rest];
-}
-
-/**
  * The thread screen's header title.
  *
  * Computed here rather than read from `ThreadListRow.title` because the

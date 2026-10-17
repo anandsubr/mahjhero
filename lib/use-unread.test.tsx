@@ -41,7 +41,13 @@ import { useUnreadCounts } from './use-unread';
  *  value, which a one-line component reports perfectly well. */
 function Probe() {
   const counts = useUnreadCounts();
-  return <span data-testid="total">{counts.total}</span>;
+  return (
+    <>
+      <span data-testid="total">{counts.total}</span>
+      <span data-testid="personal">{counts.personal}</span>
+      <span data-testid="by-club">{JSON.stringify(counts.byClub)}</span>
+    </>
+  );
 }
 
 describe('useUnreadCounts', () => {
@@ -70,5 +76,23 @@ describe('useUnreadCounts', () => {
     // Give any spurious effect a chance to fire before asserting it didn't.
     await waitFor(() => expect(screen.getByTestId('total')).toBeTruthy());
     expect(fetchUnreadCounts).toHaveBeenCalledTimes(1);
+  });
+
+  it('exposes the null-club row as personal, leaving total and byClub as they were', async () => {
+    fetchUnreadCounts.mockResolvedValueOnce([
+      { club_id: null, unread: 3 },
+      { club_id: 'c1', unread: 2 },
+    ]);
+    render(<Probe />);
+    await waitFor(() => expect(screen.getByTestId('total').textContent).toBe('5'));
+    expect(screen.getByTestId('personal').textContent).toBe('3');
+    expect(screen.getByTestId('by-club').textContent).toBe('{"c1":2}');
+  });
+
+  it('reports personal as 0 when there is no null-club row', async () => {
+    fetchUnreadCounts.mockResolvedValueOnce([{ club_id: 'c1', unread: 2 }]);
+    render(<Probe />);
+    await waitFor(() => expect(screen.getByTestId('total').textContent).toBe('2'));
+    expect(screen.getByTestId('personal').textContent).toBe('0');
   });
 });

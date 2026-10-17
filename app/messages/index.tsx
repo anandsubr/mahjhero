@@ -1,7 +1,9 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Redirect, useFocusEffect, useRouter } from 'expo-router';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { Text } from '../../components/Text';
+import Button from '../../components/Button';
+import { ChevronLeftIcon } from '../../components/icons';
 import MahjongTile from '../../components/MahjongTile';
 import PlusButton from '../../components/PlusButton';
 import ErrorBanner from '../../components/ErrorBanner';
@@ -10,21 +12,15 @@ import ThreadRow from '../../components/ThreadRow';
 import { GENERIC_ERROR } from '../../lib/constants';
 import {
   fetchMyThreads,
-  openThreadForClub,
-  orderThreadsForList,
+  sortThreads,
   type ThreadListRow,
 } from '../../lib/messages';
 import { useSession } from '../../lib/session';
 import { colors, radius, space, type } from '../../lib/theme';
 
 /**
- * The `1C messages` artboard, restyled flat -- iOS Messages, not the
- * artboard's `class="card"` rows -- and with the Recent | By club sort this
- * screen used to carry removed entirely. That sort existed to do two jobs:
- * "By club" grouped, "Recent" floated active conversations up. Pinning club
- * threads at the top of the one list (lib/messages.ts's
- * `orderThreadsForList`) does both at once, which is what makes a second
- * organizing control on top of it redundant rather than merely unused.
+ * The personal inbox: one-to-one and group chats only, newest first. Club
+ * boards and game chats open from their club's Board and the game page.
  */
 export default function MessagesScreen() {
   const { session, loading } = useSession();
@@ -32,24 +28,7 @@ export default function MessagesScreen() {
 
   const [rows, setRows] = useState<ThreadListRow[] | null>(null);
   const [ready, setReady] = useState(false);
-  // Split from `actionError` below, the same way clubs/index.tsx keeps
-  // `loadFailed` apart from `actionError` — a background refetch that lands
-  // while a thread is opening must not clear the refusal that tap just
-  // produced, and a fresh refusal must not blank a standing "could not
-  // reach MahjHero" either. One shared slot let either overwrite the other.
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [opening, setOpening] = useState(false);
-  // `opening` above is read from the render closure, so a guard written as
-  // `if (opening) return` is blind to a tap landing in the same tick as an
-  // earlier `setOpening(true)` — a queued tap, a screen-reader activation, a
-  // native double-tap — since the closure still holds the old value in that
-  // window. This ref is written synchronously alongside `setOpening`, so it
-  // is what actually makes the guard sound; `opening` itself keeps doing its
-  // own job of re-rendering the row into its disabled/busy look. See the
-  // identical comment on `busyRef` in app/clubs/index.tsx and app/friends.tsx
-  // for the same bug class.
-  const openingRef = useRef(false);
 
   const load = useCallback(async () => {
     const next = await fetchMyThreads();
@@ -79,46 +58,6 @@ export default function MessagesScreen() {
     }, [session?.user.id, load]),
   );
 
-  const open = useCallback(
-    async (row: ThreadListRow) => {
-      if (openingRef.current) return;
-      openingRef.current = true;
-      setActionError(null);
-
-      if (row.thread_id) {
-        openingRef.current = false;
-        // A club thread lands on its board now; every other kind still
-        // opens straight into the flat thread screen.
-        router.push(
-          row.kind === 'club'
-            ? `/messages/club/${row.thread_id}`
-            : `/messages/${row.thread_id}`,
-        );
-        return;
-      }
-
-      // A club thread nobody has posted in is listed without an id. Every
-      // club row could go through this call; only the ones with no row must.
-      if (!row.club_id) {
-        openingRef.current = false;
-        return;
-      }
-      setOpening(true);
-      const { id, error: refusal } = await openThreadForClub(row.club_id);
-      openingRef.current = false;
-      setOpening(false);
-      if (refusal || !id) {
-        setActionError(refusal ?? GENERIC_ERROR);
-        return;
-      }
-      // This branch is only ever reached for a club row (the `!row.club_id`
-      // guard above returns for anything else), so the id it just opened
-      // always belongs to a club thread -- always the board.
-      router.push(`/messages/club/${id}`);
-    },
-    [router],
-  );
-
   if (loading) {
     return (
       <Screen center contentStyle={styles.centered}>
@@ -128,16 +67,29 @@ export default function MessagesScreen() {
   }
   if (!session) return <Redirect href="/sign-in" />;
 
-  const ordered = orderThreadsForList(rows ?? []);
-  // actionError first: it names what the member just tapped, which is more
-  // useful in the moment than a standing load failure.
-  const error = actionError ?? loadError;
+  // Club boards and game chats are opened from their club; this inbox is
+  // one-to-one and group chats only.
+  const ordered = sortThreads(
+    (rows ?? []).filter((r) => r.kind === 'direct' || r.kind === 'group'),
+  );
+  const error = loadError;
 
   return (
     <Screen
       scroll
       contentStyle={styles.container}
     >
+      <Button
+        variant="ghost"
+        big={false}
+        icon={<ChevronLeftIcon color={colors.accentColor} />}
+        onPress={() => router.replace('/home')}
+        accessibilityLabel="Back to home"
+        style={styles.backButton}
+      >
+        Home
+      </Button>
+
       <View style={styles.header}>
         <View style={styles.titleRow}>
           <View testID="section-tile">
@@ -165,9 +117,9 @@ export default function MessagesScreen() {
         <View style={styles.list}>
           {ordered.map((row, index) => (
             <ThreadRow
-              key={row.thread_id ?? `club:${row.club_id}`}
+              key={row.thread_id}
               row={row}
-              onPress={() => void open(row)}
+              onPress={() => router.push(`/messages/${row.thread_id}`)}
               showDivider={index < ordered.length - 1}
             />
           ))}
@@ -179,6 +131,7 @@ export default function MessagesScreen() {
 
 const styles = StyleSheet.create({
   container: { padding: space[6], gap: space[3] },
+  backButton: { alignSelf: 'flex-start' },
   centered: { alignItems: 'center' },
   header: {
     flexDirection: 'row',
