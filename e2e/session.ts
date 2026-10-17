@@ -1975,6 +1975,19 @@ export async function seedPopulatedBoard(
     throw new Error(`seedPopulatedBoard: root2 update failed: ${JSON.stringify(root2UpdateError)}`);
   }
 
+  // Hearts (post_hearts, 20261017100000_board_feed.sql): the announcement
+  // carries two (neither the viewer's), the plain post one that IS the
+  // viewer's -- so the board shows a count of 2 unfilled and a count of 1
+  // filled. Written with the service role: the table has no client policies.
+  const { error: heartError } = await admin.from('post_hearts').insert([
+    { message_id: root1.id, profile_id: replyAuthorA },
+    { message_id: root1.id, profile_id: replyAuthorB },
+    { message_id: root2.id, profile_id: profileId },
+  ]);
+  if (heartError) {
+    throw new Error(`seedPopulatedBoard: heart insert failed: ${JSON.stringify(heartError)}`);
+  }
+
   return { clubId, threadId, announcementId: root1.id };
 }
 

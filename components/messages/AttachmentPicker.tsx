@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Image, Modal, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { Text } from '../Text';
-import { CameraIcon, PlusIcon, TrashIcon } from '../icons';
+import { CameraIcon, ImageIcon, PlusIcon, TrashIcon } from '../icons';
 import {
   compressImage,
   pickImages,
@@ -31,8 +31,7 @@ type Props = {
    * -- the conversation composer puts the button inside its message pill
    * and the strip above the whole row. Given this, the button is drawn as
    * the composer's bare camera glyph rather than the default plus-in-a-
-   * circle. Omitted, the strip sits above the plus button in one column
-   * (app/messages/club/new.tsx).
+   * circle. Omitted, the strip sits above the plus button in one column.
    */
   layout?: (parts: { strip: ReactNode; trigger: ReactNode }) => ReactNode;
   /**
@@ -42,6 +41,11 @@ type Props = {
    * keyboard focus after every send.
    */
   resetKey?: number;
+  /**
+   * With `layout`, draws the trigger as the Board composer's 44pt surface
+   * photo button (image glyph) instead of the bare camera glyph.
+   */
+  triggerVariant?: 'camera' | 'photo';
 };
 
 let nextLocalId = 0;
@@ -62,6 +66,7 @@ export default function AttachmentPicker({
   onAttachmentsChange,
   layout,
   resetKey,
+  triggerVariant = 'camera',
 }: Props) {
   const [items, setItems] = useState<Item[]>([]);
   const [sourceMenuOpen, setSourceMenuOpen] = useState(false);
@@ -168,7 +173,17 @@ export default function AttachmentPicker({
       </View>
     ) : null;
 
-  const trigger = layout ? (
+  const trigger = layout && triggerVariant === 'photo' ? (
+    <Pressable
+      onPress={() => setSourceMenuOpen(true)}
+      accessibilityRole="button"
+      accessibilityLabel="Attach an image"
+      disabled={atLimit}
+      style={[styles.photoButton, atLimit ? styles.attachButtonDisabled : null]}
+    >
+      <ImageIcon size={22} color={colors.text} />
+    </Pressable>
+  ) : layout ? (
     <Pressable
       onPress={() => setSourceMenuOpen(true)}
       accessibilityRole="button"
@@ -293,6 +308,14 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   attachButtonDisabled: { opacity: 0.4 },
+  photoButton: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   cameraButton: {
     width: 40,
     height: 40,

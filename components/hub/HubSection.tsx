@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { colors, layout } from '../../lib/theme';
 
 /**
@@ -13,12 +13,15 @@ export default function HubSection({
   children,
   footer,
   onRefresh,
+  avoidKeyboard = false,
 }: {
   children: ReactNode;
   /** Pinned below the scroller, capped and centred like Screen's footer. */
   footer?: ReactNode;
   /** Native pull-to-refresh; HubSection owns the spinner flag. */
   onRefresh?: () => Promise<void>;
+  /** iOS only: lift the pinned footer above the keyboard, as Screen does. */
+  avoidKeyboard?: boolean;
 }) {
   const [refreshing, setRefreshing] = useState(false);
   const handleRefresh = onRefresh
@@ -32,7 +35,7 @@ export default function HubSection({
       }
     : undefined;
 
-  return (
+  const shell = (
     <View style={styles.fill}>
       <View style={styles.body}>
         <ScrollView
@@ -55,6 +58,15 @@ export default function HubSection({
       </View>
       {footer ? <View style={styles.footerColumn}>{footer}</View> : null}
     </View>
+  );
+
+  if (!avoidKeyboard || Platform.OS !== 'ios') return shell;
+
+  // No offset: the hub fills the window from the very top.
+  return (
+    <KeyboardAvoidingView behavior="padding" style={styles.fill}>
+      {shell}
+    </KeyboardAvoidingView>
   );
 }
 

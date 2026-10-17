@@ -433,3 +433,32 @@ export function MessageSquareIcon({ size = 22, color = colors.text }: { size?: n
     </Svg>
   );
 }
+
+/** Lucide "heart" for the Board's HeartPill; `filled` is the hearted state. */
+export function HeartIcon({
+  size = 18,
+  color = colors.text,
+  filled = false,
+}: {
+  size?: number;
+  color?: string;
+  filled?: boolean;
+}) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill={filled ? color : 'none'} stroke={color} strokeWidth={2.75} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" />
+    </Svg>
+  );
+}
+
+/** Lucide "megaphone" -- the Board composer's organizer-only "Email everyone
+ *  in the club" toggle (components/board/BoardComposer.tsx). */
+export function MegaphoneIcon({ size = 22, color = colors.text }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.75} strokeLinecap="round" strokeLinejoin="round">
+      <Path d="M11 6a13 13 0 0 0 8.4-2.8A1 1 0 0 1 21 4v12a1 1 0 0 1-1.6.8A13 13 0 0 0 11 14H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z" />
+      <Path d="M6 14a12 12 0 0 0 2.4 7.2 2 2 0 0 0 3.2-2.4A8 8 0 0 1 10 14" />
+      <Path d="M8 6v8" />
+    </Svg>
+  );
+}

@@ -3,8 +3,10 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { Text } from '../../../../components/Text';
 import Button from '../../../../components/Button';
 import ClubBoard, { type ClubBoardHandle } from '../../../../components/ClubBoard';
+import BoardComposer from '../../../../components/board/BoardComposer';
 import HubSection from '../../../../components/hub/HubSection';
 import { useClubHub } from '../../../../components/hub/ClubHubContext';
+import { canAnnounce } from '../../../../lib/clubs';
 import { openThreadForClub } from '../../../../lib/messages';
 import { colors, type } from '../../../../lib/theme';
 
@@ -19,9 +21,14 @@ import { colors, type } from '../../../../lib/theme';
  * posts themselves, which board.tsx wants a Retry-able ready/failed state
  * fetching that thread id, the id itself never changes for a club, and
  * ClubBoard already refetches its own posts on focus and over realtime.
+ *
+ * The composer is pinned in HubSection's footer (outside the scroller); a
+ * successful post reloads the board so the new post shows first. Hosts and
+ * co-organizers also get the composer's megaphone toggle (post + email the
+ * club), from the role the hub layout already resolved.
  */
 export default function BoardSection() {
-  const { club } = useClubHub();
+  const { club, role } = useClubHub();
   const [threadId, setThreadId] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const boardRef = useRef<ClubBoardHandle>(null);
@@ -48,6 +55,10 @@ export default function BoardSection() {
     }
   }, [threadId, load]);
 
+  const onPosted = useCallback(() => {
+    void boardRef.current?.reload();
+  }, []);
+
   if (failed) {
     return (
       <HubSection>
@@ -70,8 +81,19 @@ export default function BoardSection() {
   }
 
   return (
-    <HubSection onRefresh={onRefresh}>
-      <ClubBoard ref={boardRef} threadId={threadId} clubId={club.id} showNewPost />
+    <HubSection
+      avoidKeyboard
+      onRefresh={onRefresh}
+      footer={
+        <BoardComposer
+          threadId={threadId}
+          onPosted={onPosted}
+          clubId={club.id}
+          canAnnounce={role !== null && canAnnounce(role)}
+        />
+      }
+    >
+      <ClubBoard ref={boardRef} threadId={threadId} />
     </HubSection>
   );
 }

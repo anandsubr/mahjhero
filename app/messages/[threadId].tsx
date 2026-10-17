@@ -51,8 +51,8 @@ import { useThreadRealtime } from '../../lib/use-thread-realtime';
  * `post_message`, `broadcast_recipients`, and the outbox fan-out are all
  * untouched underneath this screen, for the redesign to reattach a UI to.
  * `countBroadcastRecipients` (lib/broadcasts.ts) loses its caller here — it
- * is called from `app/messages/club/new.tsx` now, for the same recipient
- * count shown before an announcement is sent.
+ * is called from the club Board's composer (components/board/BoardComposer.tsx)
+ * now, for the same recipient count shown before an announcement is sent.
  */
 export default function ThreadScreen() {
   const { session, loading } = useSession();
