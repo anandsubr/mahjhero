@@ -32,6 +32,33 @@ const WIDTHS: Viewport[] = [
 /** components/Screen.tsx puts this on the ScrollView it renders in `scroll` mode. */
 const SCROLLER = '[data-testid="screen-scroll"]';
 
+/**
+ * `extraMask` for the club settings baseline, which shows the club's own
+ * code as plain text next to a "Change" button (no icon of its own).
+ * `suggest_club_code` (20260929100000_club_codes.sql) appends a RANDOM
+ * 3-digit suffix to the club's name on every insert, same as `profile`'s
+ * per-run email or `check-in`'s per-run avatar colour -- so the text differs
+ * on every run that reseeds the club, and an unmasked screenshot would fail
+ * the very next run against its own just-written baseline. `text=/Club
+ * code:/` matches the whole "Club code: XXXX" string as ONE node (`Text`'s
+ * children collapse into a single text node on web), so this masks the
+ * digits regardless of how many the suffix ends up being.
+ */
+const CLUB_CODE_MASK = ['text=/Club code:/'];
+
+/**
+ * `extraMask` for every OTHER club-hub baseline (Games/Board/Ranks/Photos/
+ * Members) -- these all render the code through `ClubHubHeader` instead,
+ * where masking the code text alone was NOT enough: a first pass using
+ * `CLUB_CODE_MASK` here still flaked on immediate re-run, isolated (per the
+ * diff PNG) to the Share pill right next to it, not the masked text. That
+ * pill's `ShareIcon` is an inline SVG, the same sub-pixel-jitter class the
+ * `thread-avatar-club-tile` global mask above already exists for -- so
+ * this masks the whole row (`testID="club-hub-code-row"`,
+ * components/hub/ClubHubHeader.tsx) rather than only the code text.
+ */
+const CLUB_HUB_HEADER_CODE_ROW_MASK = ['[data-testid="club-hub-code-row"]'];
+
 /** Fonts are fetched, so a screenshot taken before they land is a false diff. */
 async function settle(page: Page) {
   await page.evaluate(() => document.fonts.ready);
@@ -585,36 +612,144 @@ test.describe('signed in', () => {
         ]);
       });
 
-      test(`club detail at ${vp.name}`, async ({ page }) => {
+      // The club hub's Games section (app/clubs/[id]/(hub)/games.tsx), the
+      // hub's default landing section, replacing the old club-detail screen
+      // (app/clubs/[id]/index.tsx, now a redirect to `.../games`) that the
+      // `club detail` baseline used to picture. Lands on "Upcoming" by
+      // default (`GamesSection`'s own initial `segment` state) -- pictured
+      // here rather than "All" or "Past" because that is what an organizer
+      // or member actually sees first.
+      //
+      // Deliberately the EMPTY state, checked against the real screen rather
+      // than assumed, for the same reason `home my games`'s own comment
+      // above gives for Home: `fetchClubGames`'s "upcoming" window is
+      // `[now, now+120d)` against the page's frozen clock (2026-08-22), and
+      // every event `seedClubWithEvent` seeds on THIS club falls outside it
+      // -- FIRST_OCCURRENCE/SECOND_OCCURRENCE are dated 2099 (deliberately,
+      // for the OLD unbounded query the redirect's predecessor used) and
+      // `checkInEventId` starts 15 minutes BEFORE the frozen clock, so it
+      // only ever shows on "Past". A populated Upcoming list is already
+      // pictured for a DIFFERENT club, Thursday Casuals, by `home my games`
+      // and the `event *` baselines below -- this section's own
+      // rendering (the segmented control, the pinned "Add to calendar" /
+      // "New game" footer, host-only) is what is actually new here, and the
+      // empty state's "New game" button is the host-only affordance this
+      // baseline would otherwise never show.
+      test(`club games at ${vp.name}`, async ({ page }) => {
         await page.setViewportSize({ width: vp.width, height: vp.height });
-        await page.goto(`/clubs/${seeded.clubId}`);
-        // Both seeded occurrences, not just the section heading: the roster
-        // and invite controls render underneath regardless of whether the
-        // events fetch has landed, so waiting on "Upcoming" alone would
-        // happily shoot a screen with the games still missing. Anchored on
-        // the two venue names — one per card — rather than on the formatted
-        // date, because the abbreviation Intl produces for September ("Sep"
-        // vs "Sept") differs between ICU builds and would make this assertion
-        // a portability trap rather than a check.
-        await expect(page.getByText('Newton Community Centre')).toBeVisible();
-        await expect(page.getByText('St Mary’s Hall')).toBeVisible();
-        // `exact` because Playwright's string matcher is case-insensitive and
-        // this screen's failure copy — "Could not load upcoming games." —
-        // would otherwise match too, turning a red test into an ambiguity
-        // error that names the wrong problem.
-        await expect(page.getByText('Upcoming', { exact: true })).toBeVisible();
-        // The table count on each card, as text — not just as pixels.
-        // `toClubEvent` in lib/events.ts derives this from the embedded
-        // `event_tables` array (`event_tables?.length ?? 0`), and nothing
-        // else in the suite pins that mapping: a mutation collapsing it to a
-        // constant 0 still produces "0 tables", a one-digit change that fits
-        // well inside the 120px `maxDiffPixels` budget and so cannot fail the
-        // screenshot comparison (see docs/testing.md, "Why the threshold is
-        // an absolute pixel budget"). Both seeded occurrences have 2 tables,
-        // so `.first()` is enough to catch the mapper regressing without
-        // needing to disambiguate the two cards.
-        await expect(page.getByText('2 tables').first()).toBeVisible();
-        await captureScreen(page, vp, `club-detail-${vp.name}.png`);
+        await page.goto(`/clubs/${seeded.clubId}/games`);
+        await expect(page.getByText('Riverside Mah Jongg', { exact: true })).toBeVisible();
+        await expect(page.getByText('Club code:')).toBeVisible();
+        await expect(page.getByRole('tab', { name: 'Upcoming', selected: true })).toBeVisible();
+        await expect(page.getByText('No games here yet.')).toBeVisible();
+        // Two "New game" buttons render at once here: the empty state's own
+        // (host-only) and the pinned footer's, which is always there
+        // regardless of segment. `.first()` -- the empty-state one -- is
+        // proof the empty state itself renders the host affordance, not
+        // just the footer.
+        await expect(page.getByRole('button', { name: 'New game' }).first()).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Add to calendar' })).toBeVisible();
+        // `CLUB_HUB_HEADER_CODE_ROW_MASK` -- see its own comment below.
+        await captureScreen(page, vp, `club-games-${vp.name}.png`, CLUB_HUB_HEADER_CODE_ROW_MASK);
+      });
+
+      // The hub's Members section (app/clubs/[id]/(hub)/members.tsx) --
+      // moved out of the old club-detail/legacy screen verbatim (club-hub
+      // phase 2, Task 10). `seedClubWithEvent` puts nobody but the
+      // signed-in host on Riverside's roster, so this is the singular
+      // "1 member" heading and the host's own row with its "Host" tag --
+      // the search field only appears once the roster is non-empty
+      // (`ClubMembers`'s own `roster.length > 0` gate), so this also
+      // pictures that.
+      test(`club members at ${vp.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        await page.goto(`/clubs/${seeded.clubId}/members`);
+        await expect(page.getByText('1 member', { exact: true })).toBeVisible();
+        await expect(page.getByText('Wei Chen')).toBeVisible();
+        await expect(page.getByText('Host', { exact: true })).toBeVisible();
+        await expect(page.getByLabel('Search members')).toBeVisible();
+        await captureScreen(page, vp, `club-members-${vp.name}.png`, CLUB_HUB_HEADER_CODE_ROW_MASK);
+      });
+
+      // The hub's Board section (app/clubs/[id]/(hub)/board.tsx) -- the SAME
+      // `ClubBoard` component the `club board populated`/`club post
+      // populated` baselines below already picture through the messages
+      // route, now reached through the hub's own chrome instead. Seeds its
+      // own club (`seedPopulatedBoard`, same as those two baselines) rather
+      // than reusing `seeded.clubId`, so this baseline is the hub header
+      // and section tabs around a populated board, not a second exercise of
+      // the post/reply rendering those two baselines already cover.
+      test(`club board at ${vp.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        const { clubId } = await seedPopulatedBoard(userId, userId.slice(0, 8));
+        await page.goto(`/clubs/${clubId}/board`);
+        await expect(page.getByText('Cedar Falls Mah Jongg', { exact: true })).toBeVisible();
+        await expect(
+          page.getByText('Fall tournament signup opens Monday', { exact: true }),
+        ).toBeVisible();
+        await expect(page.getByText('4 replies')).toBeVisible();
+        await captureScreen(page, vp, `club-hub-board-${vp.name}.png`, CLUB_HUB_HEADER_CODE_ROW_MASK);
+      });
+
+      // The hub's Ranks section (app/clubs/[id]/(hub)/ranks.tsx) -- the same
+      // `ClubLeaderboard` app/clubs/[id]/leaderboard.tsx used to draw under
+      // its own header (that route now redirects here). Reuses
+      // `seedTableWithRound` the same way the `event detail, live with a
+      // round recorded` baseline below does (same club, same helper) so this
+      // pictures a populated podium row rather than the "No rounds recorded
+      // yet." empty card -- the ranking itself already has a real winner to
+      // show once that fixture exists on this club.
+      test(`club ranks at ${vp.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        const { winnerName, points } = await seedTableWithRound(
+          seeded.clubId,
+          userId,
+          userId.slice(0, 8),
+        );
+        await page.goto(`/clubs/${seeded.clubId}/ranks`);
+        await expect(page.getByText(winnerName)).toBeVisible();
+        await expect(page.getByText('1 round won')).toBeVisible();
+        await expect(page.getByText(`${points} pts`)).toBeVisible();
+        // The winner's own avatar circle (`testID="leaderboard-avatar"`,
+        // components/ClubLeaderboard.tsx) is colored by `avatarColorFor`,
+        // hashed from `seedTableWithRound`'s FRESH filler profile id --
+        // random every run, same class as `check-in`'s own per-run avatar
+        // colour (docs/testing.md) -- confirmed here by four consecutive
+        // failures against this baseline's own just-written PNG before this
+        // mask was added.
+        await captureScreen(page, vp, `club-ranks-${vp.name}.png`, [
+          ...CLUB_HUB_HEADER_CODE_ROW_MASK,
+          '[data-testid="leaderboard-avatar"]',
+        ]);
+      });
+
+      // The hub's Photos section (app/clubs/[id]/(hub)/photos.tsx) -- nothing
+      // built yet but the "coming soon" placeholder (`PhotosSection`'s own
+      // docstring), needing no seeded data beyond the club itself.
+      test(`club photos at ${vp.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        await page.goto(`/clubs/${seeded.clubId}/photos`);
+        await expect(page.getByText('Photos and files are coming soon.')).toBeVisible();
+        await captureScreen(page, vp, `club-photos-${vp.name}.png`, CLUB_HUB_HEADER_CODE_ROW_MASK);
+      });
+
+      // Club settings (app/clubs/[id]/settings.tsx) -- organizers only,
+      // reached from the hub header's gear (`canManage`, ClubHubHeader) and
+      // new in club-hub phase 2 (Task 11): cover photo/colour, the club
+      // code, the invite-only default for new games, and links to Venues
+      // and Import a roster, moved out of the old club-detail/legacy
+      // screen. `seeded`'s host role satisfies `canInvite`, so this is the
+      // organizer's own view, not the `Redirect` a plain member would get.
+      test(`club settings at ${vp.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        await page.goto(`/clubs/${seeded.clubId}/settings`);
+        await expect(page.getByText('Club settings', { exact: true })).toBeVisible();
+        await expect(page.getByText('Cover', { exact: true })).toBeVisible();
+        await expect(page.getByText('Club code:')).toBeVisible();
+        await expect(page.getByText('New games default to invite-only')).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Venues' })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Import a roster from a spreadsheet' })).toBeVisible();
+        await captureScreen(page, vp, `club-settings-${vp.name}.png`, CLUB_CODE_MASK);
       });
 
       // The POPULATED picker. Before Task 16 this baseline pictured the

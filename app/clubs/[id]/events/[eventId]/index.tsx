@@ -870,7 +870,7 @@ export default function EventScreen() {
       return;
     }
     if (event?.game_mode === 'invite_only' && !isOrganizer) {
-      router.push('/home');
+      router.replace(`/clubs/${clubId}/games`);
       return;
     }
     await load();
@@ -1000,15 +1000,17 @@ export default function EventScreen() {
       }
     >
       {/*
-        Goes to /home, not /clubs/${clubId}: the club management page no
-        longer lists games (2026-09-02-club-page-games-and-back-links-
-        design.md deleted its own "Upcoming" section), so Home is the only
-        real way into this screen left.
+        Pushed from the hub's Games section (and from Home), so popping
+        returns to wherever the caller came from; a cold open (deep link,
+        web reload) has nothing to pop, so it falls back to the hub's Games
+        section rather than assuming Home.
       */}
       <CompactHeader
         variant="inset"
         divider={false}
-        onBack={() => router.push('/home')}
+        onBack={() =>
+          router.canGoBack() ? router.back() : router.replace(`/clubs/${clubId}/games`)
+        }
         backLabel="Back to your clubs"
         kind="club"
         clubId={clubId}

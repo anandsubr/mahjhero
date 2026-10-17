@@ -32,7 +32,7 @@ export default function BroadcastsRedirect() {
       if (cancelled) return;
       // The board, not the flat thread screen: this route only ever opens a
       // CLUB thread, and a club's conversation is a board of posts now.
-      router.replace(result.id ? `/messages/club/${result.id}` : `/clubs/${id}`);
+      router.replace(result.id ? `/messages/club/${result.id}` : `/clubs/${id}/games`);
     })();
 
     return () => {

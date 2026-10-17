@@ -268,7 +268,13 @@ export default function HomeScreen() {
   const retry = mode === 'list' ? () => void loadFeed() : () => setMonthRetry((n) => n + 1);
 
   return (
-    <Screen scroll contentStyle={styles.container}>
+    <Screen
+      scroll
+      contentStyle={styles.container}
+      onRefresh={async () => {
+        await Promise.all([loadFeed(), loadClubs(), reloadNeeds.current()]);
+      }}
+    >
       {header}
       <NeedsYouStack needs={needs} />
       <HomeSwitch value={view} upcomingCount={games.length} onChange={setView} />
@@ -324,7 +330,7 @@ export default function HomeScreen() {
         </View>
       ) : (
         <View style={styles.section}>
-          <JoinClubCard onJoined={(clubId) => router.push(`/clubs/${clubId}`)} />
+          <JoinClubCard onJoined={(clubId) => router.push(`/clubs/${clubId}/games`)} />
           <HomeGuides
             clubs={clubs}
             roles={roles}
@@ -341,7 +347,7 @@ export default function HomeScreen() {
               role={roleFor(club.id)}
               nextStartsAt={nextGames[club.id] ?? null}
               unread={unreadByClub[club.id] ?? 0}
-              onPress={() => router.push(`/clubs/${club.id}`)}
+              onPress={() => router.push(`/clubs/${club.id}/games`)}
             />
           ))}
           <Pressable

@@ -4,6 +4,8 @@ import { fireEvent, render, screen } from '@testing-library/react';
 
 const push = vi.fn();
 const replace = vi.fn();
+const back = vi.fn();
+const canGoBack = vi.fn(() => true);
 
 const searchParams: Record<string, string> = { id: 'club-1' };
 
@@ -11,7 +13,7 @@ vi.mock('expo-router', () => ({
   Redirect: ({ href }: { href: string }) => (
     <div data-testid="redirect" data-href={href} />
   ),
-  useRouter: () => ({ push, replace }),
+  useRouter: () => ({ push, replace, back, canGoBack }),
   usePathname: () => '/clubs/club-1/venues',
   useLocalSearchParams: () => searchParams,
   // Wrapped in a real `useEffect` keyed on the callback's identity, not
@@ -337,9 +339,13 @@ describe('screen chrome', () => {
     expect(screen.queryByRole('button', { name: 'Your profile' })).toBeNull();
   });
 
-  it('keeps its back link to the club', async () => {
+  it('goes back to club settings, or replaces to it on a cold open', async () => {
+    canGoBack.mockReturnValue(true);
     render(<VenuesScreen />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Back to the club' }));
-    expect(push).toHaveBeenCalledWith('/clubs/club-1');
+    fireEvent.click(await screen.findByRole('button', { name: 'Back to club settings' }));
+    expect(back).toHaveBeenCalled();
+    canGoBack.mockReturnValue(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Back to club settings' }));
+    expect(replace).toHaveBeenCalledWith('/clubs/club-1/settings');
   });
 });

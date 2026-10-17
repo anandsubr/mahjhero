@@ -794,6 +794,8 @@ select is(
        'public.create_club(text, text, text)',
        'public.join_club_by_code(text)',
        'public.set_club_code(uuid, text)',
+       'public.set_club_cover(uuid, text)',
+       'public.set_club_cover_color(uuid, text)',
        'public.create_club_invite(uuid, text, text, uuid)',
        'public.accept_club_invite(uuid)',
        'public.decline_club_invite(uuid)',
@@ -835,6 +837,7 @@ select is(
        'public.my_upcoming_bookings()',
        'public.my_games(timestamptz, timestamptz)',
        'public.my_clubs_next_game()',
+       'public.club_games(uuid, timestamptz, timestamptz)',
        'public.broadcast_recipient_count(uuid, uuid)',
        'public.send_broadcast(uuid, uuid, text, text)',
        'public.record_attendance(uuid, uuid, public.attendance_state, timestamptz)',
@@ -864,7 +867,9 @@ select is(
        'public.mark_notifications_read()',
        'public.my_notification_unread_count()',
        'public.set_payment_status(uuid, uuid, boolean)',
-       'public.event_payment_status(uuid)'
+       'public.event_payment_status(uuid)',
+       'public.my_calendar_feed_token()',
+       'public.reset_calendar_feed_token()'
      ]) as f
    ) expected
    where not exists (
@@ -899,6 +904,8 @@ select is(
          'public.create_club(text, text, text)',
          'public.join_club_by_code(text)',
          'public.set_club_code(uuid, text)',
+         'public.set_club_cover(uuid, text)',
+         'public.set_club_cover_color(uuid, text)',
          'public.create_club_invite(uuid, text, text, uuid)',
          'public.accept_club_invite(uuid)',
          'public.decline_club_invite(uuid)',
@@ -940,6 +947,7 @@ select is(
          'public.my_upcoming_bookings()',
          'public.my_games(timestamptz, timestamptz)',
          'public.my_clubs_next_game()',
+         'public.club_games(uuid, timestamptz, timestamptz)',
          'public.broadcast_recipient_count(uuid, uuid)',
          'public.send_broadcast(uuid, uuid, text, text)',
          'public.record_attendance(uuid, uuid, public.attendance_state, timestamptz)',
@@ -969,7 +977,9 @@ select is(
          'public.mark_notifications_read()',
          'public.my_notification_unread_count()',
          'public.set_payment_status(uuid, uuid, boolean)',
-         'public.event_payment_status(uuid)'
+         'public.event_payment_status(uuid)',
+         'public.my_calendar_feed_token()',
+         'public.reset_calendar_feed_token()'
        ]) as f
        where to_regprocedure(f) = p.oid::regprocedure
      )),

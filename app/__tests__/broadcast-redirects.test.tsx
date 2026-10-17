@@ -65,7 +65,7 @@ describe('the old broadcast routes', () => {
       error: 'you are not a member of this club',
     });
     render(<BroadcastRedirect />);
-    await waitFor(() => expect(replace).toHaveBeenCalledWith('/clubs/c1'));
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/clubs/c1/games'));
   });
 
   // A malformed route (no club id) must not dead-end on the loading

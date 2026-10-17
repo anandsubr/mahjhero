@@ -14,11 +14,33 @@
  *     wrapper `<div>` appears anywhere, and the single wrapped `content`
  *     column is exactly what encloses `children`.
  */
-import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 import { useState } from 'react';
 import { Pressable, Text } from 'react-native';
 import Screen from '../Screen';
+
+// react-native-web's real RefreshControl renders as a plain, inert `View`
+// (see node_modules/react-native-web/src/exports/RefreshControl) -- there is
+// no native pull gesture in a browser, so it never calls `onRefresh` or
+// shows `refreshing` in the DOM on its own. Swapping in a button that
+// exposes both is the only way, in jsdom, to prove `Screen` actually wires
+// its `onRefresh`/`refreshing` state into the prop the ScrollView receives,
+// per the brief's suggestion to mock `RefreshControl` for this.
+vi.mock('react-native', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('react-native')>();
+  return {
+    ...actual,
+    RefreshControl: (props: { refreshing: boolean; onRefresh?: () => void }) => (
+      <button
+        type="button"
+        aria-label="refresh-control"
+        data-refreshing={props.refreshing}
+        onClick={() => props.onRefresh?.()}
+      />
+    ),
+  };
+});
 
 /** A child that proves whether it survived a rerender: its own local
  *  state, bumped by a tap, has nowhere to come back from if this
@@ -143,5 +165,40 @@ describe('Screen', () => {
       </Screen>,
     );
     expect(screen.getByTestId('count').textContent).toBe('1');
+  });
+
+  it('wires onRefresh into the ScrollView refreshControl and tracks refreshing', async () => {
+    let resolveRefresh: () => void = () => {};
+    const onRefresh = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveRefresh = resolve;
+        }),
+    );
+
+    render(
+      <Screen scroll onRefresh={onRefresh}>
+        <Text testID="a">A</Text>
+      </Screen>,
+    );
+
+    const control = screen.getByLabelText('refresh-control');
+    expect(control.getAttribute('data-refreshing')).toBe('false');
+
+    fireEvent.click(control);
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(control.getAttribute('data-refreshing')).toBe('true'));
+
+    resolveRefresh();
+    await waitFor(() => expect(control.getAttribute('data-refreshing')).toBe('false'));
+  });
+
+  it('does not render a refreshControl when onRefresh is not given', () => {
+    render(
+      <Screen scroll>
+        <Text testID="a">A</Text>
+      </Screen>,
+    );
+    expect(screen.queryByLabelText('refresh-control')).toBeNull();
   });
 });

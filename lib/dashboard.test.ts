@@ -19,6 +19,8 @@ const CLUBS: Club[] = [
     timezone: 'America/New_York',
     default_game_mode: 'open_play',
     code: 'TESTCODE',
+    cover_path: null,
+    cover_color: 'accent2_800',
   },
   {
     id: 'club-2',
@@ -29,6 +31,8 @@ const CLUBS: Club[] = [
     timezone: 'America/New_York',
     default_game_mode: 'open_play',
     code: 'TESTCODE',
+    cover_path: null,
+    cover_color: 'accent2_800',
   },
 ];
 

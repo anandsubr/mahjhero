@@ -6,10 +6,13 @@ import { GENERIC_ERROR } from '../../lib/constants';
 import { glyphForClub } from '../../lib/dashboard';
 
 const push = vi.fn();
+const back = vi.fn();
+const replace = vi.fn();
+const canGoBack = vi.fn();
 
 vi.mock('expo-router', () => ({
   Redirect: () => null,
-  useRouter: () => ({ push, back: vi.fn(), replace: vi.fn() }),
+  useRouter: () => ({ push, back, replace, canGoBack }),
   usePathname: () => '/messages/club/t1/p1',
   useLocalSearchParams: () => ({ threadId: 't1', postId: 'p1' }),
   // A bare `(cb) => cb()` fires on every render, which the real hook never
@@ -106,6 +109,7 @@ const reply = {
 describe('a club post', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    canGoBack.mockReturnValue(true);
     fetchPostMessages.mockResolvedValue([root]);
     markPostRead.mockResolvedValue({ error: null });
     postMessage.mockResolvedValue({ id: 'm2', error: null });
@@ -332,14 +336,25 @@ describe('a club post', () => {
     });
 
     // No tab bar inside a conversation (Messages 2a) -- the chevron is the
-    // way out, and it pushes the board outright rather than relying on
-    // history.
-    it('hides the tab bar and shows a back chevron that returns to the board', async () => {
+    // way out. It pops when there's history to unwind, and falls back to
+    // pushing the board outright on a cold open (deep link, notification).
+    it('hides the tab bar and shows a back chevron that pops back to the board', async () => {
+      canGoBack.mockReturnValue(true);
       render(<PostScreen />);
       await screen.findByText('Cedar Falls Mah Jongg');
       expect(screen.queryByRole('button', { name: 'Messages' })).toBeNull();
       fireEvent.click(screen.getByLabelText('Back to board'));
-      expect(push).toHaveBeenCalledWith('/messages/club/t1');
+      expect(back).toHaveBeenCalled();
+      expect(replace).not.toHaveBeenCalled();
+    });
+
+    it('falls back to the board directly when there is nothing to pop', async () => {
+      canGoBack.mockReturnValue(false);
+      render(<PostScreen />);
+      await screen.findByText('Cedar Falls Mah Jongg');
+      fireEvent.click(screen.getByLabelText('Back to board'));
+      expect(back).not.toHaveBeenCalled();
+      expect(replace).toHaveBeenCalledWith('/messages/club/t1');
     });
 
     // The name doesn't navigate -- matching app/messages/club/new.tsx's

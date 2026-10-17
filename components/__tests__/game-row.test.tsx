@@ -34,6 +34,10 @@ describe('statusTag', () => {
     expect(statusTag({ ...GAME, myStatus: 'not' }))
       .toEqual({ label: 'Not going', tone: 'neutral' });
   });
+  it('shows Invited in the accent pill, like hosting', () => {
+    expect(statusTag({ ...GAME, myStatus: 'invited' }))
+      .toEqual({ label: 'Invited', tone: 'hosting' });
+  });
 });
 
 describe('seatsLabel', () => {

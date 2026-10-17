@@ -243,4 +243,16 @@ describe('useNeedsYou', () => {
     );
     await waitFor(() => expect(push).toHaveBeenCalledWith('/clubs/c9/events/e9'));
   });
+
+  it('accepting a club invite with no event lands on the club\'s Games section', async () => {
+    acceptClubInvite.mockResolvedValue({ clubId: 'c9', eventId: null, error: null });
+    const { result } = renderHook(() => useNeedsYou('u1', CLUBS, vi.fn()));
+    await waitFor(() => expect(fetchMyUpcomingBookings).toHaveBeenCalledTimes(1));
+    act(() =>
+      result.current.acceptClubInvite({
+        id: 'i1', clubId: 'c9', clubName: 'Elm', eventId: null, eventTitle: null,
+      }),
+    );
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/clubs/c9/games'));
+  });
 });

@@ -1,7 +1,9 @@
 import type { ReactNode } from 'react';
+import { useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   View,
@@ -62,6 +64,15 @@ type ScreenProps = {
    * Android was never observed to have this problem.
    */
   avoidKeyboard?: boolean;
+  /**
+   * When given together with `scroll`, wires a native pull-to-refresh
+   * gesture into the ScrollView. `Screen` owns the `refreshing` flag itself
+   * (true only while the returned promise is in flight) so every caller
+   * gets the spinner's start/stop for free instead of reimplementing it.
+   * A no-op on react-native-web -- there is no pull gesture in a browser --
+   * but still exercised there so the wiring itself is covered.
+   */
+  onRefresh?: () => Promise<void>;
 };
 
 /**
@@ -87,7 +98,19 @@ export default function Screen({
   footer,
   stickyHeaderIndices,
   avoidKeyboard = false,
+  onRefresh,
 }: ScreenProps) {
+  const [refreshing, setRefreshing] = useState(false);
+  const handleRefresh = onRefresh
+    ? async () => {
+        setRefreshing(true);
+        try {
+          await onRefresh();
+        } finally {
+          setRefreshing(false);
+        }
+      }
+    : undefined;
   // The status bar/notch/Dynamic Island inset. Applied here, on the layer
   // above `contentStyle`, rather than folded into `styles.content`: nearly
   // every screen's own `contentStyle` sets `padding` as a shorthand for its
@@ -118,6 +141,16 @@ export default function Screen({
         center ? styles.scrollCenter : null,
       ]}
       stickyHeaderIndices={stickyHeaderIndices}
+      refreshControl={
+        handleRefresh ? (
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={colors.accentColor}
+            colors={[colors.accentColor]}
+          />
+        ) : undefined
+      }
     >
       {stickyHeaderIndices ? children : content}
     </ScrollView>

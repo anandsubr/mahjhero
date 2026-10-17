@@ -261,7 +261,11 @@ export default function PostScreen() {
         view, so the name is plain and there is no overflow button.
       */}
       <CompactHeader
-        onBack={() => router.push(`/messages/club/${threadId}`)}
+        onBack={() =>
+          router.canGoBack()
+            ? router.back()
+            : router.replace(`/messages/club/${threadId}`)
+        }
         backLabel="Back to board"
         kind={thread ? kind : null}
         title={title}

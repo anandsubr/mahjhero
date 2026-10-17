@@ -230,7 +230,7 @@ export default function NewEventScreen() {
   // there is no UI yet to grant co_organizer to anyone, so this stays
   // reserved for whoever actually created the club until a real cohost
   // feature exists to extend it deliberately.
-  if (!isHost) return <Redirect href={`/clubs/${clubId}`} />;
+  if (!isHost) return <Redirect href={`/clubs/${clubId}/games`} />;
 
   const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
   // "Monthly" means "the same weekday-of-month as the date you picked" --
@@ -325,9 +325,11 @@ export default function NewEventScreen() {
         }
       }
       setSaving(false);
-      // Home, not this specific club's own page -- a newly created game
-      // already shows up there.
-      router.replace('/home');
+      // Back to the hub's Games section, where the newly created game
+      // already shows up -- same fallback `leave()` below uses for a cold
+      // open with nothing to pop.
+      if (router.canGoBack()) router.back();
+      else router.replace(`/clubs/${clubId}/games`);
       return;
     }
 
@@ -359,7 +361,8 @@ export default function NewEventScreen() {
       return;
     }
     // Same destination as the single-event save above, for the same reason.
-    router.replace('/home');
+    if (router.canGoBack()) router.back();
+    else router.replace(`/clubs/${clubId}/games`);
   }
 
   function leave() {
@@ -371,7 +374,7 @@ export default function NewEventScreen() {
     if (router.canGoBack()) {
       router.back();
     } else {
-      router.replace(`/clubs/${clubId}`);
+      router.replace(`/clubs/${clubId}/games`);
     }
   }
 

@@ -201,7 +201,7 @@ export function useNeedsYou(
         // Accepting changes which club/event the member can see at all, so
         // going there is simpler and more correct than reconciling local
         // state for a club that was not in `clubs` a moment ago.
-        router.push(eventId ? `/clubs/${clubId}/events/${eventId}` : `/clubs/${clubId}`);
+        router.push(eventId ? `/clubs/${clubId}/events/${eventId}` : `/clubs/${clubId}/games`);
         return { error: null };
       }, false),
     declineClubInvite: (invite) => void run(() => declineClubInviteRpc(invite.id), false),

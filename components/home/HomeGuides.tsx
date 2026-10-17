@@ -69,7 +69,7 @@ export default function HomeGuides({
             next?.key === 'game'
               ? { label: 'Add a game', onPress: () => router.push(`/clubs/${club.id}/events/new`) }
               : next?.key === 'invite'
-                ? { label: 'Invite players', onPress: () => router.push(`/clubs/${club.id}`) }
+                ? { label: 'Invite players', onPress: () => router.push(`/clubs/${club.id}/members`) }
                 : undefined;
           return (
             <TipCard

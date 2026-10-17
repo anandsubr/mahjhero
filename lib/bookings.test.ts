@@ -550,6 +550,17 @@ describe('BOOKING_REFUSALS (self-audit against the migrations)', () => {
     // defence in depth, not a reachable path from any lib/*.ts function.
     'club code cannot be changed directly':
       'trigger (clubs_freeze_identity) on public.clubs UPDATE — never reached through an RPC, only a direct UPDATE no lib/*.ts function performs',
+    // Same trigger, same guard added for the cover columns (20260930100100):
+    // only set_club_cover/set_club_cover_color (both security definer,
+    // running as the function owner, which the trigger exempts) ever write
+    // cover_path/cover_color — a direct client UPDATE never reaches this.
+    'club cover cannot be changed directly':
+      'trigger (clubs_freeze_identity) on public.clubs UPDATE — never reached through an RPC, only a direct UPDATE no lib/*.ts function performs',
+    // set_club_cover's path guard (20260930100100): new_path is always built
+    // client-side from the club id it is uploading under, so a foreign
+    // prefix is not a path a real client ever sends.
+    'invalid_path':
+      'raised by set_club_cover — the client always builds new_path from the club id it is uploading under, so a foreign prefix is unreachable',
     // clubs_validate_timezone is an INSERT/UPDATE trigger on public.clubs;
     // lib/clubs.ts only ever writes a timezone from a fixed picker of valid
     // IANA names, so this is defence in depth, not a reachable client path.

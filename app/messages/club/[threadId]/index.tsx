@@ -1,23 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Redirect, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
-import { Text } from '../../../../components/Text';
+import { useEffect, useState } from 'react';
+import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
+import { ActivityIndicator, StyleSheet } from 'react-native';
 import CompactHeader from '../../../../components/CompactHeader';
-import ErrorBanner from '../../../../components/ErrorBanner';
-import PostRow from '../../../../components/messages/PostRow';
+import ClubBoard from '../../../../components/ClubBoard';
 import Screen from '../../../../components/Screen';
-import { GENERIC_ERROR } from '../../../../lib/constants';
 import {
-  fetchClubPosts,
   fetchThread,
   threadKindFor,
   threadTitleFor,
-  type ClubPost,
   type ThreadDetail,
 } from '../../../../lib/messages';
 import { useSession } from '../../../../lib/session';
-import { colors, radius, space, type } from '../../../../lib/theme';
-import { useThreadRealtime } from '../../../../lib/use-thread-realtime';
+import { colors, space } from '../../../../lib/theme';
 
 /**
  * A club's board: its root posts, most recent activity first --
@@ -43,65 +37,12 @@ export default function ClubBoardScreen() {
   const { threadId } = useLocalSearchParams<{ threadId: string }>();
   const router = useRouter();
 
-  const [posts, setPosts] = useState<ClubPost[]>([]);
   // Kept whole, not trimmed to `club_id`: the header below needs
   // `threadTitleFor`/`threadKindFor`'s full `ThreadDetail` to name the club
   // and pick the avatar kind, and the New-post button's `clubId` is one
   // field of that same row, so there is nothing left to gain from narrowing
   // the state down to a lone column the way this used to.
   const [thread, setThread] = useState<ThreadDetail | null>(null);
-  const [ready, setReady] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  // Written synchronously alongside the async call it guards, the same
-  // pattern app/messages/index.tsx's `openingRef` and app/messages/
-  // [threadId].tsx's `sendingRef` both record: a boolean read from render
-  // state is blind to a second call landing before that render commits.
-  // Cleared on every exit path below, including the one where `threadId`
-  // never even arrives.
-  const loadingRef = useRef(false);
-
-  const load = useCallback(async () => {
-    if (!threadId || loadingRef.current) return;
-    loadingRef.current = true;
-    const rows = await fetchClubPosts(threadId);
-    // `fetchClubPosts` never rejects: null means "we could not ask", []
-    // means "there is nothing". Showing the empty state for a failed read
-    // tells a member something false about their club's board.
-    if (rows === null) {
-      setError(GENERIC_ERROR);
-      setReady(true);
-      loadingRef.current = false;
-      return;
-    }
-    setError(null);
-    setPosts(rows);
-    setReady(true);
-    loadingRef.current = false;
-  }, [threadId]);
-
-  /*
-   * On FOCUS, not only on mount -- the same call app/messages/index.tsx
-   * already makes for the list, and for a sharper reason here. Opening a
-   * post pushes a screen ON TOP of this one; the board stays mounted, so a
-   * mount-only effect never runs again. `markPostRead` writes post_reads,
-   * and post_reads is not in the realtime publication (20260829070000
-   * publishes `messages`), so nothing tells this screen the dot it is
-   * drawing is stale. Reading a post and pressing back left the dot lit
-   * until the app was restarted.
-   *
-   * The callback must be a stable `useCallback`: useFocusEffect keys a
-   * useEffect on the callback's identity, so a fresh function each render is
-   * a refetch loop. `load` is already stable on `threadId`, and the viewer's
-   * id -- not the `session` OBJECT, which lib/session.tsx replaces on every
-   * token refresh -- is what this actually depends on. The comment eight
-   * lines below said so; this effect was not doing it.
-   */
-  useFocusEffect(
-    useCallback(() => {
-      if (!session?.user.id) return;
-      void load();
-    }, [session?.user.id, load]),
-  );
 
   useEffect(() => {
     if (!session?.user.id || !threadId) return;
@@ -125,19 +66,6 @@ export default function ClubBoardScreen() {
     // lib/session.tsx's docstring: a token refresh hands out a fresh
     // `Session` that changes nothing about who is asking.
   }, [session?.user.id, threadId]);
-
-  useThreadRealtime(
-    threadId,
-    session?.user.id,
-    useCallback(() => {
-      // Refetch rather than appending the payload row: a `postgres_changes`
-      // INSERT carries author_id but not the joined author_name, and the
-      // board's reply_count/last_activity_at/unread columns are all
-      // computed server-side -- there is nothing here to patch a payload
-      // row into that wouldn't already need the full row back anyway.
-      void load();
-    }, [load]),
-  );
 
   if (loading) {
     return (
@@ -185,28 +113,14 @@ export default function ClubBoardScreen() {
         }}
       />
 
-      {/* The alert role lives inside ErrorBanner now -- see its docstring. */}
-      {error ? <ErrorBanner message={error} /> : null}
-
-      {!ready ? (
-        <ActivityIndicator color={colors.accentColor} />
-      ) : posts.length === 0 && !error ? (
-        <View style={styles.emptyCard}>
-          <Text style={styles.emptyText}>
-            Nothing here yet. Start the first post.
-          </Text>
-        </View>
-      ) : (
-        <View style={styles.list}>
-          {posts.map((post) => (
-            <PostRow
-              key={post.id}
-              post={post}
-              onPress={() => router.push(`/messages/club/${threadId}/${post.id}`)}
-            />
-          ))}
-        </View>
-      )}
+      {/*
+        The board list itself -- components/ClubBoard.tsx, extracted here in
+        club-hub phase 2 Task 9 so the Board hub section can render the same
+        component. `showNewPost` stays off: this screen's own CompactHeader
+        ⊕ above already carries the New-post action, wired to the same
+        destination.
+      */}
+      <ClubBoard threadId={threadId} clubId={thread?.club_id ?? ''} />
     </Screen>
   );
 }
@@ -214,21 +128,4 @@ export default function ClubBoardScreen() {
 const styles = StyleSheet.create({
   container: { padding: space[6], gap: space[3] },
   centered: { alignItems: 'center' },
-  list: { gap: space[3] },
-  // The same dashed-border empty card app/messages/index.tsx and
-  // app/messages/[threadId].tsx already use, reused rather than a third
-  // near-identical pair of styles.
-  emptyCard: {
-    padding: space[4],
-    borderRadius: radius.card,
-    borderWidth: 2,
-    borderStyle: 'dashed',
-    borderColor: colors.neutral[400],
-  },
-  emptyText: {
-    fontFamily: type.bodyRegular,
-    fontSize: type.size.helper,
-    lineHeight: 24,
-    color: colors.textMuted,
-  },
 });
