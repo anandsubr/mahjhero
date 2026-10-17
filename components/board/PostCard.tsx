@@ -33,7 +33,7 @@ function looksLong(body: string): boolean {
 export default function PostCard({ post, attachmentUrls, onOpen, onToggleHeart, hearting }: Props) {
   const [measuredLong, setMeasuredLong] = useState(false);
   const long = measuredLong || looksLong(post.body);
-  const showHost = isHostRole(post.authorRole);
+  const showHost = post.authorRole !== null && isHostRole(post.authorRole);
 
   return (
     <View style={styles.card}>
