@@ -76,6 +76,18 @@ describe('pure helpers', () => {
     expect(out).toHaveLength(100);
     expect(out.endsWith('.pdf')).toBe(true);
   });
+  it('sanitiseFileName never reintroduces ".." when truncating', () => {
+    const out = sanitiseFileName(`${'a'.repeat(95)}.${'b'.repeat(10)}.pdf`);
+    expect(out.length).toBeLessThanOrEqual(100);
+    expect(out).not.toContain('..');
+    expect(out.endsWith('.pdf')).toBe(true);
+    const out2 = sanitiseFileName(`${'a'.repeat(96)}.${'b'.repeat(10)}.pdf`);
+    expect(out2).not.toContain('..');
+  });
+  it('sanitiseFileName gives an emoji-only name a non-empty valid result', () => {
+    const out = sanitiseFileName('😀');
+    expect(out).toBe('_');
+  });
   it('fileTypeLabel', () => {
     expect(fileTypeLabel('a.PDF')).toBe('PDF');
     expect(fileTypeLabel('a.docx')).toBe('DOC');
@@ -229,6 +241,14 @@ describe('pickClubFile / uploadClubFile', () => {
       p_file_name: 'Ré sumé/✓ v2.PDF', p_mime_type: 'application/pdf', p_size_bytes: 8,
       p_width: null, p_height: null,
     });
+  });
+  it('removes the object when the RPC throws', async () => {
+    uploadMock.mockResolvedValue({ error: null });
+    rpc.mockRejectedValue(new Error('network'));
+    removeMock.mockResolvedValue({ error: null });
+    const r = await uploadClubFile('c1', { uri: 'u', name: 'a.txt', mimeType: 'text/plain', size: 3 });
+    expect(r.error).not.toBeNull();
+    expect(removeMock).toHaveBeenCalledWith(['c1/files/uuid-1/a.txt']);
   });
   it('removes the object when the RPC fails', async () => {
     uploadMock.mockResolvedValue({ error: null });

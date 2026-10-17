@@ -75,7 +75,10 @@ export function sanitiseFileName(name: string): string {
   const dot = cleaned.lastIndexOf('.');
   const ext = dot > 0 ? cleaned.slice(dot) : '';
   if (ext.length >= MAX_NAME_LENGTH) return cleaned.slice(0, MAX_NAME_LENGTH);
-  return cleaned.slice(0, MAX_NAME_LENGTH - ext.length) + ext;
+  const base = cleaned
+    .slice(0, MAX_NAME_LENGTH - ext.length)
+    .replace(/\.+$/, '');
+  return (base + ext).replace(/\.{2,}/g, '.');
 }
 
 export function fileTypeLabel(name: string): string {
@@ -175,20 +178,33 @@ async function uploadAndRecord(
     console.error('club media upload failed', uploadError);
     return { error: GENERIC_ERROR };
   }
-  const { error } = await supabase.rpc('add_club_media', {
-    target_club: clubId,
-    p_kind: meta.kind,
-    p_storage_path: path,
-    p_file_name: meta.fileName,
-    p_mime_type: meta.mimeType,
-    p_size_bytes: bytes.byteLength,
-    p_width: meta.width,
-    p_height: meta.height,
-  });
-  if (error) {
-    console.error('add_club_media failed', error);
-    const { error: removeError } = await supabase.storage.from(BUCKET).remove([path]);
-    if (removeError) console.error('club media: removing the failed upload failed', removeError);
+  let rpcFailed = false;
+  try {
+    const { error } = await supabase.rpc('add_club_media', {
+      target_club: clubId,
+      p_kind: meta.kind,
+      p_storage_path: path,
+      p_file_name: meta.fileName,
+      p_mime_type: meta.mimeType,
+      p_size_bytes: bytes.byteLength,
+      p_width: meta.width,
+      p_height: meta.height,
+    });
+    if (error) {
+      console.error('add_club_media failed', error);
+      rpcFailed = true;
+    }
+  } catch (cause) {
+    console.error('add_club_media threw', cause);
+    rpcFailed = true;
+  }
+  if (rpcFailed) {
+    try {
+      const { error: removeError } = await supabase.storage.from(BUCKET).remove([path]);
+      if (removeError) console.error('club media: removing the failed upload failed', removeError);
+    } catch (cause) {
+      console.error('club media: removing the failed upload threw', cause);
+    }
     return { error: GENERIC_ERROR };
   }
   return { error: null };
