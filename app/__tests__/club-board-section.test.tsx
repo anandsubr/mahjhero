@@ -38,10 +38,13 @@ vi.mock('../../lib/board', async () => {
   return {
     ...actual,
     fetchClubFeed: (...a: unknown[]) => fetchClubFeed(...a),
-    loadFeedOrder: async () => 'recent',
-    saveFeedOrder: async () => {},
   };
 });
+
+const countBroadcastRecipients = vi.fn();
+vi.mock('../../lib/broadcasts', () => ({
+  countBroadcastRecipients: (...a: unknown[]) => countBroadcastRecipients(...a),
+}));
 
 vi.mock('../../lib/attachments', () => ({
   pickImages: vi.fn(),
@@ -104,6 +107,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   openThreadForClub.mockResolvedValue({ id: 't1', error: null });
   fetchClubFeed.mockResolvedValue([]);
+  countBroadcastRecipients.mockResolvedValue(8);
 });
 
 describe('club hub Board section', () => {
@@ -112,18 +116,27 @@ describe('club hub Board section', () => {
     renderSection();
     expect(await screen.findByText('Anyone free Thursday?')).toBeTruthy();
     expect(openThreadForClub).toHaveBeenCalledWith('c1');
-    expect(fetchClubFeed).toHaveBeenCalledWith('t1', 'recent', undefined, 30);
+    expect(fetchClubFeed).toHaveBeenCalledWith('t1', undefined, 30);
   });
 
-  it('shows hosts an Announcement button to the full composer for this club and thread', async () => {
+  it('gives hosts the composer megaphone (counting this club), not an Announcement button', async () => {
     renderSection('host');
-    fireEvent.click(await screen.findByRole('button', { name: 'Announcement' }));
-    expect(push).toHaveBeenCalledWith('/messages/club/new?threadId=t1&clubId=c1');
+    fireEvent.click(await screen.findByRole('switch', { name: 'Email everyone in the club' }));
+    expect(await screen.findByText('Will also email 8 people in the club')).toBeTruthy();
+    expect(countBroadcastRecipients).toHaveBeenCalledWith('c1', null);
+    expect(screen.queryByRole('button', { name: 'Announcement' })).toBeNull();
+    expect(screen.queryByText('Most recent')).toBeNull();
   });
 
-  it('does not show members an Announcement button, or the old New post pill', async () => {
+  it('gives co-organizers the megaphone too', async () => {
+    renderSection('co_organizer');
+    expect(await screen.findByRole('switch', { name: 'Email everyone in the club' })).toBeTruthy();
+  });
+
+  it('does not show members the megaphone, an Announcement button, or the old New post pill', async () => {
     renderSection('member');
     await screen.findByText('Nothing here yet. Start the first post.');
+    expect(screen.queryByRole('switch', { name: 'Email everyone in the club' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Announcement' })).toBeNull();
     expect(screen.queryByLabelText('New post')).toBeNull();
   });

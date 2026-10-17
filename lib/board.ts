@@ -1,10 +1,7 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { ClubRole } from './clubs';
 import { MONTHS } from './home';
 import type { MessageAttachment } from './messages';
 import { supabase } from './supabase';
-
-export type FeedOrder = 'recent' | 'activity';
 
 export type FeedComment = {
   id: string;
@@ -83,19 +80,20 @@ function mapRow(r: FeedRow): FeedPost {
 }
 
 /**
- * One page of the club board (30 rows unless `limit` is given; the server
- * caps it at 100). `before` is the last row's sort key + id.
+ * One page of the club board, newest post first (30 rows unless `limit` is
+ * given; the server caps it at 100). `before` is the last row's created_at +
+ * id. fetch_club_feed also has an 'activity' order; the Board no longer
+ * offers a sort control (user decision 2026-10-17), so only 'recent' is sent.
  */
 export async function fetchClubFeed(
   threadId: string,
-  order: FeedOrder,
   before?: { at: string; id: string },
   limit?: number,
 ): Promise<FeedPost[] | null> {
   try {
     const { data, error } = await supabase.rpc('fetch_club_feed', {
       target_thread: threadId,
-      p_order: order,
+      p_order: 'recent',
       p_before: before?.at ?? null,
       p_before_id: before?.id ?? null,
       ...(limit !== undefined ? { p_limit: limit } : {}),
@@ -152,23 +150,4 @@ export function mergeFeedPages(existing: FeedPost[], page: FeedPost[]): FeedPost
     out.push(p);
   }
   return out;
-}
-
-const ORDER_KEY = 'board:order';
-
-export async function loadFeedOrder(): Promise<FeedOrder> {
-  try {
-    const v = await AsyncStorage.getItem(ORDER_KEY);
-    return v === 'activity' ? 'activity' : 'recent';
-  } catch {
-    return 'recent';
-  }
-}
-
-export async function saveFeedOrder(o: FeedOrder): Promise<void> {
-  try {
-    await AsyncStorage.setItem(ORDER_KEY, o);
-  } catch {
-    // preference only; losing it is harmless
-  }
 }

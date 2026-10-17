@@ -357,9 +357,8 @@ describe('a club post', () => {
       expect(replace).toHaveBeenCalledWith('/messages/club/t1');
     });
 
-    // The name doesn't navigate -- matching app/messages/club/new.tsx's
-    // own inert pill (a control that looks tappable and does nothing is
-    // worse than one that plainly isn't interactive).
+    // The name doesn't navigate (a control that looks tappable and does
+    // nothing is worse than one that plainly isn't interactive).
     it('renders the club name as a plain label, with no overflow button', async () => {
       render(<PostScreen />);
       await screen.findByText('Cedar Falls Mah Jongg');

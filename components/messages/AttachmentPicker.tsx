@@ -31,8 +31,7 @@ type Props = {
    * -- the conversation composer puts the button inside its message pill
    * and the strip above the whole row. Given this, the button is drawn as
    * the composer's bare camera glyph rather than the default plus-in-a-
-   * circle. Omitted, the strip sits above the plus button in one column
-   * (app/messages/club/new.tsx).
+   * circle. Omitted, the strip sits above the plus button in one column.
    */
   layout?: (parts: { strip: ReactNode; trigger: ReactNode }) => ReactNode;
   /**

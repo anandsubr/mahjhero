@@ -759,8 +759,8 @@ describe('BOOKING_REFUSALS (self-audit against the migrations)', () => {
     'not_a_post':
       'raised by toggle_post_heart — the Board heart toggle (lib/board.ts) is responsible, not this module',
     // Raised by fetch_club_feed when p_order is neither 'recent' nor
-    // 'activity'. The client only ever passes one of those two constants, so
-    // this is a caller bug. lib/board.ts owns it.
+    // 'activity'. The client only ever passes 'recent', so this is a caller
+    // bug. lib/board.ts owns it.
     'unknown feed order':
       'raised by fetch_club_feed — lib/board.ts is the module responsible, and by design relays error.message rather than mapping through a refusal table',
     // Raised by post_message (20260905040000_post_message_attachments.sql)

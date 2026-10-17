@@ -715,7 +715,8 @@ test.describe('signed in', () => {
           page.getByText(/^Fall tournament signup opens Monday/),
         ).toBeVisible();
         await expect(page.getByText('Everyone in the club sees posts here')).toBeVisible();
-        await expect(page.getByText('Most recent')).toBeVisible();
+        // No sort control (user decision 2026-10-17): newest first, always.
+        await expect(page.getByText('Most recent')).toHaveCount(0);
         await expect(page.getByText('4 comments', { exact: true })).toBeVisible();
         await expect(page.getByText('View all 4 comments')).toBeVisible();
         await expect(page.getByRole('button', { name: 'Remove your heart' })).toBeVisible();

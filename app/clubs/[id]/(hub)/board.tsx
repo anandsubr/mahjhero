@@ -24,8 +24,8 @@ import { colors, type } from '../../../../lib/theme';
  *
  * The composer is pinned in HubSection's footer (outside the scroller); a
  * successful post reloads the board so the new post shows first. Hosts and
- * co-organizers also get ClubBoard's "Announcement" button, from the role
- * the hub layout already resolved.
+ * co-organizers also get the composer's megaphone toggle (post + email the
+ * club), from the role the hub layout already resolved.
  */
 export default function BoardSection() {
   const { club, role } = useClubHub();
@@ -84,14 +84,16 @@ export default function BoardSection() {
     <HubSection
       avoidKeyboard
       onRefresh={onRefresh}
-      footer={<BoardComposer threadId={threadId} onPosted={onPosted} />}
+      footer={
+        <BoardComposer
+          threadId={threadId}
+          onPosted={onPosted}
+          clubId={club.id}
+          canAnnounce={role !== null && canAnnounce(role)}
+        />
+      }
     >
-      <ClubBoard
-        ref={boardRef}
-        threadId={threadId}
-        clubId={club.id}
-        canAnnounce={role !== null && canAnnounce(role)}
-      />
+      <ClubBoard ref={boardRef} threadId={threadId} />
     </HubSection>
   );
 }

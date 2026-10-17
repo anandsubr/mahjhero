@@ -75,16 +75,12 @@ vi.mock('../../lib/messages', async () => {
 
 const fetchClubFeed = vi.fn();
 const togglePostHeart = vi.fn();
-const loadFeedOrder = vi.fn();
-const saveFeedOrder = vi.fn();
 vi.mock('../../lib/board', async () => {
   const actual = await vi.importActual<typeof import('../../lib/board')>('../../lib/board');
   return {
     ...actual,
     fetchClubFeed: (...a: unknown[]) => fetchClubFeed(...a),
     togglePostHeart: (...a: unknown[]) => togglePostHeart(...a),
-    loadFeedOrder: (...a: unknown[]) => loadFeedOrder(...a),
-    saveFeedOrder: (...a: unknown[]) => saveFeedOrder(...a),
   };
 });
 
@@ -95,6 +91,11 @@ vi.mock('../../lib/attachments', () => ({
   uploadAttachment: vi.fn(),
   getSignedUrls: (...a: unknown[]) => getSignedUrls(...a),
   MAX_ATTACHMENTS: 4,
+}));
+
+const countBroadcastRecipients = vi.fn();
+vi.mock('../../lib/broadcasts', () => ({
+  countBroadcastRecipients: (...a: unknown[]) => countBroadcastRecipients(...a),
 }));
 
 const fetchRoster = vi.fn();
@@ -137,8 +138,7 @@ describe('the club board', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     fetchThread.mockResolvedValue({ id: 't1', club_id: 'c1' });
-    loadFeedOrder.mockResolvedValue('recent');
-    saveFeedOrder.mockResolvedValue(undefined);
+    countBroadcastRecipients.mockResolvedValue(12);
     getSignedUrls.mockResolvedValue({});
     fetchRoster.mockResolvedValue([{ profile_id: 'me', role: 'member', display_name: 'Me', skill_level: null }]);
     fetchClubFeed.mockResolvedValue([]);
@@ -152,7 +152,7 @@ describe('the club board', () => {
     // PostCard's own heart pill and comment link.
     expect(screen.getByRole('button', { name: 'Heart this post' })).toBeTruthy();
     expect(screen.getByText('Comment')).toBeTruthy();
-    expect(fetchClubFeed).toHaveBeenCalledWith('t1', 'recent', undefined, 30);
+    expect(fetchClubFeed).toHaveBeenCalledWith('t1', undefined, 30);
   });
 
   it('says so when the board is empty', async () => {
@@ -174,25 +174,13 @@ describe('the club board', () => {
     expect(markPostRead).not.toHaveBeenCalled();
   });
 
-  describe('sort', () => {
-    it('defaults to Most recent and switches to Latest activity, refetching and remembering it', async () => {
-      fetchClubFeed.mockResolvedValue([post('p1')]);
-      render(<ClubBoardScreen />);
-      await screen.findByText('Body of p1');
-      expect(screen.getByText('Most recent')).toBeTruthy();
-      fireEvent.click(screen.getByRole('button', { name: 'Sort posts: Most recent' }));
-      fireEvent.click(screen.getByRole('button', { name: 'Latest activity' }));
-      await waitFor(() => expect(fetchClubFeed).toHaveBeenCalledWith('t1', 'activity', undefined, 30));
-      expect(saveFeedOrder).toHaveBeenCalledWith('activity');
-      expect(await screen.findByRole('button', { name: 'Sort posts: Latest activity' })).toBeTruthy();
-    });
-
-    it('starts in the remembered order', async () => {
-      loadFeedOrder.mockResolvedValue('activity');
-      render(<ClubBoardScreen />);
-      await waitFor(() => expect(fetchClubFeed).toHaveBeenCalledWith('t1', 'activity', undefined, 30));
-      expect(fetchClubFeed).not.toHaveBeenCalledWith('t1', 'recent', undefined, 30);
-    });
+  it('has no sort control: always newest first', async () => {
+    fetchClubFeed.mockResolvedValue([post('p1')]);
+    render(<ClubBoardScreen />);
+    await screen.findByText('Body of p1');
+    expect(screen.queryByText('Most recent')).toBeNull();
+    expect(screen.queryByText('Latest activity')).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Sort posts/ })).toBeNull();
   });
 
   describe('hearts', () => {
@@ -328,27 +316,13 @@ describe('the club board', () => {
       await screen.findByText('Body of p0');
       fireEvent.click(screen.getByRole('button', { name: 'Show older posts' }));
       expect(await screen.findByText('An older post')).toBeTruthy();
-      expect(fetchClubFeed).toHaveBeenLastCalledWith('t1', 'recent', {
+      expect(fetchClubFeed).toHaveBeenLastCalledWith('t1', {
         at: page1[29].createdAt,
         id: 'p29',
       });
       expect(screen.getAllByText('Body of p29')).toHaveLength(1);
       // Fewer than a page came back: nothing older left.
       expect(screen.queryByRole('button', { name: 'Show older posts' })).toBeNull();
-    });
-
-    it('pages by last activity in Latest activity order', async () => {
-      loadFeedOrder.mockResolvedValue('activity');
-      fetchClubFeed.mockResolvedValueOnce(page1).mockResolvedValueOnce([]);
-      render(<ClubBoardScreen />);
-      await screen.findByText('Body of p0');
-      fireEvent.click(screen.getByRole('button', { name: 'Show older posts' }));
-      await waitFor(() =>
-        expect(fetchClubFeed).toHaveBeenLastCalledWith('t1', 'activity', {
-          at: page1[29].lastActivityAt,
-          id: 'p29',
-        }),
-      );
     });
 
     it('a realtime refetch keeps loaded older pages, requesting the loaded count', async () => {
@@ -366,7 +340,7 @@ describe('the club board', () => {
         onInsert();
       });
       await waitFor(() => expect(fetchClubFeed).toHaveBeenCalledTimes(3));
-      expect(fetchClubFeed).toHaveBeenLastCalledWith('t1', 'recent', undefined, 31);
+      expect(fetchClubFeed).toHaveBeenLastCalledWith('t1', undefined, 31);
       expect(screen.getByText('An older post')).toBeTruthy();
       expect(screen.getByText('Body of p0')).toBeTruthy();
     });
@@ -386,7 +360,7 @@ describe('the club board', () => {
         latest();
       });
       await waitFor(() => expect(fetchClubFeed).toHaveBeenCalledTimes(3));
-      expect(fetchClubFeed).toHaveBeenLastCalledWith('t1', 'recent', undefined, 60);
+      expect(fetchClubFeed).toHaveBeenLastCalledWith('t1', undefined, 60);
       expect(screen.getByText('Older 29')).toBeTruthy();
       expect(screen.getByRole('button', { name: 'Show older posts' })).toBeTruthy();
     });
@@ -414,7 +388,7 @@ describe('the club board', () => {
         onInsert();
       });
       await screen.findByText('Brand new');
-      expect(fetchClubFeed).toHaveBeenLastCalledWith('t1', 'recent', undefined, 100);
+      expect(fetchClubFeed).toHaveBeenLastCalledWith('t1', undefined, 100);
       expect(screen.getByText('Post 119')).toBeTruthy();
       expect(screen.getAllByText('Post 50')).toHaveLength(1);
       const bodies = screen.getAllByText(/^(Brand new|Post 0|Post 119)$/).map((n) => n.textContent);
@@ -488,19 +462,36 @@ describe('the club board', () => {
     });
   });
 
-  describe('Announcement button', () => {
-    it('shows organizers an Announcement button to the full composer', async () => {
+  describe('announcing', () => {
+    it('has no Announcement button; organizers get the composer megaphone instead', async () => {
       fetchRoster.mockResolvedValue([{ profile_id: 'me', role: 'co_organizer', display_name: 'Me', skill_level: null }]);
       render(<ClubBoardScreen />);
-      fireEvent.click(await screen.findByRole('button', { name: 'Announcement' }));
-      expect(push).toHaveBeenCalledWith('/messages/club/new?threadId=t1&clubId=c1');
+      expect(await screen.findByRole('switch', { name: 'Email everyone in the club' })).toBeTruthy();
       expect(fetchRoster).toHaveBeenCalledWith('c1');
+      expect(screen.queryByRole('button', { name: 'Announcement' })).toBeNull();
     });
 
-    it('does not show members an Announcement button', async () => {
+    it('posts an announcement from the composer, counting recipients for this club', async () => {
+      fetchRoster.mockResolvedValue([{ profile_id: 'me', role: 'host', display_name: 'Me', skill_level: null }]);
+      postMessage.mockResolvedValue({ id: 'p9', error: null });
+      render(<ClubBoardScreen />);
+      fireEvent.click(await screen.findByRole('switch', { name: 'Email everyone in the club' }));
+      expect(await screen.findByText('Will also email 12 people in the club')).toBeTruthy();
+      expect(countBroadcastRecipients).toHaveBeenCalledWith('c1', null);
+      fireEvent.change(screen.getByPlaceholderText('Write to the club'), {
+        target: { value: 'Tables at seven' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Post & email' }));
+      await waitFor(() =>
+        expect(postMessage).toHaveBeenCalledWith('t1', 'Tables at seven', true, null, null, []),
+      );
+    });
+
+    it('does not show members the megaphone or an Announcement button', async () => {
       render(<ClubBoardScreen />);
       await screen.findByText('Nothing here yet. Start the first post.');
       await waitFor(() => expect(fetchRoster).toHaveBeenCalled());
+      expect(screen.queryByRole('switch', { name: 'Email everyone in the club' })).toBeNull();
       expect(screen.queryByRole('button', { name: 'Announcement' })).toBeNull();
     });
   });
@@ -545,13 +536,10 @@ describe('the club board', () => {
     expect(await screen.findByText('New post while you were away')).toBeTruthy();
   });
 
-  it('keeps the header New post control, carrying this thread and its club', async () => {
+  it('has no header New post control -- the pinned composer is the way to post', async () => {
     render(<ClubBoardScreen />);
-    await waitFor(() => expect(screen.getByLabelText('New post')).toBeTruthy());
-    await waitFor(() => {
-      fireEvent.click(screen.getByLabelText('New post'));
-      expect(push).toHaveBeenCalledWith('/messages/club/new?threadId=t1&clubId=c1');
-    });
+    await screen.findByText('Nothing here yet. Start the first post.');
+    expect(screen.queryByLabelText('New post')).toBeNull();
   });
 
   describe('header', () => {
@@ -622,9 +610,9 @@ describe('the club board', () => {
       await screen.findByText('Anyone free Thursday?');
       expect(screen.getByLabelText('Back')).toBeTruthy();
       expect(screen.queryByTestId('thread-header-avatar-club')).toBeNull();
-      // No club id, so no roster read and no Announcement button.
+      // No club id, so no roster read and no megaphone.
       expect(fetchRoster).not.toHaveBeenCalled();
-      expect(screen.queryByRole('button', { name: 'Announcement' })).toBeNull();
+      expect(screen.queryByRole('switch', { name: 'Email everyone in the club' })).toBeNull();
     });
   });
 

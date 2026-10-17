@@ -23,8 +23,15 @@ vi.mock('../../lib/messages', async (orig) => ({
   postMessage: (...a: unknown[]) => postMessage(...a),
 }));
 
+const countBroadcastRecipients = vi.fn();
+vi.mock('../../lib/broadcasts', () => ({
+  countBroadcastRecipients: (...a: unknown[]) => countBroadcastRecipients(...a),
+}));
+
 beforeEach(() => {
   insets.bottom = 0;
+  countBroadcastRecipients.mockReset();
+  countBroadcastRecipients.mockResolvedValue(23);
   pickImages.mockReset();
   compressImage.mockReset();
   uploadAttachment.mockReset();
@@ -133,5 +140,92 @@ describe('BoardComposer', () => {
     insets.bottom = 0;
     const second = render(<BoardComposer threadId="t1" onPosted={() => {}} />);
     expect((second.container.firstChild as HTMLElement).style.paddingBottom).toBe('8px');
+  });
+
+  describe('email everyone (announce)', () => {
+    const megaphone = () => screen.getByRole('switch', { name: 'Email everyone in the club' });
+
+    it('never shows members the toggle', () => {
+      render(<BoardComposer threadId="t1" clubId="c1" onPosted={() => {}} />);
+      expect(screen.queryByRole('switch', { name: 'Email everyone in the club' })).toBeNull();
+      expect(screen.queryByText(/Will also email/)).toBeNull();
+      expect(countBroadcastRecipients).not.toHaveBeenCalled();
+    });
+
+    it('shows organizers the toggle, off, with a plain Post button', () => {
+      render(<BoardComposer threadId="t1" clubId="c1" canAnnounce onPosted={() => {}} />);
+      expect(megaphone().getAttribute('aria-checked')).toBe('false');
+      expect(screen.queryByText(/Will also email/)).toBeNull();
+      expect(postBtn()).toBeTruthy();
+      expect(countBroadcastRecipients).not.toHaveBeenCalled();
+    });
+
+    it('when on, shows the recipient count and "Post & email"', async () => {
+      render(<BoardComposer threadId="t1" clubId="c1" canAnnounce onPosted={() => {}} />);
+      fireEvent.click(megaphone());
+      expect(megaphone().getAttribute('aria-checked')).toBe('true');
+      expect(await screen.findByText('Will also email 23 people in the club')).toBeTruthy();
+      expect(countBroadcastRecipients).toHaveBeenCalledWith('c1', null);
+      expect(screen.getByRole('button', { name: 'Post & email' })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Post' })).toBeNull();
+      fireEvent.click(megaphone());
+      expect(screen.queryByText(/Will also email/)).toBeNull();
+      expect(postBtn()).toBeTruthy();
+    });
+
+    it('says "1 person" for a single recipient', async () => {
+      countBroadcastRecipients.mockResolvedValue(1);
+      render(<BoardComposer threadId="t1" clubId="c1" canAnnounce onPosted={() => {}} />);
+      fireEvent.click(megaphone());
+      expect(await screen.findByText('Will also email 1 person in the club')).toBeTruthy();
+    });
+
+    it('falls back to "everyone in the club" when the count fails', async () => {
+      countBroadcastRecipients.mockResolvedValue(null);
+      render(<BoardComposer threadId="t1" clubId="c1" canAnnounce onPosted={() => {}} />);
+      fireEvent.click(megaphone());
+      await waitFor(() => expect(countBroadcastRecipients).toHaveBeenCalled());
+      expect(screen.getByText('Will also email everyone in the club')).toBeTruthy();
+    });
+
+    it('posts as an announcement once on double tap, then turns the toggle off', async () => {
+      let resolve!: (v: unknown) => void;
+      postMessage.mockImplementation(() => new Promise((r) => (resolve = r)));
+      const onPosted = vi.fn();
+      render(<BoardComposer threadId="t1" clubId="c1" canAnnounce onPosted={onPosted} />);
+      fireEvent.click(megaphone());
+      type('Doors at seven');
+      const btn = screen.getByRole('button', { name: 'Post & email' });
+      fireEvent.click(btn);
+      fireEvent.click(btn);
+      expect(postMessage).toHaveBeenCalledTimes(1);
+      expect(postMessage).toHaveBeenCalledWith('t1', 'Doors at seven', true, null, null, []);
+      await act(async () => resolve({ id: 'p5', error: null }));
+      expect(onPosted).toHaveBeenCalledWith('p5');
+      expect(megaphone().getAttribute('aria-checked')).toBe('false');
+      expect(screen.queryByText(/Will also email/)).toBeNull();
+      expect(postBtn()).toBeTruthy();
+    });
+
+    it('shows a server refusal inline and keeps the draft and the toggle on', async () => {
+      postMessage.mockResolvedValueOnce({ id: null, error: 'only an organizer can announce' });
+      render(<BoardComposer threadId="t1" clubId="c1" canAnnounce onPosted={() => {}} />);
+      fireEvent.click(megaphone());
+      type('Doors at seven');
+      fireEvent.click(screen.getByRole('button', { name: 'Post & email' }));
+      expect(await screen.findByText('only an organizer can announce')).toBeTruthy();
+      expect((field() as HTMLTextAreaElement).value).toBe('Doors at seven');
+      expect(megaphone().getAttribute('aria-checked')).toBe('true');
+    });
+
+    it('a plain post from an organizer still sends announce=false', async () => {
+      postMessage.mockResolvedValue({ id: 'p6', error: null });
+      render(<BoardComposer threadId="t1" clubId="c1" canAnnounce onPosted={() => {}} />);
+      type('hi');
+      fireEvent.click(postBtn());
+      await waitFor(() =>
+        expect(postMessage).toHaveBeenCalledWith('t1', 'hi', false, null, null, []),
+      );
+    });
   });
 });

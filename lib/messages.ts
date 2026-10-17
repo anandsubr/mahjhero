@@ -237,8 +237,8 @@ const EDGE_SPACE_PATTERN = /^ +| +$/g;
  *     only then takes that trimmed body's first line — so a body starting
  *     with a blank line loses the blank line before the split, not after.
  *     This function takes the first line of whatever it is GIVEN, so the
- *     caller must pass the trimmed draft, not the raw one: see the call
- *     site in app/messages/club/new.tsx, which used to pass the untrimmed
+ *     caller must pass the trimmed draft, not the raw one: the former call
+ *     site (app/messages/club/new.tsx, since removed) used to pass the untrimmed
  *     draft and show an empty subject for a body that was about to mail a
  *     real one.
  *   - The TRUNCATION must count characters the way Postgres's `length()`/

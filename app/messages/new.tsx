@@ -66,8 +66,9 @@ type Candidate = { profile_id: string; display_name: string; meta: string };
  *   open-with-nothing-typed case is a shortcut to a destination the
  *   Messages list already shows, one screen back, as a club row.
  * - The post-with-text case was a strictly worse version of the club
- *   board's own composer (`app/messages/club/new.tsx`): no subject
- *   preview, no Announcement toggle, no header naming which club. Anything
+ *   board's own composer (then `app/messages/club/new.tsx`, since folded
+ *   into the Board's pinned composer): no Announcement toggle, no header
+ *   naming which club. Anything
  *   a member could do here, they could do better one tap away.
  * - Removing it also deletes the last navigation path that had to be
  *   specially taught a club thread belongs on `/messages/club/<id>`, never

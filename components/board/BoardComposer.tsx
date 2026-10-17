@@ -3,6 +3,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Keyboard, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { Text, TextInput } from '../Text';
 import AttachmentPicker from '../messages/AttachmentPicker';
+import { MegaphoneIcon } from '../icons';
+import { countBroadcastRecipients } from '../../lib/broadcasts';
 import { GENERIC_ERROR } from '../../lib/constants';
 import { BODY_MAX, postMessage, type MessageAttachmentInput } from '../../lib/messages';
 import { colors, radius, space, type } from '../../lib/theme';
@@ -14,6 +16,14 @@ type Props = {
   threadId: string;
   /** Called with the new post's id after a successful post. */
   onPosted: (postId: string) => void;
+  /**
+   * Hosts and co-organizers (`canAnnounce` in lib/clubs.ts) get the
+   * megaphone toggle: posting with it on sends an announcement, which also
+   * emails everyone in the club. Members never see it.
+   */
+  canAnnounce?: boolean;
+  /** The club the board belongs to -- for the announcement recipient count. */
+  clubId?: string;
 };
 
 type KeyEvent = {
@@ -23,15 +33,31 @@ type KeyEvent = {
 
 /**
  * The composer pinned to the bottom of the club Board: photo button, pill
- * input, Post. Always a regular (non-announcement) root post. Photos reuse
+ * input, Post. Organizers also get a megaphone toggle ("Email everyone in
+ * the club") beside the photo button; with it on, a line above the row says
+ * how many people will be emailed (`countBroadcastRecipients`, the same
+ * count `send_broadcast` resolves its recipients through), the button reads
+ * "Post & email", and the post goes out as an announcement. The toggle turns
+ * off after a successful post. This is the app's only way to email a whole
+ * club. Photos reuse
  * AttachmentPicker (pick -> compress -> upload), shown as removable
  * thumbnails above the row, up to MAX_ATTACHMENTS.
  *
  * Enter posts on web (Shift+Enter breaks the line); on phones Enter inserts
  * a newline and the Post button posts.
  */
-export default function BoardComposer({ threadId, onPosted }: Props) {
+export default function BoardComposer({
+  threadId,
+  onPosted,
+  canAnnounce = false,
+  clubId,
+}: Props) {
   const [body, setBody] = useState('');
+  const [announceOn, setAnnounceOn] = useState(false);
+  // null covers "still counting" and "could not count" alike: both read
+  // "everyone in the club" rather than a number the app doesn't know.
+  const [recipients, setRecipients] = useState<number | null>(null);
+  const announce = canAnnounce && announceOn;
   const [attachments, setAttachments] = useState<MessageAttachmentInput[]>([]);
   const [attachmentsPending, setAttachmentsPending] = useState(false);
   const [resetKey, setResetKey] = useState(0);
@@ -67,10 +93,25 @@ export default function BoardComposer({ threadId, onPosted }: Props) {
     },
     [],
   );
+  // Counted each time the toggle is armed, so the number is never stale
+  // against a roster that changed since the last announcement.
+  useEffect(() => {
+    if (!announce || !clubId) return;
+    let cancelled = false;
+    setRecipients(null);
+    // A club announcement has no event, so the second argument is null.
+    void countBroadcastRecipients(clubId, null).then((n) => {
+      if (!cancelled) setRecipients(n);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [announce, clubId]);
+
   // Latest values for the keyboard handler / submit, which must not act on a
   // stale closure.
-  const latest = useRef({ body, attachments, attachmentsPending });
-  latest.current = { body, attachments, attachmentsPending };
+  const latest = useRef({ body, attachments, attachmentsPending, announce });
+  latest.current = { body, attachments, attachmentsPending, announce };
 
   const canPost =
     !busy && !attachmentsPending && (body.trim().length > 0 || attachments.length > 0);
@@ -85,7 +126,7 @@ export default function BoardComposer({ threadId, onPosted }: Props) {
     const { id, error: refusal } = await postMessage(
       threadId,
       cur.body.trim(),
-      false,
+      cur.announce,
       null,
       null,
       cur.attachments,
@@ -98,6 +139,7 @@ export default function BoardComposer({ threadId, onPosted }: Props) {
       return;
     }
     setBody('');
+    setAnnounceOn(false);
     setAttachments([]);
     setResetKey((k) => k + 1);
     onPosted(id);
@@ -113,6 +155,8 @@ export default function BoardComposer({ threadId, onPosted }: Props) {
     },
     [submit],
   );
+
+  const postLabel = announce ? 'Post & email' : 'Post';
 
   return (
     <View style={[styles.wrap, { paddingBottom: keyboardUp ? 8 : Math.max(insets.bottom, 8) }]}>
@@ -132,8 +176,30 @@ export default function BoardComposer({ threadId, onPosted }: Props) {
         layout={({ strip, trigger }) => (
           <>
             {strip}
+            {announce ? (
+              <Text style={styles.announceNote}>
+                {recipients !== null
+                  ? `Will also email ${recipients} ${recipients === 1 ? 'person' : 'people'} in the club`
+                  : 'Will also email everyone in the club'}
+              </Text>
+            ) : null}
             <View style={styles.row}>
               {trigger}
+              {canAnnounce ? (
+                <Pressable
+                  onPress={() => setAnnounceOn((on) => !on)}
+                  accessibilityRole="switch"
+                  accessibilityLabel="Email everyone in the club"
+                  // aria-*, not accessibilityState: react-native-web drops
+                  // accessibilityState entirely (see components/Toggle.tsx),
+                  // and RN's Pressable reads aria-checked natively too.
+                  aria-checked={announce}
+                  aria-selected={announce}
+                  style={[styles.announce, announce ? styles.announceOnBg : null]}
+                >
+                  <MegaphoneIcon size={22} color={announce ? colors.bg : colors.text} />
+                </Pressable>
+              ) : null}
               <TextInput
                 style={[styles.input, { height: inputHeight }]}
                 value={body}
@@ -151,11 +217,13 @@ export default function BoardComposer({ threadId, onPosted }: Props) {
                 onPress={() => void submit()}
                 disabled={!canPost}
                 accessibilityRole="button"
-                accessibilityLabel="Post"
+                accessibilityLabel={postLabel}
                 accessibilityState={{ disabled: !canPost, busy }}
                 style={[styles.post, canPost ? styles.postOn : null]}
               >
-                <Text style={[styles.postText, canPost ? styles.postTextOn : null]}>Post</Text>
+                <Text style={[styles.postText, canPost ? styles.postTextOn : null]}>
+                  {postLabel}
+                </Text>
               </Pressable>
             </View>
           </>
@@ -201,5 +269,19 @@ const styles = StyleSheet.create({
   postOn: { backgroundColor: colors.accent[700] },
   postText: { fontFamily: type.bodyBold, fontSize: 16, color: colors.neutral[600] },
   postTextOn: { color: '#fff' },
+  announce: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  announceOnBg: { backgroundColor: colors.accent[700] },
+  announceNote: {
+    fontFamily: type.bodyBold,
+    fontSize: type.size.helper,
+    color: colors.accent[700],
+  },
   error: { fontFamily: type.bodyRegular, fontSize: type.size.helper, color: colors.accent[800] },
 });
