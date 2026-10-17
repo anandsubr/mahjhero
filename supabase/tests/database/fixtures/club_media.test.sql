@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(48);
+select plan(60);
 
 -- Club 1 (c1): host H(a), members M(b) and P(c), removed member R(d).
 -- Club 2 (c2): host O(e), plain member Q(f) — outsiders to c1.
@@ -81,6 +81,16 @@ select ok(
     'public.add_club_media(uuid, text, text, text, text, int, int, int)', 'EXECUTE')
   and has_function_privilege('authenticated', 'public.remove_club_media(uuid)', 'EXECUTE'),
   'authenticated can execute add_club_media and remove_club_media'
+);
+select ok(
+  not has_function_privilege('anon',
+    'public.fetch_club_media(uuid, text, timestamptz, int)', 'EXECUTE'),
+  'anon cannot execute fetch_club_media'
+);
+select ok(
+  has_function_privilege('authenticated',
+    'public.fetch_club_media(uuid, text, timestamptz, int)', 'EXECUTE'),
+  'authenticated can execute fetch_club_media'
 );
 select ok(
   not has_table_privilege('authenticated', 'public.club_media', 'INSERT')
@@ -562,6 +572,134 @@ select count(*)::int as organizer_deleted from d \gset
 select ok(
   :row_uploader_deleted = 1 and :organizer_deleted = 1,
   'the uploader of a club_media row and a club organizer can each delete the object'
+);
+
+-- ---------------------------------------------------------------------
+-- fetch_club_media
+--
+-- profiles are readable only for the caller's own row (20260822180000), so
+-- uploader names have to come from this security definer RPC rather than a
+-- PostgREST embed. Rows below get explicit created_at values: every row
+-- inserted earlier in this transaction shares one now(), which would make
+-- ordering and paging untestable. The two c1 rows left from above
+-- (R's r-owned.jpg photo and B's sheet.xlsx file) carry that now(), so they
+-- are newer than all of these.
+-- ---------------------------------------------------------------------
+reset role;
+update public.profiles set display_name = 'Hana Host'
+ where id = 'aaaaaaaa-0000-0000-0000-000000000001';
+update public.profiles set display_name = 'Bea Member'
+ where id = 'bbbbbbbb-0000-0000-0000-000000000002';
+update public.profiles set display_name = 'Cal Other'
+ where id = 'cccccccc-0000-0000-0000-000000000003';
+update public.profiles set display_name = 'Rae Removed'
+ where id = 'dddddddd-0000-0000-0000-000000000004';
+update public.profiles set display_name = 'Oscar Outside'
+ where id = 'eeeeeeee-0000-0000-0000-000000000005';
+
+insert into public.club_media
+  (club_id, kind, storage_path, file_name, mime_type, size_bytes, uploaded_by, created_at)
+values
+  ('c1c1c1c1-0000-0000-0000-000000000001', 'photo',
+   'c1c1c1c1-0000-0000-0000-000000000001/photos/fb.jpg', 'fb.jpg', 'image/jpeg', 1,
+   'bbbbbbbb-0000-0000-0000-000000000002', '2026-10-01 10:00:00+00'),
+  ('c1c1c1c1-0000-0000-0000-000000000001', 'photo',
+   'c1c1c1c1-0000-0000-0000-000000000001/photos/fa.jpg', 'fa.jpg', 'image/jpeg', 1,
+   'aaaaaaaa-0000-0000-0000-000000000001', '2026-10-01 11:00:00+00'),
+  ('c1c1c1c1-0000-0000-0000-000000000001', 'photo',
+   'c1c1c1c1-0000-0000-0000-000000000001/photos/fc.jpg', 'fc.jpg', 'image/jpeg', 1,
+   'cccccccc-0000-0000-0000-000000000003', '2026-10-01 12:00:00+00'),
+  ('c1c1c1c1-0000-0000-0000-000000000001', 'file',
+   'c1c1c1c1-0000-0000-0000-000000000001/files/fa/notes.txt', 'notes.txt', 'text/plain', 1,
+   'aaaaaaaa-0000-0000-0000-000000000001', '2026-10-01 09:00:00+00'),
+  ('c2c2c2c2-0000-0000-0000-000000000002', 'photo',
+   'c2c2c2c2-0000-0000-0000-000000000002/photos/fe.jpg', 'fe.jpg', 'image/jpeg', 1,
+   'eeeeeeee-0000-0000-0000-000000000005', '2026-10-01 13:00:00+00');
+
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub":"cccccccc-0000-0000-0000-000000000003","role":"authenticated"}';
+
+select is(
+  (select uploader_name from public.fetch_club_media(
+      'c1c1c1c1-0000-0000-0000-000000000001', 'photo')
+    where storage_path = 'c1c1c1c1-0000-0000-0000-000000000001/photos/fb.jpg'),
+  'Bea Member',
+  'a member sees another member''s name as the uploader'
+);
+
+select is(
+  (select array_agg(uploader_name || ':' || file_name order by f.ordinality)
+     from public.fetch_club_media('c1c1c1c1-0000-0000-0000-000000000001', 'photo')
+       with ordinality as f),
+  array['Rae Removed:r.jpg', 'Cal Other:fc.jpg', 'Hana Host:fa.jpg', 'Bea Member:fb.jpg'],
+  'photos come back newest first, only this club''s, each with its uploader''s name'
+);
+
+select is(
+  (select array_agg(kind || ':' || file_name order by f.ordinality)
+     from public.fetch_club_media('c1c1c1c1-0000-0000-0000-000000000001', 'file')
+       with ordinality as f),
+  array['file:sheet.xlsx', 'file:notes.txt'],
+  'the file kind returns only files'
+);
+
+select is(
+  (select count(*)::int
+     from public.fetch_club_media('c1c1c1c1-0000-0000-0000-000000000001', 'photo')
+    where kind <> 'photo'),
+  0,
+  'the photo kind returns no files'
+);
+
+select is(
+  (select array_agg(file_name order by f.ordinality)
+     from public.fetch_club_media('c1c1c1c1-0000-0000-0000-000000000001', 'photo',
+       '2026-10-01 12:00:00+00')
+       with ordinality as f),
+  array['fa.jpg', 'fb.jpg'],
+  'p_before pages to rows strictly older than the cursor'
+);
+
+select is(
+  (select array_agg(file_name order by f.ordinality)
+     from public.fetch_club_media('c1c1c1c1-0000-0000-0000-000000000001', 'photo',
+       null, 2)
+       with ordinality as f),
+  array['r.jpg', 'fc.jpg'],
+  'p_limit caps the page'
+);
+
+select is(
+  (select count(*)::int
+     from public.fetch_club_media('c1c1c1c1-0000-0000-0000-000000000001', 'photo',
+       null, 100000)),
+  4,
+  'an oversized p_limit is clamped rather than refused'
+);
+
+select throws_ok(
+  $$select * from public.fetch_club_media('c1c1c1c1-0000-0000-0000-000000000001', 'video')$$,
+  '22023', 'invalid_kind',
+  'fetch_club_media refuses an unknown kind'
+);
+
+set local request.jwt.claims =
+  '{"sub":"eeeeeeee-0000-0000-0000-000000000005","role":"authenticated"}';
+
+select throws_ok(
+  $$select * from public.fetch_club_media('c1c1c1c1-0000-0000-0000-000000000001', 'photo')$$,
+  '42501', 'not allowed',
+  'a non-member cannot list the club''s media'
+);
+
+set local request.jwt.claims =
+  '{"sub":"dddddddd-0000-0000-0000-000000000004","role":"authenticated"}';
+
+select throws_ok(
+  $$select * from public.fetch_club_media('c1c1c1c1-0000-0000-0000-000000000001', 'photo')$$,
+  '42501', 'not allowed',
+  'a removed member cannot list the club''s media'
 );
 
 select * from finish();

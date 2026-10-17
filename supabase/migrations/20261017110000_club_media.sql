@@ -5,8 +5,11 @@
  *   {club_id}/photos/{uuid}.jpg
  *   {club_id}/files/{uuid}/{sanitised file name}
  * and each one gets a `club_media` row recording who added it and what it
- * is. Members read rows through RLS; rows are written only by the two RPCs
- * below. The client uploads the object first, then calls add_club_media; on
+ * is. Members list rows through fetch_club_media (which also returns each
+ * uploader's display name — profiles are readable only for the caller's own
+ * row since 20260822180000, so a PostgREST embed cannot); the member select
+ * policy stays as a plain read path. Rows are written only by add_club_media
+ * and remove_club_media. The client uploads the object first, then calls add_club_media; on
  * removal it calls remove_club_media, then deletes the object at the path
  * that RPC returns.
  */
@@ -39,6 +42,66 @@ grant select on public.club_media to authenticated;
 create policy club_media_select_member on public.club_media
   for select to authenticated
   using (public.is_club_member(club_id));
+
+-- ---------------------------------------------------------------------
+-- fetch_club_media: one page of a club's photos or files, newest first,
+-- with each uploader's display name. p_before pages strictly older than that
+-- created_at. p_limit is clamped to 1..500: the client asks for its whole
+-- loaded count when it refreshes, so a page can be well over the default.
+-- ---------------------------------------------------------------------
+create function public.fetch_club_media(
+  target_club uuid,
+  p_kind      text,
+  p_before    timestamptz default null,
+  p_limit     int default 60
+)
+returns table (
+  id            uuid,
+  club_id       uuid,
+  kind          text,
+  storage_path  text,
+  file_name     text,
+  mime_type     text,
+  size_bytes    int,
+  width         int,
+  height        int,
+  uploaded_by   uuid,
+  uploader_name text,
+  created_at    timestamptz
+)
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  caller uuid := (select auth.uid());
+begin
+  if caller is null or not public.is_club_member(target_club) then
+    raise exception 'not allowed' using errcode = '42501';
+  end if;
+
+  if p_kind is null or p_kind not in ('photo', 'file') then
+    raise exception 'invalid_kind' using errcode = '22023';
+  end if;
+
+  return query
+    select m.id, m.club_id, m.kind, m.storage_path, m.file_name, m.mime_type,
+           m.size_bytes, m.width, m.height, m.uploaded_by, p.display_name,
+           m.created_at
+      from public.club_media m
+      join public.profiles p on p.id = m.uploaded_by
+     where m.club_id = target_club
+       and m.kind = p_kind
+       and (p_before is null or m.created_at < p_before)
+     order by m.created_at desc, m.id desc
+     limit least(greatest(coalesce(p_limit, 60), 1), 500);
+end;
+$$;
+revoke execute on function public.fetch_club_media(uuid, text, timestamptz, int)
+  from public, anon;
+grant execute on function public.fetch_club_media(uuid, text, timestamptz, int)
+  to authenticated;
 
 -- ---------------------------------------------------------------------
 -- add_club_media: record an object the caller has just uploaded.

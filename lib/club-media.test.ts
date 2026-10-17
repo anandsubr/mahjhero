@@ -114,47 +114,56 @@ describe('pure helpers', () => {
 });
 
 describe('fetchClubMedia', () => {
-  function chain(result: unknown) {
-    const c: Record<string, ReturnType<typeof vi.fn>> = {};
-    for (const m of ['select', 'eq', 'order', 'lt', 'limit']) c[m] = vi.fn(() => c);
-    (c as unknown as { then: unknown }).then = (res: (v: unknown) => unknown) => res(result);
-    return c;
-  }
-  it('selects with profile join, newest first, and maps rows', async () => {
-    const c = chain({
+  it('lists through fetch_club_media and maps rows with uploader_name', async () => {
+    rpc.mockResolvedValue({
       data: [
         {
           id: 'm1', club_id: 'c1', kind: 'photo', storage_path: 'c1/photos/a.jpg',
           file_name: 'a.jpg', mime_type: 'image/jpeg', size_bytes: 5, width: 10, height: 20,
-          uploaded_by: 'u1', created_at: '2026-10-01T00:00:00Z',
-          profiles: { display_name: 'Ann' },
+          uploaded_by: 'u1', uploader_name: 'Ann', created_at: '2026-10-01T00:00:00Z',
+        },
+        {
+          id: 'm2', club_id: 'c1', kind: 'photo', storage_path: 'c1/photos/b.jpg',
+          file_name: 'b.jpg', mime_type: 'image/jpeg', size_bytes: 6, width: null, height: null,
+          uploaded_by: 'u2', uploader_name: null, created_at: '2026-09-30T00:00:00Z',
         },
       ],
       error: null,
     });
-    fromTable.mockReturnValue(c);
     const rows = await fetchClubMedia('c1', 'photo', '2026-10-02T00:00:00Z', 30);
-    expect(fromTable).toHaveBeenCalledWith('club_media');
-    expect(c.select.mock.calls[0][0]).toContain('profiles(display_name)');
-    expect(c.eq).toHaveBeenCalledWith('club_id', 'c1');
-    expect(c.eq).toHaveBeenCalledWith('kind', 'photo');
-    expect(c.order).toHaveBeenCalledWith('created_at', { ascending: false });
-    expect(c.lt).toHaveBeenCalledWith('created_at', '2026-10-02T00:00:00Z');
-    expect(c.limit).toHaveBeenCalledWith(30);
+    expect(fromTable).not.toHaveBeenCalled();
+    expect(rpc).toHaveBeenCalledWith('fetch_club_media', {
+      target_club: 'c1',
+      p_kind: 'photo',
+      p_before: '2026-10-02T00:00:00Z',
+      p_limit: 30,
+    });
     expect(rows).toEqual([
       {
         id: 'm1', clubId: 'c1', kind: 'photo', storagePath: 'c1/photos/a.jpg',
         fileName: 'a.jpg', mimeType: 'image/jpeg', sizeBytes: 5, width: 10, height: 20,
         uploadedBy: 'u1', uploaderName: 'Ann', createdAt: '2026-10-01T00:00:00Z',
       },
+      {
+        id: 'm2', clubId: 'c1', kind: 'photo', storagePath: 'c1/photos/b.jpg',
+        fileName: 'b.jpg', mimeType: 'image/jpeg', sizeBytes: 6, width: null, height: null,
+        uploadedBy: 'u2', uploaderName: 'Someone', createdAt: '2026-09-30T00:00:00Z',
+      },
     ]);
   });
-  it('defaults limit to 60, skips lt without cursor, null on error', async () => {
-    const c = chain({ data: null, error: { message: 'x' } });
-    fromTable.mockReturnValue(c);
+  it('defaults limit to 60, sends a null cursor without one, null on error', async () => {
+    rpc.mockResolvedValue({ data: null, error: { message: 'x' } });
     expect(await fetchClubMedia('c1', 'file')).toBeNull();
-    expect(c.limit).toHaveBeenCalledWith(60);
-    expect(c.lt).not.toHaveBeenCalled();
+    expect(rpc).toHaveBeenCalledWith('fetch_club_media', {
+      target_club: 'c1',
+      p_kind: 'file',
+      p_before: null,
+      p_limit: 60,
+    });
+  });
+  it('returns null when the RPC throws', async () => {
+    rpc.mockRejectedValue(new Error('network'));
+    expect(await fetchClubMedia('c1', 'photo')).toBeNull();
   });
 });
 

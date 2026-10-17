@@ -830,16 +830,12 @@ test.describe('signed in', () => {
       // own rows and an organizer's view both get "More options"; the
       // viewer hosts this club, so every row has one.
       //
-      // `fixme`, not a baseline, until a real bug is fixed (found by this
-      // test, 2026-10-17): every row another member uploaded reads
-      // "PDF · 1 KB · Someone". `fetchClubMedia` (lib/club-media.ts) names
-      // the uploader through a `profiles(display_name)` embed, but
-      // `profiles` is readable own-row-only
-      // (20260822180000_club_roster_narrow_profiles.sql), so the embed comes
-      // back null for anyone but the viewer and falls back to 'Someone'. A
-      // baseline taken now would bake that in. Drop the `fixme` once the
-      // name resolves; the assertions below are already the fixed state.
-      test.fixme(`club files at ${vp.name}`, async ({ page }) => {
+      // Another member's rows name them: uploader names come from
+      // `fetch_club_media` (a security definer RPC), because `profiles` is
+      // readable own-row-only (20260822180000_club_roster_narrow_profiles.sql)
+      // and the earlier `profiles(display_name)` embed read "Someone" for
+      // every row but the viewer's own (found by this test, 2026-10-17).
+      test(`club files at ${vp.name}`, async ({ page }) => {
         await page.setViewportSize({ width: vp.width, height: vp.height });
         const { uploaderName } = await seedClubMedia(seeded.clubId, userId, userId.slice(0, 8));
         await page.goto(`/clubs/${seeded.clubId}/photos`);
@@ -858,10 +854,9 @@ test.describe('signed in', () => {
       // photo 1's red 800x600, and the wait below names those exact
       // dimensions. The caption's date comes from the seeded `created_at`
       // read in the pinned America/New_York timezone (2026-08-20T23:00Z is
-      // Thu 20 Aug there). The viewer's OWN photo, not the filler's, on
-      // purpose: another member's caption currently reads "Added by
-      // Someone" -- the same uploader-name bug `club files` above is
-      // `fixme` for -- and this baseline should not bake that in. The
+      // Thu 20 Aug there). The viewer's OWN photo, not the filler's: this
+      // baseline was taken while another member's caption still read "Added
+      // by Someone" (the uploader-name bug `club files` above covers). The
       // viewer's backdrop is 92% black, not opaque, so the hub header --
       // random club code included -- still shows faintly through it; hence
       // `CLUB_HUB_HEADER_CODE_ROW_MASK` here too (the mask paints over the

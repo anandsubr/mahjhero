@@ -113,8 +113,8 @@ type Row = {
   width: number | null;
   height: number | null;
   uploaded_by: string;
+  uploader_name: string | null;
   created_at: string;
-  profiles: { display_name: string | null } | null;
 };
 
 export async function fetchClubMedia(
@@ -124,16 +124,14 @@ export async function fetchClubMedia(
   limit = 60,
 ): Promise<ClubMedia[] | null> {
   try {
-    let q = supabase
-      .from('club_media')
-      .select(
-        'id, club_id, kind, storage_path, file_name, mime_type, size_bytes, width, height, uploaded_by, created_at, profiles(display_name)',
-      )
-      .eq('club_id', clubId)
-      .eq('kind', kind)
-      .order('created_at', { ascending: false });
-    if (before) q = q.lt('created_at', before);
-    const { data, error } = await q.limit(limit);
+    // An RPC, not a PostgREST embed: profiles are readable only for the
+    // caller's own row, so an embed would name every other uploader 'Someone'.
+    const { data, error } = await supabase.rpc('fetch_club_media', {
+      target_club: clubId,
+      p_kind: kind,
+      p_before: before ?? null,
+      p_limit: limit,
+    });
     if (error || !data) {
       console.error('fetchClubMedia failed', error);
       return null;
@@ -149,7 +147,7 @@ export async function fetchClubMedia(
       width: r.width,
       height: r.height,
       uploadedBy: r.uploaded_by,
-      uploaderName: r.profiles?.display_name ?? 'Someone',
+      uploaderName: r.uploader_name ?? 'Someone',
       createdAt: r.created_at,
     }));
   } catch (cause) {

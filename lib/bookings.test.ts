@@ -519,13 +519,14 @@ describe('BOOKING_REFUSALS (self-audit against the migrations)', () => {
     // this path is believed unreachable in practice, but the client-side
     // mapping itself does not exist.
     // Also raised by set_club_cover/set_club_cover_color (non-organizer),
-    // and by add_club_media/remove_club_media (20261017110000_club_media.sql)
-    // for a non-member adder, or a remover who is neither the uploader nor an
-    // organizer (or an unknown media id). The Photos & Files client
+    // and by add_club_media/remove_club_media/fetch_club_media
+    // (20261017110000_club_media.sql) for a non-member adder or lister, or a
+    // remover who is neither the uploader nor an organizer (or an unknown
+    // media id). The Photos & Files client
     // (lib/club-media.ts) only offers Add to members and Remove to the
     // uploader/organizers; none of these is this module's.
     'not allowed':
-      'raised by set_club_code/set_club_cover/set_club_cover_color for a non-organizer and by add_club_media/remove_club_media for a non-member or non-uploader — those screens only offer the controls to callers allowed to use them, so the client falls back to GENERIC_ERROR; not this module’s',
+      'raised by set_club_code/set_club_cover/set_club_cover_color for a non-organizer by add_club_media/remove_club_media for a non-member or non-uploader, and by fetch_club_media for a non-member — those screens only offer the controls to callers allowed to use them, so the client falls back to GENERIC_ERROR; not this module’s',
 
     // Club codes (20260929100000_club_codes.sql): unlike the rest of
     // Category 3 above, these ARE mapped client-side — just not by this
@@ -575,7 +576,7 @@ describe('BOOKING_REFUSALS (self-audit against the migrations)', () => {
     // disallowed type or an over-10 MB file client-side with its own copy
     // before uploading, so these are server-side belts, not this module's.
     'invalid_kind':
-      'raised by add_club_media — lib/club-media.ts only ever passes photo or file; not this module’s',
+      'raised by add_club_media and fetch_club_media — lib/club-media.ts only ever passes photo or file; not this module’s',
     'file_not_allowed':
       'raised by add_club_media (a disallowed file type, or a photo that is not image/jpeg) — lib/club-media.ts refuses disallowed file types client-side with its own copy first and always compresses photos to JPEG; not this module’s',
     'file_too_large':
