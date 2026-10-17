@@ -111,6 +111,7 @@ export default function ClubBoardScreen() {
   return (
     <Screen
       scroll
+      avoidKeyboard
       contentStyle={styles.container}
       footer={threadId ? <BoardComposer threadId={threadId} onPosted={onPosted} /> : undefined}
     >

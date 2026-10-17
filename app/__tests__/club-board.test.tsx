@@ -5,6 +5,23 @@ import ClubBoardScreen from '../messages/club/[threadId]/index';
 import { glyphForClub } from '../../lib/dashboard';
 import type { FeedPost } from '../../lib/board';
 
+const platform = vi.hoisted(() => ({ os: 'web' }));
+vi.mock('react-native', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('react-native')>();
+  return {
+    ...actual,
+    Platform: {
+      ...actual.Platform,
+      get OS() {
+        return platform.os;
+      },
+    },
+    KeyboardAvoidingView: ({ children }: { children: React.ReactNode }) => (
+      <div data-testid="kav">{children}</div>
+    ),
+  };
+});
+
 const push = vi.fn();
 const back = vi.fn();
 const replace = vi.fn();
@@ -609,5 +626,17 @@ describe('the club board', () => {
       expect(fetchRoster).not.toHaveBeenCalled();
       expect(screen.queryByRole('button', { name: 'Announcement' })).toBeNull();
     });
+  });
+
+  it('lifts the pinned composer above the iOS keyboard', async () => {
+    platform.os = 'ios';
+    try {
+      render(<ClubBoardScreen />);
+      await screen.findByText('Everyone in the club sees posts here');
+      const kav = screen.getByTestId('kav');
+      expect(within(kav).getByLabelText('Write to the club')).toBeTruthy();
+    } finally {
+      platform.os = 'web';
+    }
   });
 });
