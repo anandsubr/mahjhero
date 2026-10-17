@@ -47,7 +47,7 @@ type FeedRow = {
   created_at: string;
   reply_count: number;
   last_activity_at: string;
-  unread: boolean;
+  unread: number;
   heart_count: number;
   hearted_by_me: boolean;
   attachments: AttachmentRow[] | null;
@@ -66,7 +66,7 @@ function mapRow(r: FeedRow): FeedPost {
     createdAt: r.created_at,
     lastActivityAt: r.last_activity_at,
     replyCount: r.reply_count,
-    unread: r.unread,
+    unread: r.unread > 0,
     heartCount: r.heart_count,
     heartedByMe: r.hearted_by_me,
     attachments: (r.attachments ?? []).map((a) => ({

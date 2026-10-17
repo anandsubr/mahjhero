@@ -21,7 +21,7 @@ const ROW = {
   id: 'p1', author_id: 'u1', author_name: 'Ann', author_role: 'host', body: 'Hi',
   subject: null, is_announcement: false, created_at: '2026-10-01T15:00:00Z',
   reply_count: 3, last_reply_at: '2026-10-02T15:00:00Z', last_activity_at: '2026-10-02T15:00:00Z',
-  unread: true, heart_count: 2, hearted_by_me: true,
+  unread: 2, heart_count: 2, hearted_by_me: true,
   attachments: [{ id: 'a1', storage_path: 'x/y.jpg', width: 10, height: 20, sort_order: 0 }],
   recent_comments: [{ id: 'c1', author_id: 'u2', author_name: 'Bo', body: 'Yo', created_at: '2026-10-02T15:00:00Z' }],
 };
@@ -64,6 +64,11 @@ describe('fetchClubFeed', () => {
     expect(p.authorName).toBe('');
   });
 
+  it('maps unread count to a boolean', async () => {
+    rpc.mockResolvedValueOnce({ data: [{ ...ROW, unread: 0 }], error: null });
+    expect((await fetchClubFeed('t1', 'recent'))![0].unread).toBe(false);
+  });
+
   it('returns null on error or throw', async () => {
     rpc.mockResolvedValueOnce({ data: null, error: { message: 'x' } });
     expect(await fetchClubFeed('t1', 'recent')).toBeNull();
@@ -100,6 +105,11 @@ describe('postTimeLabel', () => {
   });
   it('Older uses weekday, day, month', () => {
     expect(postTimeLabel('2026-09-29T23:59:00Z', now)).toBe('Tue 29 Sept, 7:59 PM');
+  });
+  it('Dec 31 post is Yesterday on Jan 1', () => {
+    const jan1 = new Date('2027-01-01T15:00:00Z');
+    expect(postTimeLabel('2027-01-01T03:30:00Z', jan1)).toBe('Yesterday, 10:30 PM');
+    expect(postTimeLabel('2026-12-31T20:00:00Z', jan1)).toBe('Yesterday, 3:00 PM');
   });
   it('noon and midnight', () => {
     expect(postTimeLabel('2026-10-17T16:00:00Z', new Date('2026-10-17T20:00:00Z'))).toBe('Today, 12:00 PM');
