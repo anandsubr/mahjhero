@@ -2473,6 +2473,49 @@ export async function seedMessageCandidates(
 }
 
 /**
+ * A club where the signed-in user is a plain `member` (not an organizer),
+ * with a host and one other member: the Members screen as a non-organizer
+ * sees it (no round invite button, Add friend and Message on the other rows,
+ * "(you)" on their own). Fillers are named so the baseline reads as a real
+ * roster; `joined_at` is fixed so row order cannot depend on insert timing.
+ */
+export async function seedClubAsMember(
+  profileId: string,
+): Promise<{ clubId: string }> {
+  const admin = adminClient('seed club as member');
+  const suffix = profileId.slice(0, 8);
+
+  const { data: club, error: clubError } = await admin
+    .from('clubs')
+    .insert({
+      name: 'Lakeview Mah Jongg',
+      slug: `lakeview-${suffix}`,
+      rhythm: 'Monday evenings',
+      timezone: 'America/New_York',
+    })
+    .select('id')
+    .single();
+  if (clubError || !club) {
+    throw new Error(`seedClubAsMember: club insert failed: ${JSON.stringify(clubError)}`);
+  }
+
+  const [hostId, otherId] = await Promise.all([
+    seedFillerProfile(admin, 'Mara Ellison', 'asmember-host', suffix),
+    seedFillerProfile(admin, 'Devon Cole', 'asmember-other', suffix),
+  ]);
+
+  const { error: rosterError } = await admin.from('club_members').insert([
+    { club_id: club.id, profile_id: hostId, role: 'host', joined_at: '2026-08-01T00:00:00Z' },
+    { club_id: club.id, profile_id: otherId, role: 'member', joined_at: '2026-08-10T00:00:00Z' },
+    { club_id: club.id, profile_id: profileId, role: 'member', joined_at: '2026-08-15T00:00:00Z' },
+  ]);
+  if (rosterError) {
+    throw new Error(`seedClubAsMember: roster insert failed: ${JSON.stringify(rosterError)}`);
+  }
+  return { clubId: club.id };
+}
+
+/**
  * The localStorage key supabase-js persists its session under, derived from
  * the project ref in the URL. Keep in step with the client's own convention:
  * see `defaultStorageKey` in `node_modules/@supabase/supabase-js/src/SupabaseClient.ts`
