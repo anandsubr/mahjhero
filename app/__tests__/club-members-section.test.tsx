@@ -5,7 +5,13 @@ import type { Club } from '../../lib/clubs';
 const searchParams: Record<string, string> = {};
 vi.mock('expo-router', () => ({
   useLocalSearchParams: () => searchParams,
+  useRouter: () => ({ push: vi.fn(), back: vi.fn() }),
 }));
+
+vi.mock('../../lib/friends', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/friends')>();
+  return { ...actual, fetchFriends: () => Promise.resolve([]) };
+});
 
 const fetchRoster = vi.fn();
 const fetchPendingInvites = vi.fn();
