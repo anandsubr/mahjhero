@@ -569,7 +569,7 @@ describe('BOOKING_REFUSALS (self-audit against the migrations)', () => {
     // club's photos/ (or files/) folder; lib/club-media.ts builds every path
     // from the club id and kind it is uploading, so it is unreachable too.
     'invalid_path':
-      'raised by set_club_cover and add_club_media — the client always builds the path from the club id (and kind) it is uploading under, so a foreign prefix is unreachable',
+      'raised by set_club_cover and add_club_media — the client always builds the path from the club id (and kind) it is uploading under and calls add_club_media only after its own upload succeeds, so a foreign, bare, dotted or not-yet-uploaded path is unreachable',
     // add_club_media's remaining refusals (20261017110000_club_media.sql).
     // lib/club-media.ts only ever passes 'photo' or 'file', and refuses a
     // disallowed type or an over-10 MB file client-side with its own copy
@@ -577,9 +577,14 @@ describe('BOOKING_REFUSALS (self-audit against the migrations)', () => {
     'invalid_kind':
       'raised by add_club_media — lib/club-media.ts only ever passes photo or file; not this module’s',
     'file_not_allowed':
-      'raised by add_club_media — lib/club-media.ts refuses disallowed file types client-side with its own copy first; not this module’s',
+      'raised by add_club_media (a disallowed file type, or a photo that is not image/jpeg) — lib/club-media.ts refuses disallowed file types client-side with its own copy first and always compresses photos to JPEG; not this module’s',
     'file_too_large':
       'raised by add_club_media — lib/club-media.ts refuses files over 10 MB client-side with its own copy first; not this module’s',
+    // add_club_media's metadata sanity check: negative size, non-positive
+    // width/height, or a file name outside 1–255 characters. lib/club-media.ts
+    // derives all of these from the picked/compressed file itself.
+    'invalid_media':
+      'raised by add_club_media — lib/club-media.ts derives size, dimensions and name from the real file, so malformed metadata is unreachable; not this module’s',
     // clubs_validate_timezone is an INSERT/UPDATE trigger on public.clubs;
     // lib/clubs.ts only ever writes a timezone from a fixed picker of valid
     // IANA names, so this is defence in depth, not a reachable client path.

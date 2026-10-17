@@ -60,6 +60,7 @@ set search_path = public
 as $$
 declare
   caller uuid := (select auth.uid());
+  prefix text;
   new_id uuid;
 begin
   if caller is null or not public.is_club_member(target_club) then
@@ -71,11 +72,41 @@ begin
   end if;
 
   -- starts_with, not LIKE: a club id has no wildcards, but the rest of a
-  -- caller-supplied prefix check should never be pattern-interpreted.
+  -- caller-supplied prefix check should never be pattern-interpreted. A bare
+  -- prefix with nothing after it, and any `..`, are refused outright.
+  prefix := target_club::text || case p_kind when 'photo' then '/photos/' else '/files/' end;
   if p_storage_path is null
-     or not starts_with(p_storage_path,
-          target_club::text || case p_kind when 'photo' then '/photos/' else '/files/' end) then
+     or not starts_with(p_storage_path, prefix)
+     or char_length(p_storage_path) <= char_length(prefix)
+     or position('..' in p_storage_path) > 0 then
     raise exception 'invalid_path' using errcode = '22023';
+  end if;
+
+  -- The object must already be uploaded, and by the caller: a member cannot
+  -- claim another member's object (or a path nothing was uploaded to) as
+  -- their own media. owner_id is the text uid the Storage API stamps on
+  -- every upload.
+  if not exists (
+    select 1 from storage.objects o
+    where o.bucket_id = 'club-media'
+      and o.name = p_storage_path
+      and o.owner_id = caller::text
+  ) then
+    raise exception 'invalid_path' using errcode = '22023';
+  end if;
+
+  if p_file_name is null
+     or char_length(p_file_name) not between 1 and 255
+     or p_size_bytes is null
+     or p_size_bytes < 0
+     or (p_width is not null and p_width <= 0)
+     or (p_height is not null and p_height <= 0) then
+    raise exception 'invalid_media' using errcode = '22023';
+  end if;
+
+  -- Photos are always compressed to JPEG client-side before upload.
+  if p_kind = 'photo' and p_mime_type is distinct from 'image/jpeg' then
+    raise exception 'file_not_allowed' using errcode = '22023';
   end if;
 
   if p_kind = 'file' then
@@ -92,7 +123,7 @@ begin
     ) then
       raise exception 'file_not_allowed' using errcode = '22023';
     end if;
-    if p_size_bytes is null or p_size_bytes > 10485760 then
+    if p_size_bytes > 10485760 then
       raise exception 'file_too_large' using errcode = '22023';
     end if;
   end if;
@@ -113,7 +144,8 @@ grant execute on function public.add_club_media(uuid, text, text, text, text, in
   to authenticated;
 
 -- ---------------------------------------------------------------------
--- remove_club_media: delete a row (uploader or organizer) and return its
+-- remove_club_media: delete a row (uploader who is still an active member,
+-- or an organizer) and return its
 -- storage path so the client can delete the object. An unknown id gets the
 -- same refusal as someone else's, so ids cannot be probed.
 -- ---------------------------------------------------------------------
@@ -132,7 +164,8 @@ begin
   end if;
 
   if m.id is null
-     or not (m.uploaded_by = caller or public.is_club_organizer(m.club_id)) then
+     or not ((m.uploaded_by = caller and public.is_club_member(m.club_id))
+             or public.is_club_organizer(m.club_id)) then
     raise exception 'not allowed' using errcode = '42501';
   end if;
 
@@ -164,9 +197,9 @@ create policy club_media_objects_insert on storage.objects
   );
 
 /*
- * Delete: an organizer of the folder's club; the uploader of a club_media
- * row at that path; or the object's own uploader (owner_id), still a member
- * of the club. The last clause is what lets a plain member finish removing
+ * Delete: an organizer of the folder's club; or, while still an active
+ * member of that club, the uploader of a club_media row at that path or the
+ * object's own uploader (owner_id). A removed member can do neither. The last clause is what lets a plain member finish removing
  * their own media — remove_club_media deletes the row before the client
  * deletes the object, so the row clause no longer matches by then — and
  * clean up an object whose add_club_media call failed (no row ever existed).
@@ -177,14 +210,16 @@ create policy club_media_objects_delete on storage.objects
     bucket_id = 'club-media'
     and (
       public.is_club_organizer((storage.foldername(name))[1]::uuid)
-      or exists (
-        select 1 from public.club_media cm
-        where cm.storage_path = storage.objects.name
-          and cm.uploaded_by = (select auth.uid())
-      )
       or (
-        owner_id = (select auth.uid())::text
-        and public.is_club_member((storage.foldername(name))[1]::uuid)
+        public.is_club_member((storage.foldername(name))[1]::uuid)
+        and (
+          owner_id = (select auth.uid())::text
+          or exists (
+            select 1 from public.club_media cm
+            where cm.storage_path = storage.objects.name
+              and cm.uploaded_by = (select auth.uid())
+          )
+        )
       )
     )
   );

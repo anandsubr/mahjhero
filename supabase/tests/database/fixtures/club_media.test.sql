@@ -1,16 +1,17 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(34);
+select plan(48);
 
--- Club 1 (c1): host H, members M and P, removed member R.
--- Club 2 (c2): host O (an outsider to c1).
+-- Club 1 (c1): host H(a), members M(b) and P(c), removed member R(d).
+-- Club 2 (c2): host O(e), plain member Q(f) — outsiders to c1.
 insert into auth.users (id, email) values
   ('aaaaaaaa-0000-0000-0000-000000000001', 'host@example.com'),
   ('bbbbbbbb-0000-0000-0000-000000000002', 'member@example.com'),
   ('cccccccc-0000-0000-0000-000000000003', 'other-member@example.com'),
   ('dddddddd-0000-0000-0000-000000000004', 'removed@example.com'),
-  ('eeeeeeee-0000-0000-0000-000000000005', 'outsider@example.com');
+  ('eeeeeeee-0000-0000-0000-000000000005', 'other-host@example.com'),
+  ('ffffffff-0000-0000-0000-000000000006', 'other-club-member@example.com');
 
 insert into public.clubs (id, name, slug, timezone, created_by) values
   ('c1c1c1c1-0000-0000-0000-000000000001', 'Riverside Mah Jongg', 'riverside',
@@ -28,7 +29,40 @@ insert into public.club_members (club_id, profile_id, role, status) values
   ('c1c1c1c1-0000-0000-0000-000000000001',
    'dddddddd-0000-0000-0000-000000000004', 'member', 'removed'),
   ('c2c2c2c2-0000-0000-0000-000000000002',
-   'eeeeeeee-0000-0000-0000-000000000005', 'host', 'active');
+   'eeeeeeee-0000-0000-0000-000000000005', 'host', 'active'),
+  ('c2c2c2c2-0000-0000-0000-000000000002',
+   'ffffffff-0000-0000-0000-000000000006', 'member', 'active');
+
+-- Objects already uploaded (the client uploads before calling
+-- add_club_media). owner_id is the text uid the Storage API stamps.
+insert into storage.objects (bucket_id, name, owner, owner_id) values
+  ('club-media', 'c1c1c1c1-0000-0000-0000-000000000001/photos/p1.jpg',
+   'bbbbbbbb-0000-0000-0000-000000000002', 'bbbbbbbb-0000-0000-0000-000000000002'),
+  ('club-media', 'c1c1c1c1-0000-0000-0000-000000000001/files/f1/Rules.pdf',
+   'bbbbbbbb-0000-0000-0000-000000000002', 'bbbbbbbb-0000-0000-0000-000000000002'),
+  ('club-media', 'c1c1c1c1-0000-0000-0000-000000000001/files/f2/sheet.xlsx',
+   'bbbbbbbb-0000-0000-0000-000000000002', 'bbbbbbbb-0000-0000-0000-000000000002'),
+  ('club-media', 'c1c1c1c1-0000-0000-0000-000000000001/files/f4/big.pdf',
+   'bbbbbbbb-0000-0000-0000-000000000002', 'bbbbbbbb-0000-0000-0000-000000000002'),
+  ('club-media', 'c1c1c1c1-0000-0000-0000-000000000001/files/f5/run.exe',
+   'bbbbbbbb-0000-0000-0000-000000000002', 'bbbbbbbb-0000-0000-0000-000000000002'),
+  ('club-media', 'c1c1c1c1-0000-0000-0000-000000000001/photos/png.jpg',
+   'bbbbbbbb-0000-0000-0000-000000000002', 'bbbbbbbb-0000-0000-0000-000000000002'),
+  ('club-media', 'c1c1c1c1-0000-0000-0000-000000000001/photos/meta.jpg',
+   'bbbbbbbb-0000-0000-0000-000000000002', 'bbbbbbbb-0000-0000-0000-000000000002'),
+  ('club-media', 'c1c1c1c1-0000-0000-0000-000000000001/photos/c-owned.jpg',
+   'cccccccc-0000-0000-0000-000000000003', 'cccccccc-0000-0000-0000-000000000003'),
+  ('club-media', 'c1c1c1c1-0000-0000-0000-000000000001/photos/r-owned.jpg',
+   'dddddddd-0000-0000-0000-000000000004', 'dddddddd-0000-0000-0000-000000000004');
+
+-- A row the removed member R added while still active.
+insert into public.club_media
+  (club_id, kind, storage_path, file_name, mime_type, size_bytes, uploaded_by)
+values
+  ('c1c1c1c1-0000-0000-0000-000000000001', 'photo',
+   'c1c1c1c1-0000-0000-0000-000000000001/photos/r-owned.jpg', 'r.jpg', 'image/jpeg', 100,
+   'dddddddd-0000-0000-0000-000000000004')
+returning id as r_media_id \gset
 
 -- ---------------------------------------------------------------------
 -- Grants
@@ -76,7 +110,7 @@ select lives_ok(
   $$select public.add_club_media('c1c1c1c1-0000-0000-0000-000000000001', 'photo',
       'c1c1c1c1-0000-0000-0000-000000000001/photos/p1.jpg', 'IMG_0001.jpg',
       'image/jpeg', 250000, 1600, 1200)$$,
-  'a member can add a photo'
+  'a member can add a photo they uploaded'
 );
 
 select lives_ok(
@@ -111,7 +145,7 @@ select lives_ok(
 
 select throws_ok(
   $$select public.add_club_media('c1c1c1c1-0000-0000-0000-000000000001', 'photo',
-      'c1c1c1c1-0000-0000-0000-000000000001/files/p2.jpg', 'x.jpg', 'image/jpeg', 100)$$,
+      'c1c1c1c1-0000-0000-0000-000000000001/files/f1/Rules.pdf', 'x.jpg', 'image/jpeg', 100)$$,
   '22023', 'invalid_path',
   'a photo outside the club''s photos/ folder is refused'
 );
@@ -125,14 +159,44 @@ select throws_ok(
 
 select throws_ok(
   $$select public.add_club_media('c1c1c1c1-0000-0000-0000-000000000001', 'file',
-      'c1c1c1c1-0000-0000-0000-000000000001/photos/f3/a.pdf', 'a.pdf', 'application/pdf', 100)$$,
+      'c1c1c1c1-0000-0000-0000-000000000001/photos/p1.jpg', 'a.pdf', 'application/pdf', 100)$$,
   '22023', 'invalid_path',
   'a file outside the club''s files/ folder is refused'
 );
 
 select throws_ok(
+  $$select public.add_club_media('c1c1c1c1-0000-0000-0000-000000000001', 'photo',
+      'c1c1c1c1-0000-0000-0000-000000000001/photos/', 'x.jpg', 'image/jpeg', 100)$$,
+  '22023', 'invalid_path',
+  'a bare prefix with nothing after it is refused'
+);
+
+select throws_ok(
+  $$select public.add_club_media('c1c1c1c1-0000-0000-0000-000000000001', 'photo',
+      'c1c1c1c1-0000-0000-0000-000000000001/photos/../files/f1/Rules.pdf', 'x.jpg',
+      'image/jpeg', 100)$$,
+  '22023', 'invalid_path',
+  'a path containing .. is refused'
+);
+
+select throws_ok(
+  $$select public.add_club_media('c1c1c1c1-0000-0000-0000-000000000001', 'photo',
+      'c1c1c1c1-0000-0000-0000-000000000001/photos/c-owned.jpg', 'x.jpg', 'image/jpeg', 100)$$,
+  '22023', 'invalid_path',
+  'a member cannot claim another member''s uploaded object'
+);
+
+select throws_ok(
+  $$select public.add_club_media('c1c1c1c1-0000-0000-0000-000000000001', 'photo',
+      'c1c1c1c1-0000-0000-0000-000000000001/photos/never-uploaded.jpg', 'x.jpg',
+      'image/jpeg', 100)$$,
+  '22023', 'invalid_path',
+  'a path with no uploaded object is refused'
+);
+
+select throws_ok(
   $$select public.add_club_media('c1c1c1c1-0000-0000-0000-000000000001', 'video',
-      'c1c1c1c1-0000-0000-0000-000000000001/photos/v.mp4', 'v.mp4', 'video/mp4', 100)$$,
+      'c1c1c1c1-0000-0000-0000-000000000001/photos/p1.jpg', 'v.mp4', 'video/mp4', 100)$$,
   '22023', 'invalid_kind',
   'an unknown kind is refused'
 );
@@ -150,7 +214,52 @@ select throws_ok(
       'c1c1c1c1-0000-0000-0000-000000000001/files/f5/run.exe', 'run.exe',
       'application/x-msdownload', 100)$$,
   '22023', 'file_not_allowed',
-  'a disallowed mime type is refused'
+  'a disallowed file mime type is refused'
+);
+
+select throws_ok(
+  $$select public.add_club_media('c1c1c1c1-0000-0000-0000-000000000001', 'photo',
+      'c1c1c1c1-0000-0000-0000-000000000001/photos/png.jpg', 'x.png', 'image/png', 100)$$,
+  '22023', 'file_not_allowed',
+  'a photo that is not image/jpeg is refused'
+);
+
+select throws_ok(
+  $$select public.add_club_media('c1c1c1c1-0000-0000-0000-000000000001', 'photo',
+      'c1c1c1c1-0000-0000-0000-000000000001/photos/meta.jpg', 'x.jpg', 'image/jpeg', -1)$$,
+  '22023', 'invalid_media',
+  'a negative size is refused'
+);
+
+select throws_ok(
+  $$select public.add_club_media('c1c1c1c1-0000-0000-0000-000000000001', 'photo',
+      'c1c1c1c1-0000-0000-0000-000000000001/photos/meta.jpg', 'x.jpg', 'image/jpeg', 100,
+      0, 100)$$,
+  '22023', 'invalid_media',
+  'a zero width is refused'
+);
+
+select throws_ok(
+  $$select public.add_club_media('c1c1c1c1-0000-0000-0000-000000000001', 'photo',
+      'c1c1c1c1-0000-0000-0000-000000000001/photos/meta.jpg', 'x.jpg', 'image/jpeg', 100,
+      100, -5)$$,
+  '22023', 'invalid_media',
+  'a negative height is refused'
+);
+
+select throws_ok(
+  $$select public.add_club_media('c1c1c1c1-0000-0000-0000-000000000001', 'photo',
+      'c1c1c1c1-0000-0000-0000-000000000001/photos/meta.jpg', '', 'image/jpeg', 100)$$,
+  '22023', 'invalid_media',
+  'an empty file name is refused'
+);
+
+select throws_ok(
+  $$select public.add_club_media('c1c1c1c1-0000-0000-0000-000000000001', 'photo',
+      'c1c1c1c1-0000-0000-0000-000000000001/photos/meta.jpg', repeat('a', 256),
+      'image/jpeg', 100)$$,
+  '22023', 'invalid_media',
+  'a file name over 255 characters is refused'
 );
 
 set local request.jwt.claims =
@@ -158,7 +267,7 @@ set local request.jwt.claims =
 
 select throws_ok(
   $$select public.add_club_media('c1c1c1c1-0000-0000-0000-000000000001', 'photo',
-      'c1c1c1c1-0000-0000-0000-000000000001/photos/o1.jpg', 'o.jpg', 'image/jpeg', 100)$$,
+      'c1c1c1c1-0000-0000-0000-000000000001/photos/meta.jpg', 'o.jpg', 'image/jpeg', 100)$$,
   '42501', 'not allowed',
   'a non-member cannot add media to the club'
 );
@@ -168,7 +277,7 @@ set local request.jwt.claims =
 
 select throws_ok(
   $$select public.add_club_media('c1c1c1c1-0000-0000-0000-000000000001', 'photo',
-      'c1c1c1c1-0000-0000-0000-000000000001/photos/r1.jpg', 'r.jpg', 'image/jpeg', 100)$$,
+      'c1c1c1c1-0000-0000-0000-000000000001/photos/r-owned.jpg', 'r.jpg', 'image/jpeg', 100)$$,
   '42501', 'not allowed',
   'a removed member cannot add media to the club'
 );
@@ -181,8 +290,8 @@ set local request.jwt.claims =
 
 select is(
   (select count(*)::int from public.club_media),
-  3,
-  'another member of the same club sees all three rows'
+  4,
+  'another member of the same club sees all four rows'
 );
 
 select throws_ok(
@@ -215,7 +324,26 @@ select is(
 
 -- ---------------------------------------------------------------------
 -- remove_club_media
+--
+-- r_media_id was captured as postgres above: neither a removed member nor an
+-- outsider can see the row through RLS, so looking the id up under their
+-- role would pass null and prove nothing.
 -- ---------------------------------------------------------------------
+select throws_ok(
+  format('select public.remove_club_media(%L)', :'r_media_id'),
+  '42501', 'not allowed',
+  'a removed member cannot remove their own earlier upload'
+);
+
+set local request.jwt.claims =
+  '{"sub":"eeeeeeee-0000-0000-0000-000000000005","role":"authenticated"}';
+
+select throws_ok(
+  format('select public.remove_club_media(%L)', :'r_media_id'),
+  '42501', 'not allowed',
+  'an organizer of another club cannot remove this club''s media'
+);
+
 set local request.jwt.claims =
   '{"sub":"cccccccc-0000-0000-0000-000000000003","role":"authenticated"}';
 
@@ -322,12 +450,56 @@ select ok(
   'a club member can read the object; another club''s member and a removed member cannot'
 );
 
--- Delete policy: another plain member (no row, not the owner) deletes nothing;
--- the uploader (object owner) can delete their own object even with no
--- club_media row — the orphan-cleanup path and the after-remove path.
 -- The Storage API sets this flag for its own deletes; storage.protect_delete
 -- refuses a direct DELETE without it, before RLS is ever consulted.
 set local storage.allow_delete_query = 'true';
+
+-- Removed member R: neither their own object (owner_id) nor the object of
+-- their own club_media row.
+with d as (
+  delete from storage.objects
+   where bucket_id = 'club-media'
+     and name = 'c1c1c1c1-0000-0000-0000-000000000001/photos/r-owned.jpg'
+  returning 1
+)
+select count(*)::int as removed_deleted from d \gset
+
+select is(
+  :removed_deleted, 0,
+  'a removed member cannot delete their own object'
+);
+
+-- Organizer of another club, and a plain member of another club.
+set local request.jwt.claims =
+  '{"sub":"eeeeeeee-0000-0000-0000-000000000005","role":"authenticated"}';
+
+with d as (
+  delete from storage.objects
+   where bucket_id = 'club-media'
+     and name = 'c1c1c1c1-0000-0000-0000-000000000001/photos/s1.jpg'
+  returning 1
+)
+select count(*)::int as other_org_deleted from d \gset
+
+set local request.jwt.claims =
+  '{"sub":"ffffffff-0000-0000-0000-000000000006","role":"authenticated"}';
+
+with d as (
+  delete from storage.objects
+   where bucket_id = 'club-media'
+     and name = 'c1c1c1c1-0000-0000-0000-000000000001/photos/s1.jpg'
+  returning 1
+)
+select count(*)::int as other_member_deleted from d \gset
+
+select ok(
+  :other_org_deleted = 0 and :other_member_deleted = 0,
+  'an organizer or a member of another club cannot delete this club''s object'
+);
+
+-- Another plain member (no row, not the owner) deletes nothing; the uploader
+-- (object owner) can delete their own object even with no club_media row —
+-- the orphan-cleanup path and the after-remove path.
 set local request.jwt.claims =
   '{"sub":"cccccccc-0000-0000-0000-000000000003","role":"authenticated"}';
 
@@ -355,11 +527,13 @@ select ok(
   'another plain member cannot delete the object; its uploader can'
 );
 
--- An organizer can delete any object in their club's folder; the uploader of
--- a club_media row can delete that row's object even if not its storage owner.
+-- The uploader of a club_media row can delete that row's object even if not
+-- its storage owner; an organizer can delete any object in their club.
 reset role;
+update storage.objects set owner = null, owner_id = null
+ where bucket_id = 'club-media'
+   and name = 'c1c1c1c1-0000-0000-0000-000000000001/files/f2/sheet.xlsx';
 insert into storage.objects (bucket_id, name, owner, owner_id) values
-  ('club-media', 'c1c1c1c1-0000-0000-0000-000000000001/files/f2/sheet.xlsx', null, null),
   ('club-media', 'c1c1c1c1-0000-0000-0000-000000000001/photos/x9.jpg', null, null);
 
 set local role authenticated;
