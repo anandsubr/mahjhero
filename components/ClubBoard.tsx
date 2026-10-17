@@ -355,23 +355,17 @@ const ClubBoard = forwardRef<ClubBoardHandle, Props>(function ClubBoard(
 export default ClubBoard;
 
 const styles = StyleSheet.create({
-  topRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: space[2],
-  },
+  topRow: { gap: 0 },
   caption: {
-    flex: 1,
     fontFamily: type.bodyRegular,
     fontSize: 13,
     color: colors.neutral[700],
   },
-  controls: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  controls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   textButton: { minHeight: 44, paddingHorizontal: 8, justifyContent: 'center' },
   textButtonLabel: { fontFamily: type.bodyBold, fontSize: 14, color: colors.accent[700] },
   // 44pt hit target around a smaller visual pill, as in the frame.
-  sortButton: { minHeight: 44, justifyContent: 'center' },
+  sortButton: { minHeight: 44, justifyContent: 'center', marginLeft: 'auto' },
   sortPill: {
     flexDirection: 'row',
     alignItems: 'center',
