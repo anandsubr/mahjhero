@@ -52,20 +52,25 @@ export function orderMembers(members: ClubMember[]): ClubMember[] {
   });
 }
 
+/** Lowercased with diacritics removed, so "Émile" and "emile" compare equal. */
+function foldForSearch(s: string): string {
+  return s.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+}
+
 /**
- * Case-insensitive substring match on the trimmed query against the member
- * name. When `hostsOnly` is true, keeps only hosts and co-organizers.
- * Preserves input order.
+ * Case- and accent-insensitive substring match on the trimmed query against
+ * the member name. When `hostsOnly` is true, keeps only hosts and
+ * co-organizers. Preserves input order.
  */
 export function filterMembers(
   members: ClubMember[],
   query: string,
   hostsOnly: boolean,
 ): ClubMember[] {
-  const needle = query.trim().toLowerCase();
+  const needle = foldForSearch(query.trim());
   return members.filter((m) => {
     if (hostsOnly && !isHostRole(m.role)) return false;
-    if (needle && !memberName(m).toLowerCase().includes(needle)) return false;
+    if (needle && !foldForSearch(memberName(m)).includes(needle)) return false;
     return true;
   });
 }

@@ -40,6 +40,26 @@ describe('orderMembers', () => {
     expect(ordered.map((x) => x.display_name)).toEqual(['Ann', '']);
   });
 
+  it('sorts a blank name after Zed, where "Member" alone would sort first', () => {
+    const ordered = orderMembers([m('1', ''), m('2', 'Zed')]);
+    expect(ordered.map((x) => x.display_name)).toEqual(['Zed', '']);
+  });
+
+  it('treats a whitespace-only name as blank', () => {
+    const ordered = orderMembers([m('1', '   '), m('2', 'Zed')]);
+    expect(ordered.map((x) => x.display_name)).toEqual(['Zed', '   ']);
+    expect(memberName(m('3', '   '))).toBe('Member');
+  });
+
+  it('sorts a blank host after a named host, within the host group', () => {
+    const ordered = orderMembers([
+      m('1', '', 'host'),
+      m('2', 'Zed', 'host'),
+      m('3', 'Ann', 'member'),
+    ]);
+    expect(ordered.map((x) => x.display_name)).toEqual(['Zed', '', 'Ann']);
+  });
+
   it('orders case and accents with base sensitivity', () => {
     const input = [m('1', 'émile'), m('2', 'Eli'), m('3', 'eve')];
     expect(orderMembers(input).map((x) => x.display_name)).toEqual([
@@ -51,6 +71,11 @@ describe('orderMembers', () => {
 
   it('breaks name ties by profile_id for stability', () => {
     const input = [m('b', 'Sam'), m('a', 'Sam')];
+    expect(orderMembers(input).map((x) => x.profile_id)).toEqual(['a', 'b']);
+  });
+
+  it('breaks a case-only name tie by profile_id', () => {
+    const input = [m('b', 'eli'), m('a', 'Eli')];
     expect(orderMembers(input).map((x) => x.profile_id)).toEqual(['a', 'b']);
   });
 });
@@ -79,6 +104,12 @@ describe('filterMembers', () => {
     const onlyMembers = [m('1', 'Wei'), m('2', 'Ann')];
     expect(filterMembers(onlyMembers, '', true)).toEqual([]);
   });
+
+  it('matches accent-insensitively in both directions', () => {
+    const accented = [m('1', 'Émile'), m('2', 'Wei')];
+    expect(filterMembers(accented, 'emile', false).map((x) => x.profile_id)).toEqual(['1']);
+    expect(filterMembers([m('3', 'emile')], 'ÉMILE', false).map((x) => x.profile_id)).toEqual(['3']);
+  });
 });
 
 describe('memberInitials', () => {
@@ -106,8 +137,10 @@ describe('isHostRole', () => {
 });
 
 describe('skillLabel', () => {
-  it('maps a skill level to a label', () => {
+  it('maps each skill level to a label', () => {
+    expect(skillLabel('beginner')).toBe('Beginner');
     expect(skillLabel('intermediate')).toBe('Intermediate');
+    expect(skillLabel('advanced')).toBe('Advanced');
   });
 
   it('returns null when there is no skill level', () => {
