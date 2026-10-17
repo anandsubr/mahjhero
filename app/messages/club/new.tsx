@@ -230,14 +230,16 @@ export default function NewPostScreen() {
     // typed text -- a member who attached a photo but never typed a word
     // must not have it silently discarded on the first tap.
     if (!body.trim() && attachments.length === 0) {
-      router.push(`/messages/club/${threadId}`);
+      if (router.canGoBack()) router.back();
+      else router.replace(`/messages/club/${threadId}`);
       return;
     }
     if (!confirmingCancel) {
       setConfirmingCancel(true);
       return;
     }
-    router.push(`/messages/club/${threadId}`);
+    if (router.canGoBack()) router.back();
+      else router.replace(`/messages/club/${threadId}`);
   }, [body, attachments, confirmingCancel, threadId, router]);
 
   const submit = useCallback(async () => {

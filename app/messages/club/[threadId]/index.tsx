@@ -102,9 +102,11 @@ export default function ClubBoardScreen() {
           // The board lives inside the club (hub Board section): with no
           // history (deep link, cold reload) land there, not on the inbox.
           if (router.canGoBack()) router.back();
-          else router.replace(thread ? `/clubs/${thread.club_id}/board` : '/messages');
+          // Unloaded thread: the route carries no club id and the inbox no
+          // longer lists boards, so '/home' is the only safe landing.
+          else router.replace(thread?.club_id ? `/clubs/${thread.club_id}/board` : '/home');
         }}
-        backLabel="Back to Messages"
+        backLabel="Back"
         kind={thread ? kind : null}
         clubId={kind === 'club' ? thread?.club_id : null}
         title={title}

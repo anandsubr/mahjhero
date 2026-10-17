@@ -281,7 +281,7 @@ export default function ThreadScreen() {
             router.replace(`/clubs/${thread.club_id}/events/${thread.event_id}`);
           } else router.replace('/messages');
         }}
-        backLabel="Back to Messages"
+        backLabel="Back"
         kind={thread ? kind : null}
         title={title}
         subtitle={kind === 'group' ? memberCountText : null}

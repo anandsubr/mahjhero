@@ -26,9 +26,9 @@ const DIVIDER_INSET = space[4] + AVATAR_SIZE + space[3];
  * One row of the messages list, styled flat -- iOS Messages, not a card.
  * This is a deliberate departure from the `1C messages` artboard, which
  * specifies `class="card"` per row; the owner's call, made knowingly, once
- * pinning club threads at the top (see lib/messages.ts's
- * `orderThreadsForList`) made the "Recent | By club" sort control this
- * screen used to carry redundant. Uniform circular avatars are the point of
+ * the list stopped needing a "Recent | By club" sort control (it now
+ * shows direct and group chats only; club boards live in the club hub).
+ * Uniform circular avatars are the point of
  * the change, so every kind gets the same size and shape here -- only the
  * avatar's fill and glyph/initials vary:
  *
@@ -39,9 +39,7 @@ const DIVIDER_INSET = space[4] + AVATAR_SIZE + space[3];
  *           not fit a circular avatar); the game's date moves into the
  *           subtitle line instead, via lib/messages.ts's `rowSubtitle`.
  *
- * Knows nothing about navigation — the screen decides what a press means,
- * which is what lets a club thread with no id yet go through
- * open_thread_for_club on the way.
+ * Knows nothing about navigation — the screen decides what a press means.
  */
 export default function ThreadRow({
   row,

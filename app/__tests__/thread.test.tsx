@@ -1164,7 +1164,7 @@ describe('thread screen', () => {
   it('leaves the back chevron as the way out of a conversation', async () => {
     render(<ThreadScreen />);
     await screen.findByText('Sara, Peter');
-    fireEvent.click(screen.getByLabelText('Back to Messages'));
+    fireEvent.click(screen.getByLabelText('Back'));
     expect(back).toHaveBeenCalled();
   });
 
@@ -1172,7 +1172,7 @@ describe('thread screen', () => {
     fetchThread.mockResolvedValueOnce(null);
     render(<ThreadScreen />);
     expect(await screen.findByText(/Could not reach MahjHero/)).toBeTruthy();
-    expect(screen.getByLabelText('Back to Messages')).toBeTruthy();
+    expect(screen.getByLabelText('Back')).toBeTruthy();
   });
 
   // The Messages 2a header: back chevron, a 40pt avatar, the name (with a
@@ -1256,12 +1256,12 @@ describe('thread screen', () => {
   });
 
   describe('back link', () => {
-    const clickBack = () => fireEvent.click(screen.getByLabelText('Back to Messages'));
+    const clickBack = () => fireEvent.click(screen.getByLabelText('Back'));
 
     it('goes back through history when there is some, for any thread kind', async () => {
       fetchThread.mockResolvedValueOnce(GAME_THREAD);
       render(<ThreadScreen />);
-      await screen.findByLabelText('Back to Messages');
+      await screen.findByLabelText('Back');
       clickBack();
       expect(back).toHaveBeenCalled();
       expect(replace).not.toHaveBeenCalled();
@@ -1279,7 +1279,7 @@ describe('thread screen', () => {
     it('lands on the inbox from a group chat with no history', async () => {
       canGoBack.mockReturnValue(false);
       render(<ThreadScreen />);
-      await screen.findByLabelText('Back to Messages');
+      await screen.findByLabelText('Back');
       await waitFor(() => expect(fetchThread).toHaveBeenCalled());
       clickBack();
       expect(replace).toHaveBeenCalledWith('/messages');

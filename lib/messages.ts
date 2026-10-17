@@ -10,8 +10,8 @@ export type ThreadKind = 'club' | 'game' | 'group' | 'direct';
  * `thread_id` is null for a club thread nobody has opened yet — the row is
  * still listed regardless, because every active membership gets a club
  * thread row whether it has ever been opened or not, and the client calls
- * `openThreadForClub(club_id)` on tap. Every caller navigates that way,
- * existing row or not, so there is one path rather than two.
+ * `openThreadForClub(club_id)` before opening the board (the Board section
+ * and club entry points do this; the inbox no longer lists club rows).
  */
 export type ThreadListRow = {
   thread_id: string | null;
