@@ -33,9 +33,8 @@ the comments, and a composer always at the bottom.
 ## Feed (Board section)
 
 - Caption at top: "Everyone in the club sees posts here" (13px `neutral[700]`).
-- Sort control on the right: "Most recent ▾" opening two choices, **Most recent** (newest posts
-  first, default) and **Latest activity** (posts with the newest comment first — today's order)
-  *(call: the design only shows the default label)*. Choice remembered per device.
+- No sort control: newest posts first, always (user decision 2026-10-17, after trying the
+  dropdown).
 - **Post card** (no card chrome; posts separated by a 1px divider, per the frame):
   - 44pt initials avatar (`avatarColorFor(author_id)`, `memberInitials`), name 700 16
     `accent[700]`, a "Host" tag for hosts and co-organizers *(call: matches Members)*, time
@@ -55,9 +54,9 @@ the comments, and a composer always at the bottom.
   opens the post screen.
 - **Paging:** first 30 posts, then a "Show older posts" button loading 30 more.
 - **Empty:** "Nothing here yet. Start the first post." above the composer.
-- **Organizers:** an "Announcement" text button beside the sort control opens today's full
-  composer screen (with "Also email everyone in the club") *(call: the pinned composer stays
-  simple; announcements keep their existing screen)*.
+- **Organizers:** no separate Announcement button (user decision 2026-10-17). Announcing — posting
+  and emailing everyone in the club — happens from the pinned composer (below). This is the only
+  way to email the whole club.
 - Pull to refresh; refetch on focus; realtime refetch on new messages (as today).
 
 ## Composer (pinned to the bottom of the Board)
@@ -69,8 +68,12 @@ the comments, and a composer always at the bottom.
   button posts *(call: Enter-to-post on phones swallows newlines)*.
 - Photos: up to 4, shown as removable thumbnails above the row (existing attachment picker and
   upload flow).
-- Posting creates a regular (non-announcement) post, clears the composer, and shows the new post at
-  the top. On failure the draft stays and an inline error shows.
+- **Email everyone (organizers only):** a 44pt megaphone toggle beside the photo button. When on,
+  a line above the row reads "Will also email N people in the club" (existing recipient count),
+  and the Post button reads "Post & email". Posting then sends an announcement (Announcement tag on
+  the Board, emails fanned out as today); the toggle turns off after posting. Members never see it.
+- Posting clears the composer and shows the new post at the top. On failure the draft stays and an
+  inline error shows.
 
 ## Hearts
 
