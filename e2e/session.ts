@@ -1718,8 +1718,10 @@ export async function seedThreadWithAttachments(
 /** Tiny real documents under e2e/fixtures/files/, with the mime type
  * `uploadClubFile` (lib/club-media.ts) records for each extension. Sizes are
  * read off the bytes at upload time, not written here, so `size_bytes` can
- * never drift from the object it describes. Each is kept just over 512
- * bytes so `formatBytes` reads "1 KB"/"3 KB" rather than "0 KB". */
+ * never drift from the object it describes. Each is just over 512 bytes,
+ * so its file row reads "1 KB"/"3 KB". The mime types must stay in the
+ * bucket's allowed_mime_types (20261017120000), which binds service_role
+ * uploads too. */
 const FILE_FIXTURES = {
   'league-rules.pdf': 'application/pdf',
   'standings.csv': 'text/csv',

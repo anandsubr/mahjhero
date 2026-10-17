@@ -68,10 +68,13 @@ rules, scorecards, cheat sheets). Today the Photos section is a "coming soon" no
   `club_media` row or an organizer)*.
 - RPCs (security definer, member checks): `add_club_media(target_club, kind, storage_path,
   file_name, mime_type, size_bytes, width, height) returns uuid` (validates path prefix, kind/mime,
-  size ≤ 10 MB for files) and `remove_club_media(media_id) returns text` (uploader or organizer;
+  size ≤ 10 MB; since `20261017120000` these are checked against the stored object's own
+  Storage metadata, and the bucket itself is capped at 10 MB and the allowed types) and `remove_club_media(media_id) returns text` (uploader or organizer;
   returns the storage path so the client can delete the object).
-- Listing via PostgREST select on `club_media` with the uploader's display name (join `profiles`),
-  ordered by `created_at desc`, paged.
+- Listing via the `fetch_club_media(target_club, p_kind, p_before, p_limit)` RPC (security
+  definer, member check), which returns each row plus `uploader_name`, ordered by
+  `created_at desc`, paged. Not a PostgREST select joined to `profiles`: profiles are readable
+  only for the caller's own row, so an embed could not name other uploaders.
 
 ## Constraints
 

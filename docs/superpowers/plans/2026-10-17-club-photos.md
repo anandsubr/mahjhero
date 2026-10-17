@@ -48,7 +48,7 @@
 
 **Produces:**
 - `type ClubMedia = { id; clubId; kind: 'photo' | 'file'; storagePath; fileName; mimeType; sizeBytes; width: number | null; height: number | null; uploadedBy: string; uploaderName: string; createdAt: string }`
-- `fetchClubMedia(clubId: string, kind: 'photo'|'file', before?: string /* createdAt */, limit = 60): Promise<ClubMedia[] | null>` (select joined with `profiles(display_name)`, order `created_at desc`).
+- `fetchClubMedia(clubId: string, kind: 'photo'|'file', before?: string /* createdAt */, limit = 60): Promise<ClubMedia[] | null>` (calls the `fetch_club_media` RPC — security definer, returns `uploader_name` — rather than a select joined with `profiles(display_name)`, which RLS on profiles would blank for other uploaders; order `created_at desc`).
 - `uploadClubPhotos(clubId: string, images: PickedImage[], onProgress?: (done: number, total: number) => void): Promise<{ added: number; errors: string[] }>` — per image: compress → upload to `{club}/photos/{uuid}.jpg` (no upsert) → `add_club_media`; if the RPC fails, delete the uploaded object.
 - `pickClubFile(): Promise<PickedFile | null>` and `uploadClubFile(clubId: string, file: PickedFile): Promise<{ error: string | null }>` with client validation (`fileTypeAllowed(name, mime)`, size) using the exact copy.
 - `removeClubMedia(media: ClubMedia): Promise<{ error: string | null }>` — RPC then storage remove of the returned path (ignore remove error).

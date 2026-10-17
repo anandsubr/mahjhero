@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(60);
+select plan(67);
 
 -- Club 1 (c1): host H(a), members M(b) and P(c), removed member R(d).
 -- Club 2 (c2): host O(e), plain member Q(f) — outsiders to c1.
@@ -34,26 +34,49 @@ insert into public.club_members (club_id, profile_id, role, status) values
    'ffffffff-0000-0000-0000-000000000006', 'member', 'active');
 
 -- Objects already uploaded (the client uploads before calling
--- add_club_media). owner_id is the text uid the Storage API stamps.
-insert into storage.objects (bucket_id, name, owner, owner_id) values
+-- add_club_media). owner_id is the text uid the Storage API stamps;
+-- metadata carries the `size` and `mimetype` keys Storage writes for every
+-- upload, which add_club_media checks (20261017120000).
+insert into storage.objects (bucket_id, name, owner, owner_id, metadata) values
   ('club-media', 'c1c1c1c1-0000-0000-0000-000000000001/photos/p1.jpg',
-   'bbbbbbbb-0000-0000-0000-000000000002', 'bbbbbbbb-0000-0000-0000-000000000002'),
+   'bbbbbbbb-0000-0000-0000-000000000002', 'bbbbbbbb-0000-0000-0000-000000000002',
+   '{"size": 250000, "mimetype": "image/jpeg"}'),
   ('club-media', 'c1c1c1c1-0000-0000-0000-000000000001/files/f1/Rules.pdf',
-   'bbbbbbbb-0000-0000-0000-000000000002', 'bbbbbbbb-0000-0000-0000-000000000002'),
+   'bbbbbbbb-0000-0000-0000-000000000002', 'bbbbbbbb-0000-0000-0000-000000000002',
+   '{"size": 10485760, "mimetype": "application/pdf"}'),
   ('club-media', 'c1c1c1c1-0000-0000-0000-000000000001/files/f2/sheet.xlsx',
-   'bbbbbbbb-0000-0000-0000-000000000002', 'bbbbbbbb-0000-0000-0000-000000000002'),
+   'bbbbbbbb-0000-0000-0000-000000000002', 'bbbbbbbb-0000-0000-0000-000000000002',
+   '{"size": 4096, "mimetype": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}'),
   ('club-media', 'c1c1c1c1-0000-0000-0000-000000000001/files/f4/big.pdf',
-   'bbbbbbbb-0000-0000-0000-000000000002', 'bbbbbbbb-0000-0000-0000-000000000002'),
+   'bbbbbbbb-0000-0000-0000-000000000002', 'bbbbbbbb-0000-0000-0000-000000000002',
+   '{"size": 10485761, "mimetype": "application/pdf"}'),
   ('club-media', 'c1c1c1c1-0000-0000-0000-000000000001/files/f5/run.exe',
-   'bbbbbbbb-0000-0000-0000-000000000002', 'bbbbbbbb-0000-0000-0000-000000000002'),
+   'bbbbbbbb-0000-0000-0000-000000000002', 'bbbbbbbb-0000-0000-0000-000000000002',
+   '{"size": 100, "mimetype": "application/x-msdownload"}'),
   ('club-media', 'c1c1c1c1-0000-0000-0000-000000000001/photos/png.jpg',
-   'bbbbbbbb-0000-0000-0000-000000000002', 'bbbbbbbb-0000-0000-0000-000000000002'),
+   'bbbbbbbb-0000-0000-0000-000000000002', 'bbbbbbbb-0000-0000-0000-000000000002',
+   '{"size": 100, "mimetype": "image/png"}'),
   ('club-media', 'c1c1c1c1-0000-0000-0000-000000000001/photos/meta.jpg',
-   'bbbbbbbb-0000-0000-0000-000000000002', 'bbbbbbbb-0000-0000-0000-000000000002'),
+   'bbbbbbbb-0000-0000-0000-000000000002', 'bbbbbbbb-0000-0000-0000-000000000002',
+   '{"size": 100, "mimetype": "image/jpeg"}'),
+  ('club-media', 'c1c1c1c1-0000-0000-0000-000000000001/files/f6/huge.pdf',
+   'bbbbbbbb-0000-0000-0000-000000000002', 'bbbbbbbb-0000-0000-0000-000000000002',
+   '{"size": 20000000, "mimetype": "application/pdf"}'),
+  ('club-media', 'c1c1c1c1-0000-0000-0000-000000000001/files/f7/phish.pdf',
+   'bbbbbbbb-0000-0000-0000-000000000002', 'bbbbbbbb-0000-0000-0000-000000000002',
+   '{"size": 1000, "mimetype": "text/html"}'),
+  ('club-media', 'c1c1c1c1-0000-0000-0000-000000000001/files/f9/x.pdf',
+   'bbbbbbbb-0000-0000-0000-000000000002', 'bbbbbbbb-0000-0000-0000-000000000002',
+   '{"size": 1000, "mimetype": "application/pdf"}'),
+  ('club-media', 'c1c1c1c1-0000-0000-0000-000000000001/photos/svg.jpg',
+   'bbbbbbbb-0000-0000-0000-000000000002', 'bbbbbbbb-0000-0000-0000-000000000002',
+   '{"size": 1000, "mimetype": "image/svg+xml"}'),
   ('club-media', 'c1c1c1c1-0000-0000-0000-000000000001/photos/c-owned.jpg',
-   'cccccccc-0000-0000-0000-000000000003', 'cccccccc-0000-0000-0000-000000000003'),
+   'cccccccc-0000-0000-0000-000000000003', 'cccccccc-0000-0000-0000-000000000003',
+   '{"size": 100, "mimetype": "image/jpeg"}'),
   ('club-media', 'c1c1c1c1-0000-0000-0000-000000000001/photos/r-owned.jpg',
-   'dddddddd-0000-0000-0000-000000000004', 'dddddddd-0000-0000-0000-000000000004');
+   'dddddddd-0000-0000-0000-000000000004', 'dddddddd-0000-0000-0000-000000000004',
+   '{"size": 100, "mimetype": "image/jpeg"}');
 
 -- A row the removed member R added while still active.
 insert into public.club_media
@@ -109,6 +132,24 @@ select is(
   'the club-media bucket exists and is private'
 );
 
+select is(
+  (select row(file_size_limit, allowed_mime_types)::text
+     from storage.buckets where id = 'club-media'),
+  row(10485760::bigint, array[
+    'image/jpeg',
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'text/csv',
+    'application/vnd.ms-powerpoint',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'text/plain'
+  ]::text[])::text,
+  'the bucket caps objects at 10 MB and allows only jpeg plus the canonical file types'
+);
+
 -- ---------------------------------------------------------------------
 -- add_club_media
 -- ---------------------------------------------------------------------
@@ -151,6 +192,13 @@ select lives_ok(
       'c1c1c1c1-0000-0000-0000-000000000001/files/f2/sheet.xlsx', 'sheet.xlsx',
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 2048)$$,
   'an xlsx file is allowed'
+);
+
+select is(
+  (select size_bytes from public.club_media
+    where storage_path = 'c1c1c1c1-0000-0000-0000-000000000001/files/f2/sheet.xlsx'),
+  4096,
+  'the row records the stored object''s size, not the declared one'
 );
 
 select throws_ok(
@@ -232,6 +280,37 @@ select throws_ok(
       'c1c1c1c1-0000-0000-0000-000000000001/photos/png.jpg', 'x.png', 'image/png', 100)$$,
   '22023', 'file_not_allowed',
   'a photo that is not image/jpeg is refused'
+);
+
+select throws_ok(
+  $$select public.add_club_media('c1c1c1c1-0000-0000-0000-000000000001', 'file',
+      'c1c1c1c1-0000-0000-0000-000000000001/files/f6/huge.pdf', 'huge.pdf',
+      'application/pdf', 1000)$$,
+  '22023', 'file_too_large',
+  'an object over 10 MB is refused even when declared small'
+);
+
+select throws_ok(
+  $$select public.add_club_media('c1c1c1c1-0000-0000-0000-000000000001', 'file',
+      'c1c1c1c1-0000-0000-0000-000000000001/files/f7/phish.pdf', 'league-rules.pdf',
+      'application/pdf', 1000)$$,
+  '22023', 'file_not_allowed',
+  'a text/html object declared as a pdf is refused'
+);
+
+select throws_ok(
+  $$select public.add_club_media('c1c1c1c1-0000-0000-0000-000000000001', 'file',
+      'c1c1c1c1-0000-0000-0000-000000000001/files/f9/x.pdf', 'x.txt',
+      'application/pdf', 1000)$$,
+  '22023', 'file_not_allowed',
+  'a file whose name''s extension does not match its type is refused'
+);
+
+select throws_ok(
+  $$select public.add_club_media('c1c1c1c1-0000-0000-0000-000000000001', 'photo',
+      'c1c1c1c1-0000-0000-0000-000000000001/photos/svg.jpg', 'x.jpg', 'image/jpeg', 1000)$$,
+  '22023', 'file_not_allowed',
+  'a photo whose stored object is not image/jpeg is refused'
 );
 
 select throws_ok(
@@ -477,6 +556,26 @@ select count(*)::int as removed_deleted from d \gset
 select is(
   :removed_deleted, 0,
   'a removed member cannot delete their own object'
+);
+
+-- R's row still references r-owned.jpg. With its object gone (deleted here
+-- as postgres, the way a direct Storage API delete would leave it), nobody
+-- can upload a new object into that path and have it shown as R's.
+reset role;
+delete from storage.objects
+ where bucket_id = 'club-media'
+   and name = 'c1c1c1c1-0000-0000-0000-000000000001/photos/r-owned.jpg';
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub":"bbbbbbbb-0000-0000-0000-000000000002","role":"authenticated"}';
+
+select throws_ok(
+  $$ insert into storage.objects (bucket_id, name, owner, owner_id)
+     values ('club-media', 'c1c1c1c1-0000-0000-0000-000000000001/photos/r-owned.jpg',
+             'bbbbbbbb-0000-0000-0000-000000000002',
+             'bbbbbbbb-0000-0000-0000-000000000002') $$,
+  '42501', null,
+  'a member cannot upload at a path a club_media row already references'
 );
 
 -- Organizer of another club, and a plain member of another club.
