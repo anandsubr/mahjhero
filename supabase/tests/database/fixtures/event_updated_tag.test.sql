@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(33);
+select plan(45);
 
 /*
  * The "Updated" tag (phase 6): events.details_changed_at, event_views,
@@ -157,6 +157,18 @@ select is(
   (select updated from public.my_games(now() - interval '7 days', now() + interval '30 days')
    where title = 'Time edit'),
   true, 'my_games: the same game is updated');
+
+-- The editor never sees Updated for their own edit.
+set local request.jwt.claims = '{"sub": "bbbbbbbb-0000-0000-0000-000000000002", "role": "authenticated"}';
+select is(
+  (select updated from public.club_games('c1c1c1c1-0000-0000-0000-000000000001',
+     now() - interval '7 days', now() + interval '30 days') where title = 'Time edit'),
+  false, 'club_games: the host who made the edit does not see it as updated');
+select is(
+  (select updated from public.my_games(now() - interval '7 days', now() + interval '30 days')
+   where title = 'Time edit'),
+  false, 'my_games: nor in their own hosting list');
+set local request.jwt.claims = '{"sub": "aaaaaaaa-0000-0000-0000-000000000001", "role": "authenticated"}';
 select is(
   (select updated from public.club_games('c1c1c1c1-0000-0000-0000-000000000001',
      now() - interval '7 days', now() + interval '30 days') where title = 'Capacity only'),
@@ -212,6 +224,16 @@ select lives_ok($$select public.mark_event_seen('ea000000-0000-0000-0000-0000000
 set local request.jwt.claims = '{"sub": "cccccccc-0000-0000-0000-000000000003", "role": "authenticated"}';
 select throws_ok($$select public.mark_event_seen('e1000000-0000-0000-0000-000000000001')$$,
   '42501', null, 'a non-member cannot mark a game seen');
+reset role;
+
+insert into auth.users (id, email) values
+  ('eeeeeeee-0000-0000-0000-000000000005', 'removed@example.com');
+insert into public.club_members (club_id, profile_id, role, status) values
+  ('c1c1c1c1-0000-0000-0000-000000000001', 'eeeeeeee-0000-0000-0000-000000000005', 'member', 'removed');
+set local role authenticated;
+set local request.jwt.claims = '{"sub": "eeeeeeee-0000-0000-0000-000000000005", "role": "authenticated"}';
+select throws_ok($$select public.mark_event_seen('e1000000-0000-0000-0000-000000000001')$$,
+  '42501', null, 'a removed member cannot mark a game seen');
 reset role;
 
 -- ---------------------------------------------------------------------------
@@ -272,6 +294,99 @@ select is(
   (select details_changed_at from public.events
    where title = 'Weekly' and occurrence_date = current_date - 6),
   null, 'a past occurrence is not stamped');
+
+-- An occurrence that already holds the new value stays unstamped, even when
+-- the edit reaches overridden weeks. +22 is hand-set to 21:00 already.
+update public.events set
+  starts_at = ((current_date + 22) + time '21:00') at time zone 'America/New_York',
+  ends_at   = ((current_date + 22) + time '21:00') at time zone 'America/New_York' + interval '3 hours',
+  overrides = '{starts_at}', details_changed_at = null
+  where series_id is not null and occurrence_date = current_date + 22;
+
+set local role authenticated;
+set local request.jwt.claims = '{"sub": "bbbbbbbb-0000-0000-0000-000000000002", "role": "authenticated"}';
+select public.update_event_series((select id from public.event_series limit 1),
+  new_start_time => '21:00', include_overridden => true);
+reset role;
+
+select is(
+  (select details_changed_at from public.events
+   where series_id is not null and occurrence_date = current_date + 22),
+  null, 'an occurrence already at the new time is not stamped');
+select is(
+  (select details_changed_at from public.events
+   where series_id is not null and occurrence_date = current_date + 8),
+  now(), 'the overridden week the edit now reaches is stamped');
+
+-- reset_event_to_series: stamps when the reset changes a detail, not otherwise.
+update public.events set title = 'Hand title', overrides = '{title}', details_changed_at = null
+  where series_id is not null and occurrence_date = current_date + 29;
+update public.events set capacity = 9, overrides = '{capacity}', details_changed_at = null
+  where series_id is not null and occurrence_date = current_date + 36;
+
+set local role authenticated;
+set local request.jwt.claims = '{"sub": "bbbbbbbb-0000-0000-0000-000000000002", "role": "authenticated"}';
+select public.reset_event_to_series(
+  (select id from public.events where series_id is not null and occurrence_date = current_date + 29));
+select public.reset_event_to_series(
+  (select id from public.events where series_id is not null and occurrence_date = current_date + 36));
+reset role;
+
+select is(
+  (select details_changed_at from public.events
+   where series_id is not null and occurrence_date = current_date + 29),
+  now(), 'a reset that restores the title stamps the occurrence');
+select is(
+  (select v.seen_at from public.event_views v join public.events e on e.id = v.event_id
+   where e.series_id is not null and e.occurrence_date = current_date + 29
+     and v.profile_id = 'bbbbbbbb-0000-0000-0000-000000000002'),
+  now(), 'and the host who reset it has seen it');
+select is(
+  (select details_changed_at from public.events
+   where series_id is not null and occurrence_date = current_date + 36),
+  null, 'a reset that changes only capacity does not stamp');
+
+-- Series title, venue and notes edits each stamp every future occurrence and
+-- no past one. The stamps are cleared before each edit.
+update public.events set details_changed_at = null where series_id is not null;
+set local role authenticated;
+set local request.jwt.claims = '{"sub": "bbbbbbbb-0000-0000-0000-000000000002", "role": "authenticated"}';
+select public.update_event_series((select id from public.event_series limit 1), new_title => 'Weekly renamed');
+reset role;
+select is(
+  (select count(*) filter (where starts_at > now() and details_changed_at is distinct from now())
+        + count(*) filter (where starts_at <= now() and details_changed_at is not null)
+   from public.events where series_id is not null)::int,
+  0, 'a series title edit stamps every future occurrence and no past one');
+select is(
+  (select count(*)::int from public.event_views v join public.events e on e.id = v.event_id
+   where e.series_id is not null and e.details_changed_at = now()
+     and v.profile_id = 'bbbbbbbb-0000-0000-0000-000000000002' and v.seen_at = now())
+  - (select count(*)::int from public.events where series_id is not null and details_changed_at = now()),
+  0, 'and the host who made the series edit has seen every stamped occurrence');
+
+update public.events set details_changed_at = null where series_id is not null;
+set local role authenticated;
+set local request.jwt.claims = '{"sub": "bbbbbbbb-0000-0000-0000-000000000002", "role": "authenticated"}';
+select public.update_event_series((select id from public.event_series limit 1),
+  new_venue_id => '11111111-0000-0000-0000-000000000002');
+reset role;
+select is(
+  (select count(*) filter (where starts_at > now() and details_changed_at is distinct from now())
+        + count(*) filter (where starts_at <= now() and details_changed_at is not null)
+   from public.events where series_id is not null)::int,
+  0, 'a series venue edit stamps every future occurrence and no past one');
+
+update public.events set details_changed_at = null where series_id is not null;
+set local role authenticated;
+set local request.jwt.claims = '{"sub": "bbbbbbbb-0000-0000-0000-000000000002", "role": "authenticated"}';
+select public.update_event_series((select id from public.event_series limit 1), new_notes => 'New notes');
+reset role;
+select is(
+  (select count(*) filter (where starts_at > now() and details_changed_at is distinct from now())
+        + count(*) filter (where starts_at <= now() and details_changed_at is not null)
+   from public.events where series_id is not null)::int,
+  0, 'a series notes edit stamps every future occurrence and no past one');
 
 select * from finish();
 rollback;

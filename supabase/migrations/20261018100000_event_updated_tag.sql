@@ -6,11 +6,18 @@
  * instant of the latest such change. Compared old vs new: title and notes as
  * trimmed text, the rest with IS DISTINCT FROM. A save that changes none of
  * them (capacity only, fee only, or the same values re-saved) leaves it
- * untouched. Only update_event and update_event_series write it; their
+ * untouched. Only update_event, update_event_series and
+ * reset_event_to_series write it; their
  * bodies below are copied verbatim from their latest definitions
  * (update_event: 20260906160000_capacity_guard_on_update.sql;
  * update_event_series: 20260924103100_series_shortening_tells_the_invited.sql)
- * with only the details_changed_at assignments added, each marked "-- ADDED".
+ * and reset_event_to_series (resetting an occurrence back to its series can
+ * change its details too; latest 20260906130000_seating_mode_propagation.sql)
+ * with only the change tracking added, each piece marked "-- ADDED".
+ *
+ * The editor never gets the tag for their own edit: wherever an occurrence
+ * is stamped, the same function upserts the caller's event_views row with
+ * seen_at = the same now(), so seen_at >= details_changed_at.
  *
  * event_views: one row per (person, game), seen_at = the last time they
  * opened its Game detail. Written only by mark_event_seen; no direct access.
@@ -121,6 +128,7 @@ declare
   eff_seating    public.seating_mode;
   eff_capacity   int;
   next_overrides text[];
+  details_changed boolean;  -- ADDED
 begin
   select * into ev from public.events where id = target_event for update;
 
@@ -277,6 +285,13 @@ begin
       from unnest(next_overrides) k;
   end if;
 
+  -- ADDED
+  details_changed := trim(eff_title) is distinct from trim(ev.title)
+    or eff_venue is distinct from ev.venue_id
+    or trim(eff_notes) is distinct from trim(ev.notes)
+    or eff_starts is distinct from ev.starts_at
+    or eff_ends is distinct from ev.ends_at;
+
   update public.events set
     title              = trim(eff_title),
     venue_id           = eff_venue,
@@ -291,16 +306,16 @@ begin
     capacity           = eff_capacity,
     overrides          = next_overrides,
     -- ADDED: stamp only when a detail actually changes.
-    details_changed_at = case
-      when trim(eff_title) is distinct from trim(ev.title)
-        or eff_venue is distinct from ev.venue_id
-        or trim(eff_notes) is distinct from trim(ev.notes)
-        or eff_starts is distinct from ev.starts_at
-        or eff_ends is distinct from ev.ends_at
-      then now()
-      else ev.details_changed_at
-    end
+    details_changed_at = case when details_changed then now()
+                              else ev.details_changed_at end
   where id = target_event;
+
+  -- ADDED: the editor has seen their own change.
+  if details_changed then
+    insert into public.event_views (profile_id, event_id, seen_at)
+    values (auth.uid(), target_event, now())
+    on conflict (profile_id, event_id) do update set seen_at = excluded.seen_at;
+  end if;
 
   return true;
 end;
@@ -626,6 +641,15 @@ begin
   -- topped up -- for this series only. With the delete above, this is also
   -- what makes shortening reversible: the freed slots are refilled here the
   -- moment the end date moves back out or goes away.
+  -- ADDED: the editor has seen every occurrence this edit stamped. now() is
+  -- the transaction's timestamp, so it picks out exactly the rows stamped
+  -- above (the shortening delete has already removed any it dropped).
+  insert into public.event_views (profile_id, event_id, seen_at)
+  select auth.uid(), e.id, now()
+  from public.events e
+  where e.series_id = target_series and e.details_changed_at = now()
+  on conflict (profile_id, event_id) do update set seen_at = excluded.seen_at;
+
   perform public.materialize_one_series(target_series);
 
   return true;
@@ -641,6 +665,94 @@ revoke execute on function public.update_event_series(
 grant execute on function public.update_event_series(
   uuid, text, uuid, text, time, int, int, date, boolean, boolean, boolean, int, int,
   public.game_mode, public.seating_mode, int, boolean)
+  to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- reset_event_to_series (latest: 20260906130000_seating_mode_propagation.sql)
+-- ---------------------------------------------------------------------------
+create or replace function public.reset_event_to_series(target_event uuid)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  ev      public.events;
+  se      public.event_series;
+  club_tz text;
+  new_starts timestamptz;      -- ADDED
+  details_changed boolean;     -- ADDED
+begin
+  select * into ev from public.events where id = target_event for update;
+
+  if ev.id is null then
+    raise exception 'no such event' using errcode = 'P0002';
+  end if;
+  perform public.assert_club_organizer(ev.club_id);
+
+  if ev.series_id is null then
+    raise exception 'this event is not part of a series'
+      using errcode = '42501';
+  end if;
+  if ev.status = 'cancelled' then
+    raise exception 'a cancelled event cannot be edited'
+      using errcode = '42501';
+  end if;
+  if ev.starts_at <= now() then
+    raise exception 'a past occurrence is history and cannot be reset'
+      using errcode = '42501';
+  end if;
+
+  select * into se from public.event_series where id = ev.series_id;
+  select c.timezone into club_tz from public.clubs c where c.id = ev.club_id;
+
+  -- ADDED
+  new_starts := (ev.occurrence_date + se.start_time) at time zone club_tz;
+  details_changed := trim(se.title) is distinct from trim(ev.title)
+    or se.venue_id is distinct from ev.venue_id
+    or trim(se.notes) is distinct from trim(ev.notes)
+    or new_starts is distinct from ev.starts_at
+    or new_starts + make_interval(mins => se.duration_minutes)
+         is distinct from ev.ends_at;
+
+  update public.events set
+    title              = se.title,
+    venue_id           = se.venue_id,
+    notes              = se.notes,
+    starts_at          = (ev.occurrence_date + se.start_time) at time zone club_tz,
+    ends_at            = ((ev.occurrence_date + se.start_time) at time zone club_tz)
+                            + make_interval(mins => se.duration_minutes),
+    check_in_required  = se.check_in_required,
+    fee_cents          = se.fee_cents,
+    min_spend_cents    = se.min_spend_cents,
+    -- The pre-existing bug this migration fixes: game_mode was added by
+    -- 20260905060000, after this function was last written, and never
+    -- restored here until now. See the file-level comment above.
+    game_mode          = se.game_mode,
+    seating_mode       = se.seating_mode,
+    capacity           = se.capacity,
+    overrides = '{}',
+    -- ADDED
+    details_changed_at = case when details_changed then now()
+                              else ev.details_changed_at end
+  where id = target_event;
+
+  -- ADDED: the editor has seen their own change.
+  if details_changed then
+    insert into public.event_views (profile_id, event_id, seen_at)
+    values (auth.uid(), target_event, now())
+    on conflict (profile_id, event_id) do update set seen_at = excluded.seen_at;
+  end if;
+
+  return true;
+end;
+$$;
+
+-- `create or replace` preserves the ACL, but it is restated rather than
+-- assumed -- the house rule after 20260822045809.
+revoke execute on function public.reset_event_to_series(uuid)
+  from public, anon;
+grant execute on function public.reset_event_to_series(uuid)
   to authenticated;
 
 -- ---------------------------------------------------------------------------
