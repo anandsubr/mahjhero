@@ -357,12 +357,14 @@ describe('a club post', () => {
       expect(replace).toHaveBeenCalledWith('/clubs/c1/board');
     });
 
-    it('falls back to Home when there is nothing to pop and the thread cannot be read', async () => {
+    // The board redirect route resolves the club itself (and sends an
+    // unreadable thread on to Home), so an unloaded thread still reaches it.
+    it('falls back to the board redirect when there is nothing to pop and the thread cannot be read', async () => {
       canGoBack.mockReturnValue(false);
       fetchThread.mockResolvedValue(null);
       render(<PostScreen />);
       fireEvent.click(await screen.findByLabelText('Back to the board'));
-      expect(replace).toHaveBeenCalledWith('/home');
+      expect(replace).toHaveBeenCalledWith('/messages/club/t1');
     });
 
     // The name doesn't navigate (a control that looks tappable and does

@@ -340,8 +340,8 @@ export default function NewEventScreen() {
       }
       setSaving(false);
       // Back to the hub's Games section, where the newly created game
-      // already shows up -- same fallback `leave()` below uses for a cold
-      // open with nothing to pop.
+      // already shows up -- the same fallback the Close button uses for a
+      // cold open with nothing to pop.
       if (router.canGoBack()) router.back();
       else router.replace(`/clubs/${clubId}/games`);
       return;

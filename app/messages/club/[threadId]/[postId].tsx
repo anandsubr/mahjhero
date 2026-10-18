@@ -263,7 +263,11 @@ export default function PostScreen() {
       */}
       <CompactHeader
         onBack={() =>
-          goBack(router, thread?.club_id ? `/clubs/${thread.club_id}/board` : '/home')
+          // Before the thread loads, the board redirect route resolves the club.
+          goBack(
+            router,
+            thread?.club_id ? `/clubs/${thread.club_id}/board` : `/messages/club/${threadId}`,
+          )
         }
         backLabel="Back to the board"
         kind={thread ? kind : null}

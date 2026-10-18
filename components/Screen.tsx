@@ -82,7 +82,8 @@ type ScreenProps = {
    * padding happened to leave it (phase 6: Profile, Alerts and Messages
    * each drew the chevron somewhere different). Scrolls with the content.
    * Ignored with `stickyHeaderIndices`, whose caller lays out its own
-   * top-level children.
+   * top-level children. Also overrides `center`: with a header the body
+   * starts below it rather than centred in the screen.
    */
   header?: ReactNode;
 };
