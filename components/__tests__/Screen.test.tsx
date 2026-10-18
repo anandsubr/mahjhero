@@ -201,4 +201,21 @@ describe('Screen', () => {
     );
     expect(screen.queryByLabelText('refresh-control')).toBeNull();
   });
+
+  // Phase 6: a page header drawn outside contentStyle's padding, so its
+  // chevron sits where the conversation screens' full-width header puts it.
+  it.each([true, false])('draws `header` above, and outside, the padded column (scroll=%s)', (scroll) => {
+    render(
+      <Screen scroll={scroll} header={<Text testID="hdr">H</Text>} contentStyle={{ padding: 24 }}>
+        <Text testID="a">A</Text>
+      </Screen>,
+    );
+    const hdr = screen.getByTestId('hdr');
+    const padded = screen.getByTestId('a').parentElement as HTMLElement;
+    expect(padded.style.paddingTop || padded.style.padding).toBe('24px');
+    expect(padded.contains(hdr)).toBe(false);
+    // Same column, header first.
+    expect(hdr.parentElement).toBe(padded.parentElement);
+    expect(hdr.compareDocumentPosition(padded) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
 });

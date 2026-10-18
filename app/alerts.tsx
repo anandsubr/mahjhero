@@ -105,7 +105,6 @@ export default function AlertsScreen() {
 
   const header = (
     <CompactHeader
-      variant="inset"
       divider={false}
       onBack={() => goBack(router, '/home')}
       backLabel="Back to Home"
@@ -117,8 +116,7 @@ export default function AlertsScreen() {
 
   if (loading) {
     return (
-      <Screen contentStyle={[styles.container, styles.fill]}>
-        {header}
+      <Screen header={header} contentStyle={[styles.container, styles.fill]}>
         <View style={styles.centered}>
           <ActivityIndicator color={colors.accentColor} />
         </View>
@@ -128,9 +126,7 @@ export default function AlertsScreen() {
   if (!session) return <Redirect href="/sign-in" />;
 
   return (
-    <Screen scroll contentStyle={styles.container}>
-      {header}
-
+    <Screen header={header} scroll contentStyle={styles.container}>
       {error ? <ErrorBanner message={error} /> : null}
 
       {!ready ? (
@@ -181,7 +177,14 @@ function NotificationCard({ row }: { row: NotificationRow }) {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: space[6], gap: space[3] },
+  // The header sits outside this padding (Screen's `header` slot); the top
+  // padding is the same gap that used to separate it from the content.
+  container: {
+    paddingTop: space[3],
+    paddingHorizontal: space[6],
+    paddingBottom: space[6],
+    gap: space[3],
+  },
   fill: { flex: 1 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   emptyCard: {

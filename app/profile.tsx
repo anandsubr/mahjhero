@@ -93,7 +93,6 @@ export default function ProfileScreen() {
   // Reached from Home's avatar; a deep link or reload has nothing to pop.
   const header = (
     <CompactHeader
-      variant="inset"
       divider={false}
       onBack={() => goBack(router, '/home')}
       backLabel="Back to Home"
@@ -107,8 +106,7 @@ export default function ProfileScreen() {
   // returns: it renders nothing, and a signed-out member belongs at sign-in.
   if (loading) {
     return (
-      <Screen contentStyle={[styles.container, styles.fill]}>
-        {header}
+      <Screen header={header} contentStyle={[styles.container, styles.fill]}>
         <View style={styles.centered}>
           <ActivityIndicator />
         </View>
@@ -120,8 +118,7 @@ export default function ProfileScreen() {
 
   if (!ready) {
     return (
-      <Screen contentStyle={[styles.container, styles.fill]}>
-        {header}
+      <Screen header={header} contentStyle={[styles.container, styles.fill]}>
         <View style={styles.centered}>
           <ActivityIndicator />
         </View>
@@ -131,8 +128,7 @@ export default function ProfileScreen() {
 
   if (loadFailed) {
     return (
-      <Screen contentStyle={[styles.container, styles.fill]}>
-        {header}
+      <Screen header={header} contentStyle={[styles.container, styles.fill]}>
         <View style={styles.centered}>
           <Text style={styles.error}>{GENERIC_ERROR}</Text>
         </View>
@@ -214,9 +210,7 @@ export default function ProfileScreen() {
   const shownName = savedName.trim() || 'Your name';
 
   return (
-    <Screen scroll contentStyle={styles.container}>
-      {header}
-
+    <Screen header={header} scroll contentStyle={styles.container}>
       <View style={styles.identity} testID="profile-identity">
         <View style={styles.avatar}>
           <Text style={styles.avatarInitial}>{(savedName.trim()[0] ?? '?').toUpperCase()}</Text>
@@ -493,7 +487,9 @@ function SettingsRow({
 }
 
 const styles = StyleSheet.create({
-  container: { paddingTop: 6, paddingHorizontal: 16, paddingBottom: 24, gap: 22 },
+  // The header sits outside this padding (Screen's `header` slot); the top
+  // padding is the same 22 that used to separate it from the content.
+  container: { paddingTop: 22, paddingHorizontal: 16, paddingBottom: 24, gap: 22 },
   fill: { flex: 1 },
   centered: {
     flex: 1,

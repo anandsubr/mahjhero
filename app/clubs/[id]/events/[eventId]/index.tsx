@@ -394,10 +394,16 @@ export default function EventScreen() {
   // The <Redirect> branch below is the deliberate exception among these
   // early returns -- it renders nothing, and a signed-out visitor belongs at
   // sign-in.
+  // Loading and error states keep the back control (phase 6): drawn in
+  // Screen's `header` slot, like the loaded header below, so the chevron
+  // never moves when the game arrives.
+  const stubHeader = (
+    <CompactHeader divider={false} onBack={onBack} backLabel="Back" kind={null} title="" />
+  );
+
   if (loading) {
     return (
-      <Screen contentStyle={[styles.container, styles.loadingScreen]}>
-        <CompactHeader variant="inset" divider={false} onBack={onBack} backLabel="Back" kind={null} title="" />
+      <Screen header={stubHeader} contentStyle={[styles.container, styles.loadingScreen]}>
         <View style={styles.loadingBody}>
           <ActivityIndicator color={colors.accentColor} />
         </View>
@@ -416,8 +422,7 @@ export default function EventScreen() {
 
   if (!ready) {
     return (
-      <Screen contentStyle={[styles.container, styles.loadingScreen]}>
-        <CompactHeader variant="inset" divider={false} onBack={onBack} backLabel="Back" kind={null} title="" />
+      <Screen header={stubHeader} contentStyle={[styles.container, styles.loadingScreen]}>
         <View style={styles.loadingBody}>
           <ActivityIndicator color={colors.accentColor} />
         </View>
@@ -427,8 +432,7 @@ export default function EventScreen() {
 
   if (!club || !event) {
     return (
-      <Screen contentStyle={styles.container}>
-        <CompactHeader variant="inset" divider={false} onBack={onBack} backLabel="Back" kind={null} title="" />
+      <Screen header={stubHeader} contentStyle={styles.container}>
         <ErrorBanner message="That game could not be loaded." />
       </Screen>
     );
@@ -1016,6 +1020,17 @@ export default function EventScreen() {
   return (
     <Screen
       scroll
+      header={
+        <CompactHeader
+          divider={false}
+          onBack={onBack}
+          backLabel="Back"
+          kind="club"
+          clubId={clubId}
+          avatarTestID="thread-avatar-club-tile"
+          title={club.name}
+        />
+      }
       contentStyle={styles.container}
       footer={
         showRoundBar ? (
@@ -1026,16 +1041,6 @@ export default function EventScreen() {
         ) : null
       }
     >
-      <CompactHeader
-        variant="inset"
-        divider={false}
-        onBack={onBack}
-        backLabel="Back"
-        kind="club"
-        clubId={clubId}
-        avatarTestID="thread-avatar-club-tile"
-        title={club.name}
-      />
       <View style={styles.titleBlock}>
         <View style={styles.row}>
           <View style={styles.titleRow}>
@@ -1801,9 +1806,11 @@ function GhostPill({
 }
 
 const styles = StyleSheet.create({
-  // The 2a scroll body: 20 at the sides, 22 between sections.
+  // The 2a scroll body: 20 at the sides, 22 between sections. The header
+  // sits outside this padding (Screen's `header` slot), so the top is the
+  // same 22 that used to separate it from the title.
   container: {
-    paddingTop: 6,
+    paddingTop: 22,
     paddingHorizontal: 20,
     paddingBottom: 28,
     gap: 22,

@@ -179,7 +179,6 @@ export default function NewMessageScreen() {
   // pop, so it falls back to the inbox.
   const header = (
     <CompactHeader
-      variant="inset"
       divider={false}
       onBack={() => goBack(router, '/messages')}
       backLabel="Back to Messages"
@@ -191,8 +190,7 @@ export default function NewMessageScreen() {
 
   if (loading) {
     return (
-      <Screen contentStyle={[styles.container, styles.fill]}>
-        {header}
+      <Screen header={header} contentStyle={[styles.container, styles.fill]}>
         <View style={styles.centered}>
           <ActivityIndicator color={colors.accentColor} />
         </View>
@@ -230,9 +228,7 @@ export default function NewMessageScreen() {
   const genuinelyEmpty = friends !== null && people !== null && candidates.length === 0;
 
   return (
-    <Screen scroll contentStyle={styles.container}>
-      {header}
-
+    <Screen header={header} scroll contentStyle={styles.container}>
       {error ? <ErrorBanner message={error} /> : null}
 
       {!ready ? (
@@ -288,7 +284,14 @@ export default function NewMessageScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: space[6], gap: space[3] },
+  // The header sits outside this padding (Screen's `header` slot); the top
+  // padding is the same gap that used to separate it from the content.
+  container: {
+    paddingTop: space[3],
+    paddingHorizontal: space[6],
+    paddingBottom: space[6],
+    gap: space[3],
+  },
   fill: { flex: 1 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   label: {
