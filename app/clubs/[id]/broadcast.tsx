@@ -47,7 +47,7 @@ export default function BroadcastRedirect() {
       // what decides which screen renders it -- the flat screen cannot serve
       // a club thread at all any more.
       router.replace(
-        eventId ? `/messages/${result.id}` : `/messages/club/${result.id}`,
+        eventId ? `/messages/${result.id}` : `/clubs/${id}/board`,
       );
     })();
 

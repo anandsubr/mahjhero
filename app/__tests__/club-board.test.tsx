@@ -5,9 +5,6 @@ import ClubBoard from '../../components/ClubBoard';
 import type { FeedPost } from '../../lib/board';
 
 const push = vi.fn();
-const back = vi.fn();
-const replace = vi.fn();
-const canGoBack = vi.fn(() => true);
 
 // Forwards to, rather than replaces, the identity-keyed `useEffect` double
 // below. Capturing every call lets one test re-invoke the LATEST registered
@@ -18,7 +15,7 @@ const useFocusEffectSpy = vi.fn();
 
 vi.mock('expo-router', () => ({
   Redirect: () => null,
-  useRouter: () => ({ push, back, replace, canGoBack }),
+  useRouter: () => ({ push, back: vi.fn(), replace: vi.fn(), canGoBack: () => true }),
   usePathname: () => '/messages/club/t1',
   useLocalSearchParams: () => ({ threadId: 't1' }),
   // Keyed on the callback's identity -- the real hook re-runs when the
@@ -42,16 +39,12 @@ vi.mock('../../lib/use-thread-realtime', () => ({
 }));
 
 const markPostRead = vi.fn();
-const fetchThread = vi.fn();
-const postMessage = vi.fn();
 vi.mock('../../lib/messages', async () => {
   const actual =
     await vi.importActual<typeof import('../../lib/messages')>('../../lib/messages');
   return {
     ...actual,
     markPostRead: (...a: unknown[]) => markPostRead(...a),
-    fetchThread: (...a: unknown[]) => fetchThread(...a),
-    postMessage: (...a: unknown[]) => postMessage(...a),
   };
 });
 
@@ -74,17 +67,6 @@ vi.mock('../../lib/attachments', () => ({
   getSignedUrls: (...a: unknown[]) => getSignedUrls(...a),
   MAX_ATTACHMENTS: 4,
 }));
-
-const countBroadcastRecipients = vi.fn();
-vi.mock('../../lib/broadcasts', () => ({
-  countBroadcastRecipients: (...a: unknown[]) => countBroadcastRecipients(...a),
-}));
-
-const fetchRoster = vi.fn();
-vi.mock('../../lib/clubs', async () => {
-  const actual = await vi.importActual<typeof import('../../lib/clubs')>('../../lib/clubs');
-  return { ...actual, fetchRoster: (...a: unknown[]) => fetchRoster(...a) };
-});
 
 function post(id: string, over: Partial<FeedPost> = {}): FeedPost {
   return {
@@ -119,10 +101,7 @@ function deferred<T>() {
 describe('the club board', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    fetchThread.mockResolvedValue({ id: 't1', club_id: 'c1' });
-    countBroadcastRecipients.mockResolvedValue(12);
     getSignedUrls.mockResolvedValue({});
-    fetchRoster.mockResolvedValue([{ profile_id: 'me', role: 'member', display_name: 'Me', skill_level: null }]);
     fetchClubFeed.mockResolvedValue([]);
   });
 

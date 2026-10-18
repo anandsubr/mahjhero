@@ -11,11 +11,10 @@ import { openThreadForClub } from '../../../../lib/messages';
 import { colors, type } from '../../../../lib/theme';
 
 /**
- * The club hub's Board section: the same root-posts list
- * app/messages/club/[threadId]/index.tsx renders, reached from the hub (the
- * inbox no longer lists boards). `open_thread_for_club` resolves the club's
- * single thread, so this section and that route always show the SAME
- * thread -- there is no second thread-creation path to keep in sync.
+ * The club hub's Board section: the club's one board, reached from the hub
+ * (the inbox no longer lists boards; the old /messages/club/{thread} route
+ * forwards here). `open_thread_for_club` resolves the club's single thread,
+ * so there is no second thread-creation path to keep in sync.
  *
  * The thread id is fetched once per club (not on every focus): unlike the
  * posts themselves, which board.tsx wants a Retry-able ready/failed state

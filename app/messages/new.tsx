@@ -67,8 +67,8 @@ type Candidate = { profile_id: string; display_name: string; meta: string };
  *   naming which club. Anything
  *   a member could do here, they could do better one tap away.
  * - Removing it also deletes the last navigation path that had to be
- *   specially taught a club thread belongs on `/messages/club/<id>`, never
- *   the flat `/messages/[threadId]` screen (docs/messaging.md decision #7)
+ *   specially taught a club thread belongs on the club's hub Board
+ *   (`/clubs/<id>/board`), never the flat `/messages/[threadId]` screen (docs/messaging.md decision #7)
  *   -- this screen's own `Everyone` branch was one of the four sites that
  *   invariant had to be re-learned at, the thirteen-review history that
  *   decision records.

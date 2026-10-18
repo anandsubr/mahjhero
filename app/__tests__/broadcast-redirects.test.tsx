@@ -41,7 +41,7 @@ describe('the old broadcast routes', () => {
   it('sends the club compose route to the club board', async () => {
     render(<BroadcastRedirect />);
     await waitFor(() => expect(openThreadForClub).toHaveBeenCalledWith('c1'));
-    await waitFor(() => expect(replace).toHaveBeenCalledWith('/messages/club/t1'));
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/clubs/c1/board'));
   });
 
   // A game thread stays FLAT -- only the club branch moved to the board.
