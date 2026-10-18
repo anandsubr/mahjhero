@@ -167,12 +167,17 @@ describe('new message screen', () => {
     expect(replace).not.toHaveBeenCalled();
   });
 
-  // This screen carries its own explicit back link
-  // (2026-09-01-back-links-design.md).
+  it('titles its header "New message", with no ghost Messages button', async () => {
+    render(<NewMessageScreen />);
+    await screen.findByText('Bob Reyes');
+    expect(screen.getByTestId('compact-header-title').textContent).toBe('New message');
+    expect(screen.queryByText('Messages')).toBeNull();
+  });
+
   it('goes back through history when there is some', async () => {
     render(<NewMessageScreen />);
-    await screen.findByText('New message');
-    fireEvent.click(screen.getByRole('button', { name: 'Back to messages' }));
+    await screen.findByText('Bob Reyes');
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
     expect(back).toHaveBeenCalled();
     expect(replace).not.toHaveBeenCalled();
   });
@@ -180,9 +185,20 @@ describe('new message screen', () => {
   it('falls back to the inbox with no history', async () => {
     canGoBack.mockReturnValue(false);
     render(<NewMessageScreen />);
-    await screen.findByText('New message');
-    fireEvent.click(screen.getByRole('button', { name: 'Back to messages' }));
+    await screen.findByText('Bob Reyes');
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
     expect(replace).toHaveBeenCalledWith('/messages');
     expect(back).not.toHaveBeenCalled();
+  });
+
+  it('offers back while the session is still loading', () => {
+    SESSION.loading = true;
+    try {
+      render(<NewMessageScreen />);
+      fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+      expect(back).toHaveBeenCalled();
+    } finally {
+      SESSION.loading = false;
+    }
   });
 });

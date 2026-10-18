@@ -15,8 +15,11 @@ vi.mock('../../lib/greetings', () => ({
 }));
 
 const push = vi.fn();
+const replace = vi.fn();
+const back = vi.fn();
+const canGoBack = vi.fn(() => true);
 vi.mock('expo-router', () => ({
-  useRouter: () => ({ push }),
+  useRouter: () => ({ push, replace, back, canGoBack }),
   usePathname: () => '/admin/greetings',
   useFocusEffect: (cb: () => void | (() => void)) => {
     useEffect(cb, [cb]);
@@ -48,9 +51,44 @@ beforeEach(() => {
   deleteGreeting.mockReset();
   deleteGreeting.mockResolvedValue({ error: null });
   push.mockReset();
+  replace.mockReset();
+  back.mockReset();
+  canGoBack.mockReset();
+  canGoBack.mockReturnValue(true);
 });
 
 describe('AdminGreetingsScreen', () => {
+  // Reached from Profile, so back pops to it rather than stacking a second
+  // Profile on top -- and a deep link with no history still lands there.
+  it('pops back to Profile when there is history', async () => {
+    render(<AdminGreetingsScreen />);
+    await screen.findByText('Ready to shuffle, {name}?');
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Profile' }));
+    expect(back).toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it('falls back to Profile when there is nothing to pop', async () => {
+    canGoBack.mockReturnValue(false);
+    render(<AdminGreetingsScreen />);
+    await screen.findByText('Ready to shuffle, {name}?');
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Profile' }));
+    expect(replace).toHaveBeenCalledWith('/profile');
+    expect(back).not.toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it('offers back while the session is still loading', () => {
+    sessionState = { session, loading: true };
+    try {
+      render(<AdminGreetingsScreen />);
+      fireEvent.click(screen.getByRole('button', { name: 'Back to Profile' }));
+      expect(back).toHaveBeenCalled();
+    } finally {
+      sessionState = { session, loading: false };
+    }
+  });
   it('lists the existing greetings', async () => {
     render(<AdminGreetingsScreen />);
     expect(await screen.findByText('Ready to shuffle, {name}?')).toBeTruthy();

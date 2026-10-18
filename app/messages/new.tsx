@@ -8,9 +8,9 @@ import {
 } from 'react-native';
 import { Text } from '../../components/Text';
 import Button from '../../components/Button';
+import CompactHeader from '../../components/CompactHeader';
 import ErrorBanner from '../../components/ErrorBanner';
 import Screen from '../../components/Screen';
-import { ChevronLeftIcon } from '../../components/icons';
 import { GENERIC_ERROR } from '../../lib/constants';
 import { initialsFrom } from '../../lib/dashboard';
 import {
@@ -20,6 +20,7 @@ import {
   type Friend,
 } from '../../lib/friends';
 import { createGroupThread } from '../../lib/messages';
+import { goBack } from '../../lib/navigation';
 import { useSession } from '../../lib/session';
 import { colors, radius, space, type } from '../../lib/theme';
 
@@ -28,13 +29,8 @@ type Candidate = { profile_id: string; display_name: string; meta: string };
 /**
  * Start a conversation with one or more people.
  *
- * Carries the tab bar with `active="messages"`, the same as every other
- * signed-in screen: the design source renders the bar as a sibling of every
- * `appScreens` entry, `compose` included — it is not gated to the four tabs
- * themselves. Also carries an explicit "Messages" ghost back link again
- * (2026-09-01-back-links-design.md): the Messages tab reaches the identical
- * `/messages` route, but renders as *already active* here, which reads as
- * "you are here" rather than a way out.
+ * Headed by the same CompactHeader as the inbox, its back popping to
+ * wherever the member came from (the inbox, from its +).
  *
  * Two visible steps, on purpose: picking people and tapping Start
  * conversation only creates (or opens) the thread and navigates straight to
@@ -179,10 +175,27 @@ export default function NewMessageScreen() {
     router.replace(`/messages/${result.id}`);
   }, [picked, router]);
 
+  // Usually opened from the inbox's +; a deep link or reload has nothing to
+  // pop, so it falls back to the inbox.
+  const header = (
+    <CompactHeader
+      variant="inset"
+      divider={false}
+      onBack={() => goBack(router, '/messages')}
+      backLabel="Back"
+      kind={null}
+      titleOnly
+      title="New message"
+    />
+  );
+
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered}>
-        <ActivityIndicator color={colors.accentColor} />
+      <Screen contentStyle={[styles.container, styles.fill]}>
+        {header}
+        <View style={styles.centered}>
+          <ActivityIndicator color={colors.accentColor} />
+        </View>
       </Screen>
     );
   }
@@ -218,21 +231,7 @@ export default function NewMessageScreen() {
 
   return (
     <Screen scroll contentStyle={styles.container}>
-      <Button
-        variant="ghost"
-        big={false}
-        icon={<ChevronLeftIcon color={colors.accentColor} />}
-        onPress={() => {
-          if (router.canGoBack()) router.back();
-          else router.replace('/messages');
-        }}
-        accessibilityLabel="Back to messages"
-        style={styles.backButton}
-      >
-        Messages
-      </Button>
-
-      <Text style={styles.heading}>New message</Text>
+      {header}
 
       {error ? <ErrorBanner message={error} /> : null}
 
@@ -290,13 +289,8 @@ export default function NewMessageScreen() {
 
 const styles = StyleSheet.create({
   container: { padding: space[6], gap: space[3] },
-  centered: { alignItems: 'center' },
-  backButton: { alignSelf: 'flex-start' },
-  heading: {
-    fontFamily: type.heading,
-    fontSize: type.size.h3,
-    color: colors.text,
-  },
+  fill: { flex: 1 },
+  centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   label: {
     fontFamily: type.bodyRegular,
     fontSize: type.size.helper,

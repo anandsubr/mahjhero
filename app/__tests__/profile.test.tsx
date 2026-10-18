@@ -3,11 +3,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ProfileScreen from '../profile';
 
-const { push } = vi.hoisted(() => ({ push: vi.fn() }));
+const { push, replace, back, canGoBack } = vi.hoisted(() => ({
+  push: vi.fn(),
+  replace: vi.fn(),
+  back: vi.fn(),
+  canGoBack: vi.fn(() => true),
+}));
 
 vi.mock('expo-router', () => ({
   Redirect: () => null,
-  useRouter: () => ({ push, back: vi.fn() }),
+  useRouter: () => ({ push, replace, back, canGoBack }),
   usePathname: () => '/profile',
   // Wrapped in a real `useEffect` keyed on the callback's identity, not
   // called inline on every render: `(cb) => cb()` fires on every render,
@@ -50,7 +55,11 @@ const MEMBER = {
 };
 
 describe('profile screen', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    canGoBack.mockReturnValue(true);
+    SESSION.loading = false;
+  });
 
   it('shows an error rather than a blank editable form when the load fails', async () => {
     fetchProfile.mockResolvedValueOnce(null);
@@ -112,20 +121,68 @@ describe('profile screen', () => {
     expect(await screen.findByText('test-user@example.com')).toBeTruthy();
   });
 
-  // Profile was reachable only by pushing onto a stack when this link was
-  // added. The tab bar now sits under every tab screen and its Club tab is
-  // the same destination, so the link was a second way to do one thing.
-  it('has no back link now the tab bar carries that job', async () => {
-    fetchProfile.mockResolvedValueOnce({
+  describe('header', () => {
+    const PAT = {
       id: 'test-user',
       display_name: 'Pat',
       skill_level: 'intermediate',
       avatar_url: null,
       timezone: 'America/New_York',
+    };
+
+    it('titles its header "Profile", with no section tile', async () => {
+      fetchProfile.mockResolvedValueOnce(PAT);
+      render(<ProfileScreen />);
+      expect(await screen.findByText('About you')).toBeTruthy();
+      expect(screen.getByTestId('compact-header-title').textContent).toBe('Profile');
+      expect(screen.queryByTestId('section-tile')).toBeNull();
     });
-    render(<ProfileScreen />);
-    expect(await screen.findByText('About you')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Back to your clubs' })).toBeNull();
+
+    it('pops back to Home when there is history', async () => {
+      fetchProfile.mockResolvedValueOnce(PAT);
+      render(<ProfileScreen />);
+      await screen.findByText('About you');
+      fireEvent.click(screen.getByRole('button', { name: 'Back to Home' }));
+      expect(back).toHaveBeenCalled();
+      expect(replace).not.toHaveBeenCalled();
+      expect(push).not.toHaveBeenCalled();
+    });
+
+    it('falls back to Home when there is nothing to pop', async () => {
+      canGoBack.mockReturnValue(false);
+      fetchProfile.mockResolvedValueOnce(PAT);
+      render(<ProfileScreen />);
+      await screen.findByText('About you');
+      fireEvent.click(screen.getByRole('button', { name: 'Back to Home' }));
+      expect(replace).toHaveBeenCalledWith('/home');
+      expect(back).not.toHaveBeenCalled();
+      expect(push).not.toHaveBeenCalled();
+    });
+
+    it('offers back while the session is still loading', () => {
+      SESSION.loading = true;
+      fetchProfile.mockReturnValueOnce(new Promise(() => {}));
+      render(<ProfileScreen />);
+      fireEvent.click(screen.getByRole('button', { name: 'Back to Home' }));
+      expect(back).toHaveBeenCalled();
+    });
+
+    it('offers back while the profile is still loading', () => {
+      fetchProfile.mockReturnValueOnce(new Promise(() => {}));
+      render(<ProfileScreen />);
+      expect(screen.getByTestId('compact-header-title').textContent).toBe('Profile');
+      fireEvent.click(screen.getByRole('button', { name: 'Back to Home' }));
+      expect(back).toHaveBeenCalled();
+    });
+
+    it('offers back from the load error', async () => {
+      canGoBack.mockReturnValue(false);
+      fetchProfile.mockResolvedValueOnce(null);
+      render(<ProfileScreen />);
+      await screen.findByText(/Could not reach MahjHero/);
+      fireEvent.click(screen.getByRole('button', { name: 'Back to Home' }));
+      expect(replace).toHaveBeenCalledWith('/home');
+    });
   });
 
   it('shows the saved name and level in the identity row', async () => {

@@ -24,6 +24,7 @@ import {
   UserPlusIcon,
 } from '../components/icons';
 import { GENERIC_ERROR } from '../lib/constants';
+import { goBack } from '../lib/navigation';
 import { fetchPreferences, updatePreferences } from '../lib/profile';
 import type { NotificationPreferences, NotifyChannel } from '../lib/profile';
 import { useSession } from '../lib/session';
@@ -105,12 +106,25 @@ export default function NotificationSettings() {
     };
   }, [userId]);
 
+  // Reached from Profile: pop back to it rather than stacking a second
+  // Profile, and land there from a deep link with nothing to pop.
+  const backRow = (
+    <BackRow
+      label="Profile"
+      onPress={() => goBack(router, '/profile')}
+      accessibilityLabel="Back to Profile"
+    />
+  );
+
   // The `<Redirect>` below is the deliberate exception among these early
   // returns: it renders nothing, and a signed-out member belongs at sign-in.
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered}>
-        <ActivityIndicator />
+      <Screen contentStyle={[formStyles.body, styles.body, styles.fill]}>
+        {backRow}
+        <View style={styles.centered}>
+          <ActivityIndicator />
+        </View>
       </Screen>
     );
   }
@@ -119,16 +133,22 @@ export default function NotificationSettings() {
 
   if (!ready) {
     return (
-      <Screen center contentStyle={styles.centered}>
-        <ActivityIndicator />
+      <Screen contentStyle={[formStyles.body, styles.body, styles.fill]}>
+        {backRow}
+        <View style={styles.centered}>
+          <ActivityIndicator />
+        </View>
       </Screen>
     );
   }
 
   if (!prefs || !savedPrefs) {
     return (
-      <Screen center contentStyle={styles.centered}>
-        <Text style={styles.error}>{GENERIC_ERROR}</Text>
+      <Screen contentStyle={[formStyles.body, styles.body, styles.fill]}>
+        {backRow}
+        <View style={styles.centered}>
+          <Text style={styles.error}>{GENERIC_ERROR}</Text>
+        </View>
       </Screen>
     );
   }
@@ -225,11 +245,7 @@ export default function NotificationSettings() {
           of the OS back gesture (web) or force-quitting (there is no
           equivalent on a phone). */}
       <View style={styles.top}>
-        <BackRow
-          label="Profile"
-          onPress={() => router.push('/profile')}
-          accessibilityLabel="Back to profile"
-        />
+        {backRow}
         <FormTitle>Notifications</FormTitle>
       </View>
 
@@ -336,8 +352,11 @@ export default function NotificationSettings() {
 
 const styles = StyleSheet.create({
   body: { paddingTop: 6, paddingBottom: 24 },
+  fill: { flex: 1 },
   centered: {
+    flex: 1,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   top: { gap: 4 },
   channelRow: {

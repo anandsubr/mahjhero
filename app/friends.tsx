@@ -9,6 +9,7 @@ import Screen from '../components/Screen';
 import { PeopleIcon, PlusIcon, SearchIcon, UserMinusIcon } from '../components/icons';
 import { GENERIC_ERROR } from '../lib/constants';
 import { initialsFrom } from '../lib/dashboard';
+import { goBack } from '../lib/navigation';
 import {
   addFriend,
   avatarColorFor,
@@ -110,10 +111,23 @@ export default function FriendsScreen() {
     [load],
   );
 
+  // Reached from Profile: pop back to it rather than stacking a second
+  // Profile, and land there from a deep link with nothing to pop.
+  const backRow = (
+    <BackRow
+      label="Profile"
+      onPress={() => goBack(router, '/profile')}
+      accessibilityLabel="Back to Profile"
+    />
+  );
+
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered}>
-        <ActivityIndicator color={colors.accentColor} />
+      <Screen contentStyle={[formStyles.body, styles.body, styles.fill]}>
+        {backRow}
+        <View style={styles.centered}>
+          <ActivityIndicator color={colors.accentColor} />
+        </View>
       </Screen>
     );
   }
@@ -135,11 +149,7 @@ export default function FriendsScreen() {
       contentStyle={[formStyles.body, styles.body]}
     >
       <View style={styles.top}>
-        <BackRow
-          label="Profile"
-          onPress={() => router.push('/profile')}
-          accessibilityLabel="Back to profile"
-        />
+        {backRow}
         <FormTitle>Friends</FormTitle>
         <Text style={styles.intro}>
           These are the people you can hold seats with when you join a table.
@@ -267,7 +277,8 @@ function Avatar({ id, name }: { id: string; name: string }) {
 
 const styles = StyleSheet.create({
   body: { paddingTop: 6, paddingBottom: 24 },
-  centered: { alignItems: 'center' },
+  fill: { flex: 1 },
+  centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   top: { gap: 4 },
   intro: {
     fontFamily: type.bodyRegular,

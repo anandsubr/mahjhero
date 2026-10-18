@@ -8,6 +8,7 @@ import ErrorBanner from '../components/ErrorBanner';
 import Screen from '../components/Screen';
 import { ChevronLeftIcon } from '../components/icons';
 import { GENERIC_ERROR } from '../lib/constants';
+import { goBack } from '../lib/navigation';
 import { useSession } from '../lib/session';
 import { colors, space, type } from '../lib/theme';
 import { useGuides } from '../lib/use-guides';
@@ -41,8 +42,8 @@ export default function HowItWorks() {
         variant="ghost"
         big={false}
         icon={<ChevronLeftIcon color={colors.accentColor} />}
-        onPress={() => router.push('/profile')}
-        accessibilityLabel="Back to your profile"
+        onPress={() => goBack(router, '/profile')}
+        accessibilityLabel="Back to Profile"
         style={styles.back}
       >
         Profile

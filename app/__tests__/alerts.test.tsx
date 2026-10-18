@@ -5,11 +5,14 @@ import AlertsScreen from '../alerts';
 import type { NotificationRow } from '../../lib/notifications';
 
 const push = vi.fn();
+const replace = vi.fn();
+const back = vi.fn();
+const canGoBack = vi.fn(() => true);
 
 vi.mock('expo-router', () => ({
   Redirect: () => null,
   Link: ({ children }: { children: React.ReactNode }) => children,
-  useRouter: () => ({ push, back: vi.fn() }),
+  useRouter: () => ({ push, replace, back, canGoBack }),
   usePathname: () => '/alerts',
   // Wrapped in a real `useEffect` keyed on the callback's identity, not
   // called inline on every render: `(cb) => cb()` fires on every render,
@@ -67,6 +70,8 @@ const BOOKED_BY_FRIEND: NotificationRow = {
 describe('alerts screen', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    canGoBack.mockReturnValue(true);
+    SESSION.loading = false;
     fetchMyNotifications.mockResolvedValue([]);
     markNotificationsRead.mockResolvedValue({ error: null });
   });
@@ -170,14 +175,43 @@ describe('alerts screen', () => {
     expect(notifyNotificationsRead).not.toHaveBeenCalled();
   });
 
-  // The tile is purely decorative -- scoped to a wrapping testID rather than
-  // a bare `[aria-hidden="true"]` query, which would pass whether or not
-  // this screen's own section tile exists.
-  it('shows a decorative green-dragon tile before the heading', async () => {
+  it('titles its header "Alerts", with no section tile', async () => {
     render(<AlertsScreen />);
     await screen.findByText(/No notifications yet/);
-    expect(
-      screen.getByTestId('section-tile').querySelector('[aria-hidden="true"]'),
-    ).toBeTruthy();
+    expect(screen.getByTestId('compact-header-title').textContent).toBe('Alerts');
+    expect(screen.queryByTestId('section-tile')).toBeNull();
+  });
+
+  it('pops back to Home when there is history', async () => {
+    render(<AlertsScreen />);
+    await screen.findByText(/No notifications yet/);
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Home' }));
+    expect(back).toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it('falls back to Home when there is nothing to pop', async () => {
+    canGoBack.mockReturnValue(false);
+    render(<AlertsScreen />);
+    await screen.findByText(/No notifications yet/);
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Home' }));
+    expect(replace).toHaveBeenCalledWith('/home');
+    expect(back).not.toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it('offers back while the session is still loading', () => {
+    SESSION.loading = true;
+    render(<AlertsScreen />);
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Home' }));
+    expect(back).toHaveBeenCalled();
+  });
+
+  it('offers back from the load error', async () => {
+    fetchMyNotifications.mockResolvedValueOnce(null);
+    render(<AlertsScreen />);
+    await screen.findByText(/Could not reach MahjHero/);
+    expect(screen.getByRole('button', { name: 'Back to Home' })).toBeTruthy();
   });
 });

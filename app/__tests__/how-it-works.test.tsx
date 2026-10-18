@@ -3,9 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 
 const push = vi.fn();
+const replace = vi.fn();
+const back = vi.fn();
+const canGoBack = vi.fn(() => true);
 vi.mock('expo-router', () => ({
   Redirect: ({ href }: { href: string }) => <div data-testid="redirect" data-href={href} />,
-  useRouter: () => ({ push }),
+  useRouter: () => ({ push, replace, back, canGoBack }),
   usePathname: () => '/how-it-works',
   useFocusEffect: (cb: () => void | (() => void)) => {
     useEffect(cb, [cb]);
@@ -27,10 +30,31 @@ import HowItWorks from '../how-it-works';
 
 beforeEach(() => {
   vi.clearAllMocks();
+  canGoBack.mockReturnValue(true);
   current = SESSION;
 });
 
 describe('How it works', () => {
+  // Reached from Profile, so back pops to it rather than stacking a second
+  // Profile on top -- and a deep link with no history still lands there.
+  it('pops back to Profile when there is history', async () => {
+    render(<HowItWorks />);
+    await screen.findByText('How it works');
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Profile' }));
+    expect(back).toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it('falls back to Profile when there is nothing to pop', async () => {
+    canGoBack.mockReturnValue(false);
+    render(<HowItWorks />);
+    await screen.findByText('How it works');
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Profile' }));
+    expect(replace).toHaveBeenCalledWith('/profile');
+    expect(back).not.toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
+  });
   it('explains playing and organizing', () => {
     render(<HowItWorks />);
     expect(screen.getByText('How it works')).toBeTruthy();

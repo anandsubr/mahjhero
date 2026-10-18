@@ -3,9 +3,9 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { Text } from '../components/Text';
 import ErrorBanner from '../components/ErrorBanner';
-import MahjongTile from '../components/MahjongTile';
 import NoticeBanner from '../components/NoticeBanner';
-import { ConfirmSheet, FormCard, FormSection, FormTitle, TextRow } from '../components/GameForm';
+import CompactHeader from '../components/CompactHeader';
+import { ConfirmSheet, FormCard, FormSection, TextRow } from '../components/GameForm';
 import Screen from '../components/Screen';
 import {
   BellIcon,
@@ -19,6 +19,7 @@ import {
 } from '../components/icons';
 import { resetCalendarFeed } from '../lib/calendar-feed';
 import { GENERIC_ERROR } from '../lib/constants';
+import { goBack } from '../lib/navigation';
 import { fetchProfile, isCompleteProfile, updateProfile } from '../lib/profile';
 import type { SkillLevel } from '../lib/profile';
 import { useSession } from '../lib/session';
@@ -91,10 +92,26 @@ export default function ProfileScreen() {
 
   // The `<Redirect>` below is the deliberate exception among these early
   // returns: it renders nothing, and a signed-out member belongs at sign-in.
+  // Reached from Home's avatar; a deep link or reload has nothing to pop.
+  const header = (
+    <CompactHeader
+      variant="inset"
+      divider={false}
+      onBack={() => goBack(router, '/home')}
+      backLabel="Back to Home"
+      kind={null}
+      titleOnly
+      title="Profile"
+    />
+  );
+
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered}>
-        <ActivityIndicator />
+      <Screen contentStyle={[styles.container, styles.fill]}>
+        {header}
+        <View style={styles.centered}>
+          <ActivityIndicator />
+        </View>
       </Screen>
     );
   }
@@ -103,16 +120,22 @@ export default function ProfileScreen() {
 
   if (!ready) {
     return (
-      <Screen center contentStyle={styles.centered}>
-        <ActivityIndicator />
+      <Screen contentStyle={[styles.container, styles.fill]}>
+        {header}
+        <View style={styles.centered}>
+          <ActivityIndicator />
+        </View>
       </Screen>
     );
   }
 
   if (loadFailed) {
     return (
-      <Screen center contentStyle={styles.centered}>
-        <Text style={styles.error}>{GENERIC_ERROR}</Text>
+      <Screen contentStyle={[styles.container, styles.fill]}>
+        {header}
+        <View style={styles.centered}>
+          <Text style={styles.error}>{GENERIC_ERROR}</Text>
+        </View>
       </Screen>
     );
   }
@@ -192,12 +215,7 @@ export default function ProfileScreen() {
 
   return (
     <Screen scroll contentStyle={styles.container}>
-      <View style={styles.titleRow}>
-        <View testID="section-tile">
-          <MahjongTile suit="red-dragon" size="section" />
-        </View>
-        <FormTitle>Profile</FormTitle>
-      </View>
+      {header}
 
       <View style={styles.identity} testID="profile-identity">
         <View style={styles.avatar}>
@@ -475,10 +493,12 @@ function SettingsRow({
 }
 
 const styles = StyleSheet.create({
-  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   container: { paddingTop: 6, paddingHorizontal: 16, paddingBottom: 24, gap: 22 },
+  fill: { flex: 1 },
   centered: {
+    flex: 1,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   error: {
     fontFamily: type.bodyRegular,
