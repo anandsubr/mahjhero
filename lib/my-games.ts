@@ -1,5 +1,6 @@
 import type { GameMode } from './clubs';
 import type { SeatingMode } from './events';
+import { seenLocally } from './seen-events';
 import { supabase } from './supabase';
 
 /**
@@ -54,6 +55,7 @@ type MyGameRow = {
 };
 
 export async function fetchMyGames(from: Date, to: Date): Promise<MyGame[] | null> {
+  const startedAt = Date.now();
   try {
     const { data, error } = await supabase.rpc('my_games', {
       from_ts: from.toISOString(),
@@ -78,7 +80,7 @@ export async function fetchMyGames(from: Date, to: Date): Promise<MyGame[] | nul
       myStatus: r.my_status,
       waitlistPosition: r.waitlist_position,
       tableLabel: r.table_label,
-      updated: r.updated === true,
+      updated: r.updated === true && !seenLocally(r.event_id, startedAt),
     }));
   } catch (cause) {
     console.error('fetchMyGames failed', cause);
@@ -98,6 +100,7 @@ export async function fetchClubGames(
   from: Date,
   to: Date,
 ): Promise<MyGame[] | null> {
+  const startedAt = Date.now();
   try {
     const { data, error } = await supabase.rpc('club_games', {
       target_club: clubId,
@@ -124,7 +127,7 @@ export async function fetchClubGames(
       waitlistPosition: r.waitlist_position,
       tableLabel: r.table_label,
       notes: r.notes ?? undefined,
-      updated: r.updated === true,
+      updated: r.updated === true && !seenLocally(r.event_id, startedAt),
     }));
   } catch (cause) {
     console.error('fetchClubGames failed', cause);
