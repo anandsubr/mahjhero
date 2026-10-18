@@ -2,11 +2,11 @@ import { Redirect, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Text } from '../components/Text';
+import BackRow from '../components/BackRow';
 import Button from '../components/Button';
 import Card from '../components/Card';
 import ErrorBanner from '../components/ErrorBanner';
 import Screen from '../components/Screen';
-import { ChevronLeftIcon } from '../components/icons';
 import { GENERIC_ERROR } from '../lib/constants';
 import { goBack } from '../lib/navigation';
 import { useSession } from '../lib/session';
@@ -38,16 +38,11 @@ export default function HowItWorks() {
 
   return (
     <Screen scroll contentStyle={styles.container}>
-      <Button
-        variant="ghost"
-        big={false}
-        icon={<ChevronLeftIcon color={colors.accentColor} />}
+      <BackRow
+        label="Profile"
         onPress={() => goBack(router, '/profile')}
         accessibilityLabel="Back to Profile"
-        style={styles.back}
-      >
-        Profile
-      </Button>
+      />
 
       <Text style={styles.heading}>How it works</Text>
 
@@ -88,7 +83,6 @@ export default function HowItWorks() {
 
 const styles = StyleSheet.create({
   container: { padding: space[6], gap: space[4] },
-  back: { alignSelf: 'flex-start' },
   heading: {
     fontFamily: type.heading,
     fontSize: type.size.h2,

@@ -177,7 +177,7 @@ describe('new message screen', () => {
   it('goes back through history when there is some', async () => {
     render(<NewMessageScreen />);
     await screen.findByText('Bob Reyes');
-    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Messages' }));
     expect(back).toHaveBeenCalled();
     expect(replace).not.toHaveBeenCalled();
   });
@@ -186,7 +186,7 @@ describe('new message screen', () => {
     canGoBack.mockReturnValue(false);
     render(<NewMessageScreen />);
     await screen.findByText('Bob Reyes');
-    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Messages' }));
     expect(replace).toHaveBeenCalledWith('/messages');
     expect(back).not.toHaveBeenCalled();
   });
@@ -195,7 +195,7 @@ describe('new message screen', () => {
     SESSION.loading = true;
     try {
       render(<NewMessageScreen />);
-      fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Back to Messages' }));
       expect(back).toHaveBeenCalled();
     } finally {
       SESSION.loading = false;

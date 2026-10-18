@@ -90,8 +90,6 @@ export default function ProfileScreen() {
     };
   }, [userId]);
 
-  // The `<Redirect>` below is the deliberate exception among these early
-  // returns: it renders nothing, and a signed-out member belongs at sign-in.
   // Reached from Home's avatar; a deep link or reload has nothing to pop.
   const header = (
     <CompactHeader
@@ -105,6 +103,8 @@ export default function ProfileScreen() {
     />
   );
 
+  // The `<Redirect>` below is the deliberate exception among these early
+  // returns: it renders nothing, and a signed-out member belongs at sign-in.
   if (loading) {
     return (
       <Screen contentStyle={[styles.container, styles.fill]}>

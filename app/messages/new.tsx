@@ -182,7 +182,7 @@ export default function NewMessageScreen() {
       variant="inset"
       divider={false}
       onBack={() => goBack(router, '/messages')}
-      backLabel="Back"
+      backLabel="Back to Messages"
       kind={null}
       titleOnly
       title="New message"

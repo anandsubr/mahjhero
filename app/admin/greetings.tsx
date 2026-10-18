@@ -2,12 +2,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Redirect, useRouter } from 'expo-router';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { Text } from '../../components/Text';
+import BackRow from '../../components/BackRow';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
 import ErrorBanner from '../../components/ErrorBanner';
 import Screen from '../../components/Screen';
 import TextField from '../../components/TextField';
-import { ChevronLeftIcon } from '../../components/icons';
 import { GENERIC_ERROR } from '../../lib/constants';
 import { goBack } from '../../lib/navigation';
 import {
@@ -114,23 +114,18 @@ export default function AdminGreetingsScreen() {
 
   // Reached from Profile: pop back to it rather than stacking a second
   // Profile, and land there from a deep link with nothing to pop.
-  const backButton = (
-    <Button
-      variant="ghost"
-      big={false}
-      icon={<ChevronLeftIcon color={colors.accentColor} />}
+  const backRow = (
+    <BackRow
+      label="Profile"
       onPress={() => goBack(router, '/profile')}
       accessibilityLabel="Back to Profile"
-      style={styles.backButton}
-    >
-      Profile
-    </Button>
+    />
   );
 
   if (loading) {
     return (
       <Screen contentStyle={[styles.container, styles.fill]}>
-        {backButton}
+        {backRow}
         <View style={styles.centered}>
           <ActivityIndicator color={colors.accentColor} />
         </View>
@@ -141,7 +136,7 @@ export default function AdminGreetingsScreen() {
 
   return (
     <Screen scroll contentStyle={styles.container}>
-      {backButton}
+      {backRow}
 
       <Text style={styles.heading}>Greetings</Text>
       <Text style={styles.intro}>
@@ -212,7 +207,6 @@ const styles = StyleSheet.create({
   container: { padding: space[6], gap: space[3] },
   fill: { flex: 1 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  backButton: { alignSelf: 'flex-start' },
   heading: {
     fontFamily: type.heading,
     fontSize: type.size.h1,

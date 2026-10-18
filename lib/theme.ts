@@ -119,8 +119,8 @@ export const radius = {
 // ---------------------------------------------------------------------------
 
 export const control = {
-  // The 50x50 circular touch target every icon-only circular button uses
-  // (PlusButton, and formerly DashboardHeader's own avatar/⊕ styles) — not
+  // The 50x50 circular touch target for an icon-only circular button
+  // (formerly PlusButton and DashboardHeader's own avatar/⊕ styles) — not
   // on the space[] scale, which is sized for gaps and padding, not a fixed
   // control dimension.
   circleSize: 50,
