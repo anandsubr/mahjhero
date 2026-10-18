@@ -86,6 +86,7 @@ the last 14 days. Seat counts, bookings and chat don't count.
   disabled)*.
 - Never shown on past games.
 - Opening the game's detail screen clears it for you (on any device).
+- You never see Updated for your own edit *(call)*: the edit marks the editor as having seen it.
 - A game you have never opened shows Updated only if it changed after you first could see it
   *(call: approximated as changed ≥ 1 hour after the game was created, so a host's edits while
   setting the game up don't flag it for everyone)*.
@@ -93,7 +94,9 @@ the last 14 days. Seat counts, bookings and chat don't count.
 **Data**
 - `events.details_changed_at timestamptz` (null until a detail changes). `update_event` and
   `update_event_series` set it to `now()` on every occurrence whose starts_at, ends_at, venue,
-  title or notes actually changes (compare old vs new; a save with no change doesn't touch it).
+  title or notes actually changes (compare old vs new; a save with no change doesn't touch it);
+  `reset_event_to_series` does the same when the reset changes a detail. Each stamped occurrence
+  also gets an `event_views` row for the editor at the same instant.
 - Table `event_views(profile_id → profiles, event_id → events on delete cascade, seen_at
   timestamptz, primary key (profile_id, event_id))`, RLS on, no direct access.
 - RPC `mark_event_seen(target_event uuid)` — security definer; caller must be able to read the
