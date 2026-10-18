@@ -5,6 +5,8 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 const searchParams: Record<string, string> = { id: 'club-1', eventId: 'event-1' };
 const push = vi.fn();
 const replace = vi.fn();
+const back = vi.fn();
+const canGoBack = vi.fn();
 
 const pathname = '/clubs/club-1/events/event-1/check-in';
 
@@ -12,7 +14,7 @@ vi.mock('expo-router', () => ({
   Redirect: ({ href }: { href: string }) => (
     <div data-testid="redirect" data-href={href} />
   ),
-  useRouter: () => ({ push, replace }),
+  useRouter: () => ({ push, replace, back, canGoBack }),
   usePathname: () => pathname,
   useLocalSearchParams: () => searchParams,
   // Wrapped in a real `useEffect` keyed on the callback's identity, not
@@ -149,6 +151,7 @@ const UNDO_MS = 10_000;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  canGoBack.mockReturnValue(true);
   for (const key of Object.keys(searchParams)) delete searchParams[key];
   searchParams.id = 'club-1';
   searchParams.eventId = 'event-1';
@@ -185,14 +188,54 @@ describe('screen chrome', () => {
   it('names the game, its date and venue in the header', async () => {
     fetchEvent.mockResolvedValue({ ...EVENT, title: 'Thursday Mahjong', venue_name: 'The Hall' });
     render(<CheckInScreen />);
-    expect(await screen.findByText('Thursday Mahjong')).toBeTruthy();
-    expect(screen.getByText(/ · The Hall$/)).toBeTruthy();
+    // One line under the header's "Check-in": the game, then when and where.
+    expect(await screen.findByText(/^Thursday Mahjong · .* · The Hall$/)).toBeTruthy();
   });
 
-  it('draws a back link to the game', async () => {
+  it('titles its header "Check-in"', async () => {
     render(<CheckInScreen />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Back to the game' }));
-    expect(push).toHaveBeenCalledWith('/clubs/club-1/events/event-1');
+    await screen.findByRole('button', { name: 'Add a walk-in' });
+    expect(screen.getByTestId('compact-header-title').textContent).toBe('Check-in');
+  });
+
+  // Only ever reached from the game screen, so back pops to it rather than
+  // pushing a second copy of it on top of the stack.
+  it('pops back to the game when there is history', async () => {
+    canGoBack.mockReturnValue(true);
+    render(<CheckInScreen />);
+    // The loading state has its own back; wait for the loaded screen.
+    await screen.findByRole('button', { name: 'Add a walk-in' });
+    fireEvent.click(screen.getByRole('button', { name: 'Back to the game' }));
+    expect(back).toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the game when there is nothing to pop', async () => {
+    canGoBack.mockReturnValue(false);
+    render(<CheckInScreen />);
+    // The loading state has its own back; wait for the loaded screen.
+    await screen.findByRole('button', { name: 'Add a walk-in' });
+    fireEvent.click(screen.getByRole('button', { name: 'Back to the game' }));
+    expect(back).not.toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
+    expect(replace).toHaveBeenCalledWith('/clubs/club-1/events/event-1');
+  });
+
+  it('offers back while the session is still loading', () => {
+    useSessionMock.mockReturnValue({ session: null, loading: true });
+    render(<CheckInScreen />);
+    fireEvent.click(screen.getByRole('button', { name: 'Back to the game' }));
+    expect(back).toHaveBeenCalled();
+  });
+
+  it('offers back from the not-an-organizer error', async () => {
+    fetchRoster.mockResolvedValue([{ ...HOST, role: 'member' as const }]);
+    canGoBack.mockReturnValue(false);
+    render(<CheckInScreen />);
+    await screen.findByText('You are not an organizer of this club.');
+    fireEvent.click(screen.getByRole('button', { name: 'Back to the game' }));
+    expect(replace).toHaveBeenCalledWith('/clubs/club-1/events/event-1');
   });
 });
 

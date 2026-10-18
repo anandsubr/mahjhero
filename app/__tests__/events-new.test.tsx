@@ -131,6 +131,27 @@ describe('guard ordering', () => {
   });
 });
 
+// A failed or unfinished load is never a dead end: the ✕ is there too, with
+// the loaded form's own fallback.
+describe('Close before the form is ready', () => {
+  it('offers Close while the session is still loading', () => {
+    useSessionMock.mockReturnValue({ session: null, loading: true });
+    canGoBack.mockReturnValue(true);
+    render(<NewEventScreen />);
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(back).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers Close when the club could not be loaded', async () => {
+    fetchClub.mockResolvedValue(null);
+    canGoBack.mockReturnValue(false);
+    render(<NewEventScreen />);
+    await screen.findByText('That club could not be loaded.');
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(replace).toHaveBeenCalledWith('/clubs/club-1/games');
+  });
+});
+
 // Game form handoff: a ✕ in the header replaces the old back link. It and
 // the pinned Cancel both leave the same way, asking first when the host has
 // changed anything.

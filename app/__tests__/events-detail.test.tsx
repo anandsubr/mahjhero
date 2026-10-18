@@ -384,6 +384,25 @@ describe('essential data missing', () => {
     ).toBeTruthy();
   });
 
+  // A failed load is never a dead end: the header's back control is there
+  // too, with the same cold-open fallback as the loaded screen.
+  it('offers back from the error state', async () => {
+    fetchEvent.mockResolvedValue(null);
+    canGoBack.mockReturnValue(false);
+    render(<EventScreen />);
+    await screen.findByText('That game could not be loaded.');
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    expect(replace).toHaveBeenCalledWith('/clubs/club-1/games');
+  });
+
+  it('offers back while the session is still loading', () => {
+    useSessionMock.mockReturnValue({ session: null, loading: true });
+    canGoBack.mockReturnValue(true);
+    render(<EventScreen />);
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    expect(back).toHaveBeenCalled();
+  });
+
   it('shows an error rather than a blank screen when the club fails to load', async () => {
     fetchClub.mockResolvedValue(null);
     render(<EventScreen />);
@@ -399,7 +418,9 @@ describe('screen chrome', () => {
   it('draws a back link that pops when there is history', async () => {
     canGoBack.mockReturnValue(true);
     render(<EventScreen />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Back to your clubs' }));
+    // The loading state has its own Back; wait for the loaded header.
+    await screen.findByText(CLUB.name);
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
     expect(back).toHaveBeenCalled();
     expect(replace).not.toHaveBeenCalled();
   });
@@ -409,7 +430,9 @@ describe('screen chrome', () => {
   it('falls back to the hub Games section when there is nothing to pop', async () => {
     canGoBack.mockReturnValue(false);
     render(<EventScreen />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Back to your clubs' }));
+    // The loading state has its own Back; wait for the loaded header.
+    await screen.findByText(CLUB.name);
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
     expect(back).not.toHaveBeenCalled();
     expect(replace).toHaveBeenCalledWith('/clubs/club-1/games');
   });

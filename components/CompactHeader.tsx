@@ -13,6 +13,11 @@ type Props = {
   /** Null until the thread/club has loaded -- back and `action` render regardless. */
   kind: ThreadKind | null;
   title: string;
+  /**
+   * A screen headed by its own name (Check-in, Profile) rather than a
+   * thread or club: no avatar, and the title draws even with `kind` null.
+   */
+  titleOnly?: boolean;
   /** A club's id, to draw it as its own mahjong tile rather than a circle. */
   clubId?: string | null;
   /** Overrides the avatar's testID (default `thread-header-avatar-<kind>`). */
@@ -59,6 +64,7 @@ export default function CompactHeader({
   backLabel,
   kind,
   title,
+  titleOnly = false,
   clubId,
   avatarTestID,
   subtitle,
@@ -71,21 +77,23 @@ export default function CompactHeader({
   divider = true,
 }: Props) {
   const identity =
-    kind !== null ? (
+    kind !== null || titleOnly ? (
       <>
-        <ThreadAvatar
-          kind={kind}
-          name={title}
-          size={40}
-          initialsSize={17}
-          testID={avatarTestID ?? `thread-header-avatar-${kind}`}
-          asTile={kind === 'club' && !!clubId}
-          clubId={clubId ?? undefined}
-          tileSize="section"
-        />
+        {kind !== null && !titleOnly ? (
+          <ThreadAvatar
+            kind={kind}
+            name={title}
+            size={40}
+            initialsSize={17}
+            testID={avatarTestID ?? `thread-header-avatar-${kind}`}
+            asTile={kind === 'club' && !!clubId}
+            clubId={clubId ?? undefined}
+            tileSize="section"
+          />
+        ) : null}
         <View style={styles.titleBlock}>
           <View style={styles.titleRow}>
-            <Text numberOfLines={1} style={styles.title}>
+            <Text numberOfLines={1} style={styles.title} testID="compact-header-title">
               {title}
             </Text>
             {onOpenDetails && detailsHint === 'pencil' ? (
@@ -114,6 +122,9 @@ export default function CompactHeader({
           onPress={onBack}
           accessibilityRole="button"
           accessibilityLabel={backLabel}
+          // The box is 40 wide so the chevron sits on the column's edge; the
+          // slop brings the touch area to the 44pt minimum.
+          hitSlop={{ left: 2, right: 2 }}
           style={({ pressed }) => [styles.back, pressed ? styles.pressed : null]}
         >
           <ChevronLeftIcon color={colors.text} size={24} />

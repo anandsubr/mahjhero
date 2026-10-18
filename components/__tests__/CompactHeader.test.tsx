@@ -54,6 +54,14 @@ describe('CompactHeader', () => {
     expect(screen.queryByLabelText('Conversation options')).toBeNull();
   });
 
+  // A screen headed by its own name rather than a thread or club (Check-in,
+  // Profile): no avatar, but the title still draws -- even with no kind.
+  it('draws a title-only header with no avatar', () => {
+    render(<CompactHeader onBack={() => {}} backLabel="Back" kind={null} titleOnly title="Check-in" />);
+    expect(screen.getByTestId('compact-header-title').textContent).toBe('Check-in');
+    expect(screen.queryByTestId(/thread-header-avatar/)).toBeNull();
+  });
+
   it('collapses the back slot when there is nowhere to go back to', () => {
     render(<CompactHeader kind="group" title="Tuesday crew" />);
     expect(screen.queryAllByRole('button')).toHaveLength(0);

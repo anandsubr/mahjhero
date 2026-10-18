@@ -50,6 +50,7 @@ import {
   type EventTable,
   type SeatingMode,
 } from '../../../../../lib/events';
+import { goBack } from '../../../../../lib/navigation';
 import { useSession } from '../../../../../lib/session';
 import { dateToDateString } from '../../../../../lib/time';
 import { colors, space, type } from '../../../../../lib/theme';
@@ -167,6 +168,12 @@ export default function EditEventScreen() {
   }>();
   const { session, loading } = useSession();
   const router = useRouter();
+  // A direct URL, a page reload on web, a deep link, or a cold launch
+  // straight into this route leaves nothing to pop -- only `back()` when
+  // there is history to unwind. The fallback replaces rather than pushes:
+  // a pushed screen would leave this cancelled form one browser-back away,
+  // a stale entry the member could stumble straight back into.
+  const close = () => goBack(router, `/clubs/${clubId}/events/${eventId}`);
 
   const [club, setClub] = useState<Club | null>(null);
   const [event, setEvent] = useState<ClubEvent | null>(null);
@@ -429,8 +436,11 @@ export default function EditEventScreen() {
   // sign-in.
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered}>
-        <ActivityIndicator color={colors.accentColor} />
+      <Screen contentStyle={[styles.container, styles.loadingScreen]}>
+        <FormHeader clubName="" onClose={close} />
+        <View style={styles.loadingBody}>
+          <ActivityIndicator color={colors.accentColor} />
+        </View>
       </Screen>
     );
   }
@@ -446,8 +456,11 @@ export default function EditEventScreen() {
 
   if (!ready) {
     return (
-      <Screen center contentStyle={styles.centered}>
-        <ActivityIndicator color={colors.accentColor} />
+      <Screen contentStyle={[styles.container, styles.loadingScreen]}>
+        <FormHeader clubName="" onClose={close} />
+        <View style={styles.loadingBody}>
+          <ActivityIndicator color={colors.accentColor} />
+        </View>
       </Screen>
     );
   }
@@ -455,6 +468,7 @@ export default function EditEventScreen() {
   if (!club || !event) {
     return (
       <Screen contentStyle={styles.container}>
+        <FormHeader clubName="" onClose={close} />
         <ErrorBanner message="That game could not be loaded." />
       </Screen>
     );
@@ -470,6 +484,7 @@ export default function EditEventScreen() {
   if (Number.isNaN(new Date(event.starts_at).getTime())) {
     return (
       <Screen contentStyle={styles.container}>
+        <FormHeader clubId={clubId} clubName={club.name} onClose={close} />
         <ErrorBanner message="This game's start time could not be read, so it cannot be edited." />
       </Screen>
     );
@@ -757,22 +772,9 @@ export default function EditEventScreen() {
     router.replace(`/clubs/${clubId}/events/${eventId}`);
   };
 
-  const leave = () => {
-    // A direct URL, a page reload on web, a deep link, or a cold launch
-    // straight into this route leaves nothing to pop -- only `back()` when
-    // there is history to unwind. The fallback replaces rather than pushes:
-    // a pushed event screen would leave this cancelled form one browser-back
-    // away, a stale entry the member could stumble straight back into.
-    if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace(`/clubs/${clubId}/events/${eventId}`);
-    }
-  };
-
   const requestLeave = () => {
     if (dirty) setConfirming('discard');
-    else leave();
+    else close();
   };
 
   const onEndSeries = async () => {
@@ -1076,7 +1078,7 @@ export default function EditEventScreen() {
           cancelLabel="Keep editing"
           onConfirm={() => {
             setConfirming(null);
-            leave();
+            close();
           }}
           onCancel={() => setConfirming(null)}
         />
@@ -1112,7 +1114,9 @@ export default function EditEventScreen() {
 
 const styles = StyleSheet.create({
   container: { padding: space[6], gap: space[4] },
-  centered: { alignItems: 'center' },
+  // The header at the top, the spinner centred in what is left below it.
+  loadingScreen: { flex: 1 },
+  loadingBody: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   help: {
     fontFamily: type.bodyRegular,
     fontSize: 13,

@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { Text, TextInput } from '../../../../../components/Text';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import CompactHeader from '../../../../../components/CompactHeader';
 import DoorStatusControl from '../../../../../components/DoorStatusControl';
 import ErrorBanner from '../../../../../components/ErrorBanner';
 import PaidControl from '../../../../../components/PaidControl';
@@ -17,7 +18,6 @@ import Screen from '../../../../../components/Screen';
 import TipCard, { TipText } from '../../../../../components/TipCard';
 import {
   CheckIcon,
-  ChevronLeftIcon,
   SearchIcon,
   UserPlusIcon,
 } from '../../../../../components/icons';
@@ -38,6 +38,7 @@ import {
   type SeatingMode,
 } from '../../../../../lib/events';
 import { fetchEventPayments, setPaymentStatus } from '../../../../../lib/payments';
+import { goBack } from '../../../../../lib/navigation';
 import { useSession } from '../../../../../lib/session';
 import { addHours } from '../../../../../lib/time';
 import { useGuides } from '../../../../../lib/use-guides';
@@ -238,6 +239,9 @@ export default function CheckInScreen() {
     eventId: string;
   }>();
   const router = useRouter();
+  // Only ever reached from the game screen, so back pops to it; a cold open
+  // (deep link, web reload) has nothing to pop and lands on that game.
+  const onBack = () => goBack(router, `/clubs/${clubId}/events/${eventId}`);
   const insets = useSafeAreaInsets();
   const { session, loading } = useSession();
   const guides = useGuides();
@@ -693,8 +697,19 @@ export default function CheckInScreen() {
   // sign-in.
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered}>
-        <ActivityIndicator color={colors.accentColor} />
+      <Screen contentStyle={[styles.container, styles.loadingScreen]}>
+        <CompactHeader
+          variant="inset"
+          divider={false}
+          onBack={onBack}
+          backLabel="Back to the game"
+          kind={null}
+          titleOnly
+          title="Check-in"
+        />
+        <View style={styles.loadingBody}>
+          <ActivityIndicator color={colors.accentColor} />
+        </View>
       </Screen>
     );
   }
@@ -707,8 +722,19 @@ export default function CheckInScreen() {
 
   if (!ready) {
     return (
-      <Screen center contentStyle={styles.centered}>
-        <ActivityIndicator color={colors.accentColor} />
+      <Screen contentStyle={[styles.container, styles.loadingScreen]}>
+        <CompactHeader
+          variant="inset"
+          divider={false}
+          onBack={onBack}
+          backLabel="Back to the game"
+          kind={null}
+          titleOnly
+          title="Check-in"
+        />
+        <View style={styles.loadingBody}>
+          <ActivityIndicator color={colors.accentColor} />
+        </View>
       </Screen>
     );
   }
@@ -716,6 +742,15 @@ export default function CheckInScreen() {
   if (!isOrganizer) {
     return (
       <Screen contentStyle={styles.container}>
+        <CompactHeader
+          variant="inset"
+          divider={false}
+          onBack={onBack}
+          backLabel="Back to the game"
+          kind={null}
+          titleOnly
+          title="Check-in"
+        />
         <ErrorBanner message="You are not an organizer of this club." />
       </Screen>
     );
@@ -1168,32 +1203,17 @@ export default function CheckInScreen() {
 
   const top = (
     <View style={styles.top}>
-      <View style={styles.header}>
-        <Pressable
-          onPress={() => router.push(`/clubs/${clubId}/events/${eventId}`)}
-          accessibilityRole="button"
-          accessibilityLabel="Back to the game"
-          style={styles.iconButton}
-        >
-          <ChevronLeftIcon size={22} color={colors.text} />
-        </Pressable>
-        <View style={styles.headerText}>
-          {eventTitle ? (
-            <Text style={styles.eventTitle} numberOfLines={1}>
-              {eventTitle}
-            </Text>
-          ) : null}
-          {context ? (
-            <Text style={styles.eventContext} numberOfLines={1}>
-              {context}
-            </Text>
-          ) : null}
-        </View>
-      </View>
+      <CompactHeader
+        divider={false}
+        onBack={onBack}
+        backLabel="Back to the game"
+        kind={null}
+        titleOnly
+        title="Check-in"
+        subtitle={[eventTitle, context].filter(Boolean).join(' · ') || null}
+      />
 
       <View style={styles.summaryBlock}>
-        <Text style={styles.heading}>Check-in</Text>
-
         {attendanceFailed && rows.length === 0 ? (
           // `fetchEventAttendance` returns null on failure the same way it
           // returns `[]` on a genuinely empty list -- without this branch a
@@ -1439,32 +1459,14 @@ function LegendItem({ color, text }: { color: string; text: string }) {
 
 const styles = StyleSheet.create({
   container: { padding: space[6], gap: space[4] },
-  centered: { alignItems: 'center' },
+  // The header at the top, the spinner centred in what is left below it.
+  loadingScreen: { flex: 1 },
+  loadingBody: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   // Screen's `stickyHeaderIndices` mode passes children straight through to
   // the ScrollView unwrapped (see components/Screen.tsx), so each top-level
   // piece carries the content column's width cap itself.
   top: { width: '100%', maxWidth: layout.contentMaxWidth, alignSelf: 'center' },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingTop: 2,
-    paddingRight: 12,
-    paddingBottom: 4,
-    paddingLeft: 8,
-  },
-  iconButton: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerText: { flex: 1, minWidth: 0 },
-  eventTitle: { fontFamily: type.bodyBold, fontSize: 15, lineHeight: 18, color: colors.text },
-  eventContext: { fontFamily: type.bodyRegular, fontSize: 12, lineHeight: 15, color: colors.neutral[700] },
   summaryBlock: { paddingTop: 8, paddingHorizontal: 20, paddingBottom: 14, gap: 12 },
-  heading: { fontFamily: type.heading, fontSize: 32, lineHeight: 35, color: colors.text },
   countRow: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
   count: { fontFamily: type.heading, fontSize: 28, lineHeight: 30, color: colors.text },
   countLabel: { fontFamily: type.bodySemiBold, fontSize: 15, color: colors.text },

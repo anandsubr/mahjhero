@@ -91,6 +91,7 @@ import {
   type TableRound,
 } from '../../../../../lib/rounds';
 import { useGuides } from '../../../../../lib/use-guides';
+import { goBack } from '../../../../../lib/navigation';
 import { useSession } from '../../../../../lib/session';
 import { addHours } from '../../../../../lib/time';
 import { colors, radius, space, type } from '../../../../../lib/theme';
@@ -158,6 +159,11 @@ export default function EventScreen() {
   const { session, loading } = useSession();
   const guides = useGuides();
   const router = useRouter();
+  // Pushed from the hub's Games section (and from Home), so popping returns
+  // to wherever the caller came from; a cold open (deep link, web reload)
+  // has nothing to pop, so it falls back to the hub's Games section rather
+  // than assuming Home.
+  const onBack = () => goBack(router, `/clubs/${clubId}/games`);
 
   const [club, setClub] = useState<Club | null>(null);
   const [event, setEvent] = useState<ClubEvent | null>(null);
@@ -376,8 +382,11 @@ export default function EventScreen() {
   // sign-in.
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered}>
-        <ActivityIndicator color={colors.accentColor} />
+      <Screen contentStyle={[styles.container, styles.loadingScreen]}>
+        <CompactHeader variant="inset" divider={false} onBack={onBack} backLabel="Back" kind={null} title="" />
+        <View style={styles.loadingBody}>
+          <ActivityIndicator color={colors.accentColor} />
+        </View>
       </Screen>
     );
   }
@@ -393,8 +402,11 @@ export default function EventScreen() {
 
   if (!ready) {
     return (
-      <Screen center contentStyle={styles.centered}>
-        <ActivityIndicator color={colors.accentColor} />
+      <Screen contentStyle={[styles.container, styles.loadingScreen]}>
+        <CompactHeader variant="inset" divider={false} onBack={onBack} backLabel="Back" kind={null} title="" />
+        <View style={styles.loadingBody}>
+          <ActivityIndicator color={colors.accentColor} />
+        </View>
       </Screen>
     );
   }
@@ -402,6 +414,7 @@ export default function EventScreen() {
   if (!club || !event) {
     return (
       <Screen contentStyle={styles.container}>
+        <CompactHeader variant="inset" divider={false} onBack={onBack} backLabel="Back" kind={null} title="" />
         <ErrorBanner message="That game could not be loaded." />
       </Screen>
     );
@@ -999,19 +1012,11 @@ export default function EventScreen() {
         ) : null
       }
     >
-      {/*
-        Pushed from the hub's Games section (and from Home), so popping
-        returns to wherever the caller came from; a cold open (deep link,
-        web reload) has nothing to pop, so it falls back to the hub's Games
-        section rather than assuming Home.
-      */}
       <CompactHeader
         variant="inset"
         divider={false}
-        onBack={() =>
-          router.canGoBack() ? router.back() : router.replace(`/clubs/${clubId}/games`)
-        }
-        backLabel="Back to your clubs"
+        onBack={onBack}
+        backLabel="Back"
         kind="club"
         clubId={clubId}
         avatarTestID="thread-avatar-club-tile"
@@ -1789,7 +1794,9 @@ const styles = StyleSheet.create({
     paddingBottom: 28,
     gap: 22,
   },
-  centered: { alignItems: 'center' },
+  // The header at the top, the spinner centred in what is left below it.
+  loadingScreen: { flex: 1 },
+  loadingBody: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   titleBlock: { gap: 8 },
   heading: {
     fontFamily: type.heading,

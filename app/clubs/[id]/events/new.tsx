@@ -40,6 +40,7 @@ import {
   type SeriesFrequency,
 } from '../../../../lib/events';
 import { useGuides } from '../../../../lib/use-guides';
+import { goBack } from '../../../../lib/navigation';
 import { useSession } from '../../../../lib/session';
 import { dateToDateString } from '../../../../lib/time';
 import { colors, space, type } from '../../../../lib/theme';
@@ -111,6 +112,12 @@ export default function NewEventScreen() {
   const { session, loading } = useSession();
   const guides = useGuides();
   const router = useRouter();
+  // A direct URL, a page reload on web, a deep link, or a cold launch
+  // straight into this route leaves nothing to pop -- only `back()` when
+  // there is history to unwind. The fallback replaces rather than pushes:
+  // a pushed screen would leave this cancelled form one browser-back away,
+  // a stale entry the member could stumble straight back into.
+  const close = () => goBack(router, `/clubs/${clubId}/games`);
 
   const [club, setClub] = useState<Club | null>(null);
   const [isHost, setIsHost] = useState(false);
@@ -193,8 +200,11 @@ export default function NewEventScreen() {
 
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered}>
-        <ActivityIndicator color={colors.accentColor} />
+      <Screen contentStyle={[styles.container, styles.loadingScreen]}>
+        <FormHeader clubName="" onClose={close} />
+        <View style={styles.loadingBody}>
+          <ActivityIndicator color={colors.accentColor} />
+        </View>
       </Screen>
     );
   }
@@ -209,8 +219,11 @@ export default function NewEventScreen() {
 
   if (!ready) {
     return (
-      <Screen center contentStyle={styles.centered}>
-        <ActivityIndicator color={colors.accentColor} />
+      <Screen contentStyle={[styles.container, styles.loadingScreen]}>
+        <FormHeader clubName="" onClose={close} />
+        <View style={styles.loadingBody}>
+          <ActivityIndicator color={colors.accentColor} />
+        </View>
       </Screen>
     );
   }
@@ -218,6 +231,7 @@ export default function NewEventScreen() {
   if (!club) {
     return (
       <Screen contentStyle={styles.container}>
+        <FormHeader clubName="" onClose={close} />
         <ErrorBanner message="That club could not be loaded." />
       </Screen>
     );
@@ -365,22 +379,9 @@ export default function NewEventScreen() {
     else router.replace(`/clubs/${clubId}/games`);
   }
 
-  function leave() {
-    // A direct URL, a page reload on web, a deep link, or a cold launch
-    // straight into this route leaves nothing to pop -- only `back()` when
-    // there is history to unwind. The fallback replaces rather than pushes:
-    // a pushed club screen would leave this cancelled form one browser-back
-    // away, a stale entry the member could stumble straight back into.
-    if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace(`/clubs/${clubId}/games`);
-    }
-  }
-
   function requestLeave() {
     if (dirty) setConfirmingDiscard(true);
-    else leave();
+    else close();
   }
 
   const repeating = repeat !== 'never';
@@ -605,7 +606,7 @@ export default function NewEventScreen() {
           cancelLabel="Keep editing"
           onConfirm={() => {
             setConfirmingDiscard(false);
-            leave();
+            close();
           }}
           onCancel={() => setConfirmingDiscard(false)}
         />
@@ -616,7 +617,9 @@ export default function NewEventScreen() {
 
 const styles = StyleSheet.create({
   container: { padding: space[6], gap: space[4] },
-  centered: { alignItems: 'center' },
+  // The header at the top, the spinner centred in what is left below it.
+  loadingScreen: { flex: 1 },
+  loadingBody: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   repeatChips: {
     flexDirection: 'row',
     flexWrap: 'wrap',
