@@ -94,7 +94,7 @@ const GAME = {
   gameMode: 'open_play', seatingMode: 'open_seating',
   startsAt: new Date(Date.now() + 86_400_000).toISOString(), timezone: 'America/New_York',
   venueName: 'Sample Venue', seatsTaken: 2, capacity: 8, myStatus: 'going',
-  waitlistPosition: null, tableLabel: null,
+  waitlistPosition: null, tableLabel: null, updated: false,
 };
 
 beforeEach(() => {

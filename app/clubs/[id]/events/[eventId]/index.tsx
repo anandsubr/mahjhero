@@ -77,6 +77,7 @@ import {
   formatEventWhen,
   formatFeeCents,
   frequencyLabel,
+  markEventSeen,
   removeEventTable,
   resetEventToSeries,
   type ClubEvent,
@@ -289,6 +290,11 @@ export default function EventScreen() {
 
   const me = session?.user.id ?? '';
 
+  // The game this screen last marked seen (clears its "Updated" pill). Kept
+  // in a ref so the reloads after every action, and a session refresh that
+  // re-runs the load effect, don't call the RPC again for the same game.
+  const markedSeenFor = useRef<string | null>(null);
+
   async function load() {
     const [
       loadedClub,
@@ -363,6 +369,14 @@ export default function EventScreen() {
       loadedEvent?.series_id ? await fetchSeries(loadedEvent.series_id) : null,
     );
     setReady(true);
+
+    // Only a successful load counts as opening the game: without the club
+    // and the event the screen shows "could not be loaded". Fire-and-forget;
+    // markEventSeen swallows its own failures, and the catch is a backstop.
+    if (loadedClub && loadedEvent && markedSeenFor.current !== eventId) {
+      markedSeenFor.current = eventId;
+      markEventSeen(eventId).catch(() => {});
+    }
   }
 
   useEffect(() => {

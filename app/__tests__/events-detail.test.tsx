@@ -67,6 +67,7 @@ const cancelEvent = vi.fn();
 const addEventTable = vi.fn();
 const removeEventTable = vi.fn();
 const resetEventToSeries = vi.fn();
+const markEventSeen = vi.fn();
 
 // formatEventWhen and frequencyLabel stay real, same reasoning as
 // clubs.test.tsx and events-new.test.tsx: the whole point of the timezone
@@ -82,6 +83,7 @@ vi.mock('../../lib/events', async (importOriginal) => {
     addEventTable: (...args: unknown[]) => addEventTable(...args),
     removeEventTable: (...args: unknown[]) => removeEventTable(...args),
     resetEventToSeries: (...args: unknown[]) => resetEventToSeries(...args),
+    markEventSeen: (...args: unknown[]) => markEventSeen(...args),
   };
 });
 
@@ -322,6 +324,8 @@ beforeEach(() => {
   addEventTable.mockResolvedValue({ error: null });
   removeEventTable.mockResolvedValue({ error: null });
   resetEventToSeries.mockResolvedValue({ error: null });
+  markEventSeen.mockReset();
+  markEventSeen.mockResolvedValue(undefined);
   fetchEventSeating.mockReset();
   fetchEventSeating.mockResolvedValue([]);
   fetchOpenOffer.mockReset();
@@ -409,6 +413,55 @@ describe('essential data missing', () => {
     expect(
       await screen.findByText('That game could not be loaded.'),
     ).toBeTruthy();
+  });
+});
+
+// Opening a game clears its "Updated" pill (phase 6): a successful load marks
+// it seen, once; a failed load never does, and a failed mark is invisible.
+describe('marking the game seen', () => {
+  it('marks the game seen once after a successful load', async () => {
+    render(<EventScreen />);
+    await screen.findByText(CLUB.name);
+    await waitFor(() => expect(markEventSeen).toHaveBeenCalledTimes(1));
+    expect(markEventSeen).toHaveBeenCalledWith('event-1');
+  });
+
+  it('does not mark it again when the screen reloads', async () => {
+    const { rerender } = render(<EventScreen />);
+    await screen.findByText(CLUB.name);
+    await waitFor(() => expect(markEventSeen).toHaveBeenCalledTimes(1));
+    // A fresh session object (token refresh) re-runs the load effect.
+    useSessionMock.mockReturnValue({
+      session: { user: { id: 'test-user' } },
+      loading: false,
+    });
+    rerender(<EventScreen />);
+    await waitFor(() => expect(fetchEvent).toHaveBeenCalledTimes(2));
+    await screen.findByText(CLUB.name);
+    expect(markEventSeen).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not mark it seen when the event fails to load', async () => {
+    fetchEvent.mockResolvedValue(null);
+    render(<EventScreen />);
+    await screen.findByText('That game could not be loaded.');
+    expect(markEventSeen).not.toHaveBeenCalled();
+  });
+
+  it('does not mark it seen when the club fails to load', async () => {
+    fetchClub.mockResolvedValue(null);
+    render(<EventScreen />);
+    await screen.findByText('That game could not be loaded.');
+    expect(markEventSeen).not.toHaveBeenCalled();
+  });
+
+  it('ignores a failed mark: the game still shows, with no error', async () => {
+    markEventSeen.mockRejectedValue(new Error('offline'));
+    render(<EventScreen />);
+    await screen.findByText(CLUB.name);
+    await waitFor(() => expect(markEventSeen).toHaveBeenCalled());
+    expect(screen.getByText('Thursday Mahjong')).toBeTruthy();
+    expect(screen.queryByText('That game could not be loaded.')).toBeNull();
   });
 });
 

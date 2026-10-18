@@ -1191,6 +1191,20 @@ export async function resetEventToSeries(
 }
 
 /**
+ * Records that the caller has opened this game, which clears its "Updated"
+ * pill on every device. Best-effort: a failure is logged and swallowed — it
+ * only means the pill stays until the next successful open.
+ */
+export async function markEventSeen(eventId: string): Promise<void> {
+  try {
+    const { error } = await supabase.rpc('mark_event_seen', { target_event: eventId });
+    if (error) console.error('markEventSeen failed', error);
+  } catch (cause) {
+    console.error('markEventSeen failed', cause);
+  }
+}
+
+/**
  * The number of times `addEventTable` retries after losing the
  * `(event_id, position)` race before giving up.
  */

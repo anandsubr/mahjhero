@@ -30,7 +30,17 @@ describe('fetchMyGames', () => {
       gameMode: 'open_play', seatingMode: 'open_seating',
       startsAt: '2026-10-01T15:30:00Z', timezone: 'America/New_York', venueName: 'Sample Venue',
       seatsTaken: 14, capacity: 24, myStatus: 'going', waitlistPosition: null, tableLabel: null,
+      updated: false,
     }]);
+  });
+
+  it('maps updated, and treats a missing updated as false', async () => {
+    rpc.mockResolvedValueOnce({
+      data: [{ ...ROW, updated: true }, { ...ROW, event_id: 'e2', updated: false }, ROW],
+      error: null,
+    });
+    const games = (await fetchMyGames(new Date(), new Date()))!;
+    expect(games.map((g) => g.updated)).toEqual([true, false, false]);
   });
 
   it('maps an uncapped game to capacity null', async () => {
@@ -59,8 +69,17 @@ describe('fetchClubGames', () => {
       gameMode: 'open_play', seatingMode: 'open_seating',
       startsAt: '2026-10-01T15:30:00Z', timezone: 'America/New_York', venueName: 'Sample Venue',
       seatsTaken: 14, capacity: 24, myStatus: 'going', waitlistPosition: null, tableLabel: null,
-      notes: 'Bring your own set',
+      notes: 'Bring your own set', updated: false,
     }]);
+  });
+
+  it('maps updated, and treats a missing updated as false', async () => {
+    rpc.mockResolvedValueOnce({
+      data: [{ ...ROW, notes: null, updated: true }, { ...ROW, notes: null }],
+      error: null,
+    });
+    const games = (await fetchClubGames('c1', new Date(), new Date()))!;
+    expect(games.map((g) => g.updated)).toEqual([true, false]);
   });
 
   it('maps an invited/not game and a null notes value', async () => {

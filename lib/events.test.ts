@@ -30,6 +30,7 @@ import {
   eventStartTimeInZone,
   fetchEvent,
   formatEventTime,
+  markEventSeen,
   formatEventWhen,
   formatFeeCents,
   frequencyLabel,
@@ -1265,5 +1266,24 @@ describe('the table/series mutations report their own refusals', () => {
     await expect(updateEvent('event-1', { venueId: 'venue-9' })).resolves.toEqual({
       error: 'That venue is not available to this club.',
     });
+  });
+});
+
+describe('markEventSeen', () => {
+  beforeEach(() => rpcMock.mockReset());
+
+  it('calls mark_event_seen with the event id', async () => {
+    rpcMock.mockResolvedValueOnce({ data: null, error: null });
+    await markEventSeen('event-1');
+    expect(rpcMock).toHaveBeenCalledWith('mark_event_seen', { target_event: 'event-1' });
+  });
+
+  it('swallows an RPC error and a thrown failure', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    rpcMock.mockResolvedValueOnce({ data: null, error: { message: 'no such event' } });
+    await expect(markEventSeen('event-1')).resolves.toBeUndefined();
+    rpcMock.mockRejectedValueOnce(new Error('offline'));
+    await expect(markEventSeen('event-1')).resolves.toBeUndefined();
+    spy.mockRestore();
   });
 });
