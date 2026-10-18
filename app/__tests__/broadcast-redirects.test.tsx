@@ -53,9 +53,9 @@ describe('the old broadcast routes', () => {
     expect(openThreadForClub).not.toHaveBeenCalled();
   });
 
-  it('sends the sent-history route to the club board', async () => {
+  it('sends the sent-history route to the hub Board', async () => {
     render(<BroadcastsRedirect />);
-    await waitFor(() => expect(replace).toHaveBeenCalledWith('/messages/club/t1'));
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/clubs/c1/board'));
   });
 
   // A refusal must not strand somebody on a blank screen with a spinner.

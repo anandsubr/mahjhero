@@ -242,7 +242,7 @@ export default function ThreadScreen() {
    * flat conversation is ever painted on the way past.
    */
   if (thread && thread.club_id && !thread.event_id) {
-    return <Redirect href={`/messages/club/${thread.id}`} />;
+    return <Redirect href={`/clubs/${thread.club_id}/board`} />;
   }
 
   const title = thread ? threadTitleFor(thread, viewerId) : '';

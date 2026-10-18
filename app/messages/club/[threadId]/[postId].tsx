@@ -8,6 +8,7 @@ import ErrorBanner from '../../../../components/ErrorBanner';
 import Screen from '../../../../components/Screen';
 import { getSignedUrls } from '../../../../lib/attachments';
 import { GENERIC_ERROR } from '../../../../lib/constants';
+import { goBack } from '../../../../lib/navigation';
 import {
   fetchPostMessages,
   fetchThread,
@@ -256,17 +257,15 @@ export default function PostScreen() {
   return (
     <Screen avoidKeyboard contentStyle={styles.container}>
       {/*
-        The chevron goes to the board, not `/messages`: this screen is one
+        The chevron goes to the hub Board, not `/messages`: this screen is one
         level below the board, not two below the list. A post has no members
         view, so the name is plain and there is no overflow button.
       */}
       <CompactHeader
         onBack={() =>
-          router.canGoBack()
-            ? router.back()
-            : router.replace(`/messages/club/${threadId}`)
+          goBack(router, thread?.club_id ? `/clubs/${thread.club_id}/board` : '/home')
         }
-        backLabel="Back to board"
+        backLabel="Back to the board"
         kind={thread ? kind : null}
         title={title}
         clubId={thread?.club_id}

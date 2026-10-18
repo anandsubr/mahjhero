@@ -50,8 +50,8 @@ function cursorFor(post: FeedPost): { at: string; id: string } {
  * with hearts and a comments peek, newest post first (no sort control --
  * user decision 2026-10-17), paged 30 at a time with "Show older posts".
  *
- * Mounted by the hub Board section and by app/messages/club/[threadId]; both
- * pin BoardComposer in their own footer (outside the scroller) and call
+ * Mounted by the hub Board section (the old standalone route forwards
+ * there), which pins BoardComposer in its own footer (outside the scroller) and calls
  * `reload()` from its `onPosted`, which brings the new post to the top.
  * Organizers announce (post + email the club) from that composer's
  * megaphone toggle, not from here.

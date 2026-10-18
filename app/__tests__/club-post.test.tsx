@@ -343,7 +343,7 @@ describe('a club post', () => {
       render(<PostScreen />);
       await screen.findByText('Cedar Falls Mah Jongg');
       expect(screen.queryByRole('button', { name: 'Messages' })).toBeNull();
-      fireEvent.click(screen.getByLabelText('Back to board'));
+      fireEvent.click(screen.getByLabelText('Back to the board'));
       expect(back).toHaveBeenCalled();
       expect(replace).not.toHaveBeenCalled();
     });
@@ -352,9 +352,17 @@ describe('a club post', () => {
       canGoBack.mockReturnValue(false);
       render(<PostScreen />);
       await screen.findByText('Cedar Falls Mah Jongg');
-      fireEvent.click(screen.getByLabelText('Back to board'));
+      fireEvent.click(screen.getByLabelText('Back to the board'));
       expect(back).not.toHaveBeenCalled();
-      expect(replace).toHaveBeenCalledWith('/messages/club/t1');
+      expect(replace).toHaveBeenCalledWith('/clubs/c1/board');
+    });
+
+    it('falls back to Home when there is nothing to pop and the thread cannot be read', async () => {
+      canGoBack.mockReturnValue(false);
+      fetchThread.mockResolvedValue(null);
+      render(<PostScreen />);
+      fireEvent.click(await screen.findByLabelText('Back to the board'));
+      expect(replace).toHaveBeenCalledWith('/home');
     });
 
     // The name doesn't navigate (a control that looks tappable and does
@@ -375,7 +383,7 @@ describe('a club post', () => {
       fetchThread.mockResolvedValue(null);
       render(<PostScreen />);
       await screen.findByText('Anyone free Thursday?');
-      expect(screen.getByLabelText('Back to board')).toBeTruthy();
+      expect(screen.getByLabelText('Back to the board')).toBeTruthy();
       expect(screen.queryByRole('button', { name: /view club/ })).toBeNull();
       expect(screen.queryByTestId('thread-header-avatar-club')).toBeNull();
     });
