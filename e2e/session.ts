@@ -2668,6 +2668,100 @@ export async function seedClubAsMember(
 }
 
 /**
+ * The page clock the `home updated pill` baseline freezes at, and the one
+ * game it seeds: 00:00Z on Jan 5 is 7pm Saturday Jan 4 in America/New_York
+ * (EST, UTC-5), which is what the row shows.
+ *
+ * Far future for the same reason FIRST_OCCURRENCE is: `my_games`'
+ * `updated` column (20261018100000_event_updated_tag.sql) requires
+ * `starts_at >= now()` against the DATABASE's real clock, which the page's
+ * frozen clock cannot reach — so a game near FROZEN_NOW (2026-08-22) is
+ * always "past" to that test and never gets the pill. Home's own window is
+ * `[page now, page now + 120 days)`, so the page clock moves out here with
+ * the game. 2098, not 2099, so none of seedClubWithEvent's 2099 games
+ * (FIRST_OCCURRENCE, SECOND_OCCURRENCE, FRIEND_GAME) lands in that window:
+ * this game is the only row on screen.
+ */
+export const UPDATED_GAME_PAGE_NOW = '2098-01-01T16:00:00Z';
+const UPDATED_GAME = {
+  startsAt: '2098-01-05T00:00:00Z',
+  endsAt: '2098-01-05T03:00:00Z',
+};
+
+/**
+ * Seeds one upcoming game whose details changed yesterday, so `my_games`
+ * and `club_games` return `updated = true` for its host — the "Updated"
+ * pill on its game row (phase 6).
+ *
+ * The rule (see the migration above) needs three things, set directly here
+ * rather than through `update_event`, which would also write the editor's
+ * own `event_views` row and so hide the pill from exactly this viewer:
+ *   - `details_changed_at` within the last 14 days of the database's real
+ *     clock — `now() - 1 day`. The only wall-clock read in this file, and
+ *     unavoidable: the comparison happens in SQL against real `now()`.
+ *   - `created_at` more than an hour before that (30 days back), so the
+ *     change is not mistaken for the host's own set-up edits.
+ *   - no `event_views` row for the viewer — none is ever written here.
+ *
+ * Takes an already-seeded club and its host, like `seedOpenSeatingEvent`.
+ * The host is `created_by`, so `my_games` lists it as a "hosting" row
+ * without any booking.
+ */
+export async function seedUpdatedGame(
+  clubId: string,
+  hostProfileId: string,
+): Promise<{ eventId: string; title: string }> {
+  const admin = adminClient('seed updated game');
+
+  const need = <T>(what: string, result: { data: unknown; error: unknown }): T => {
+    if (result.error || result.data == null) {
+      throw new Error(`seedUpdatedGame: ${what} failed: ${JSON.stringify(result.error)}`);
+    }
+    return result.data as T;
+  };
+
+  const venue = need<{ id: string }>(
+    'venue insert',
+    await admin
+      .from('venues')
+      .insert({
+        name: 'Library Annex',
+        address_line: '12 Church Street',
+        locality: 'Newton',
+        added_by_club_id: clubId,
+        created_by: hostProfileId,
+      })
+      .select('id')
+      .single(),
+  );
+
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  const title = 'Moved to the annex';
+
+  const event = need<{ id: string }>(
+    'updated event insert',
+    await admin
+      .from('events')
+      .insert({
+        club_id: clubId,
+        title,
+        venue_id: venue.id,
+        notes: '',
+        starts_at: UPDATED_GAME.startsAt,
+        ends_at: UPDATED_GAME.endsAt,
+        created_by: hostProfileId,
+        created_at: new Date(now - 30 * DAY_MS).toISOString(),
+        details_changed_at: new Date(now - DAY_MS).toISOString(),
+      })
+      .select('id')
+      .single(),
+  );
+
+  return { eventId: event.id, title };
+}
+
+/**
  * The localStorage key supabase-js persists its session under, derived from
  * the project ref in the URL. Keep in step with the client's own convention:
  * see `defaultStorageKey` in `node_modules/@supabase/supabase-js/src/SupabaseClient.ts`
