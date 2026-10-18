@@ -697,9 +697,8 @@ export default function CheckInScreen() {
   // sign-in.
   if (loading) {
     return (
-      <Screen contentStyle={[styles.container, styles.loadingScreen]}>
+      <Screen contentStyle={styles.loadingScreen}>
         <CompactHeader
-          variant="inset"
           divider={false}
           onBack={onBack}
           backLabel="Back to the game"
@@ -722,9 +721,8 @@ export default function CheckInScreen() {
 
   if (!ready) {
     return (
-      <Screen contentStyle={[styles.container, styles.loadingScreen]}>
+      <Screen contentStyle={styles.loadingScreen}>
         <CompactHeader
-          variant="inset"
           divider={false}
           onBack={onBack}
           backLabel="Back to the game"
@@ -741,9 +739,8 @@ export default function CheckInScreen() {
 
   if (!isOrganizer) {
     return (
-      <Screen contentStyle={styles.container}>
+      <Screen>
         <CompactHeader
-          variant="inset"
           divider={false}
           onBack={onBack}
           backLabel="Back to the game"
@@ -751,7 +748,9 @@ export default function CheckInScreen() {
           titleOnly
           title="Check-in"
         />
-        <ErrorBanner message="You are not an organizer of this club." />
+        <View style={styles.container}>
+          <ErrorBanner message="You are not an organizer of this club." />
+        </View>
       </Screen>
     );
   }
@@ -1210,10 +1209,24 @@ export default function CheckInScreen() {
         kind={null}
         titleOnly
         title="Check-in"
-        subtitle={[eventTitle, context].filter(Boolean).join(' · ') || null}
       />
 
       <View style={styles.summaryBlock}>
+        {eventTitle || context ? (
+          <View>
+            {eventTitle ? (
+              <Text style={styles.eventTitle} numberOfLines={1}>
+                {eventTitle}
+              </Text>
+            ) : null}
+            {context ? (
+              <Text style={styles.eventContext} numberOfLines={1}>
+                {context}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
+
         {attendanceFailed && rows.length === 0 ? (
           // `fetchEventAttendance` returns null on failure the same way it
           // returns `[]` on a genuinely empty list -- without this branch a
@@ -1462,6 +1475,8 @@ const styles = StyleSheet.create({
   // The header at the top, the spinner centred in what is left below it.
   loadingScreen: { flex: 1 },
   loadingBody: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  eventTitle: { fontFamily: type.bodyBold, fontSize: 15, lineHeight: 18, color: colors.text },
+  eventContext: { fontFamily: type.bodyRegular, fontSize: 12, lineHeight: 15, color: colors.neutral[700] },
   // Screen's `stickyHeaderIndices` mode passes children straight through to
   // the ScrollView unwrapped (see components/Screen.tsx), so each top-level
   // piece carries the content column's width cap itself.

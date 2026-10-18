@@ -188,8 +188,8 @@ describe('screen chrome', () => {
   it('names the game, its date and venue in the header', async () => {
     fetchEvent.mockResolvedValue({ ...EVENT, title: 'Thursday Mahjong', venue_name: 'The Hall' });
     render(<CheckInScreen />);
-    // One line under the header's "Check-in": the game, then when and where.
-    expect(await screen.findByText(/^Thursday Mahjong · .* · The Hall$/)).toBeTruthy();
+    expect(await screen.findByText('Thursday Mahjong')).toBeTruthy();
+    expect(screen.getByText(/ · The Hall$/)).toBeTruthy();
   });
 
   it('titles its header "Check-in"', async () => {
