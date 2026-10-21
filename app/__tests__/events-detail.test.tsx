@@ -2377,3 +2377,26 @@ describe('game invites', () => {
     expect(screen.queryByLabelText('Take the 2 seats')).toBeNull();
   });
 });
+
+// The name is optional (20261021100000): an unnamed game is headed by the
+// same fallback GameRow uses -- lib/home.ts gameHeadline.
+describe('an unnamed game', () => {
+  it('is headed "Open play" when open', async () => {
+    fetchEvent.mockResolvedValue({ ...EVENT, title: null });
+    render(<EventScreen />);
+    expect(await screen.findByText('Open play')).toBeTruthy();
+  });
+
+  it('is headed "Private game" when invite-only', async () => {
+    fetchEvent.mockResolvedValue({ ...EVENT, title: '  ', game_mode: 'invite_only' as const });
+    render(<EventScreen />);
+    expect(await screen.findByText('Private game')).toBeTruthy();
+  });
+
+  it('names the pencil after the fallback for an organizer', async () => {
+    fetchRoster.mockResolvedValue(HOST_ROLE);
+    fetchEvent.mockResolvedValue({ ...EVENT, title: null });
+    render(<EventScreen />);
+    expect(await screen.findByRole('button', { name: 'Edit Open play' })).toBeTruthy();
+  });
+});

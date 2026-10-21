@@ -441,25 +441,30 @@ describe('createEvent', () => {
     });
   });
 
-  it('rejects a blank title with a friendly message, before ever calling the RPC', async () => {
+  // The name is optional (20261021100000): a blank one is an unnamed game,
+  // sent as null so the database stores NULL rather than ''.
+  it('creates an unnamed game when the title is blank, sending null', async () => {
+    rpcMock.mockResolvedValueOnce({ data: 'event-1', error: null });
     await expect(createEvent({ ...validInput, title: '   ' })).resolves.toEqual({
-      eventId: null,
-      error: 'Give the game a name.',
+      eventId: 'event-1',
+      error: null,
     });
-    expect(rpcMock).not.toHaveBeenCalled();
+    expect(rpcMock).toHaveBeenCalledWith(
+      'create_event',
+      expect.objectContaining({ event_title: null }),
+    );
   });
 
-  // MINOR 7: title is validated with `.trim()` before the RPC call. The
-  // create screen only ever supplies a string, but a caller further from
-  // TypeScript's checking (or a stale/untyped bundle) could hand this a
-  // `null` — and lib/'s never-rejects convention (see the block comment
-  // above toClubEvent) means that must come back as `{ error }`, not an
-  // unhandled rejection that strands the screen on a spinner.
-  it('never rejects, even when title is not actually a string at runtime', async () => {
-    await expect(
-      createEvent({ ...validInput, title: null as unknown as string }),
-    ).resolves.toEqual({ eventId: null, error: GENERIC_ERROR });
-    expect(rpcMock).not.toHaveBeenCalled();
+  it('accepts a null title too', async () => {
+    rpcMock.mockResolvedValueOnce({ data: 'event-1', error: null });
+    await expect(createEvent({ ...validInput, title: null })).resolves.toEqual({
+      eventId: 'event-1',
+      error: null,
+    });
+    expect(rpcMock).toHaveBeenCalledWith(
+      'create_event',
+      expect.objectContaining({ event_title: null }),
+    );
   });
 
   // Task 14: the host's "Require check-in" toggle. `check_in` is
@@ -739,19 +744,25 @@ describe('createEventSeries', () => {
     gameMode: 'open_play' as const,
   };
 
-  it('rejects a blank title with a friendly message, before ever calling the RPC', async () => {
-    await expect(createEventSeries({ ...validInput, title: '   ' })).resolves.toEqual({
-      seriesId: null,
-      error: 'Give the game a name.',
+  it('creates an unnamed series when the title is blank, sending null', async () => {
+    rpcMock.mockResolvedValueOnce({ data: 'series-1', error: null });
+    await expect(createEventSeries({ ...validInput, title: '  ' })).resolves.toEqual({
+      seriesId: 'series-1',
+      error: null,
     });
-    expect(rpcMock).not.toHaveBeenCalled();
+    expect(rpcMock).toHaveBeenCalledWith(
+      'create_event_series',
+      expect.objectContaining({ series_title: null }),
+    );
   });
 
-  it('never rejects, even when title is not actually a string at runtime', async () => {
-    await expect(
-      createEventSeries({ ...validInput, title: null as unknown as string }),
-    ).resolves.toEqual({ seriesId: null, error: GENERIC_ERROR });
-    expect(rpcMock).not.toHaveBeenCalled();
+  it('accepts a null series title too', async () => {
+    rpcMock.mockResolvedValueOnce({ data: 'series-1', error: null });
+    await createEventSeries({ ...validInput, title: null });
+    expect(rpcMock).toHaveBeenCalledWith(
+      'create_event_series',
+      expect.objectContaining({ series_title: null }),
+    );
   });
 
   // Task 14. `check_in` is `create_event_series`'s real argument name
@@ -903,7 +914,6 @@ describe('deliberate refusals are reported as refusals, not as network failures'
     message:
       'that start time has already passed',
   };
-  const titleRequired = { code: '23514', message: 'title is required' };
   const endsBeforeStart = {
     code: '23514',
     message:
@@ -936,14 +946,24 @@ describe('deliberate refusals are reported as refusals, not as network failures'
     expect(result.error).not.toBe(GENERIC_ERROR);
   });
 
-  it('updateEvent: an empty title says the same thing the create screen says', async () => {
-    rpcMock.mockResolvedValueOnce({ error: titleRequired });
-    // Word-for-word the create screen's own client-side message. The two
-    // screens used to disagree about one rule: create said "Give the game a
-    // name." and edit said the internet was down.
-    await expect(updateEvent('event-1', { title: '  ' })).resolves.toEqual({
-      error: 'Give the game a name.',
-    });
+  // '' is the clear-the-name signal (20261021100000); null still means
+  // "leave it alone". Whitespace is normalised to '' on the way out.
+  it('updateEvent: an emptied title is sent as \'\' (clear it)', async () => {
+    rpcMock.mockResolvedValueOnce({ error: null });
+    await expect(updateEvent('event-1', { title: '  ' })).resolves.toEqual({ error: null });
+    expect(rpcMock).toHaveBeenCalledWith(
+      'update_event',
+      expect.objectContaining({ new_title: '' }),
+    );
+  });
+
+  it('updateEvent: an omitted title is sent as null (leave it alone)', async () => {
+    rpcMock.mockResolvedValueOnce({ error: null });
+    await updateEvent('event-1', { notes: 'x' });
+    expect(rpcMock).toHaveBeenCalledWith(
+      'update_event',
+      expect.objectContaining({ new_title: null }),
+    );
   });
 
   it('updateEvent: moving a game into the past says so', async () => {
@@ -953,11 +973,15 @@ describe('deliberate refusals are reported as refusals, not as network failures'
     });
   });
 
-  it('updateEventSeries: an empty title says so', async () => {
-    rpcMock.mockResolvedValueOnce({ error: titleRequired });
+  it('updateEventSeries: an emptied title is sent as \'\' (clear it)', async () => {
+    rpcMock.mockResolvedValueOnce({ error: null });
     await expect(updateEventSeries('series-1', { title: '  ' })).resolves.toEqual({
-      error: 'Give the game a name.',
+      error: null,
     });
+    expect(rpcMock).toHaveBeenCalledWith(
+      'update_event_series',
+      expect.objectContaining({ new_title: '' }),
+    );
   });
 
   it('updateEventSeries: an end date before the start says so', async () => {

@@ -12,6 +12,7 @@ import type { MyBooking } from './bookings';
 import type { Club } from './clubs';
 import { formatEventWhen } from './events';
 import type { ClubEvent } from './events';
+import { gameHeadline } from './home';
 
 /**
  * Empty for a member who never set a display name — a magic-link signup
@@ -154,7 +155,7 @@ export function needAFourthAlerts(input: {
         clubId: event.club_id,
         clubName: club.name,
         tableId: table.id,
-        text: `${formatEventWhen(event.starts_at, club.timezone)} — ${event.title}`,
+        text: `${formatEventWhen(event.starts_at, club.timezone)} — ${gameHeadline(event.title, event.game_mode)}`,
       });
     }
   }

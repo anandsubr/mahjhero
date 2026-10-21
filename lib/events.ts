@@ -32,7 +32,8 @@ export type ClubEvent = {
   id: string;
   club_id: string;
   series_id: string | null;
-  title: string;
+  /** NULL for an unnamed game -- show it with lib/home.ts gameHeadline. */
+  title: string | null;
   venue_id: string;
   venue_name: string;
   notes: string;
@@ -96,7 +97,8 @@ export type EventTable = {
 export type EventSeries = {
   id: string;
   club_id: string;
-  title: string;
+  /** NULL for an unnamed series. */
+  title: string | null;
   venue_id: string;
   /**
    * Joined from `venues(name)`, the same embed EVENT_COLUMNS already uses
@@ -615,8 +617,7 @@ type RpcError = { code?: string | null; message?: string | null } | null | undef
  *
  * GENERIC_ERROR says "Could not reach MahjHero. Check your connection and try
  * again." That is a FALSE STATEMENT about a request that reached MahjHero
- * fine and was refused for a reason the host can act on — clearing the title,
- * naming an end date before the start, choosing a date that has already gone
+ * fine and was refused for a reason the host can act on — naming an end date before the start, choosing a date that has already gone
  * past, removing an event's last table. Every one of those used to be
  * reported as a broken internet connection, and the create screen and the
  * edit screen disagreed about the very same rule (create already said "Give
@@ -642,13 +643,6 @@ type RpcError = { code?: string | null; message?: string | null } | null | undef
  * than a precise one and better than a false one.
  */
 const RPC_ERROR_MESSAGES: { contains: string; message: string; codes: string[] }[] = [
-  {
-    contains: 'title is required',
-    // Word-for-word what the create screen's own client-side check says, so
-    // the two screens stop disagreeing about one rule.
-    message: 'Give the game a name.',
-    codes: ['23514'],
-  },
   {
     contains: 'event_series_ends_after_start',
     message: 'That end date is before the series starts.',
@@ -985,7 +979,8 @@ export async function fetchFutureOccurrenceCount(
  */
 export async function createEvent(input: {
   clubId: string;
-  title: string;
+  /** Optional: blank or null creates an unnamed game (sent as null). */
+  title: string | null;
   venueId: string;
   notes: string;
   /** 'YYYY-MM-DD', club-local. */
@@ -1028,12 +1023,9 @@ export async function createEvent(input: {
   capacity?: number | null;
 }): Promise<{ eventId: string | null; error: string | null }> {
   try {
-    if (input.title.trim().length === 0) {
-      return { eventId: null, error: 'Give the game a name.' };
-    }
     const { data, error } = await supabase.rpc('create_event', {
       target_club: input.clubId,
-      event_title: input.title.trim(),
+      event_title: input.title?.trim() || null,
       target_venue: input.venueId,
       event_notes: input.notes.trim(),
       event_date: input.date,
@@ -1060,7 +1052,9 @@ export async function createEvent(input: {
 }
 
 /**
- * A null field means "leave this alone", matching the RPC exactly.
+ * A null field means "leave this alone", matching the RPC exactly. The one
+ * exception is clearing the (optional) name: `title: ''` (or whitespace)
+ * clears it to NULL, since null already means "leave it alone".
  *
  * Calendar values, not instants, for the same reason as `createEvent`: the
  * edit screen must not reintroduce a second client-side implementation of the
@@ -1120,7 +1114,8 @@ export async function updateEvent(
   try {
     const { error } = await supabase.rpc('update_event', {
       target_event: eventId,
-      new_title: input.title ?? null,
+      // null = leave the name alone; '' = clear it (20261021100000).
+      new_title: input.title == null ? null : input.title.trim(),
       new_venue_id: input.venueId ?? null,
       new_notes: input.notes ?? null,
       new_date: input.date ?? null,
@@ -1294,7 +1289,8 @@ export async function removeEventTable(
 
 export async function createEventSeries(input: {
   clubId: string;
-  title: string;
+  /** Optional: blank or null creates an unnamed series (sent as null). */
+  title: string | null;
   venueId: string;
   notes: string;
   frequency: SeriesFrequency;
@@ -1333,12 +1329,9 @@ export async function createEventSeries(input: {
   capacity?: number | null;
 }): Promise<{ seriesId: string | null; error: string | null }> {
   try {
-    if (input.title.trim().length === 0) {
-      return { seriesId: null, error: 'Give the game a name.' };
-    }
     const { data, error } = await supabase.rpc('create_event_series', {
       target_club: input.clubId,
-      series_title: input.title.trim(),
+      series_title: input.title?.trim() || null,
       target_venue: input.venueId,
       series_notes: input.notes.trim(),
       freq: input.frequency,
@@ -1424,7 +1417,8 @@ export async function updateEventSeries(
   try {
     const { error } = await supabase.rpc('update_event_series', {
       target_series: seriesId,
-      new_title: input.title ?? null,
+      // null = leave the name alone; '' = clear it (20261021100000).
+      new_title: input.title == null ? null : input.title.trim(),
       new_venue_id: input.venueId ?? null,
       new_notes: input.notes ?? null,
       new_start_time: input.startTime ?? null,

@@ -84,6 +84,7 @@ import {
   type EventSeries,
   type EventTable,
 } from '../../../../../lib/events';
+import { gameHeadline } from '../../../../../lib/home';
 import { openThreadForEvent } from '../../../../../lib/messages';
 import {
   deleteRound,
@@ -1044,12 +1045,12 @@ export default function EventScreen() {
       <View style={styles.titleBlock}>
         <View style={styles.row}>
           <View style={styles.titleRow}>
-            <Text style={styles.heading}>{event.title}</Text>
+            <Text style={styles.heading}>{gameHeadline(event.title, event.game_mode)}</Text>
             {isOrganizer && event.status !== 'cancelled' ? (
               <Pressable
                 onPress={() => router.push(`/clubs/${clubId}/events/${eventId}/edit`)}
                 accessibilityRole="button"
-                accessibilityLabel={`Edit ${event.title}`}
+                accessibilityLabel={`Edit ${gameHeadline(event.title, event.game_mode)}`}
                 style={({ pressed }) => [styles.editButton, pressed ? styles.editPressed : null]}
               >
                 <PencilIcon size={18} color={colors.accent[700]} />

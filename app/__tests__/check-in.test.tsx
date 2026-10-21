@@ -192,6 +192,13 @@ describe('screen chrome', () => {
     expect(screen.getByText(/ · The Hall$/)).toBeTruthy();
   });
 
+  // The name is optional (20261021100000).
+  it('heads an unnamed game with its fallback', async () => {
+    fetchEvent.mockResolvedValue({ ...EVENT, title: null, game_mode: 'invite_only', venue_name: 'The Hall' });
+    render(<CheckInScreen />);
+    expect(await screen.findByText('Private game')).toBeTruthy();
+  });
+
   it('titles its header "Check-in"', async () => {
     render(<CheckInScreen />);
     await screen.findByRole('button', { name: 'Add a walk-in' });
