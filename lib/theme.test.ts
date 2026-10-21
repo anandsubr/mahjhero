@@ -378,6 +378,32 @@ describe('invited seat avatar clears AA', () => {
 // IS the state, so WCAG 1.4.11's 3:1 applies against the ground they sit on.
 // accentColor is 2.75:1 on bg; accent[600] is used instead. The knobs drawn
 // on the track (colors.bg in Toggle, '#fff' in GameForm) are checked too.
+// lib/focus-ring.ts's keyboard ring is drawn on the page and on cards. The
+// spec's accent (accentColor) measured 2.75:1 on bg and 2.46:1 on surface,
+// under WCAG 1.4.11's 3:1, so it uses accent[600] like the state indicators.
+describe('the focus ring clears non-text contrast', () => {
+  it('clears 3:1 on bg and on surface', () => {
+    expect(contrast(colors.accent[600], colors.bg)).toBeGreaterThanOrEqual(NON_TEXT);
+    expect(contrast(colors.accent[600], colors.surface)).toBeGreaterThanOrEqual(NON_TEXT);
+  });
+});
+
+// components/TipCard.tsx: accent2[800] body text on the blush accent[100]
+// ground (Linen & Jade §4).
+describe('TipCard body text clears AA on its ground', () => {
+  it('clears AA for accent2[800] on accent[100]', () => {
+    expect(contrast(colors.accent2[800], colors.accent[100])).toBeGreaterThanOrEqual(AA);
+  });
+});
+
+// components/hub/MemberRow.tsx's Beginner skill chip: accent2[800] text on
+// an accent2[200] fill.
+describe('Beginner skill chip clears AA', () => {
+  it('clears AA for accent2[800] on accent2[200]', () => {
+    expect(contrast(colors.accent2[800], colors.accent2[200])).toBeGreaterThanOrEqual(AA);
+  });
+});
+
 describe('state indicators clear non-text contrast', () => {
   it('accent[600] clears 3:1 on bg and on surface', () => {
     expect(contrast(colors.accent[600], colors.bg)).toBeGreaterThanOrEqual(NON_TEXT);

@@ -13,8 +13,8 @@ import ErrorBanner from '../../components/ErrorBanner';
 import Screen from '../../components/Screen';
 import { GENERIC_ERROR } from '../../lib/constants';
 import { initialsFrom } from '../../lib/dashboard';
-import { avatarColorsFor } from '../../lib/friends';
 import {
+  avatarColorsFor,
   fetchAddablePeople,
   fetchFriends,
   type AddablePerson,
@@ -247,6 +247,7 @@ export default function NewMessageScreen() {
           ) : null}
           {candidates.map((c) => {
             const on = picked.includes(c.profile_id);
+            const tint = avatarColorsFor(c.profile_id);
             return (
               <Pressable
                 key={c.profile_id}
@@ -256,8 +257,8 @@ export default function NewMessageScreen() {
                 aria-selected={on}
                 style={[styles.person, on ? styles.personOn : null]}
               >
-                <View style={[styles.avatar, { backgroundColor: avatarColorsFor(c.profile_id).bg }]}>
-                  <Text style={[styles.avatarText, { color: avatarColorsFor(c.profile_id).fg }]}>
+                <View style={[styles.avatar, { backgroundColor: tint.bg }]}>
+                  <Text style={[styles.avatarText, { color: tint.fg }]}>
                     {initialsFrom(c.display_name)}
                   </Text>
                 </View>

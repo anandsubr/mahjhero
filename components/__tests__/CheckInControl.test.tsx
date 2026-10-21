@@ -121,6 +121,18 @@ describe('CheckInControl', () => {
     expect(unselectedColor).toBe(colors.divider);
   });
 
+  // Linen & Jade final review: the terracotta mid-tone (accentColor) fell to
+  // 2.75:1 on bg, under WCAG 1.4.11's 3:1, so the selected "Not coming"
+  // border moved to accent[600] like every other state indicator; the
+  // ratio itself is pinned in lib/theme.test.ts.
+  it('borders a selected "Not coming" in accent[600]', () => {
+    render(<CheckInControl state="no_show" onChange={vi.fn()} label="Ann" />);
+    const notComing = screen.getByRole('button', { name: /not coming.*ann/i });
+    const probe = document.createElement('div');
+    probe.style.borderColor = colors.accent[600];
+    expect(getComputedStyle(notComing).borderColor).toBe(probe.style.borderColor);
+  });
+
   it('falls back to a sensible label when the person has no display name', () => {
     render(<CheckInControl state={null} onChange={vi.fn()} label="" />);
     expect(

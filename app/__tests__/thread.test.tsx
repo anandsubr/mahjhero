@@ -1217,6 +1217,29 @@ describe('thread screen', () => {
       );
     });
 
+    // Final review I3: MessageGroup keys each sender avatar by author_id, so a
+    // header avatar keyed by name gave the same person two colours on one
+    // screen. The header now keys by the other member's profile id.
+    it("keys a direct thread's header avatar by the other member's id, matching their sender avatar", async () => {
+      const { avatarColorsFor } = await vi.importActual<typeof import('../../lib/friends')>(
+        '../../lib/friends',
+      );
+      // The fixture only proves something if the two keys hash apart.
+      expect(avatarColorsFor('other').bg).not.toBe(avatarColorsFor('Bob Reyes').bg);
+      fetchThread.mockResolvedValueOnce(DIRECT_THREAD);
+      fetchThreadMessages.mockResolvedValueOnce(MESSAGES);
+      render(<ThreadScreen />);
+      await screen.findByText('Bob Reyes');
+      const tint = (el: HTMLElement) => getComputedStyle(el).backgroundColor;
+      const probe = document.createElement('div');
+      probe.style.backgroundColor = avatarColorsFor('other').bg;
+      const header = screen.getByTestId('thread-header-avatar-direct');
+      expect(tint(header)).toBe(probe.style.backgroundColor);
+      const senders = await screen.findAllByTestId('sender-avatar');
+      expect(senders.length).toBeGreaterThan(0);
+      for (const s of senders) expect(tint(s)).toBe(tint(header));
+    });
+
     // Tapping the name is the way into the members view -- same accessible
     // name, same panel as before.
     it('opens the members panel from the name for a group thread', async () => {
