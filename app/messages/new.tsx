@@ -328,7 +328,8 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: 'transparent',
   },
-  personOn: { borderColor: colors.accentColor },
+  // accent[600]: 3:1 non-text contrast for the state (lib/theme.test.ts).
+  personOn: { borderColor: colors.accent[600] },
   avatar: {
     width: 34,
     height: 34,

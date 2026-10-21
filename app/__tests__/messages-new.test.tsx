@@ -149,6 +149,16 @@ describe('new message screen', () => {
     expect(postMessage).not.toHaveBeenCalled();
   });
 
+  // accent[600], not accentColor: the selected border is a state indicator
+  // and needs WCAG 1.4.11's 3:1 (lib/theme.test.ts).
+  it('borders a picked person in accent[600]', async () => {
+    render(<NewMessageScreen />);
+    fireEvent.click(await screen.findByLabelText('Bob Reyes'));
+    expect(getComputedStyle(screen.getByLabelText('Bob Reyes')).borderTopColor).toBe(
+      'rgb(196, 95, 59)',
+    );
+  });
+
   it('deselects somebody picked by mistake', async () => {
     render(<NewMessageScreen />);
     fireEvent.click(await screen.findByLabelText('Bob Reyes'));
