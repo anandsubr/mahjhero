@@ -1126,13 +1126,14 @@ export default function CheckInScreen() {
         : feeCents > 0
           ? { text: `${formatFeeCents(feeCents)} owed`, style: styles.subOwed }
           : null;
+    const pair = avatarColorsFor(r.profile_id);
     return (
       <View
         key={r.profile_id}
         style={[styles.personRow, index > 0 ? styles.personRowDivided : null]}
       >
-        <View style={[styles.avatar, { backgroundColor: avatarColorsFor(r.profile_id).bg }, notComing && styles.faded]}>
-          <Text style={[styles.avatarText, { color: avatarColorsFor(r.profile_id).fg }]}>{displayName.trim().charAt(0).toUpperCase() || '?'}</Text>
+        <View style={[styles.avatar, { backgroundColor: pair.bg }, notComing && styles.faded]}>
+          <Text style={[styles.avatarText, { color: pair.fg }]}>{displayName.trim().charAt(0).toUpperCase() || '?'}</Text>
           {here ? (
             <View style={styles.hereBadge}>
               <CheckIcon size={10} color="#ffffff" />
@@ -1414,6 +1415,7 @@ export default function CheckInScreen() {
                 ) : (
                   walkInCandidates.map((m) => {
                     const name = safeDisplayName(m.display_name);
+                    const pair = avatarColorsFor(m.profile_id);
                     return (
                       <Pressable
                         key={m.profile_id}
@@ -1422,8 +1424,8 @@ export default function CheckInScreen() {
                         onPress={() => void addWalkIn(m)}
                         style={({ pressed }) => [styles.candidateRow, pressed && styles.candidatePressed]}
                       >
-                        <View style={[styles.avatar, { backgroundColor: avatarColorsFor(m.profile_id).bg }]}>
-                          <Text style={[styles.avatarText, { color: avatarColorsFor(m.profile_id).fg }]}>{name.charAt(0).toUpperCase()}</Text>
+                        <View style={[styles.avatar, { backgroundColor: pair.bg }]}>
+                          <Text style={[styles.avatarText, { color: pair.fg }]}>{name.charAt(0).toUpperCase()}</Text>
                         </View>
                         <Text style={styles.name}>{name}</Text>
                       </Pressable>

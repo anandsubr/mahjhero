@@ -182,7 +182,7 @@ export default function VenuesScreen() {
       <Button
         variant="ghost"
         big={false}
-        icon={<ChevronLeftIcon color={colors.accentColor} />}
+        icon={<ChevronLeftIcon color={colors.accent[700]} />}
         onPress={() =>
           router.canGoBack() ? router.back() : router.replace(`/clubs/${clubId}/settings`)
         }

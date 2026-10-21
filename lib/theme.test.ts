@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { colors, shadow, type } from './theme';
+import { colors, invitedAvatar, shadow, type } from './theme';
 
 /**
  * WCAG 2.1 relative luminance and contrast ratio, written out rather than
@@ -333,5 +333,42 @@ describe('avatar initials clear AA on their tint', () => {
   // HomeHeader's own profile button: white initial on accent2[700].
   it('the current user\'s profile button: white on accent2[700]', () => {
     expect(contrast('#ffffff', colors.accent2[700])).toBeGreaterThanOrEqual(AA);
+  });
+});
+
+// Linen & Jade ruling (Task 1 review): the brighter accent (#df7a55) carries
+// cream text at only 2.75:1, so Button's primary fill and ghost label move
+// to accent[700] -- the README's "accent text / primary buttons" step.
+// These pin the token pairs; components/__tests__/Button.test.tsx pins that
+// Button actually renders them.
+describe('button text/fill pairs clear AA', () => {
+  it('primary: colors.bg label on the accent[700] fill', () => {
+    expect(contrast(colors.bg, colors.accent[700])).toBeGreaterThanOrEqual(AA);
+  });
+
+  it('ghost: accent[700] label on bg and on surface', () => {
+    expect(contrast(colors.accent[700], colors.bg)).toBeGreaterThanOrEqual(AA);
+    expect(contrast(colors.accent[700], colors.surface)).toBeGreaterThanOrEqual(AA);
+  });
+
+  it('secondary: text on surface', () => {
+    expect(contrast(colors.text, colors.surface)).toBeGreaterThanOrEqual(AA);
+  });
+
+  it('dark: colors.bg on neutral[900]', () => {
+    expect(contrast(colors.bg, colors.neutral[900])).toBeGreaterThanOrEqual(AA);
+  });
+
+  it('destructive: accent[800] on accent[200]', () => {
+    expect(contrast(colors.accent[800], colors.accent[200])).toBeGreaterThanOrEqual(AA);
+  });
+});
+
+// components/SeatGrid.tsx's invited-seat sheet: not the invitee's own tint
+// (the viewer may not be allowed to know who it is), but still a real
+// initial, so AA.
+describe('invited seat avatar clears AA', () => {
+  it('fg on bg', () => {
+    expect(contrast(invitedAvatar.fg, invitedAvatar.bg)).toBeGreaterThanOrEqual(AA);
   });
 });

@@ -54,7 +54,7 @@ export default function InAppBrowserBanner() {
           variant="secondary"
           big={false}
           onPress={onCopy}
-          icon={<CopyIcon size={16} color={colors.accentColor} />}
+          icon={<CopyIcon size={16} color={colors.accent[700]} />}
         >
           {copied ? 'Copied!' : 'Copy link'}
         </Button>

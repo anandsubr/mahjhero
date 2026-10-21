@@ -105,6 +105,14 @@ export const colors = {
   accent2,
 } as const;
 
+/**
+ * components/SeatGrid.tsx's invited-seat sheet avatar. Deliberately NOT the
+ * invitee's own soft pair: the viewer may not be allowed to see who it is,
+ * and a person's tint is the same on every screen, so it would hint at them.
+ * neutral[700] on surface, 4.92:1 -- pinned in lib/theme.test.ts.
+ */
+export const invitedAvatar: AvatarPair = { bg: colors.surface, fg: colors.neutral[700] };
+
 // ---------------------------------------------------------------------------
 // Spacing (design system's --space-1..8, in px)
 // ---------------------------------------------------------------------------

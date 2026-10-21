@@ -130,3 +130,23 @@ describe('Button: the label face', () => {
     }
   });
 });
+
+// The Linen & Jade accent (#df7a55) is too bright for cream text (2.75:1),
+// so primary fills and ghost labels use accent[700] (#9e4626) instead.
+describe('Button: accent variants use accent[700]', () => {
+  it('fills primary with accent[700] behind a cream label', () => {
+    render(<Button onPress={() => {}}>Create game</Button>);
+    const button = screen.getByRole('button', { name: 'Create game' });
+    expect(getComputedStyle(button).backgroundColor).toBe('rgb(158, 70, 38)');
+    expect(getComputedStyle(screen.getByText('Create game')).color).toBe('rgb(250, 245, 238)');
+  });
+
+  it('sets the ghost label in accent[700]', () => {
+    render(
+      <Button onPress={() => {}} variant="ghost">
+        Back
+      </Button>,
+    );
+    expect(getComputedStyle(screen.getByText('Back')).color).toBe('rgb(158, 70, 38)');
+  });
+});

@@ -21,21 +21,24 @@ export default function CommentsPeek({ comments, total, onPress }: Props) {
       accessibilityLabel={`Open post, ${total} ${total === 1 ? 'comment' : 'comments'}`}
       style={styles.block}
     >
-      {comments.map((c) => (
-        <View key={c.id} style={styles.row}>
-          <View style={[styles.avatar, { backgroundColor: avatarColorsFor(c.authorId).bg }]}>
-            <Text style={[styles.initials, { color: avatarColorsFor(c.authorId).fg }]}>{memberInitials(c.authorName)}</Text>
+      {comments.map((c) => {
+        const pair = avatarColorsFor(c.authorId);
+        return (
+          <View key={c.id} style={styles.row}>
+            <View style={[styles.avatar, { backgroundColor: pair.bg }]}>
+              <Text style={[styles.initials, { color: pair.fg }]}>{memberInitials(c.authorName)}</Text>
+            </View>
+            <View style={styles.text}>
+              <Text style={styles.name} numberOfLines={1}>
+                {c.authorName}
+              </Text>
+              <Text style={styles.body} numberOfLines={2}>
+                {c.body.trim() !== '' ? c.body : 'Photo'}
+              </Text>
+            </View>
           </View>
-          <View style={styles.text}>
-            <Text style={styles.name} numberOfLines={1}>
-              {c.authorName}
-            </Text>
-            <Text style={styles.body} numberOfLines={2}>
-              {c.body.trim() !== '' ? c.body : 'Photo'}
-            </Text>
-          </View>
-        </View>
-      ))}
+        );
+      })}
       {total > comments.length ? <Text style={styles.viewAll}>{`View all ${total} comments`}</Text> : null}
     </Pressable>
   );

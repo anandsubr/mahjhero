@@ -66,8 +66,8 @@ type ButtonProps = {
 const spinnerColor: Record<ButtonVariant, string> = {
   primary: colors.bg,
   dark: colors.bg,
-  secondary: colors.accentColor,
-  ghost: colors.accentColor,
+  secondary: colors.accent[700],
+  ghost: colors.accent[700],
   destructive: colors.accent[800],
 };
 
@@ -197,7 +197,11 @@ const styles = StyleSheet.create({
 const variantStyles = StyleSheet.create({
   primary: {
     // .btn-primary { background: var(--color-accent); color: var(--color-bg) }
-    backgroundColor: colors.accentColor,
+    // -- but Linen & Jade's brighter accent (#df7a55) carries cream text at
+    // only 2.75:1, so the fill is accent[700] (5.77:1), the step the
+    // Linen & Jade README names for primary buttons. Pinned in
+    // lib/theme.test.ts ("button text/fill pairs clear AA").
+    backgroundColor: colors.accent[700],
     ...shadow.sm,
   },
   secondary: {
@@ -224,8 +228,9 @@ const variantTextStyles = StyleSheet.create({
   // keeps the palette warm. Already correct here.
   primary: { color: colors.bg },
   secondary: { color: colors.text },
-  // .btn-ghost { color: var(--color-accent) }
-  ghost: { color: colors.accentColor },
+  // .btn-ghost { color: var(--color-accent) } -- accent[700] instead
+  // (5.77:1 on bg, 5.16:1 on surface): accentColor is 2.75:1 on bg.
+  ghost: { color: colors.accent[700] },
   dark: { color: colors.bg },
   destructive: { color: colors.accent[800] },
 });

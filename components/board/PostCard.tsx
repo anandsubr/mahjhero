@@ -47,12 +47,13 @@ export default function PostCard({ post, attachmentUrls, onOpen, onToggleHeart, 
   useLayoutEffect(measure, [measure, post.body]);
   const long = measuredLong || (overflow ?? looksLong(post.body));
   const showHost = post.authorRole !== null && isHostRole(post.authorRole);
+  const pair = avatarColorsFor(post.authorId);
 
   return (
     <View style={styles.card}>
       <View style={styles.header}>
-        <View style={[styles.avatar, { backgroundColor: avatarColorsFor(post.authorId).bg }]}>
-          <Text style={[styles.initials, { color: avatarColorsFor(post.authorId).fg }]}>{memberInitials(post.authorName)}</Text>
+        <View style={[styles.avatar, { backgroundColor: pair.bg }]}>
+          <Text style={[styles.initials, { color: pair.fg }]}>{memberInitials(post.authorName)}</Text>
         </View>
         <View style={styles.headerText}>
           <View style={styles.nameRow}>

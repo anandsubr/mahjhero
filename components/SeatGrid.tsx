@@ -5,14 +5,7 @@ import SeatSheet from './SeatSheet';
 import { ChevronDownIcon, PlusIcon, TrophyIcon } from './icons';
 import { seatsRemaining } from '../lib/bookings';
 import { avatarColorsFor } from '../lib/friends';
-import { colors, radius, type, type AvatarPair } from '../lib/theme';
-
-/**
- * An invited seat's sheet avatar. Not the invitee's own soft pair: the
- * viewer may not be allowed to see who it is (see `Seat.name`), and a
- * person's tint is the same on every screen, so it would hint at them.
- */
-const INVITED_AVATAR: AvatarPair = { bg: colors.surface, fg: colors.neutral[700] };
+import { colors, invitedAvatar, radius, type, type AvatarPair } from '../lib/theme';
 
 export type Seat = {
   bookingId: string;
@@ -189,7 +182,7 @@ export default function SeatGrid({
           <SeatSheet
             name={seat.isYou ? seat.name ?? 'You' : seat.name}
             labelName={seat.name ?? 'this seat'}
-            avatar={INVITED_AVATAR}
+            avatar={invitedAvatar}
             detail={`Invited · ${tableLabel}`}
             busy={busy}
             onClose={close}

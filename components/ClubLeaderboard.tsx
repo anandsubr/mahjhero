@@ -83,6 +83,7 @@ const ClubLeaderboard = forwardRef<ClubLeaderboardHandle, Props>(
               const isMe = entry.profile_id === userId;
               const podium = index < 3;
               const name = displayName(entry);
+              const pair = avatarColorsFor(entry.profile_id);
               return (
                 <View
                   key={entry.profile_id}
@@ -97,9 +98,9 @@ const ClubLeaderboard = forwardRef<ClubLeaderboardHandle, Props>(
                   </View>
                   <View
                     testID="leaderboard-avatar"
-                    style={[styles.avatar, { backgroundColor: avatarColorsFor(entry.profile_id).bg }]}
+                    style={[styles.avatar, { backgroundColor: pair.bg }]}
                   >
-                    <Text style={[styles.avatarText, { color: avatarColorsFor(entry.profile_id).fg }]}>{initialsFrom(name)}</Text>
+                    <Text style={[styles.avatarText, { color: pair.fg }]}>{initialsFrom(name)}</Text>
                   </View>
                   <View style={styles.rowBody}>
                     <Text style={styles.name} numberOfLines={1}>
