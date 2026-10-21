@@ -13,6 +13,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Analytics } from '@vercel/analytics/react';
 import InAppBrowserBanner from '../components/InAppBrowserBanner';
 import { useAuthDeepLink } from '../lib/auth-deep-link';
+import { installFocusRing } from '../lib/focus-ring';
 import { SessionProvider } from '../lib/session';
 import { GuidesProvider } from '../lib/use-guides';
 
@@ -26,6 +27,9 @@ SplashScreen.preventAutoHideAsync().catch(() => {
   // Only rejects if called twice (e.g. Fast Refresh during development);
   // harmless either way, since the screen is already prevented from hiding.
 });
+
+// The web keyboard-focus ring (lib/focus-ring.ts); a no-op on native.
+installFocusRing();
 
 export default function RootLayout() {
   // Mounted at the root so an OAuth redirect (or an already-sent magic-link

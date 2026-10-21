@@ -14,8 +14,8 @@ const WHITE_26 = 'rgba(255, 255, 255, 0.26)';
 const COPIED_MS = 2000;
 
 /**
- * The club hub's fixed header (design 1b–1e): cover photo under a 55%
- * `neutral[900]` scrim, or the club's cover colour; back, name and the
+ * The club hub's fixed header (design 1b–1e): cover photo under a 48%
+ * `accent2[900]` scrim, or the club's cover colour; back, name and the
  * organizer-only settings gear; the club code with a Share pill; and the
  * five section buttons. Owns the top safe-area inset -- the sections below
  * it (HubSection) deliberately add none.

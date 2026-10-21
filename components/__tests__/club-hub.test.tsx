@@ -59,12 +59,20 @@ describe('ClubHubHeader', () => {
     expect(screen.queryByTestId('club-hub-cover-photo')).toBeNull();
   });
 
+  it('falls back to accent2[800] only for an unknown cover colour', () => {
+    renderHeader({ club: { ...CLUB, cover_color: 'not-a-colour' as Club['cover_color'] } });
+    // accent2[800] (#1d4d3d).
+    expect(getComputedStyle(screen.getByTestId('club-hub-header')).backgroundColor).toBe(
+      'rgb(29, 77, 61)',
+    );
+  });
+
   it('shows the cover photo with a scrim when there is a cover URL', () => {
     renderHeader({ coverUrl: 'https://example.com/cover.jpg' });
     expect(screen.getByTestId('club-hub-cover-photo')).toBeTruthy();
     const scrim = screen.getByTestId('club-hub-scrim');
-    // neutral[900] (#302b27) at 55%.
-    expect(getComputedStyle(scrim).backgroundColor).toBe('rgba(48, 43, 39, 0.55)');
+    // Linen & Jade §4: accent2[900] (#123328) at 48%.
+    expect(getComputedStyle(scrim).backgroundColor).toBe('rgba(18, 51, 40, 0.48)');
   });
 
   it('shows the club name and code', () => {

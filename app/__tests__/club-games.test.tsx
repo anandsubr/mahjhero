@@ -206,7 +206,7 @@ describe('club Games section', () => {
     fetchClubGames.mockResolvedValueOnce(null);
     renderSection();
     expect(await screen.findByText('Could not load games.')).toBeTruthy();
-    expect(screen.queryByText('No games here yet.')).toBeNull();
+    expect(screen.queryByText('No games yet. Pick a night and invite your table.')).toBeNull();
     fetchClubGames.mockResolvedValueOnce([game({ title: 'Back again' })]);
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(await screen.findByText('Back again')).toBeTruthy();
@@ -216,14 +216,14 @@ describe('club Games section', () => {
   describe('empty state and New game', () => {
     it('members see the empty copy and no New game', async () => {
       renderSection('member');
-      expect(await screen.findByText('No games here yet.')).toBeTruthy();
+      expect(await screen.findByText('No games yet. Pick a night and invite your table.')).toBeTruthy();
       expect(screen.queryByRole('button', { name: 'New game' })).toBeNull();
       expect(screen.getByRole('button', { name: 'Add to calendar' })).toBeTruthy();
     });
 
     it('co-organizers do not get New game either (creation is host-only)', async () => {
       renderSection('co_organizer');
-      await screen.findByText('No games here yet.');
+      await screen.findByText('No games yet. Pick a night and invite your table.');
       expect(screen.queryByRole('button', { name: 'New game' })).toBeNull();
     });
 
@@ -237,10 +237,14 @@ describe('club Games section', () => {
       expect(push).toHaveBeenCalledWith('/clubs/c1/events/new');
     });
 
-    it('hosts also get New game under the empty state', async () => {
+    // Linen & Jade §4: one New game per screen -- the pinned footer's.
+    it('hosts get only the footer New game under the empty state', async () => {
       renderSection('host');
-      await screen.findByText('No games here yet.');
-      expect(screen.getAllByRole('button', { name: 'New game' })).toHaveLength(2);
+      await screen.findByText('No games yet. Pick a night and invite your table.');
+      const buttons = screen.getAllByRole('button', { name: 'New game' });
+      expect(buttons).toHaveLength(1);
+      fireEvent.click(buttons[0]);
+      expect(push).toHaveBeenCalledWith('/clubs/c1/events/new');
     });
   });
 

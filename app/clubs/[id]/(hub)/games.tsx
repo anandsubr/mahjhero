@@ -204,14 +204,12 @@ export default function GamesSection() {
         ) : games.length === 0 ? (
           failed ? null : (
             <View style={styles.empty}>
+              {/* One New game per screen: the pinned footer's (Linen & Jade §4). */}
               <Text style={styles.emptyText}>
-                {segment === 'past' ? 'No past games.' : 'No games here yet.'}
+                {segment === 'past'
+                  ? 'No past games.'
+                  : 'No games yet. Pick a night and invite your table.'}
               </Text>
-              {isHost ? (
-                <Button big={false} onPress={newGame}>
-                  New game
-                </Button>
-              ) : null}
             </View>
           )
         ) : (
@@ -262,7 +260,7 @@ const styles = StyleSheet.create({
   list: { marginHorizontal: -12 },
   loading: { marginTop: 24 },
   empty: { alignItems: 'center', gap: 16, paddingVertical: 32 },
-  emptyText: { fontFamily: type.bodyRegular, fontSize: 16, color: colors.textMuted },
+  emptyText: { fontFamily: type.bodyRegular, fontSize: 16, color: colors.textMuted, textAlign: 'center' },
   failed: { alignItems: 'center', gap: 12, paddingVertical: 24 },
   failedText: { fontFamily: type.bodyRegular, fontSize: 16, color: colors.text },
   footer: {

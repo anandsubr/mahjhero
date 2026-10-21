@@ -9,11 +9,11 @@ function withAlpha(hex: string, alpha: number): string {
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
 }
 
-const SCRIM = withAlpha(colors.neutral[900], 0.55);
+const SCRIM = withAlpha(colors.accent2[900], 0.48);
 
 /**
- * A club's cover as a background: the photo under a 55% `neutral[900]`
- * scrim, or the club's cover colour. The colour also shows while the photo
+ * A club's cover as a background: the photo under a 48% `accent2[900]`
+ * scrim (Linen & Jade), or the club's cover colour. The colour also shows while the photo
  * loads and if it fails to. Shared by the hub header and the settings
  * preview so both draw a cover the same way.
  *

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import TipCard, { TipText } from '../TipCard';
+import { colors } from '../../lib/theme';
 
 describe('TipCard', () => {
   it('shows its tag, title and body', () => {
@@ -30,5 +31,14 @@ describe('TipCard', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: 'Add a game' }));
     expect(onPress).toHaveBeenCalledTimes(1);
+  });
+
+  // Linen & Jade §4: the lime (accent2[100]) fill becomes blush accent[100].
+  it('fills the card with blush accent[100]', () => {
+    render(<TipCard testID="tip" title="T" onDismiss={() => {}}><TipText>x</TipText></TipCard>);
+    const card = screen.getByTestId('tip').firstElementChild as HTMLElement;
+    const hex = colors.accent[100];
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+    expect(getComputedStyle(card).backgroundColor).toBe(`rgb(${r}, ${g}, ${b})`);
   });
 });

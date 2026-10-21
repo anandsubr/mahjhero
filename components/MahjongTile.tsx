@@ -55,6 +55,7 @@ const GLYPH_COLOR: Record<MahjongSuit, string> = {
 };
 
 const GLYPH_HEIGHT = 24;
+const CHARACTER_SIZE = 21;
 
 const CHARACTER_GLYPHS: Partial<Record<MahjongSuit, string>> = {
   'red-dragon': '中',
@@ -195,9 +196,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent[700],
     borderBottomColor: colors.accent[800],
   },
+  // line-height 1 (Linen & Jade §4) so the character centres in its tile.
   character: {
-    fontSize: 21,
-    lineHeight: GLYPH_HEIGHT,
+    fontSize: CHARACTER_SIZE,
+    lineHeight: CHARACTER_SIZE,
   },
   label: {
     fontFamily: type.heading,

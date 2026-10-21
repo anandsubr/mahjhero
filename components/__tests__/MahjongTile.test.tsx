@@ -4,6 +4,14 @@ import MahjongTile from '../MahjongTile';
 import type { MahjongSuit } from '../MahjongTile';
 
 describe('MahjongTile', () => {
+  // Linen & Jade §4: line-height 1 so a character glyph centres in its tile.
+  it('sets a character glyph\'s line height to its font size', () => {
+    render(<MahjongTile suit="red-dragon" size="chip" />);
+    const style = getComputedStyle(screen.getByTestId('glyph-red-dragon'));
+    expect(style.fontSize).toBeTruthy();
+    expect(style.lineHeight).toBe(style.fontSize);
+  });
+
   it('renders a label only for size="tab"', () => {
     const { rerender } = render(<MahjongTile suit="dots" size="tab" label="Club" />);
     expect(screen.getByText('Club')).toBeTruthy();

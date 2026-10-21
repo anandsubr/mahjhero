@@ -723,7 +723,7 @@ test.describe('signed in', () => {
         await expect(page.getByText('Riverside Mah Jongg', { exact: true })).toBeVisible();
         await expect(page.getByText('Club code:')).toBeVisible();
         await expect(page.getByRole('tab', { name: 'Upcoming', selected: true })).toBeVisible();
-        await expect(page.getByText('No games here yet.')).toBeVisible();
+        await expect(page.getByText('No games yet. Pick a night and invite your table.')).toBeVisible();
         // Two "New game" buttons render at once here: the empty state's own
         // (host-only) and the pinned footer's, which is always there
         // regardless of segment. `.first()` -- the empty-state one -- is
