@@ -3,7 +3,7 @@ import { Text } from '../Text';
 import Tag from '../Tag';
 import { MessageCircleIcon, UserPlusIcon } from '../icons';
 import type { ClubMember } from '../../lib/clubs';
-import { avatarColorFor } from '../../lib/friends';
+import { avatarColorsFor } from '../../lib/friends';
 import { memberInitials, memberName, skillLabel } from '../../lib/members';
 import { colors, type } from '../../lib/theme';
 
@@ -39,6 +39,7 @@ export default function MemberRow({
   adding,
 }: Props) {
   const name = memberName(member);
+  const pair = avatarColorsFor(member.profile_id);
   const skill = skillLabel(member.skill_level);
   const roleTag =
     member.role === 'host' ? 'Host' : member.role === 'co_organizer' ? 'Co-organizer' : null;
@@ -46,11 +47,11 @@ export default function MemberRow({
   return (
     <View style={styles.row}>
       <View
-        style={[styles.avatar, { backgroundColor: avatarColorFor(member.profile_id) }]}
+        style={[styles.avatar, { backgroundColor: pair.bg }]}
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants"
       >
-        <Text style={styles.initials}>{memberInitials(name)}</Text>
+        <Text style={[styles.initials, { color: pair.fg }]}>{memberInitials(name)}</Text>
       </View>
       <View style={styles.body}>
         <View style={styles.text}>
@@ -124,7 +125,6 @@ const styles = StyleSheet.create({
   initials: {
     fontFamily: type.bodyBold,
     fontSize: 16,
-    color: '#fff',
   },
   // The divider runs under the text block and buttons, not under the avatar.
   body: {

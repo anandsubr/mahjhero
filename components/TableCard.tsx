@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Text } from './Text';
 import RoundLog, { type DisplayRound } from './RoundLog';
-import SeatGrid, { seatColor } from './SeatGrid';
+import SeatGrid from './SeatGrid';
 import Tag from './Tag';
 import type { SeatOccupant, SkillTier } from '../lib/bookings';
 import { roundTotals } from '../lib/rounds';
@@ -129,13 +129,6 @@ export default function TableCard({
   const showPoints = Boolean(rounds) && gameLive;
   const seatedCount = seated.length + held.length;
 
-  // The seat's own colour follows its position in the grid (confirmed
-  // first, as SeatGrid draws them), so a round's winner is drawn in the
-  // same colour in the log below.
-  const colorByProfile = new Map(
-    seated.map((o, index) => [o.profile_id ?? '', seatColor(index)]),
-  );
-
   return (
     <View style={styles.card}>
       <View style={styles.row}>
@@ -197,7 +190,6 @@ export default function TableCard({
           <View style={styles.divider} />
           <RoundLog
             rounds={rounds}
-            colorFor={(profileId) => colorByProfile.get(profileId) ?? colors.neutral[800]}
             canDelete={canDeleteRound}
             busy={busy}
             onDelete={(roundId) => onDeleteRound?.(roundId)}

@@ -34,10 +34,18 @@ const fetchAddablePeople = vi.fn();
 const createGroupThread = vi.fn();
 const postMessage = vi.fn();
 
-vi.mock('../../lib/friends', () => ({
-  fetchFriends: (...a: unknown[]) => fetchFriends(...a),
-  fetchAddablePeople: (...a: unknown[]) => fetchAddablePeople(...a),
-}));
+vi.mock('../../lib/friends', async () => {
+  // avatarColorsFor is pure and covered in lib/friends.test.ts; the real one
+  // keeps every avatar on this screen in the person's own soft pair.
+  const actual = await vi.importActual<typeof import('../../lib/friends')>(
+    '../../lib/friends',
+  );
+  return {
+    avatarColorsFor: actual.avatarColorsFor,
+    fetchFriends: (...a: unknown[]) => fetchFriends(...a),
+    fetchAddablePeople: (...a: unknown[]) => fetchAddablePeople(...a),
+  };
+});
 
 vi.mock('../../lib/messages', async () => {
   const actual =

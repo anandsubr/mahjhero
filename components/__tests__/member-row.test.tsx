@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import MemberRow from '../hub/MemberRow';
 import type { ClubMember } from '../../lib/clubs';
+import { avatarColorsFor } from '../../lib/friends';
 
 const skillPips = vi.fn((_props: unknown) => null);
 vi.mock('../SkillLevelPips', () => ({
@@ -40,7 +41,22 @@ function renderRow(overrides: Partial<Parameters<typeof MemberRow>[0]> = {}) {
   return { onMessage, onAddFriend };
 }
 
+/** '#ffe0d4' -> 'rgb(255, 224, 212)', the form getComputedStyle reports. */
+function rgb(hex: string): string {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
 describe('MemberRow', () => {
+  // Linen & Jade: a soft tint with a deep initial, not white on a dark fill.
+  it('draws the avatar in the person\'s own soft pair', () => {
+    renderRow();
+    const pair = avatarColorsFor(PRIYA.profile_id);
+    const initials = screen.getByText('PS');
+    expect(getComputedStyle(initials).color).toBe(rgb(pair.fg));
+    expect(getComputedStyle(initials.parentElement!).backgroundColor).toBe(rgb(pair.bg));
+  });
+
   it('renders initials, name, role tag and skill text, without skill pips', () => {
     renderRow();
     expect(screen.getByText('PS')).toBeTruthy();

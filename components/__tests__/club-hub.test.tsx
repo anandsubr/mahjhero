@@ -54,8 +54,8 @@ describe('ClubHubHeader', () => {
   it('uses the club cover colour when there is no cover photo', () => {
     renderHeader();
     const header = screen.getByTestId('club-hub-header');
-    // accent[700] (#8c491a) -- the club's own cover_color, not the default green.
-    expect(getComputedStyle(header).backgroundColor).toBe('rgb(140, 73, 26)');
+    // accent[700] (#9e4626) -- the club's own cover_color, not the default green.
+    expect(getComputedStyle(header).backgroundColor).toBe('rgb(158, 70, 38)');
     expect(screen.queryByTestId('club-hub-cover-photo')).toBeNull();
   });
 
@@ -63,8 +63,8 @@ describe('ClubHubHeader', () => {
     renderHeader({ coverUrl: 'https://example.com/cover.jpg' });
     expect(screen.getByTestId('club-hub-cover-photo')).toBeTruthy();
     const scrim = screen.getByTestId('club-hub-scrim');
-    // neutral[900] (#2e2b25) at 55%.
-    expect(getComputedStyle(scrim).backgroundColor).toBe('rgba(46, 43, 37, 0.55)');
+    // neutral[900] (#302b27) at 55%.
+    expect(getComputedStyle(scrim).backgroundColor).toBe('rgba(48, 43, 39, 0.55)');
   });
 
   it('shows the club name and code', () => {

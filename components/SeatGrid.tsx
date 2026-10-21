@@ -4,22 +4,15 @@ import { Text } from './Text';
 import SeatSheet from './SeatSheet';
 import { ChevronDownIcon, PlusIcon, TrophyIcon } from './icons';
 import { seatsRemaining } from '../lib/bookings';
-import { colors, radius, type } from '../lib/theme';
+import { avatarColorsFor } from '../lib/friends';
+import { colors, radius, type, type AvatarPair } from '../lib/theme';
 
 /**
- * Per-seat avatar colours from the game-screen 2a handoff, in seat order.
- * Exported so TableCard can colour a round's winner the same as their seat.
+ * An invited seat's sheet avatar. Not the invitee's own soft pair: the
+ * viewer may not be allowed to see who it is (see `Seat.name`), and a
+ * person's tint is the same on every screen, so it would hint at them.
  */
-export const SEAT_COLORS = [
-  colors.accent2[700],
-  colors.accent[700],
-  colors.neutral[800],
-  colors.accent2[800],
-] as const;
-
-export function seatColor(index: number): string {
-  return SEAT_COLORS[((index % SEAT_COLORS.length) + SEAT_COLORS.length) % SEAT_COLORS.length];
-}
+const INVITED_AVATAR: AvatarPair = { bg: colors.surface, fg: colors.neutral[700] };
 
 export type Seat = {
   bookingId: string;
@@ -182,8 +175,10 @@ export default function SeatGrid({
 
   let sheet: ReactNode = null;
 
-  const tiles = seats.map((seat, index) => {
-    const avatarColor = seatColor(index);
+  const tiles = seats.map((seat) => {
+    // The person's own soft pair, the same tint they have on every other
+    // screen -- not a colour for the seat's position.
+    const avatar = avatarColorsFor(seat.profileId);
     const isOpen = seat.bookingId === openBookingId;
     const close = () => onToggleManage?.(seat.bookingId);
 
@@ -194,7 +189,7 @@ export default function SeatGrid({
           <SeatSheet
             name={seat.isYou ? seat.name ?? 'You' : seat.name}
             labelName={seat.name ?? 'this seat'}
-            avatarColor={colors.neutral[600]}
+            avatar={INVITED_AVATAR}
             detail={`Invited · ${tableLabel}`}
             busy={busy}
             onClose={close}
@@ -227,7 +222,7 @@ export default function SeatGrid({
         <SeatSheet
           name={seat.name}
           labelName={seat.name ?? 'this player'}
-          avatarColor={avatarColor}
+          avatar={avatar}
           detail={[points !== null ? `${points} pts` : null, tableLabel]
             .filter(Boolean)
             .join(' · ')}
@@ -262,7 +257,7 @@ export default function SeatGrid({
 
     const body = (
       <>
-        <Avatar name={seat.name} color={avatarColor} trophy={seat.wonLastRound} bookingId={seat.bookingId} />
+        <Avatar name={seat.name} pair={avatar} trophy={seat.wonLastRound} bookingId={seat.bookingId} />
         <View style={styles.seatText}>
           <Text style={styles.name} numberOfLines={1} ellipsizeMode="tail">
             {seat.name ?? (seat.isYou ? 'You' : '')}
@@ -343,19 +338,19 @@ export default function SeatGrid({
 
 function Avatar({
   name,
-  color,
+  pair,
   trophy,
   bookingId,
 }: {
   name: string | null;
-  color: string;
+  pair: AvatarPair;
   trophy?: boolean;
   bookingId: string;
 }) {
   const initial = (name ?? '?').trim().charAt(0).toUpperCase() || '?';
   return (
-    <View style={[styles.avatar, { backgroundColor: color }]}>
-      <Text style={styles.avatarText}>{initial}</Text>
+    <View style={[styles.avatar, { backgroundColor: pair.bg }]}>
+      <Text style={[styles.avatarText, { color: pair.fg }]}>{initial}</Text>
       {trophy ? (
         <View
           style={styles.trophyBadge}
@@ -476,7 +471,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarText: { fontFamily: type.bodyBold, fontSize: 13, color: '#ffffff' },
+  avatarText: { fontFamily: type.bodyBold, fontSize: 13 },
   trophyBadge: {
     position: 'absolute',
     top: -5,

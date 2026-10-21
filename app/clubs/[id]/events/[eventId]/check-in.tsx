@@ -37,6 +37,7 @@ import {
   formatFeeCents,
   type SeatingMode,
 } from '../../../../../lib/events';
+import { avatarColorsFor } from '../../../../../lib/friends';
 import { fetchEventPayments, setPaymentStatus } from '../../../../../lib/payments';
 import { goBack } from '../../../../../lib/navigation';
 import { useSession } from '../../../../../lib/session';
@@ -103,21 +104,6 @@ function matchesFilter(r: AttendanceRow, filter: Filter, isPaid: boolean): boole
     case 'unpaid':
       return r.state !== 'no_show' && !isPaid;
   }
-}
-
-/** The design's avatar colours, cycled by row. */
-const AVATAR_COLORS = [
-  colors.accent2[700],
-  colors.accent[700],
-  colors.neutral[800],
-  colors.accent2[800],
-  colors.accent[600],
-];
-
-function avatarColorFor(profileId: string): string {
-  let hash = 0;
-  for (let k = 0; k < profileId.length; k++) hash = (hash * 31 + profileId.charCodeAt(k)) | 0;
-  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
 }
 
 /**
@@ -1145,8 +1131,8 @@ export default function CheckInScreen() {
         key={r.profile_id}
         style={[styles.personRow, index > 0 ? styles.personRowDivided : null]}
       >
-        <View style={[styles.avatar, { backgroundColor: avatarColorFor(r.profile_id) }, notComing && styles.faded]}>
-          <Text style={styles.avatarText}>{displayName.trim().charAt(0).toUpperCase() || '?'}</Text>
+        <View style={[styles.avatar, { backgroundColor: avatarColorsFor(r.profile_id).bg }, notComing && styles.faded]}>
+          <Text style={[styles.avatarText, { color: avatarColorsFor(r.profile_id).fg }]}>{displayName.trim().charAt(0).toUpperCase() || '?'}</Text>
           {here ? (
             <View style={styles.hereBadge}>
               <CheckIcon size={10} color="#ffffff" />
@@ -1436,8 +1422,8 @@ export default function CheckInScreen() {
                         onPress={() => void addWalkIn(m)}
                         style={({ pressed }) => [styles.candidateRow, pressed && styles.candidatePressed]}
                       >
-                        <View style={[styles.avatar, { backgroundColor: avatarColorFor(m.profile_id) }]}>
-                          <Text style={styles.avatarText}>{name.charAt(0).toUpperCase()}</Text>
+                        <View style={[styles.avatar, { backgroundColor: avatarColorsFor(m.profile_id).bg }]}>
+                          <Text style={[styles.avatarText, { color: avatarColorsFor(m.profile_id).fg }]}>{name.charAt(0).toUpperCase()}</Text>
                         </View>
                         <Text style={styles.name}>{name}</Text>
                       </Pressable>
@@ -1597,7 +1583,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     flexShrink: 0,
   },
-  avatarText: { fontFamily: type.bodyBold, fontSize: 14, color: '#ffffff' },
+  avatarText: { fontFamily: type.bodyBold, fontSize: 14 },
   hereBadge: {
     position: 'absolute',
     right: -3,

@@ -35,21 +35,6 @@ type ButtonProps = {
    * needs a larger target), so it defaults to true.
    */
   big?: boolean;
-  /**
-   * `.btn`'s base rule sets `font-family: var(--font-heading)` (Caprasimo,
-   * weight 400) with no override — that's the system's signature move, and
-   * it applies to every plain button in the design (primary CTAs, secondary
-   * CTAs, and even the ghost back/sign-out links) with no exceptions found
-   * in 1C-variant.html. The design overrides back to the body font only on
-   * bespoke option-style controls (the skill-level tiles, the
-   * notification-channel rows) that are NOT built from this component —
-   * see app/profile.tsx's SkillSegmented and app/notifications.tsx's inline
-   * channel rows, which set Figtree 700 / 600 directly. This prop exists so
-   * a future Button-based option control can opt into that body face
-   * instead of duplicating Button's layout by hand; no current call site
-   * needs it.
-   */
-  bodyFace?: boolean;
   disabled?: boolean;
   loading?: boolean;
   accessibilityLabel?: string;
@@ -92,7 +77,6 @@ export default function Button({
   variant = 'primary',
   block = false,
   big = true,
-  bodyFace = false,
   disabled = false,
   loading = false,
   accessibilityLabel,
@@ -143,7 +127,6 @@ export default function Button({
           <Text
             style={[
               styles.label,
-              bodyFace ? styles.labelBodyFace : null,
               variantTextStyles[variant],
               big ? styles.labelBig : null,
             ]}
@@ -190,13 +173,14 @@ const styles = StyleSheet.create({
     minHeight: undefined,
   },
   label: {
-    // .btn's base font-family is the HEADING face (Caprasimo, weight 400)
-    // with no override — the system's signature move, not a mistake.
-    fontFamily: type.heading,
+    // Figtree bold. The original Organic design set `.btn` in the heading
+    // face, and this component followed it; Linen & Jade drops that --
+    // "everything else, buttons included, uses Figtree", no display font
+    // inside a button (docs/design/linen-jade/README.md §2). The heading
+    // face is for titles only, so there is no longer a per-button opt-in
+    // to the body face: every Button already has it.
+    fontFamily: type.bodyBold,
     fontSize: type.size.body,
-  },
-  labelBodyFace: {
-    fontFamily: type.bodySemiBold,
   },
   labelBig: {
     fontSize: type.size.bodyLarge,
@@ -230,7 +214,7 @@ const variantStyles = StyleSheet.create({
     backgroundColor: colors.neutral[900],
   },
   destructive: {
-    // The same pairing Tag's `accent` variant uses, at 8.37:1.
+    // The same pairing Tag's `accent` variant uses, at 7.77:1.
     backgroundColor: colors.accent[200],
   },
 });

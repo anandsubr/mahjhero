@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Modal, Pressable, StyleSheet, View } from 'react-native';
 import { Text } from './Text';
 import { TrophyIcon } from './icons';
-import { colors, layout, radius, shadow, type } from '../lib/theme';
+import { colors, layout, radius, shadow, type, type AvatarPair } from '../lib/theme';
 
 /** The plan's hard rule: these seven values, everywhere, no others. */
 export const POINT_VALUES = [25, 30, 35, 40, 45, 50, 75] as const;
@@ -12,7 +12,9 @@ type Props = {
   name: string | null;
   /** The accessible name used in every action label ("Remove X from this game"). */
   labelName: string;
-  avatarColor: string;
+  /** The seat's avatar pair -- the person's own (avatarColorsFor), or
+   *  SeatGrid's neutral one for an invited seat. */
+  avatar: AvatarPair;
   /** "25 pts · Table 1" -- built by the caller, which knows whether points apply. */
   detail: string;
   busy: boolean;
@@ -44,7 +46,7 @@ type Props = {
 export default function SeatSheet({
   name,
   labelName,
-  avatarColor,
+  avatar,
   detail,
   busy,
   onClose,
@@ -71,8 +73,8 @@ export default function SeatSheet({
           <View style={styles.grabber} />
 
           <View style={styles.header}>
-            <View style={[styles.avatar, { backgroundColor: avatarColor }]}>
-              <Text style={styles.avatarText}>{initial}</Text>
+            <View style={[styles.avatar, { backgroundColor: avatar.bg }]}>
+              <Text style={[styles.avatarText, { color: avatar.fg }]}>{initial}</Text>
             </View>
             <View style={styles.headerText}>
               <Text style={styles.name} numberOfLines={1}>
@@ -243,7 +245,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarText: { fontFamily: type.bodyBold, fontSize: 19, color: '#ffffff' },
+  avatarText: { fontFamily: type.bodyBold, fontSize: 19 },
   headerText: { flex: 1, minWidth: 0 },
   name: { fontFamily: type.heading, fontSize: 22, lineHeight: 26, color: colors.text },
   detail: {

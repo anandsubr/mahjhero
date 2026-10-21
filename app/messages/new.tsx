@@ -13,6 +13,7 @@ import ErrorBanner from '../../components/ErrorBanner';
 import Screen from '../../components/Screen';
 import { GENERIC_ERROR } from '../../lib/constants';
 import { initialsFrom } from '../../lib/dashboard';
+import { avatarColorsFor } from '../../lib/friends';
 import {
   fetchAddablePeople,
   fetchFriends,
@@ -255,8 +256,8 @@ export default function NewMessageScreen() {
                 aria-selected={on}
                 style={[styles.person, on ? styles.personOn : null]}
               >
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>
+                <View style={[styles.avatar, { backgroundColor: avatarColorsFor(c.profile_id).bg }]}>
+                  <Text style={[styles.avatarText, { color: avatarColorsFor(c.profile_id).fg }]}>
                     {initialsFrom(c.display_name)}
                   </Text>
                 </View>
@@ -332,14 +333,12 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: colors.bg,
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarText: {
     fontFamily: type.bodyBold,
     fontSize: type.size.helper,
-    color: colors.text,
   },
   personBody: { flex: 1, minWidth: 0 },
   personName: {

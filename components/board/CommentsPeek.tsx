@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 import { Text } from '../Text';
-import { avatarColorFor } from '../../lib/friends';
+import { avatarColorsFor } from '../../lib/friends';
 import { memberInitials } from '../../lib/members';
 import type { FeedComment } from '../../lib/board';
 import { colors, type } from '../../lib/theme';
@@ -23,8 +23,8 @@ export default function CommentsPeek({ comments, total, onPress }: Props) {
     >
       {comments.map((c) => (
         <View key={c.id} style={styles.row}>
-          <View style={[styles.avatar, { backgroundColor: avatarColorFor(c.authorId) }]}>
-            <Text style={styles.initials}>{memberInitials(c.authorName)}</Text>
+          <View style={[styles.avatar, { backgroundColor: avatarColorsFor(c.authorId).bg }]}>
+            <Text style={[styles.initials, { color: avatarColorsFor(c.authorId).fg }]}>{memberInitials(c.authorName)}</Text>
           </View>
           <View style={styles.text}>
             <Text style={styles.name} numberOfLines={1}>
@@ -45,7 +45,7 @@ const styles = StyleSheet.create({
   block: { backgroundColor: colors.surface, borderRadius: 18, padding: 14, gap: 12 },
   row: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
   avatar: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
-  initials: { fontFamily: type.bodyBold, fontSize: 12, color: '#fff' },
+  initials: { fontFamily: type.bodyBold, fontSize: 12 },
   text: { flex: 1, minWidth: 0 },
   name: { fontFamily: type.bodyBold, fontSize: 14, color: colors.accent[700] },
   body: { fontFamily: type.bodyRegular, fontSize: 15, color: colors.text },

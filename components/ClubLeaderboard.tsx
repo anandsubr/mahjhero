@@ -6,7 +6,7 @@ import { FormCard } from './GameForm';
 import { TrophyIcon } from './icons';
 import { fetchClubLeaderboard, type LeaderboardEntry } from '../lib/leaderboard';
 import { initialsFrom } from '../lib/dashboard';
-import { avatarColorFor } from '../lib/friends';
+import { avatarColorsFor } from '../lib/friends';
 import { colors, radius, space, type } from '../lib/theme';
 
 export type ClubLeaderboardHandle = {
@@ -24,8 +24,8 @@ type Props = { clubId: string; userId: string | undefined };
  * draw is the hub header above this section now, so only the rows
  * themselves moved here.
  *
- * Same seeded avatar colours as the Friends screen, so a person looks the
- * same on both.
+ * Same seeded avatar pair (avatarColorsFor) as the Friends screen, so a
+ * person looks the same on both.
  */
 const ClubLeaderboard = forwardRef<ClubLeaderboardHandle, Props>(
   function ClubLeaderboard({ clubId, userId }, ref) {
@@ -97,9 +97,9 @@ const ClubLeaderboard = forwardRef<ClubLeaderboardHandle, Props>(
                   </View>
                   <View
                     testID="leaderboard-avatar"
-                    style={[styles.avatar, { backgroundColor: avatarColorFor(entry.profile_id) }]}
+                    style={[styles.avatar, { backgroundColor: avatarColorsFor(entry.profile_id).bg }]}
                   >
-                    <Text style={styles.avatarText}>{initialsFrom(name)}</Text>
+                    <Text style={[styles.avatarText, { color: avatarColorsFor(entry.profile_id).fg }]}>{initialsFrom(name)}</Text>
                   </View>
                   <View style={styles.rowBody}>
                     <Text style={styles.name} numberOfLines={1}>
@@ -155,7 +155,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarText: { fontFamily: type.bodyBold, fontSize: 15, color: '#ffffff' },
+  avatarText: { fontFamily: type.bodyBold, fontSize: 15 },
   rowBody: { flex: 1, minWidth: 0 },
   name: { fontFamily: type.bodySemiBold, fontSize: 15, color: colors.text },
   meta: { fontFamily: type.bodyRegular, fontSize: 13, color: colors.neutral[700] },

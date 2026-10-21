@@ -65,7 +65,7 @@ const CLUB_HUB_HEADER_CODE_ROW_MASK = ['[data-testid="club-hub-code-row"]'];
 
 /**
  * The Members rows' initials avatar (components/hub/MemberRow.tsx) is filled
- * by `avatarColorFor(profile_id)`, and every seeded profile id is random per
+ * by `avatarColorsFor(profile_id)`, and every seeded profile id is random per
  * run -- so the circle's colour differs run to run (same class as the
  * leaderboard avatar). The circle is the View whose only child is the
  * two-letter initials Text; masking it hides the colour but the
@@ -76,7 +76,7 @@ const MEMBER_AVATAR_MASK = ['div:has(> div[dir="auto"]:text-matches("^[A-Z]{2}$"
 /**
  * The door screen's one-letter initials avatar
  * (app/clubs/[id]/events/[eventId]/check-in.tsx's `avatar` View) is filled by
- * its own `avatarColorFor(profile_id)`, and every seeded profile id is random
+ * the shared `avatarColorsFor(profile_id)`, and every seeded profile id is random
  * per run -- the "per-run avatar colour" `CLUB_CODE_MASK`'s comment above
  * already names, which left both check-in baselines failing on a rerun
  * against their own just-written PNG. Same shape as `MEMBER_AVATAR_MASK`,
@@ -825,7 +825,7 @@ test.describe('signed in', () => {
         await expect(page.getByText('1 round won')).toBeVisible();
         await expect(page.getByText(`${points} pts`)).toBeVisible();
         // The winner's own avatar circle (`testID="leaderboard-avatar"`,
-        // components/ClubLeaderboard.tsx) is colored by `avatarColorFor`,
+        // components/ClubLeaderboard.tsx) is colored by `avatarColorsFor`,
         // hashed from `seedTableWithRound`'s FRESH filler profile id --
         // random every run, same class as `check-in`'s own per-run avatar
         // colour (docs/testing.md) -- confirmed here by four consecutive

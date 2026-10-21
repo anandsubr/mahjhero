@@ -1763,9 +1763,9 @@ export default function EventScreen() {
 
 /**
  * The 2a handoff's ghost pill: accent-700 Figtree text on no fill, tinted on
- * press -- "Add table", "Remove this table", "Cancel this game". The shared
- * ghost Button sets its label in the display face, which the design keeps
- * for titles only.
+ * press -- "Add table", "Remove this table", "Cancel this game". Kept
+ * separate from the shared ghost Button, whose label is Figtree bold in
+ * accentColor rather than this pill's accent-700 with a pressed tint.
  */
 function GhostPill({
   label,

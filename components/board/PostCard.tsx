@@ -5,7 +5,7 @@ import Tag from '../Tag';
 import AttachmentGrid from '../messages/AttachmentGrid';
 import HeartPill from './HeartPill';
 import CommentsPeek from './CommentsPeek';
-import { avatarColorFor } from '../../lib/friends';
+import { avatarColorsFor } from '../../lib/friends';
 import { isHostRole, memberInitials } from '../../lib/members';
 import { commentCountLabel, postTimeLabel, type FeedPost } from '../../lib/board';
 import { colors, type } from '../../lib/theme';
@@ -51,8 +51,8 @@ export default function PostCard({ post, attachmentUrls, onOpen, onToggleHeart, 
   return (
     <View style={styles.card}>
       <View style={styles.header}>
-        <View style={[styles.avatar, { backgroundColor: avatarColorFor(post.authorId) }]}>
-          <Text style={styles.initials}>{memberInitials(post.authorName)}</Text>
+        <View style={[styles.avatar, { backgroundColor: avatarColorsFor(post.authorId).bg }]}>
+          <Text style={[styles.initials, { color: avatarColorsFor(post.authorId).fg }]}>{memberInitials(post.authorName)}</Text>
         </View>
         <View style={styles.headerText}>
           <View style={styles.nameRow}>
@@ -121,7 +121,7 @@ const styles = StyleSheet.create({
   card: { gap: 12, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: colors.divider },
   header: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   avatar: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
-  initials: { fontFamily: type.bodyBold, fontSize: 16, color: '#fff' },
+  initials: { fontFamily: type.bodyBold, fontSize: 16 },
   headerText: { flex: 1, minWidth: 0 },
   nameRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 },
   name: { fontFamily: type.bodyBold, fontSize: 16, color: colors.accent[700], flexShrink: 1 },
