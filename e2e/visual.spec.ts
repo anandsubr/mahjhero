@@ -105,6 +105,16 @@ const SEAT_AVATAR_MASK = CHECK_IN_AVATAR_MASK;
  */
 const SENDER_AVATAR_MASK = ['[data-testid="sender-avatar"]'];
 
+/**
+ * The Calendar's per-day club dots (components/home/MyGamesCalendar.tsx,
+ * `testID="calendar-day-dots"`) are coloured by `clubColor(clubId)`, a hash
+ * of the club id, and ordered by club id -- both random per run, so the
+ * dots under a day differ in colour and order run to run. Masking the dots
+ * row hides that; the day numbers, the selected day and the game list
+ * underneath still pin the calendar.
+ */
+const CALENDAR_DOTS_MASK = ['[data-testid="calendar-day-dots"]'];
+
 /** Fonts are fetched, so a screenshot taken before they land is a false diff. */
 async function settle(page: Page) {
   await page.evaluate(() => document.fonts.ready);
@@ -659,6 +669,7 @@ test.describe('signed in', () => {
         await expect(page.getByRole('button', { name: 'Next month' })).toBeVisible();
         await captureScreen(page, vp, `home-calendar-${vp.name}.png`, [
           'div:has(> [data-testid^="glyph-"])',
+          ...CALENDAR_DOTS_MASK,
         ]);
       });
 
@@ -1242,9 +1253,12 @@ test.describe('signed in', () => {
         // The compact header's club tile glyph (CompactHeader's
         // testID="thread-header-avatar-club", not the global mask's id) is
         // picked from the random club id, so it differs per run -- the same
-        // mask the retired `club board populated` baseline carried.
+        // mask the retired `club board populated` baseline carried. The
+        // replies' sender avatars are hashed from random author ids; see
+        // SENDER_AVATAR_MASK.
         await captureScreen(page, vp, `club-post-${vp.name}.png`, [
           '[data-testid="thread-header-avatar-club"]',
+          ...SENDER_AVATAR_MASK,
         ]);
       });
 

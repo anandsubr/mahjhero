@@ -95,7 +95,7 @@ export default function MyGamesCalendar({
                     {cell.day}
                   </Text>
                 </View>
-                <View style={styles.dots}>
+                <View style={styles.dots} testID="calendar-day-dots">
                   {dots.map((clubId) => (
                     <View key={clubId} style={[styles.dot, { backgroundColor: clubColor(clubId) }]} />
                   ))}

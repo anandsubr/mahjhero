@@ -101,6 +101,11 @@ function deferred<T>() {
 describe('the club board', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // clearAllMocks leaves queued mockResolvedValueOnce values in place. A
+    // test that fails before draining its queue (the 120-post paging test
+    // timing out under a loaded full run) used to hand its leftover pages to
+    // the NEXT tests' fetchClubFeed, failing them too. Reset it outright.
+    fetchClubFeed.mockReset();
     getSignedUrls.mockResolvedValue({});
     fetchClubFeed.mockResolvedValue([]);
   });
@@ -326,6 +331,11 @@ describe('the club board', () => {
       expect(screen.getByRole('button', { name: 'Show older posts' })).toBeTruthy();
     });
 
+    // Renders up to 120 PostCards: ~0.8s alone, and a single page append or
+    // the 100-post refresh can pass findBy's default 1s wait when the full
+    // suite runs every worker at once. A longer wait for this test's own
+    // heavy steps, not a looser assertion.
+    const HEAVY = { timeout: 5000 };
     it('past 100 loaded, a refresh asks for 100 and keeps the older tail', async () => {
       const pages = [0, 1, 2, 3].map((n) =>
         Array.from({ length: 30 }, (_, i) => post(`k${n * 30 + i}`, { body: `Post ${n * 30 + i}` })),
@@ -339,22 +349,22 @@ describe('the club board', () => {
         // Refresh: a brand-new post on top, then the newest 99 already loaded.
         .mockResolvedValueOnce([post('new', { body: 'Brand new' }), ...all.slice(0, 99)]);
       render(<ClubBoard threadId="t1" />);
-      await screen.findByText('Post 0');
+      await screen.findByText('Post 0', undefined, HEAVY);
       for (const last of ['Post 59', 'Post 89', 'Post 119']) {
         fireEvent.click(screen.getByRole('button', { name: 'Show older posts' }));
-        await screen.findByText(last);
+        await screen.findByText(last, undefined, HEAVY);
       }
       const onInsert = useThreadRealtime.mock.calls.at(-1)![2] as () => void;
       await act(async () => {
         onInsert();
       });
-      await screen.findByText('Brand new');
+      await screen.findByText('Brand new', undefined, HEAVY);
       expect(fetchClubFeed).toHaveBeenLastCalledWith('t1', undefined, 100);
       expect(screen.getByText('Post 119')).toBeTruthy();
       expect(screen.getAllByText('Post 50')).toHaveLength(1);
       const bodies = screen.getAllByText(/^(Brand new|Post 0|Post 119)$/).map((n) => n.textContent);
       expect(bodies).toEqual(['Brand new', 'Post 0', 'Post 119']);
-    });
+    }, 20000);
 
     it('hides Show older posts when the first page is short', async () => {
       fetchClubFeed.mockResolvedValue([post('p1')]);
