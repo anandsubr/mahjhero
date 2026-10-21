@@ -7,12 +7,17 @@ import { updatePreferences } from '../../lib/profile';
 // Hoisted to module scope so the test can assert on it. A `push` created
 // inside the useRouter factory would be a fresh spy on every render, so
 // nothing outside the component could ever see the call.
-const push = vi.hoisted(() => vi.fn());
+const { push, replace, back, canGoBack } = vi.hoisted(() => ({
+  push: vi.fn(),
+  replace: vi.fn(),
+  back: vi.fn(),
+  canGoBack: vi.fn(() => true),
+}));
 
 vi.mock('expo-router', () => ({
   Redirect: () => null,
   Link: ({ children }: { children: React.ReactNode }) => children,
-  useRouter: () => ({ push, back: vi.fn() }),
+  useRouter: () => ({ push, replace, back, canGoBack }),
   usePathname: () => '/notifications',
   // Wrapped in a real `useEffect` keyed on the callback's identity, not
   // called inline on every render: `(cb) => cb()` fires on every render,
@@ -40,17 +45,41 @@ vi.mock('../../lib/profile', () => ({
 }));
 
 describe('notifications screen', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    canGoBack.mockReturnValue(true);
+  });
 
-  // Asserts the control *navigates*, not merely that the word "Profile" is
-  // on screen. The defect this guards against stranded a member on a dead-end
-  // screen; replacing the button with a static <Text>Profile</Text> would
-  // reintroduce exactly that and still satisfy a text-only assertion.
-  it('offers a way back to the profile screen', async () => {
+  // Reached from Profile, so back pops to it rather than stacking a second
+  // Profile on top -- and a deep link with no history still lands there.
+  it('pops back to Profile when there is history', async () => {
     render(<NotificationSettings />);
-    const back = await screen.findByRole('button', { name: 'Back to profile' });
-    fireEvent.click(back);
-    expect(push).toHaveBeenCalledWith('/profile');
+    await screen.findByText('Push and email');
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Profile' }));
+    expect(back).toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it('falls back to Profile when there is nothing to pop', async () => {
+    canGoBack.mockReturnValue(false);
+    render(<NotificationSettings />);
+    await screen.findByText('Push and email');
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Profile' }));
+    expect(replace).toHaveBeenCalledWith('/profile');
+    expect(back).not.toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it('offers back while the session is still loading', () => {
+    SESSION.loading = true;
+    try {
+      render(<NotificationSettings />);
+      fireEvent.click(screen.getByRole('button', { name: 'Back to Profile' }));
+      expect(back).toHaveBeenCalled();
+    } finally {
+      SESSION.loading = false;
+    }
   });
 
   it('lists the default channel first', async () => {

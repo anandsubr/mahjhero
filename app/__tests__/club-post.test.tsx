@@ -343,7 +343,7 @@ describe('a club post', () => {
       render(<PostScreen />);
       await screen.findByText('Cedar Falls Mah Jongg');
       expect(screen.queryByRole('button', { name: 'Messages' })).toBeNull();
-      fireEvent.click(screen.getByLabelText('Back to board'));
+      fireEvent.click(screen.getByLabelText('Back to the board'));
       expect(back).toHaveBeenCalled();
       expect(replace).not.toHaveBeenCalled();
     });
@@ -352,8 +352,18 @@ describe('a club post', () => {
       canGoBack.mockReturnValue(false);
       render(<PostScreen />);
       await screen.findByText('Cedar Falls Mah Jongg');
-      fireEvent.click(screen.getByLabelText('Back to board'));
+      fireEvent.click(screen.getByLabelText('Back to the board'));
       expect(back).not.toHaveBeenCalled();
+      expect(replace).toHaveBeenCalledWith('/clubs/c1/board');
+    });
+
+    // The board redirect route resolves the club itself (and sends an
+    // unreadable thread on to Home), so an unloaded thread still reaches it.
+    it('falls back to the board redirect when there is nothing to pop and the thread cannot be read', async () => {
+      canGoBack.mockReturnValue(false);
+      fetchThread.mockResolvedValue(null);
+      render(<PostScreen />);
+      fireEvent.click(await screen.findByLabelText('Back to the board'));
       expect(replace).toHaveBeenCalledWith('/messages/club/t1');
     });
 
@@ -375,7 +385,7 @@ describe('a club post', () => {
       fetchThread.mockResolvedValue(null);
       render(<PostScreen />);
       await screen.findByText('Anyone free Thursday?');
-      expect(screen.getByLabelText('Back to board')).toBeTruthy();
+      expect(screen.getByLabelText('Back to the board')).toBeTruthy();
       expect(screen.queryByRole('button', { name: /view club/ })).toBeNull();
       expect(screen.queryByTestId('thread-header-avatar-club')).toBeNull();
     });

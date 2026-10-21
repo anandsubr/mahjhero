@@ -2,10 +2,7 @@ import { useCallback, useState } from 'react';
 import { Redirect, useFocusEffect, useRouter } from 'expo-router';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { Text } from '../../components/Text';
-import Button from '../../components/Button';
-import { ChevronLeftIcon } from '../../components/icons';
-import MahjongTile from '../../components/MahjongTile';
-import PlusButton from '../../components/PlusButton';
+import CompactHeader from '../../components/CompactHeader';
 import ErrorBanner from '../../components/ErrorBanner';
 import Screen from '../../components/Screen';
 import ThreadRow from '../../components/ThreadRow';
@@ -15,6 +12,7 @@ import {
   sortThreads,
   type ThreadListRow,
 } from '../../lib/messages';
+import { goBack } from '../../lib/navigation';
 import { useSession } from '../../lib/session';
 import { colors, radius, space, type } from '../../lib/theme';
 
@@ -58,10 +56,30 @@ export default function MessagesScreen() {
     }, [session?.user.id, load]),
   );
 
+  // Reached from Home; a deep link or reload has nothing to pop. The + is
+  // the header's one action, as on the club and thread headers.
+  const header = (
+    <CompactHeader
+      divider={false}
+      onBack={() => goBack(router, '/home')}
+      backLabel="Back to Home"
+      kind={null}
+      titleOnly
+      title="Messages"
+      action={{
+        icon: 'plus',
+        label: 'New message',
+        onPress: () => router.push('/messages/new'),
+      }}
+    />
+  );
+
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered}>
-        <ActivityIndicator color={colors.accentColor} />
+      <Screen header={header} contentStyle={[styles.container, styles.fill]}>
+        <View style={styles.centered}>
+          <ActivityIndicator color={colors.accentColor} />
+        </View>
       </Screen>
     );
   }
@@ -75,34 +93,7 @@ export default function MessagesScreen() {
   const error = loadError;
 
   return (
-    <Screen
-      scroll
-      contentStyle={styles.container}
-    >
-      <Button
-        variant="ghost"
-        big={false}
-        icon={<ChevronLeftIcon color={colors.accentColor} />}
-        onPress={() => router.replace('/home')}
-        accessibilityLabel="Back to home"
-        style={styles.backButton}
-      >
-        Home
-      </Button>
-
-      <View style={styles.header}>
-        <View style={styles.titleRow}>
-          <View testID="section-tile">
-            <MahjongTile suit="bamboo" size="section" />
-          </View>
-          <Text style={styles.heading}>Messages</Text>
-        </View>
-        <PlusButton
-          onPress={() => router.push('/messages/new')}
-          accessibilityLabel="New message"
-        />
-      </View>
-
+    <Screen header={header} scroll contentStyle={styles.container}>
       {error ? <ErrorBanner message={error} /> : null}
 
       {!ready ? (
@@ -130,25 +121,16 @@ export default function MessagesScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: space[6], gap: space[3] },
-  backButton: { alignSelf: 'flex-start' },
-  centered: { alignItems: 'center' },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  // The header sits outside this padding (Screen's `header` slot); the top
+  // padding is the same gap that used to separate it from the content.
+  container: {
+    paddingTop: space[3],
+    paddingHorizontal: space[6],
+    paddingBottom: space[6],
     gap: space[3],
   },
-  heading: {
-    fontFamily: type.heading,
-    fontSize: type.size.h2,
-    color: colors.text,
-  },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space[2],
-  },
+  fill: { flex: 1 },
+  centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   // No gap: components/ThreadRow.tsx's own hairline divider is what
   // separates rows now, not space between cards.
   list: {},

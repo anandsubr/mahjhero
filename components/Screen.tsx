@@ -73,6 +73,19 @@ type ScreenProps = {
    * but still exercised there so the wiring itself is covered.
    */
   onRefresh?: () => Promise<void>;
+  /**
+   * A page header (CompactHeader, `edge` variant) drawn at the top of the
+   * content column but OUTSIDE `contentStyle`'s padding, so the back chevron
+   * and title land in exactly the same spot as on the conversation screens,
+   * which render the header full-width with no padded column around it.
+   * Without this, every padded screen put its header wherever its own
+   * padding happened to leave it (phase 6: Profile, Alerts and Messages
+   * each drew the chevron somewhere different). Scrolls with the content.
+   * Ignored with `stickyHeaderIndices`, whose caller lays out its own
+   * top-level children. Also overrides `center`: with a header the body
+   * starts below it rather than centred in the screen.
+   */
+  header?: ReactNode;
 };
 
 /**
@@ -99,6 +112,7 @@ export default function Screen({
   stickyHeaderIndices,
   avoidKeyboard = false,
   onRefresh,
+  header,
 }: ScreenProps) {
   const [refreshing, setRefreshing] = useState(false);
   const handleRefresh = onRefresh
@@ -120,7 +134,17 @@ export default function Screen({
   // screens. Landing it on the scroll/view wrapper instead means no
   // screen's own styling can ever cancel it out.
   const insets = useSafeAreaInsets();
-  const content = <View style={[styles.content, contentStyle]}>{children}</View>;
+  const content = header ? (
+    // Non-scroll screens (loading/error states) pass `flex: 1` in
+    // contentStyle to centre a spinner below the header; the column has to
+    // fill the screen for that inner flex to have room.
+    <View style={[styles.content, scroll ? null : styles.grow]}>
+      {header}
+      <View style={[scroll ? null : styles.grow, contentStyle]}>{children}</View>
+    </View>
+  ) : (
+    <View style={[styles.content, contentStyle]}>{children}</View>
+  );
 
   const body = scroll ? (
     <ScrollView
@@ -218,6 +242,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     justifyContent: 'center',
   },
+  grow: { flex: 1 },
   content: {
     width: '100%',
     maxWidth: layout.contentMaxWidth,

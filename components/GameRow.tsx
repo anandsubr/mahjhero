@@ -37,8 +37,9 @@ export function seatsLabel(game: MyGame): string {
 /**
  * One game in a list (Design V3 "shared game row"): date column, optional
  * club line, headline (title or its fallback), "time · venue", optional
- * description, tags, chevron. Used by Home's My games and, in phase 2, the
- * club Games section.
+ * description, tags (seats, status, and "Updated" when the game's details
+ * changed since you last opened it — never on a past game), chevron. Used
+ * by Home's My games and the club Games section.
  */
 export default function GameRow({
   game,
@@ -117,6 +118,11 @@ export default function GameRow({
               {tag.label}
             </Text>
           </View>
+          {game.updated && !past ? (
+            <View style={[styles.pill, styles.pillHosting]}>
+              <Text style={[styles.pillText, { color: colors.accent[800] }]}>Updated</Text>
+            </View>
+          ) : null}
         </View>
       </View>
 

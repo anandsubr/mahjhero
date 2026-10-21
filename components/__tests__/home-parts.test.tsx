@@ -16,7 +16,7 @@ const base: MyGame = {
   eventId: 'e1', clubId: 'c1', clubName: 'Test Club', title: 'Tuesday game',
   gameMode: 'open_play', seatingMode: 'open_seating', startsAt: '2026-09-29T15:30:00Z',
   timezone: 'America/New_York', venueName: 'Sample Venue', seatsTaken: 4, capacity: 8,
-  myStatus: 'going', waitlistPosition: null, tableLabel: null,
+  myStatus: 'going', waitlistPosition: null, tableLabel: null, updated: false,
 };
 const games: MyGame[] = [
   base,

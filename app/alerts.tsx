@@ -3,11 +3,12 @@ import { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { Text } from '../components/Text';
 import Card from '../components/Card';
+import CompactHeader from '../components/CompactHeader';
 import ErrorBanner from '../components/ErrorBanner';
-import MahjongTile from '../components/MahjongTile';
 import Screen from '../components/Screen';
 import { GENERIC_ERROR } from '../lib/constants';
 import { initialsFrom } from '../lib/dashboard';
+import { goBack } from '../lib/navigation';
 import {
   describeNotification,
   fetchMyNotifications,
@@ -48,12 +49,12 @@ function formatReceivedAt(createdAt: string): string {
 /**
  * The Alerts tab's own feed, reading `notification_outbox` from the client
  * for the first time -- see
- * docs/superpowers/specs/2026-09-02-alerts-feed-design.md. A genuine tab
- * root, like Messages and the Club dashboard, so unlike app/friends.tsx (a
- * screen reached FROM Profile) this carries no back link.
+ * docs/superpowers/specs/2026-09-02-alerts-feed-design.md. Reached from
+ * Home's bell, so its header's back returns there.
  */
 export default function AlertsScreen() {
   const { session, loading } = useSession();
+  const router = useRouter();
 
   const [rows, setRows] = useState<NotificationRow[] | null>(null);
   const [ready, setReady] = useState(false);
@@ -102,24 +103,30 @@ export default function AlertsScreen() {
     }, [session?.user.id, load]),
   );
 
+  const header = (
+    <CompactHeader
+      divider={false}
+      onBack={() => goBack(router, '/home')}
+      backLabel="Back to Home"
+      kind={null}
+      titleOnly
+      title="Alerts"
+    />
+  );
+
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered}>
-        <ActivityIndicator color={colors.accentColor} />
+      <Screen header={header} contentStyle={[styles.container, styles.fill]}>
+        <View style={styles.centered}>
+          <ActivityIndicator color={colors.accentColor} />
+        </View>
       </Screen>
     );
   }
   if (!session) return <Redirect href="/sign-in" />;
 
   return (
-    <Screen scroll contentStyle={styles.container}>
-      <View style={styles.titleRow}>
-        <View testID="section-tile">
-          <MahjongTile suit="green-dragon" size="section" />
-        </View>
-        <Text style={styles.heading}>Alerts</Text>
-      </View>
-
+    <Screen header={header} scroll contentStyle={styles.container}>
       {error ? <ErrorBanner message={error} /> : null}
 
       {!ready ? (
@@ -170,18 +177,16 @@ function NotificationCard({ row }: { row: NotificationRow }) {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: space[6], gap: space[3] },
-  centered: { alignItems: 'center' },
-  heading: {
-    fontFamily: type.heading,
-    fontSize: type.size.h1,
-    color: colors.text,
+  // The header sits outside this padding (Screen's `header` slot); the top
+  // padding is the same gap that used to separate it from the content.
+  container: {
+    paddingTop: space[3],
+    paddingHorizontal: space[6],
+    paddingBottom: space[6],
+    gap: space[3],
   },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space[2],
-  },
+  fill: { flex: 1 },
+  centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   emptyCard: {
     padding: space[4],
     borderRadius: radius.card,

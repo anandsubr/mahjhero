@@ -65,6 +65,7 @@ function game(overrides: Partial<MyGame>): MyGame {
     myStatus: 'not',
     waitlistPosition: null,
     tableLabel: null,
+    updated: false,
     ...overrides,
   };
 }

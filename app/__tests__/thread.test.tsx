@@ -379,7 +379,7 @@ describe('thread screen', () => {
     fetchThread.mockResolvedValueOnce(CLUB_THREAD);
     render(<ThreadScreen />);
     const redirect = await screen.findByTestId('redirect');
-    expect(redirect.getAttribute('data-href')).toBe('/messages/club/t1');
+    expect(redirect.getAttribute('data-href')).toBe('/clubs/c1/board');
     // Not even for a frame on the way past: the composer and the messages
     // are the flat screen, and neither is ever painted for a club thread.
     expect(screen.queryByLabelText('Message')).toBeNull();

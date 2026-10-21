@@ -14,8 +14,10 @@ import {
   seedTableWithRound,
   seedThreadWithAttachments,
   seedUnreadClubMessage,
+  seedUpdatedGame,
   setDismissedGuides,
   storageKeyFor,
+  UPDATED_GAME_PAGE_NOW,
 } from './session';
 
 // The LOCAL stack — the same project the bundle was built against in
@@ -70,6 +72,18 @@ const CLUB_HUB_HEADER_CODE_ROW_MASK = ['[data-testid="club-hub-code-row"]'];
  * name, tag and skill beside it still pin the row.
  */
 const MEMBER_AVATAR_MASK = ['div:has(> div[dir="auto"]:text-matches("^[A-Z]{2}$"))'];
+
+/**
+ * The door screen's one-letter initials avatar
+ * (app/clubs/[id]/events/[eventId]/check-in.tsx's `avatar` View) is filled by
+ * its own `avatarColorFor(profile_id)`, and every seeded profile id is random
+ * per run -- the "per-run avatar colour" `CLUB_CODE_MASK`'s comment above
+ * already names, which left both check-in baselines failing on a rerun
+ * against their own just-written PNG. Same shape as `MEMBER_AVATAR_MASK`,
+ * for a single letter; the name, tags and controls beside it still pin the
+ * row.
+ */
+const CHECK_IN_AVATAR_MASK = ['div:has(> div[dir="auto"]:text-matches("^[A-Z]$"))'];
 
 /** Fonts are fetched, so a screenshot taken before they land is a false diff. */
 async function settle(page: Page) {
@@ -414,7 +428,12 @@ test.describe('signed in', () => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/profile');
       await expect(page.getByText('About you')).toBeVisible();
-      await captureScreen(page, vp, `profile-${vp.name}.png`);
+      // The Email row shows this run's own `visual-${Date.now()}@example.com`
+      // address, so its digits differ every run -- and a digit of different
+      // width shifts the rest of the line, which took this baseline past the
+      // pixel budget on a rerun against its own just-written PNG. Masked the
+      // same way `CLUB_CODE_MASK` masks the per-run club code.
+      await captureScreen(page, vp, `profile-${vp.name}.png`, ['text=/^visual-\\d+@example\\.com$/']);
     });
 
     test(`new club at ${vp.name}`, async ({ page }) => {
@@ -443,6 +462,20 @@ test.describe('signed in', () => {
         page.getByText('No conversations yet. Start one with the + above.'),
       ).toBeVisible();
       await captureScreen(page, vp, `messages-${vp.name}.png`);
+    });
+
+    // Alerts (app/alerts.tsx), pictured for the first time with phase 6's
+    // CompactHeader (back chevron + "Alerts"). The EMPTY state: this
+    // block's fresh user has no notifications. The back control is
+    // asserted by its accessible name -- the header is the change this
+    // baseline exists for, and a chevron alone in the pixels could not
+    // tell "Back to Home" from a dead end.
+    test(`alerts at ${vp.name}`, async ({ page }) => {
+      await page.setViewportSize({ width: vp.width, height: vp.height });
+      await page.goto('/alerts');
+      await expect(page.getByText(/^No notifications yet\./)).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Back to Home' })).toBeVisible();
+      await captureScreen(page, vp, `alerts-${vp.name}.png`);
     });
 
     // The EMPTY state: this block's user belongs to no club, so there are
@@ -624,6 +657,43 @@ test.describe('signed in', () => {
         ]);
       });
 
+      // A My games row with the "Updated" pill (phase 6): a game whose
+      // details a host changed after the viewer last looked.
+      // `seedUpdatedGame` (e2e/session.ts) explains why this one test moves
+      // the page clock to UPDATED_GAME_PAGE_NOW (2098) instead of this
+      // block's 2026-08-22: the pill's `starts_at >= now()` test runs
+      // against the database's REAL clock, so only a far-future game can
+      // carry it, and Home only lists games within 120 days of the page's.
+      //
+      // Moving the page clock past the injected session's `expires_at`
+      // (real now + 1h, set by the outer hook) would make supabase-js treat
+      // the session as expired and try to refresh it on load, so a second
+      // init script -- registered after, so it runs after -- restamps that
+      // field relative to the new page clock. The access token itself is
+      // untouched and still validated by the server against the real
+      // clock, where it is fresh.
+      test(`home updated pill at ${vp.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+        await page.clock.setFixedTime(new Date(UPDATED_GAME_PAGE_NOW));
+        const key = storageKeyFor(SUPABASE_URL);
+        const expiresAt = Math.floor(Date.parse(UPDATED_GAME_PAGE_NOW) / 1000) + 3600;
+        await page.addInitScript(
+          ([k, exp]) => {
+            const raw = window.localStorage.getItem(k);
+            if (!raw) return;
+            window.localStorage.setItem(k, JSON.stringify({ ...JSON.parse(raw), expires_at: exp }));
+          },
+          [key, expiresAt] as const,
+        );
+        const { title } = await seedUpdatedGame(seeded.bookingClubId, userId);
+        await page.goto('/home');
+        await expect(page.getByText(title)).toBeVisible();
+        await expect(page.getByText('Updated', { exact: true })).toBeVisible();
+        await captureScreen(page, vp, `home-updated-${vp.name}.png`, [
+          'div:has(> [data-testid^="glyph-"])',
+        ]);
+      });
+
       // The club hub's Games section (app/clubs/[id]/(hub)/games.tsx), the
       // hub's default landing section, replacing the old club-detail screen
       // (app/clubs/[id]/index.tsx, now a redirect to `.../games`) that the
@@ -699,14 +769,14 @@ test.describe('signed in', () => {
         await captureScreen(page, vp, `club-members-as-member-${vp.name}.png`, [...CLUB_HUB_HEADER_CODE_ROW_MASK, ...MEMBER_AVATAR_MASK]);
       });
 
-      // The hub's Board section (app/clubs/[id]/(hub)/board.tsx) -- the SAME
-      // `ClubBoard` component the `club board populated`/`club post
-      // populated` baselines below already picture through the messages
-      // route, now reached through the hub's own chrome instead. Seeds its
-      // own club (`seedPopulatedBoard`, same as those two baselines) rather
-      // than reusing `seeded.clubId`, so this baseline is the hub header
-      // and section tabs around a populated board, not a second exercise of
-      // the post/reply rendering those two baselines already cover.
+      // The hub's Board section (app/clubs/[id]/(hub)/board.tsx) -- the one
+      // club board (phase 6). The standalone `/messages/club/{thread}` route
+      // now only redirects here, so its old `club board populated` baseline
+      // (`club-board-*.png`) was retired as a duplicate of this one; its
+      // text anchors (both posts, both comment-count plurals, both heart
+      // states) were folded in below. Seeds its own club
+      // (`seedPopulatedBoard`, same as the `club post populated` baseline)
+      // rather than reusing `seeded.clubId`.
       test(`club board at ${vp.name}`, async ({ page }) => {
         await page.setViewportSize({ width: vp.width, height: vp.height });
         const { clubId } = await seedPopulatedBoard(userId, userId.slice(0, 8));
@@ -715,11 +785,18 @@ test.describe('signed in', () => {
         await expect(
           page.getByText(/^Fall tournament signup opens Monday/),
         ).toBeVisible();
+        await expect(
+          page.getByText('Anyone free to help set up tables Saturday morning?'),
+        ).toBeVisible();
         await expect(page.getByText('Everyone in the club sees posts here')).toBeVisible();
         // No sort control (user decision 2026-10-17): newest first, always.
         await expect(page.getByText('Most recent')).toHaveCount(0);
+        // Both plurals, read as text -- "pixels cannot catch a one-glyph
+        // regression" (docs/testing.md).
         await expect(page.getByText('4 comments', { exact: true })).toBeVisible();
+        await expect(page.getByText('2 comments', { exact: true })).toBeVisible();
         await expect(page.getByText('View all 4 comments')).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Heart this post' })).toBeVisible();
         await expect(page.getByRole('button', { name: 'Remove your heart' })).toBeVisible();
         await expect(page.getByLabel('Write to the club')).toBeVisible();
         await captureScreen(page, vp, `club-hub-board-${vp.name}.png`, [
@@ -1095,57 +1172,10 @@ test.describe('signed in', () => {
         await captureScreen(page, vp, `thread-attachments-viewer-${vp.name}.png`);
       });
 
-      // The board, pictured for the first time -- and, since Task 13's own
-      // review, pictured with a THREADED discussion under it, not just four
-      // root-level messages that each read "No replies". `seedPopulatedThread`
-      // sets no message's `root_id`, so every message it inserts becomes its
-      // own post; reusing it here (as this test used to) meant the one thing
-      // this feature exists to show -- a post with replies under it -- was
-      // never in the picture. `seedPopulatedBoard` (e2e/session.ts) seeds its
-      // OWN club and thread instead, an announcement with four replies and a
-      // plain post with two, so this baseline shows two different
-      // `replyCountLabel` plurals ("4 replies", "2 replies") rather than four
-      // rows all reading "No replies".
-      test(`club board populated at ${vp.name}`, async ({ page }) => {
-        await page.setViewportSize({ width: vp.width, height: vp.height });
-        const { threadId } = await seedPopulatedBoard(userId, userId.slice(0, 8));
-        await page.goto(`/messages/club/${threadId}`);
-        // The feed shows each root's full body (no separate title row): the
-        // announcement's body opens with its subject line, and the plain
-        // post is a one-liner -- proof the board rendered more than one
-        // row, and that the announcement styling actually reached a real
-        // post rather than being asserted against nothing.
-        await expect(
-          page.getByText(/^Fall tournament signup opens Monday/),
-        ).toBeVisible();
-        await expect(
-          page.getByText('Anyone free to help set up tables Saturday morning?'),
-        ).toBeVisible();
-        // Both plurals, read off the row rather than asserted only via the
-        // screenshot -- "pixels cannot catch a one-glyph regression"
-        // (docs/testing.md). A regression that collapsed every count to the
-        // same value would still "pass" a screenshot-only check if both rows
-        // happened to read the same text.
-        await expect(page.getByText('4 comments', { exact: true })).toBeVisible();
-        await expect(page.getByText('2 comments', { exact: true })).toBeVisible();
-        // The comments peek (2 latest of 4) and its "View all" link, plus the
-        // seeded hearts: root1 has two (unfilled), root2 has the viewer's.
-        await expect(page.getByText('View all 4 comments')).toBeVisible();
-        await expect(page.getByRole('button', { name: 'Heart this post' })).toBeVisible();
-        await expect(page.getByRole('button', { name: 'Remove your heart' })).toBeVisible();
-        // The compact header's club tile glyph (CompactHeader gives it
-        // testID "thread-header-avatar-club", not the global mask's id) is
-        // chosen from the random club id, so it differs per run.
-        await captureScreen(page, vp, `club-board-${vp.name}.png`, [
-          ...MEMBER_AVATAR_MASK,
-          '[data-testid="thread-header-avatar-club"]',
-        ]);
-      });
-
-      // The post screen, pictured for the first time -- and, like the board
-      // test above, now with real replies under the root instead of an
+      // The post screen, pictured for the first time -- and, like the hub
+      // `club board` test, now with real replies under the root instead of an
       // empty post and a composer. Opens the announcement `seedPopulatedBoard`
-      // seeded above by its OWN id, via a direct `page.goto`, not by clicking
+      // seeds, by its OWN id, via a direct `page.goto`, not by clicking
       // the board row: a click is a client-side navigation, and expo-router's
       // web stack leaves the screen it came from mounted (hidden, not torn
       // down), so the board's own `testID="screen-scroll"` ScrollView is
@@ -1187,7 +1217,13 @@ test.describe('signed in', () => {
         await expect(
           page.getByText('Yes, we kept the beginner table again this year.'),
         ).toBeVisible();
-        await captureScreen(page, vp, `club-post-${vp.name}.png`);
+        // The compact header's club tile glyph (CompactHeader's
+        // testID="thread-header-avatar-club", not the global mask's id) is
+        // picked from the random club id, so it differs per run -- the same
+        // mask the retired `club board populated` baseline carried.
+        await captureScreen(page, vp, `club-post-${vp.name}.png`, [
+          '[data-testid="thread-header-avatar-club"]',
+        ]);
       });
 
       // The unread badge, pictured for the first time. Task 16 shipped it on
@@ -1491,7 +1527,7 @@ test.describe('signed in', () => {
         await expect(page.getByText('Wei Chen')).toBeVisible();
         await expect(page.getByText('Leo Fitzgerald')).toBeVisible();
         await expect(page.getByText(/ booked · /)).toBeVisible();
-        await captureScreen(page, vp, `check-in-${vp.name}.png`);
+        await captureScreen(page, vp, `check-in-${vp.name}.png`, CHECK_IN_AVATAR_MASK);
       });
 
       // Task 11: the open-seating event detail screen, pictured for the
@@ -1616,7 +1652,7 @@ test.describe('signed in', () => {
         await expect(page.getByText('Group of 2')).toHaveCount(2);
         // What the unpaid half of the pair owes -- `formatFeeCents(1500)`.
         await expect(page.getByText('$15 owed').first()).toBeVisible();
-        await captureScreen(page, vp, `check-in-open-seating-${vp.name}.png`);
+        await captureScreen(page, vp, `check-in-open-seating-${vp.name}.png`, CHECK_IN_AVATAR_MASK);
       });
 
       // The Clubs view's host checklist, not the player-intro card: this

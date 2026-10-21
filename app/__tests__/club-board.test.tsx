@@ -1,31 +1,10 @@
 import { useEffect } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import ClubBoardScreen from '../messages/club/[threadId]/index';
-import { glyphForClub } from '../../lib/dashboard';
+import ClubBoard from '../../components/ClubBoard';
 import type { FeedPost } from '../../lib/board';
 
-const platform = vi.hoisted(() => ({ os: 'web' }));
-vi.mock('react-native', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('react-native')>();
-  return {
-    ...actual,
-    Platform: {
-      ...actual.Platform,
-      get OS() {
-        return platform.os;
-      },
-    },
-    KeyboardAvoidingView: ({ children }: { children: React.ReactNode }) => (
-      <div data-testid="kav">{children}</div>
-    ),
-  };
-});
-
 const push = vi.fn();
-const back = vi.fn();
-const replace = vi.fn();
-const canGoBack = vi.fn(() => true);
 
 // Forwards to, rather than replaces, the identity-keyed `useEffect` double
 // below. Capturing every call lets one test re-invoke the LATEST registered
@@ -36,7 +15,7 @@ const useFocusEffectSpy = vi.fn();
 
 vi.mock('expo-router', () => ({
   Redirect: () => null,
-  useRouter: () => ({ push, back, replace, canGoBack }),
+  useRouter: () => ({ push, back: vi.fn(), replace: vi.fn(), canGoBack: () => true }),
   usePathname: () => '/messages/club/t1',
   useLocalSearchParams: () => ({ threadId: 't1' }),
   // Keyed on the callback's identity -- the real hook re-runs when the
@@ -60,16 +39,12 @@ vi.mock('../../lib/use-thread-realtime', () => ({
 }));
 
 const markPostRead = vi.fn();
-const fetchThread = vi.fn();
-const postMessage = vi.fn();
 vi.mock('../../lib/messages', async () => {
   const actual =
     await vi.importActual<typeof import('../../lib/messages')>('../../lib/messages');
   return {
     ...actual,
     markPostRead: (...a: unknown[]) => markPostRead(...a),
-    fetchThread: (...a: unknown[]) => fetchThread(...a),
-    postMessage: (...a: unknown[]) => postMessage(...a),
   };
 });
 
@@ -92,17 +67,6 @@ vi.mock('../../lib/attachments', () => ({
   getSignedUrls: (...a: unknown[]) => getSignedUrls(...a),
   MAX_ATTACHMENTS: 4,
 }));
-
-const countBroadcastRecipients = vi.fn();
-vi.mock('../../lib/broadcasts', () => ({
-  countBroadcastRecipients: (...a: unknown[]) => countBroadcastRecipients(...a),
-}));
-
-const fetchRoster = vi.fn();
-vi.mock('../../lib/clubs', async () => {
-  const actual = await vi.importActual<typeof import('../../lib/clubs')>('../../lib/clubs');
-  return { ...actual, fetchRoster: (...a: unknown[]) => fetchRoster(...a) };
-});
 
 function post(id: string, over: Partial<FeedPost> = {}): FeedPost {
   return {
@@ -137,16 +101,13 @@ function deferred<T>() {
 describe('the club board', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    fetchThread.mockResolvedValue({ id: 't1', club_id: 'c1' });
-    countBroadcastRecipients.mockResolvedValue(12);
     getSignedUrls.mockResolvedValue({});
-    fetchRoster.mockResolvedValue([{ profile_id: 'me', role: 'member', display_name: 'Me', skill_level: null }]);
     fetchClubFeed.mockResolvedValue([]);
   });
 
   it('captions the board and lists posts as post cards', async () => {
     fetchClubFeed.mockResolvedValue([post('p1', { body: 'Anyone free Thursday?', heartCount: 3 })]);
-    render(<ClubBoardScreen />);
+    render(<ClubBoard threadId="t1" />);
     expect(await screen.findByText('Anyone free Thursday?')).toBeTruthy();
     expect(screen.getByText('Everyone in the club sees posts here')).toBeTruthy();
     // PostCard's own heart pill and comment link.
@@ -156,27 +117,27 @@ describe('the club board', () => {
   });
 
   it('says so when the board is empty', async () => {
-    render(<ClubBoardScreen />);
+    render(<ClubBoard threadId="t1" />);
     expect(await screen.findByText('Nothing here yet. Start the first post.')).toBeTruthy();
   });
 
   it('reports a failed load as a failure, not as an empty board', async () => {
     fetchClubFeed.mockResolvedValue(null);
-    render(<ClubBoardScreen />);
+    render(<ClubBoard threadId="t1" />);
     await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy());
     expect(screen.queryByText('Nothing here yet. Start the first post.')).toBeNull();
   });
 
   it('does not mark anything read just by being opened', async () => {
     fetchClubFeed.mockResolvedValue([post('p1', { unread: true })]);
-    render(<ClubBoardScreen />);
+    render(<ClubBoard threadId="t1" />);
     await screen.findByText('Body of p1');
     expect(markPostRead).not.toHaveBeenCalled();
   });
 
   it('has no sort control: always newest first', async () => {
     fetchClubFeed.mockResolvedValue([post('p1')]);
-    render(<ClubBoardScreen />);
+    render(<ClubBoard threadId="t1" />);
     await screen.findByText('Body of p1');
     expect(screen.queryByText('Most recent')).toBeNull();
     expect(screen.queryByText('Latest activity')).toBeNull();
@@ -188,7 +149,7 @@ describe('the club board', () => {
       fetchClubFeed.mockResolvedValue([post('p1', { heartCount: 2 })]);
       const call = deferred<{ hearted: boolean | null; error: string | null }>();
       togglePostHeart.mockReturnValue(call.promise);
-      render(<ClubBoardScreen />);
+      render(<ClubBoard threadId="t1" />);
       fireEvent.click(await screen.findByRole('button', { name: 'Heart this post' }));
       const pill = screen.getByRole('button', { name: 'Remove your heart' });
       expect(within(pill).getByText('3')).toBeTruthy();
@@ -200,7 +161,7 @@ describe('the club board', () => {
     it('rolls the heart and count back when the toggle fails', async () => {
       fetchClubFeed.mockResolvedValue([post('p1', { heartCount: 2 })]);
       togglePostHeart.mockResolvedValue({ hearted: null, error: 'nope' });
-      render(<ClubBoardScreen />);
+      render(<ClubBoard threadId="t1" />);
       fireEvent.click(await screen.findByRole('button', { name: 'Heart this post' }));
       await waitFor(() => expect(togglePostHeart).toHaveBeenCalled());
       const pill = await screen.findByRole('button', { name: 'Heart this post' });
@@ -210,7 +171,7 @@ describe('the club board', () => {
     it('rolls an un-heart back too', async () => {
       fetchClubFeed.mockResolvedValue([post('p1', { heartCount: 1, heartedByMe: true })]);
       togglePostHeart.mockResolvedValue({ hearted: null, error: 'nope' });
-      render(<ClubBoardScreen />);
+      render(<ClubBoard threadId="t1" />);
       fireEvent.click(await screen.findByRole('button', { name: 'Remove your heart' }));
       await waitFor(() => expect(togglePostHeart).toHaveBeenCalled());
       const pill = await screen.findByRole('button', { name: 'Remove your heart' });
@@ -221,7 +182,7 @@ describe('the club board', () => {
       fetchClubFeed.mockResolvedValue([post('p1', { heartCount: 0 })]);
       const call = deferred<{ hearted: boolean | null; error: string | null }>();
       togglePostHeart.mockReturnValue(call.promise);
-      render(<ClubBoardScreen />);
+      render(<ClubBoard threadId="t1" />);
       fireEvent.click(await screen.findByRole('button', { name: 'Heart this post' }));
       fireEvent.click(screen.getByRole('button', { name: 'Remove your heart' }));
       expect(togglePostHeart).toHaveBeenCalledTimes(1);
@@ -234,7 +195,7 @@ describe('the club board', () => {
       fetchClubFeed.mockResolvedValue([post('p1', { heartCount: 4 })]);
       // Server says "not hearted" (e.g. another device already toggled).
       togglePostHeart.mockResolvedValue({ hearted: false, error: null });
-      render(<ClubBoardScreen />);
+      render(<ClubBoard threadId="t1" />);
       fireEvent.click(await screen.findByRole('button', { name: 'Heart this post' }));
       await waitFor(() => expect(togglePostHeart).toHaveBeenCalled());
       const pill = await screen.findByRole('button', { name: 'Heart this post' });
@@ -250,7 +211,7 @@ describe('the club board', () => {
         .mockResolvedValueOnce([post('p1', { heartCount: 5, heartedByMe: false })]);
       const call = deferred<{ hearted: boolean | null; error: string | null }>();
       togglePostHeart.mockReturnValue(call.promise);
-      render(<ClubBoardScreen />);
+      render(<ClubBoard threadId="t1" />);
       fireEvent.click(await screen.findByRole('button', { name: 'Heart this post' }));
       const onInsert = useThreadRealtime.mock.calls.at(-1)![2] as () => void;
       await act(async () => {
@@ -268,7 +229,7 @@ describe('the club board', () => {
         .mockResolvedValueOnce([post('p1', { heartCount: 5, heartedByMe: true })]);
       const call = deferred<{ hearted: boolean | null; error: string | null }>();
       togglePostHeart.mockReturnValue(call.promise);
-      render(<ClubBoardScreen />);
+      render(<ClubBoard threadId="t1" />);
       fireEvent.click(await screen.findByRole('button', { name: 'Heart this post' }));
       const onInsert = useThreadRealtime.mock.calls.at(-1)![2] as () => void;
       await act(async () => {
@@ -286,7 +247,7 @@ describe('the club board', () => {
         .mockResolvedValueOnce([post('p1', { heartCount: 7, heartedByMe: false })]);
       const call = deferred<{ hearted: boolean | null; error: string | null }>();
       togglePostHeart.mockReturnValue(call.promise);
-      render(<ClubBoardScreen />);
+      render(<ClubBoard threadId="t1" />);
       fireEvent.click(await screen.findByRole('button', { name: 'Heart this post' }));
       const onInsert = useThreadRealtime.mock.calls.at(-1)![2] as () => void;
       await act(async () => {
@@ -312,7 +273,7 @@ describe('the club board', () => {
         .mockResolvedValueOnce(page1)
         // Overlaps on p29 (equal timestamp re-read) and adds p30.
         .mockResolvedValueOnce([page1[29], post('p30', { body: 'An older post' })]);
-      render(<ClubBoardScreen />);
+      render(<ClubBoard threadId="t1" />);
       await screen.findByText('Body of p0');
       fireEvent.click(screen.getByRole('button', { name: 'Show older posts' }));
       expect(await screen.findByText('An older post')).toBeTruthy();
@@ -331,7 +292,7 @@ describe('the club board', () => {
         .mockResolvedValueOnce(page1)
         .mockResolvedValueOnce([older])
         .mockResolvedValueOnce([...page1, older]);
-      render(<ClubBoardScreen />);
+      render(<ClubBoard threadId="t1" />);
       await screen.findByText('Body of p0');
       fireEvent.click(screen.getByRole('button', { name: 'Show older posts' }));
       await screen.findByText('An older post');
@@ -351,7 +312,7 @@ describe('the club board', () => {
         .mockResolvedValueOnce(page1)
         .mockResolvedValueOnce(page2)
         .mockResolvedValueOnce([...page1, ...page2]);
-      render(<ClubBoardScreen />);
+      render(<ClubBoard threadId="t1" />);
       await screen.findByText('Body of p0');
       fireEvent.click(screen.getByRole('button', { name: 'Show older posts' }));
       await screen.findByText('Older 29');
@@ -377,7 +338,7 @@ describe('the club board', () => {
         .mockResolvedValueOnce(pages[3])
         // Refresh: a brand-new post on top, then the newest 99 already loaded.
         .mockResolvedValueOnce([post('new', { body: 'Brand new' }), ...all.slice(0, 99)]);
-      render(<ClubBoardScreen />);
+      render(<ClubBoard threadId="t1" />);
       await screen.findByText('Post 0');
       for (const last of ['Post 59', 'Post 89', 'Post 119']) {
         fireEvent.click(screen.getByRole('button', { name: 'Show older posts' }));
@@ -397,7 +358,7 @@ describe('the club board', () => {
 
     it('hides Show older posts when the first page is short', async () => {
       fetchClubFeed.mockResolvedValue([post('p1')]);
-      render(<ClubBoardScreen />);
+      render(<ClubBoard threadId="t1" />);
       await screen.findByText('Body of p1');
       expect(screen.queryByRole('button', { name: 'Show older posts' })).toBeNull();
     });
@@ -413,7 +374,7 @@ describe('the club board', () => {
           ],
         }),
       ]);
-      render(<ClubBoardScreen />);
+      render(<ClubBoard threadId="t1" />);
       fireEvent.click(await screen.findByText('1 comment'));
       expect(push).toHaveBeenCalledWith('/messages/club/t1/p1');
     });
@@ -421,7 +382,7 @@ describe('the club board', () => {
     it('opens the post screen from More on a long post', async () => {
       const long = Array.from({ length: 12 }, (_, i) => `line ${i}`).join('\n');
       fetchClubFeed.mockResolvedValue([post('p1', { body: long })]);
-      render(<ClubBoardScreen />);
+      render(<ClubBoard threadId="t1" />);
       fireEvent.click(await screen.findByText('More'));
       expect(push).toHaveBeenCalledWith('/messages/club/t1/p1');
     });
@@ -437,74 +398,21 @@ describe('the club board', () => {
         ],
       }),
     ]);
-    render(<ClubBoardScreen />);
+    render(<ClubBoard threadId="t1" />);
     await waitFor(() => expect(getSignedUrls).toHaveBeenCalled());
     expect(getSignedUrls).toHaveBeenCalledTimes(1);
     expect(getSignedUrls).toHaveBeenCalledWith(['t1/a.jpg', 't1/b.jpg', 't1/c.jpg']);
   });
 
-  describe('composer', () => {
-    it('pins the composer, and a new post reloads the feed with it first', async () => {
-      fetchClubFeed
-        .mockResolvedValueOnce([post('p1')])
-        .mockResolvedValueOnce([post('p9', { body: 'Fresh post' }), post('p1')]);
-      postMessage.mockResolvedValue({ id: 'p9', error: null });
-      render(<ClubBoardScreen />);
-      await screen.findByText('Body of p1');
-      fireEvent.change(screen.getByPlaceholderText('Write to the club'), {
-        target: { value: 'Fresh post' },
-      });
-      fireEvent.click(screen.getByRole('button', { name: 'Post' }));
-      expect(await screen.findByText('Fresh post')).toBeTruthy();
-      expect(fetchClubFeed).toHaveBeenCalledTimes(2);
-      const bodies = screen.getAllByText(/^(Fresh post|Body of p1)$/).map((n) => n.textContent);
-      expect(bodies).toEqual(['Fresh post', 'Body of p1']);
-    });
-  });
-
-  describe('announcing', () => {
-    it('has no Announcement button; organizers get the composer megaphone instead', async () => {
-      fetchRoster.mockResolvedValue([{ profile_id: 'me', role: 'co_organizer', display_name: 'Me', skill_level: null }]);
-      render(<ClubBoardScreen />);
-      expect(await screen.findByRole('switch', { name: 'Email everyone in the club' })).toBeTruthy();
-      expect(fetchRoster).toHaveBeenCalledWith('c1');
-      expect(screen.queryByRole('button', { name: 'Announcement' })).toBeNull();
-    });
-
-    it('posts an announcement from the composer, counting recipients for this club', async () => {
-      fetchRoster.mockResolvedValue([{ profile_id: 'me', role: 'host', display_name: 'Me', skill_level: null }]);
-      postMessage.mockResolvedValue({ id: 'p9', error: null });
-      render(<ClubBoardScreen />);
-      fireEvent.click(await screen.findByRole('switch', { name: 'Email everyone in the club' }));
-      expect(await screen.findByText('Will also email 12 people in the club')).toBeTruthy();
-      expect(countBroadcastRecipients).toHaveBeenCalledWith('c1', null);
-      fireEvent.change(screen.getByPlaceholderText('Write to the club'), {
-        target: { value: 'Tables at seven' },
-      });
-      fireEvent.click(screen.getByRole('button', { name: 'Post and email everyone' }));
-      await waitFor(() =>
-        expect(postMessage).toHaveBeenCalledWith('t1', 'Tables at seven', true, null, null, []),
-      );
-    });
-
-    it('does not show members the megaphone or an Announcement button', async () => {
-      render(<ClubBoardScreen />);
-      await screen.findByText('Nothing here yet. Start the first post.');
-      await waitFor(() => expect(fetchRoster).toHaveBeenCalled());
-      expect(screen.queryByRole('switch', { name: 'Email everyone in the club' })).toBeNull();
-      expect(screen.queryByRole('button', { name: 'Announcement' })).toBeNull();
-    });
-  });
-
   it('subscribes to the thread so a new post appears without a reopen', async () => {
-    render(<ClubBoardScreen />);
+    render(<ClubBoard threadId="t1" />);
     await waitFor(() =>
       expect(useThreadRealtime).toHaveBeenCalledWith('t1', 'me', expect.any(Function)),
     );
   });
 
   it('refetches the board when the subscription fires', async () => {
-    render(<ClubBoardScreen />);
+    render(<ClubBoard threadId="t1" />);
     await waitFor(() => expect(fetchClubFeed).toHaveBeenCalledTimes(1));
     const onInsert = useThreadRealtime.mock.calls.at(-1)![2] as () => void;
     await act(async () => {
@@ -522,7 +430,7 @@ describe('the club board', () => {
     fetchClubFeed
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([post('p2', { body: 'New post while you were away' })]);
-    render(<ClubBoardScreen />);
+    render(<ClubBoard threadId="t1" />);
     await waitFor(() => expect(fetchClubFeed).toHaveBeenCalledTimes(1));
     expect(await screen.findByText(/Nothing here yet/)).toBeTruthy();
 
@@ -534,97 +442,5 @@ describe('the club board', () => {
 
     await waitFor(() => expect(fetchClubFeed).toHaveBeenCalledTimes(2));
     expect(await screen.findByText('New post while you were away')).toBeTruthy();
-  });
-
-  it('has no header New post control -- the pinned composer is the way to post', async () => {
-    render(<ClubBoardScreen />);
-    await screen.findByText('Nothing here yet. Start the first post.');
-    expect(screen.queryByLabelText('New post')).toBeNull();
-  });
-
-  describe('header', () => {
-    beforeEach(() => {
-      fetchThread.mockResolvedValue({
-        id: 't1',
-        club_id: 'c1',
-        event_id: null,
-        title: null,
-        clubs: { name: 'Cedar Falls Mah Jongg', timezone: 'America/New_York' },
-        events: null,
-        thread_members: [],
-      });
-    });
-
-    it("shows the club's name once the thread has loaded", async () => {
-      render(<ClubBoardScreen />);
-      expect(await screen.findByText('Cedar Falls Mah Jongg')).toBeTruthy();
-      expect(screen.getByTestId('thread-header-avatar-club')).toBeTruthy();
-    });
-
-    it('shows the club as a mahjong tile', async () => {
-      render(<ClubBoardScreen />);
-      const tile = await screen.findByTestId('thread-header-avatar-club');
-      expect(within(tile).getByTestId(`glyph-${glyphForClub('c1')}`)).toBeTruthy();
-    });
-
-    it('goes back through history when there is some', async () => {
-      canGoBack.mockReturnValue(true);
-      render(<ClubBoardScreen />);
-      await screen.findByText('Cedar Falls Mah Jongg');
-      fireEvent.click(screen.getByLabelText('Back'));
-      expect(back).toHaveBeenCalled();
-      expect(replace).not.toHaveBeenCalled();
-    });
-
-    it('lands on the club Board, not the inbox, with no history', async () => {
-      canGoBack.mockReturnValue(false);
-      render(<ClubBoardScreen />);
-      await screen.findByText('Cedar Falls Mah Jongg');
-      fireEvent.click(screen.getByLabelText('Back'));
-      expect(replace).toHaveBeenCalledWith('/clubs/c1/board');
-      expect(back).not.toHaveBeenCalled();
-      expect(push).not.toHaveBeenCalledWith('/messages');
-    });
-
-    it('falls back to /home when there is no history and the thread has not loaded', async () => {
-      canGoBack.mockReturnValue(false);
-      fetchThread.mockResolvedValue(null);
-      render(<ClubBoardScreen />);
-      fireEvent.click(await screen.findByLabelText('Back'));
-      expect(replace).toHaveBeenCalledWith('/home');
-      expect(back).not.toHaveBeenCalled();
-    });
-
-    it('renders the club pill as a plain label, not a button that could navigate away', async () => {
-      render(<ClubBoardScreen />);
-      await screen.findByText('Cedar Falls Mah Jongg');
-      expect(
-        screen.queryByRole('button', { name: /Cedar Falls Mah Jongg/ }),
-      ).toBeNull();
-    });
-
-    it('renders only the back chevron when the thread cannot be read -- and still shows the posts', async () => {
-      fetchThread.mockResolvedValue(null);
-      fetchClubFeed.mockResolvedValue([post('p1', { body: 'Anyone free Thursday?' })]);
-      render(<ClubBoardScreen />);
-      await screen.findByText('Anyone free Thursday?');
-      expect(screen.getByLabelText('Back')).toBeTruthy();
-      expect(screen.queryByTestId('thread-header-avatar-club')).toBeNull();
-      // No club id, so no roster read and no megaphone.
-      expect(fetchRoster).not.toHaveBeenCalled();
-      expect(screen.queryByRole('switch', { name: 'Email everyone in the club' })).toBeNull();
-    });
-  });
-
-  it('lifts the pinned composer above the iOS keyboard', async () => {
-    platform.os = 'ios';
-    try {
-      render(<ClubBoardScreen />);
-      await screen.findByText('Everyone in the club sees posts here');
-      const kav = screen.getByTestId('kav');
-      expect(within(kav).getByLabelText('Write to the club')).toBeTruthy();
-    } finally {
-      platform.os = 'web';
-    }
   });
 });

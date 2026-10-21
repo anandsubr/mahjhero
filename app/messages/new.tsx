@@ -8,9 +8,9 @@ import {
 } from 'react-native';
 import { Text } from '../../components/Text';
 import Button from '../../components/Button';
+import CompactHeader from '../../components/CompactHeader';
 import ErrorBanner from '../../components/ErrorBanner';
 import Screen from '../../components/Screen';
-import { ChevronLeftIcon } from '../../components/icons';
 import { GENERIC_ERROR } from '../../lib/constants';
 import { initialsFrom } from '../../lib/dashboard';
 import {
@@ -20,6 +20,7 @@ import {
   type Friend,
 } from '../../lib/friends';
 import { createGroupThread } from '../../lib/messages';
+import { goBack } from '../../lib/navigation';
 import { useSession } from '../../lib/session';
 import { colors, radius, space, type } from '../../lib/theme';
 
@@ -28,13 +29,8 @@ type Candidate = { profile_id: string; display_name: string; meta: string };
 /**
  * Start a conversation with one or more people.
  *
- * Carries the tab bar with `active="messages"`, the same as every other
- * signed-in screen: the design source renders the bar as a sibling of every
- * `appScreens` entry, `compose` included — it is not gated to the four tabs
- * themselves. Also carries an explicit "Messages" ghost back link again
- * (2026-09-01-back-links-design.md): the Messages tab reaches the identical
- * `/messages` route, but renders as *already active* here, which reads as
- * "you are here" rather than a way out.
+ * Headed by the same CompactHeader as the inbox, its back popping to
+ * wherever the member came from (the inbox, from its +).
  *
  * Two visible steps, on purpose: picking people and tapping Start
  * conversation only creates (or opens) the thread and navigates straight to
@@ -71,8 +67,8 @@ type Candidate = { profile_id: string; display_name: string; meta: string };
  *   naming which club. Anything
  *   a member could do here, they could do better one tap away.
  * - Removing it also deletes the last navigation path that had to be
- *   specially taught a club thread belongs on `/messages/club/<id>`, never
- *   the flat `/messages/[threadId]` screen (docs/messaging.md decision #7)
+ *   specially taught a club thread belongs on the club's hub Board
+ *   (`/clubs/<id>/board`), never the flat `/messages/[threadId]` screen (docs/messaging.md decision #7)
  *   -- this screen's own `Everyone` branch was one of the four sites that
  *   invariant had to be re-learned at, the thirteen-review history that
  *   decision records.
@@ -179,10 +175,25 @@ export default function NewMessageScreen() {
     router.replace(`/messages/${result.id}`);
   }, [picked, router]);
 
+  // Usually opened from the inbox's +; a deep link or reload has nothing to
+  // pop, so it falls back to the inbox.
+  const header = (
+    <CompactHeader
+      divider={false}
+      onBack={() => goBack(router, '/messages')}
+      backLabel="Back to Messages"
+      kind={null}
+      titleOnly
+      title="New message"
+    />
+  );
+
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered}>
-        <ActivityIndicator color={colors.accentColor} />
+      <Screen header={header} contentStyle={[styles.container, styles.fill]}>
+        <View style={styles.centered}>
+          <ActivityIndicator color={colors.accentColor} />
+        </View>
       </Screen>
     );
   }
@@ -217,23 +228,7 @@ export default function NewMessageScreen() {
   const genuinelyEmpty = friends !== null && people !== null && candidates.length === 0;
 
   return (
-    <Screen scroll contentStyle={styles.container}>
-      <Button
-        variant="ghost"
-        big={false}
-        icon={<ChevronLeftIcon color={colors.accentColor} />}
-        onPress={() => {
-          if (router.canGoBack()) router.back();
-          else router.replace('/messages');
-        }}
-        accessibilityLabel="Back to messages"
-        style={styles.backButton}
-      >
-        Messages
-      </Button>
-
-      <Text style={styles.heading}>New message</Text>
-
+    <Screen header={header} scroll contentStyle={styles.container}>
       {error ? <ErrorBanner message={error} /> : null}
 
       {!ready ? (
@@ -289,14 +284,16 @@ export default function NewMessageScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: space[6], gap: space[3] },
-  centered: { alignItems: 'center' },
-  backButton: { alignSelf: 'flex-start' },
-  heading: {
-    fontFamily: type.heading,
-    fontSize: type.size.h3,
-    color: colors.text,
+  // The header sits outside this padding (Screen's `header` slot); the top
+  // padding is the same gap that used to separate it from the content.
+  container: {
+    paddingTop: space[3],
+    paddingHorizontal: space[6],
+    paddingBottom: space[6],
+    gap: space[3],
   },
+  fill: { flex: 1 },
+  centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   label: {
     fontFamily: type.bodyRegular,
     fontSize: type.size.helper,

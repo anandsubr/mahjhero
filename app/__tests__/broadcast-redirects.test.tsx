@@ -41,7 +41,7 @@ describe('the old broadcast routes', () => {
   it('sends the club compose route to the club board', async () => {
     render(<BroadcastRedirect />);
     await waitFor(() => expect(openThreadForClub).toHaveBeenCalledWith('c1'));
-    await waitFor(() => expect(replace).toHaveBeenCalledWith('/messages/club/t1'));
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/clubs/c1/board'));
   });
 
   // A game thread stays FLAT -- only the club branch moved to the board.
@@ -53,9 +53,9 @@ describe('the old broadcast routes', () => {
     expect(openThreadForClub).not.toHaveBeenCalled();
   });
 
-  it('sends the sent-history route to the club board', async () => {
+  it('sends the sent-history route to the hub Board', async () => {
     render(<BroadcastsRedirect />);
-    await waitFor(() => expect(replace).toHaveBeenCalledWith('/messages/club/t1'));
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/clubs/c1/board'));
   });
 
   // A refusal must not strand somebody on a blank screen with a spinner.

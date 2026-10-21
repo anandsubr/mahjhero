@@ -1,5 +1,6 @@
 import type { GameMode } from './clubs';
 import type { SeatingMode } from './events';
+import { seenLocally } from './seen-events';
 import { supabase } from './supabase';
 
 /**
@@ -27,6 +28,11 @@ export type MyGame = {
   waitlistPosition: number | null;
   tableLabel: string | null;
   notes?: string;
+  /**
+   * The game's details (time, venue, name, description) changed since you
+   * last opened it — drives GameRow's "Updated" pill. Computed by the RPC.
+   */
+  updated: boolean;
 };
 
 type MyGameRow = {
@@ -45,9 +51,11 @@ type MyGameRow = {
   my_status: 'going' | 'waitlisted' | 'hosting';
   waitlist_position: number | null;
   table_label: string | null;
+  updated?: boolean | null;
 };
 
 export async function fetchMyGames(from: Date, to: Date): Promise<MyGame[] | null> {
+  const startedAt = Date.now();
   try {
     const { data, error } = await supabase.rpc('my_games', {
       from_ts: from.toISOString(),
@@ -72,6 +80,7 @@ export async function fetchMyGames(from: Date, to: Date): Promise<MyGame[] | nul
       myStatus: r.my_status,
       waitlistPosition: r.waitlist_position,
       tableLabel: r.table_label,
+      updated: r.updated === true && !seenLocally(r.event_id, startedAt),
     }));
   } catch (cause) {
     console.error('fetchMyGames failed', cause);
@@ -91,6 +100,7 @@ export async function fetchClubGames(
   from: Date,
   to: Date,
 ): Promise<MyGame[] | null> {
+  const startedAt = Date.now();
   try {
     const { data, error } = await supabase.rpc('club_games', {
       target_club: clubId,
@@ -117,6 +127,7 @@ export async function fetchClubGames(
       waitlistPosition: r.waitlist_position,
       tableLabel: r.table_label,
       notes: r.notes ?? undefined,
+      updated: r.updated === true && !seenLocally(r.event_id, startedAt),
     }));
   } catch (cause) {
     console.error('fetchClubGames failed', cause);

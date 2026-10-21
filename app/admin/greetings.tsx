@@ -2,13 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Redirect, useRouter } from 'expo-router';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { Text } from '../../components/Text';
+import BackRow from '../../components/BackRow';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
 import ErrorBanner from '../../components/ErrorBanner';
 import Screen from '../../components/Screen';
 import TextField from '../../components/TextField';
-import { ChevronLeftIcon } from '../../components/icons';
 import { GENERIC_ERROR } from '../../lib/constants';
+import { goBack } from '../../lib/navigation';
 import {
   addGreeting,
   deleteGreeting,
@@ -111,10 +112,23 @@ export default function AdminGreetingsScreen() {
     setBusy(false);
   }
 
+  // Reached from Profile: pop back to it rather than stacking a second
+  // Profile, and land there from a deep link with nothing to pop.
+  const backRow = (
+    <BackRow
+      label="Profile"
+      onPress={() => goBack(router, '/profile')}
+      accessibilityLabel="Back to Profile"
+    />
+  );
+
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered}>
-        <ActivityIndicator color={colors.accentColor} />
+      <Screen contentStyle={[styles.container, styles.fill]}>
+        {backRow}
+        <View style={styles.centered}>
+          <ActivityIndicator color={colors.accentColor} />
+        </View>
       </Screen>
     );
   }
@@ -122,16 +136,7 @@ export default function AdminGreetingsScreen() {
 
   return (
     <Screen scroll contentStyle={styles.container}>
-      <Button
-        variant="ghost"
-        big={false}
-        icon={<ChevronLeftIcon color={colors.accentColor} />}
-        onPress={() => router.push('/profile')}
-        accessibilityLabel="Back to profile"
-        style={styles.backButton}
-      >
-        Profile
-      </Button>
+      {backRow}
 
       <Text style={styles.heading}>Greetings</Text>
       <Text style={styles.intro}>
@@ -200,8 +205,8 @@ export default function AdminGreetingsScreen() {
 
 const styles = StyleSheet.create({
   container: { padding: space[6], gap: space[3] },
-  centered: { alignItems: 'center' },
-  backButton: { alignSelf: 'flex-start' },
+  fill: { flex: 1 },
+  centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   heading: {
     fontFamily: type.heading,
     fontSize: type.size.h1,

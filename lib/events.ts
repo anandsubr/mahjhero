@@ -2,6 +2,7 @@ import { needsAFourth, seatsFreeLabel } from './bookings';
 import { GENERIC_ERROR } from './constants';
 import type { GameMode } from './clubs';
 import { supabase } from './supabase';
+import { noteSeenSettled, noteSeenStarted } from './seen-events';
 
 export type { GameMode } from './clubs';
 export type EventStatus = 'draft' | 'published' | 'cancelled';
@@ -1187,6 +1188,25 @@ export async function resetEventToSeries(
   } catch (cause) {
     console.error('resetEventToSeries failed', cause);
     return { error: GENERIC_ERROR };
+  }
+}
+
+/**
+ * Records that the caller has opened this game, which clears its "Updated"
+ * pill on every device (and, via lib/seen-events, at once on this one). Best-effort: a failure is logged and swallowed — it
+ * only means the pill stays until the next successful open.
+ */
+export async function markEventSeen(eventId: string): Promise<void> {
+  // Recorded before the await, so a list that reloads while the RPC is in
+  // flight already drops the pill (lib/seen-events.ts).
+  noteSeenStarted(eventId);
+  try {
+    const { error } = await supabase.rpc('mark_event_seen', { target_event: eventId });
+    if (error) console.error('markEventSeen failed', error);
+    noteSeenSettled(eventId, !error);
+  } catch (cause) {
+    console.error('markEventSeen failed', cause);
+    noteSeenSettled(eventId, false);
   }
 }
 

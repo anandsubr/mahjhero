@@ -4,11 +4,14 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import FriendsScreen from '../friends';
 
 const push = vi.fn();
+const replace = vi.fn();
+const back = vi.fn();
+const canGoBack = vi.fn(() => true);
 
 vi.mock('expo-router', () => ({
   Redirect: () => null,
   Link: ({ children }: { children: React.ReactNode }) => children,
-  useRouter: () => ({ push, back: vi.fn() }),
+  useRouter: () => ({ push, replace, back, canGoBack }),
   usePathname: () => '/friends',
   // Wrapped in a real `useEffect` keyed on the callback's identity, not
   // called inline on every render: `(cb) => cb()` fires on every render,
@@ -51,17 +54,43 @@ const CAROL = { profile_id: 'p2', display_name: 'Carol Diaz', club_name: 'Oakfie
 describe('friends screen', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    canGoBack.mockReturnValue(true);
     fetchFriends.mockResolvedValue([]);
     fetchAddablePeople.mockResolvedValue([]);
     addFriend.mockResolvedValue({ error: null });
     removeFriend.mockResolvedValue({ error: null });
   });
 
-  it('draws a back link to profile', async () => {
+  // Reached from Profile, so back pops to it rather than stacking a second
+  // Profile on top -- and a deep link with no history still lands there.
+  it('pops back to Profile when there is history', async () => {
     render(<FriendsScreen />);
     await screen.findByText('Friends');
-    fireEvent.click(screen.getByRole('button', { name: 'Back to profile' }));
-    expect(push).toHaveBeenCalledWith('/profile');
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Profile' }));
+    expect(back).toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it('falls back to Profile when there is nothing to pop', async () => {
+    canGoBack.mockReturnValue(false);
+    render(<FriendsScreen />);
+    await screen.findByText('Friends');
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Profile' }));
+    expect(replace).toHaveBeenCalledWith('/profile');
+    expect(back).not.toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it('offers back while the session is still loading', () => {
+    SESSION.loading = true;
+    try {
+      render(<FriendsScreen />);
+      fireEvent.click(screen.getByRole('button', { name: 'Back to Profile' }));
+      expect(back).toHaveBeenCalled();
+    } finally {
+      SESSION.loading = false;
+    }
   });
 
   it('lists a friend with the clubs they still share', async () => {

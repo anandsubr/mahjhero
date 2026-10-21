@@ -30,9 +30,9 @@ export default function BroadcastsRedirect() {
     void (async () => {
       const result = await openThreadForClub(id);
       if (cancelled) return;
-      // The board, not the flat thread screen: this route only ever opens a
-      // CLUB thread, and a club's conversation is a board of posts now.
-      router.replace(result.id ? `/messages/club/${result.id}` : `/clubs/${id}/games`);
+      // The club's hub Board: this route only ever opens a CLUB thread, and
+      // a club's conversation is the hub's board of posts now.
+      router.replace(result.id ? `/clubs/${id}/board` : `/clubs/${id}/games`);
     })();
 
     return () => {

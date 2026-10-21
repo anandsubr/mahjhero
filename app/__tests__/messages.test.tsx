@@ -6,11 +6,13 @@ import type { ThreadListRow } from '../../lib/messages';
 
 const push = vi.fn();
 const replace = vi.fn();
+const back = vi.fn();
+const canGoBack = vi.fn(() => true);
 
 vi.mock('expo-router', () => ({
   Redirect: () => null,
   Link: ({ children }: { children: React.ReactNode }) => children,
-  useRouter: () => ({ push, back: vi.fn(), replace }),
+  useRouter: () => ({ push, back, replace, canGoBack }),
   usePathname: () => '/messages',
   // The real useFocusEffect (node_modules/expo-router/build/useFocusEffect.js)
   // wraps the callback in a React.useEffect keyed on
@@ -104,6 +106,7 @@ const GROUP = row({
 describe('messages list', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    canGoBack.mockReturnValue(true);
     fetchMyThreads.mockResolvedValue([row(), GAME, DIRECT, GROUP]);
   });
 
@@ -151,10 +154,40 @@ describe('messages list', () => {
     await waitFor(() => expect(push).toHaveBeenCalledWith('/messages/t3'));
   });
 
-  it('goes back to Home', async () => {
+  it('pops back to Home when there is history', async () => {
     render(<MessagesScreen />);
-    fireEvent.click(await screen.findByLabelText('Back to home'));
+    await screen.findByText('Bob Reyes');
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Home' }));
+    expect(back).toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it('falls back to Home when there is nothing to pop', async () => {
+    canGoBack.mockReturnValue(false);
+    render(<MessagesScreen />);
+    await screen.findByText('Bob Reyes');
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Home' }));
     expect(replace).toHaveBeenCalledWith('/home');
+    expect(back).not.toHaveBeenCalled();
+  });
+
+  it('offers back while the session is still loading', () => {
+    SESSION.loading = true;
+    try {
+      render(<MessagesScreen />);
+      fireEvent.click(screen.getByRole('button', { name: 'Back to Home' }));
+      expect(back).toHaveBeenCalled();
+    } finally {
+      SESSION.loading = false;
+    }
+  });
+
+  it('offers back from the load error', async () => {
+    fetchMyThreads.mockResolvedValueOnce(null);
+    render(<MessagesScreen />);
+    await screen.findByText(/Could not reach MahjHero/);
+    expect(screen.getByRole('button', { name: 'Back to Home' })).toBeTruthy();
   });
 
   it('reaches the compose screen', async () => {
@@ -163,14 +196,11 @@ describe('messages list', () => {
     expect(push).toHaveBeenCalledWith('/messages/new');
   });
 
-  // The tile is purely decorative -- scoped to a wrapping testID rather than
-  // a bare `[aria-hidden="true"]` query, which would pass whether or not
-  // this screen's own section tile exists.
-  it('shows a decorative bamboo tile before the heading', async () => {
+  it('titles its header "Messages", with no tile or ghost Home button', async () => {
     render(<MessagesScreen />);
     await screen.findByText('Bob Reyes');
-    expect(
-      screen.getByTestId('section-tile').querySelector('[aria-hidden="true"]'),
-    ).toBeTruthy();
+    expect(screen.getByTestId('compact-header-title').textContent).toBe('Messages');
+    expect(screen.queryByTestId('section-tile')).toBeNull();
+    expect(screen.queryByText('Home')).toBeNull();
   });
 });

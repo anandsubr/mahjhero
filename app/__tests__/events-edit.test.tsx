@@ -247,6 +247,36 @@ describe('guard ordering', () => {
   });
 });
 
+// A failed or unfinished load is never a dead end: the ✕ is there too, with
+// the loaded form's own fallback.
+describe('Close before the form is ready', () => {
+  it('offers Close while the session is still loading', () => {
+    useSessionMock.mockReturnValue({ session: null, loading: true });
+    canGoBack.mockReturnValue(true);
+    render(<EditEventScreen />);
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(back).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers Close when the game could not be loaded', async () => {
+    fetchEvent.mockResolvedValue(null);
+    canGoBack.mockReturnValue(false);
+    render(<EditEventScreen />);
+    await screen.findByText('That game could not be loaded.');
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(replace).toHaveBeenCalledWith('/clubs/club-1/events/event-1');
+  });
+
+  it("offers Close when the game's start time cannot be read", async () => {
+    fetchEvent.mockResolvedValue({ ...ONE_OFF_EVENT, starts_at: 'not a date' });
+    canGoBack.mockReturnValue(false);
+    render(<EditEventScreen />);
+    await screen.findByText("This game's start time could not be read, so it cannot be edited.");
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(replace).toHaveBeenCalledWith('/clubs/club-1/events/event-1');
+  });
+});
+
 describe('screen chrome', () => {
   it('pins Cancel and Save at the bottom once ready', async () => {
     render(<EditEventScreen />);

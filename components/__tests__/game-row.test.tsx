@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import { colors } from '../../lib/theme';
 import GameRow, { seatsLabel, statusTag } from '../GameRow';
 import type { MyGame } from '../../lib/my-games';
 
@@ -7,7 +8,7 @@ const GAME: MyGame = {
   eventId: 'e1', clubId: 'c1', clubName: 'Test Club', title: '', gameMode: 'open_play',
   seatingMode: 'open_seating', startsAt: '2026-09-29T15:30:00Z', timezone: 'America/New_York',
   venueName: 'Sample Venue', seatsTaken: 14, capacity: 24, myStatus: 'going',
-  waitlistPosition: null, tableLabel: null,
+  waitlistPosition: null, tableLabel: null, updated: false,
 };
 
 describe('statusTag', () => {
@@ -69,4 +70,31 @@ describe('GameRow', () => {
     fireEvent.click(screen.getByRole('button'));
     expect(onPress).toHaveBeenCalledWith(GAME);
   });
+
+  it('shows an Updated pill after the other tags when the game changed', () => {
+    render(<GameRow game={{ ...GAME, updated: true }} onPress={() => {}} />);
+    const label = screen.getByText('Updated');
+    expect(getComputedStyle(label).color).toBe(hexToRgb(colors.accent[800]));
+    expect(getComputedStyle(label.parentElement!).backgroundColor)
+      .toBe(hexToRgb(colors.accent[200]));
+    // After the seats pill and the status tag.
+    const tags = label.parentElement!.parentElement!;
+    expect(tags.lastElementChild).toBe(label.parentElement);
+    expect(tags.textContent).toBe('14/24Open seatingUpdated');
+  });
+
+  it('hides the Updated pill when the game has not changed', () => {
+    render(<GameRow game={GAME} onPress={() => {}} />);
+    expect(screen.queryByText('Updated')).toBeNull();
+  });
+
+  it('never shows Updated on a past game', () => {
+    render(<GameRow game={{ ...GAME, updated: true }} past onPress={() => {}} />);
+    expect(screen.queryByText('Updated')).toBeNull();
+  });
 });
+
+function hexToRgb(hex: string): string {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgb(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255})`;
+}

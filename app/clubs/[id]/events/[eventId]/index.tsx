@@ -77,6 +77,7 @@ import {
   formatEventWhen,
   formatFeeCents,
   frequencyLabel,
+  markEventSeen,
   removeEventTable,
   resetEventToSeries,
   type ClubEvent,
@@ -91,6 +92,7 @@ import {
   type TableRound,
 } from '../../../../../lib/rounds';
 import { useGuides } from '../../../../../lib/use-guides';
+import { goBack } from '../../../../../lib/navigation';
 import { useSession } from '../../../../../lib/session';
 import { addHours } from '../../../../../lib/time';
 import { colors, radius, space, type } from '../../../../../lib/theme';
@@ -158,6 +160,11 @@ export default function EventScreen() {
   const { session, loading } = useSession();
   const guides = useGuides();
   const router = useRouter();
+  // Pushed from the hub's Games section (and from Home), so popping returns
+  // to wherever the caller came from; a cold open (deep link, web reload)
+  // has nothing to pop, so it falls back to the hub's Games section rather
+  // than assuming Home.
+  const onBack = () => goBack(router, `/clubs/${clubId}/games`);
 
   const [club, setClub] = useState<Club | null>(null);
   const [event, setEvent] = useState<ClubEvent | null>(null);
@@ -283,6 +290,11 @@ export default function EventScreen() {
 
   const me = session?.user.id ?? '';
 
+  // The game this screen last marked seen (clears its "Updated" pill). Kept
+  // in a ref so the reloads after every action, and a session refresh that
+  // re-runs the load effect, don't call the RPC again for the same game.
+  const markedSeenFor = useRef<string | null>(null);
+
   async function load() {
     const [
       loadedClub,
@@ -357,6 +369,14 @@ export default function EventScreen() {
       loadedEvent?.series_id ? await fetchSeries(loadedEvent.series_id) : null,
     );
     setReady(true);
+
+    // Only a successful load counts as opening the game: without the club
+    // and the event the screen shows "could not be loaded". Fire-and-forget;
+    // markEventSeen swallows its own failures, and the catch is a backstop.
+    if (loadedClub && loadedEvent && markedSeenFor.current !== eventId) {
+      markedSeenFor.current = eventId;
+      markEventSeen(eventId).catch(() => {});
+    }
   }
 
   useEffect(() => {
@@ -374,10 +394,19 @@ export default function EventScreen() {
   // The <Redirect> branch below is the deliberate exception among these
   // early returns -- it renders nothing, and a signed-out visitor belongs at
   // sign-in.
+  // Loading and error states keep the back control (phase 6): drawn in
+  // Screen's `header` slot, like the loaded header below, so the chevron
+  // never moves when the game arrives.
+  const stubHeader = (
+    <CompactHeader divider={false} onBack={onBack} backLabel="Back" kind={null} title="" />
+  );
+
   if (loading) {
     return (
-      <Screen center contentStyle={styles.centered}>
-        <ActivityIndicator color={colors.accentColor} />
+      <Screen header={stubHeader} contentStyle={[styles.container, styles.loadingScreen]}>
+        <View style={styles.loadingBody}>
+          <ActivityIndicator color={colors.accentColor} />
+        </View>
       </Screen>
     );
   }
@@ -393,15 +422,17 @@ export default function EventScreen() {
 
   if (!ready) {
     return (
-      <Screen center contentStyle={styles.centered}>
-        <ActivityIndicator color={colors.accentColor} />
+      <Screen header={stubHeader} contentStyle={[styles.container, styles.loadingScreen]}>
+        <View style={styles.loadingBody}>
+          <ActivityIndicator color={colors.accentColor} />
+        </View>
       </Screen>
     );
   }
 
   if (!club || !event) {
     return (
-      <Screen contentStyle={styles.container}>
+      <Screen header={stubHeader} contentStyle={styles.container}>
         <ErrorBanner message="That game could not be loaded." />
       </Screen>
     );
@@ -989,6 +1020,17 @@ export default function EventScreen() {
   return (
     <Screen
       scroll
+      header={
+        <CompactHeader
+          divider={false}
+          onBack={onBack}
+          backLabel="Back"
+          kind="club"
+          clubId={clubId}
+          avatarTestID="thread-avatar-club-tile"
+          title={club.name}
+        />
+      }
       contentStyle={styles.container}
       footer={
         showRoundBar ? (
@@ -999,24 +1041,6 @@ export default function EventScreen() {
         ) : null
       }
     >
-      {/*
-        Pushed from the hub's Games section (and from Home), so popping
-        returns to wherever the caller came from; a cold open (deep link,
-        web reload) has nothing to pop, so it falls back to the hub's Games
-        section rather than assuming Home.
-      */}
-      <CompactHeader
-        variant="inset"
-        divider={false}
-        onBack={() =>
-          router.canGoBack() ? router.back() : router.replace(`/clubs/${clubId}/games`)
-        }
-        backLabel="Back to your clubs"
-        kind="club"
-        clubId={clubId}
-        avatarTestID="thread-avatar-club-tile"
-        title={club.name}
-      />
       <View style={styles.titleBlock}>
         <View style={styles.row}>
           <View style={styles.titleRow}>
@@ -1782,14 +1806,18 @@ function GhostPill({
 }
 
 const styles = StyleSheet.create({
-  // The 2a scroll body: 20 at the sides, 22 between sections.
+  // The 2a scroll body: 20 at the sides, 22 between sections. The header
+  // sits outside this padding (Screen's `header` slot), so the top is the
+  // same 22 that used to separate it from the title.
   container: {
-    paddingTop: 6,
+    paddingTop: 22,
     paddingHorizontal: 20,
     paddingBottom: 28,
     gap: 22,
   },
-  centered: { alignItems: 'center' },
+  // The header at the top, the spinner centred in what is left below it.
+  loadingScreen: { flex: 1 },
+  loadingBody: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   titleBlock: { gap: 8 },
   heading: {
     fontFamily: type.heading,

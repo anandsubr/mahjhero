@@ -67,6 +67,7 @@ const cancelEvent = vi.fn();
 const addEventTable = vi.fn();
 const removeEventTable = vi.fn();
 const resetEventToSeries = vi.fn();
+const markEventSeen = vi.fn();
 
 // formatEventWhen and frequencyLabel stay real, same reasoning as
 // clubs.test.tsx and events-new.test.tsx: the whole point of the timezone
@@ -82,6 +83,7 @@ vi.mock('../../lib/events', async (importOriginal) => {
     addEventTable: (...args: unknown[]) => addEventTable(...args),
     removeEventTable: (...args: unknown[]) => removeEventTable(...args),
     resetEventToSeries: (...args: unknown[]) => resetEventToSeries(...args),
+    markEventSeen: (...args: unknown[]) => markEventSeen(...args),
   };
 });
 
@@ -322,6 +324,8 @@ beforeEach(() => {
   addEventTable.mockResolvedValue({ error: null });
   removeEventTable.mockResolvedValue({ error: null });
   resetEventToSeries.mockResolvedValue({ error: null });
+  markEventSeen.mockReset();
+  markEventSeen.mockResolvedValue(undefined);
   fetchEventSeating.mockReset();
   fetchEventSeating.mockResolvedValue([]);
   fetchOpenOffer.mockReset();
@@ -384,6 +388,25 @@ describe('essential data missing', () => {
     ).toBeTruthy();
   });
 
+  // A failed load is never a dead end: the header's back control is there
+  // too, with the same cold-open fallback as the loaded screen.
+  it('offers back from the error state', async () => {
+    fetchEvent.mockResolvedValue(null);
+    canGoBack.mockReturnValue(false);
+    render(<EventScreen />);
+    await screen.findByText('That game could not be loaded.');
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    expect(replace).toHaveBeenCalledWith('/clubs/club-1/games');
+  });
+
+  it('offers back while the session is still loading', () => {
+    useSessionMock.mockReturnValue({ session: null, loading: true });
+    canGoBack.mockReturnValue(true);
+    render(<EventScreen />);
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    expect(back).toHaveBeenCalled();
+  });
+
   it('shows an error rather than a blank screen when the club fails to load', async () => {
     fetchClub.mockResolvedValue(null);
     render(<EventScreen />);
@@ -393,13 +416,64 @@ describe('essential data missing', () => {
   });
 });
 
+// Opening a game clears its "Updated" pill (phase 6): a successful load marks
+// it seen, once; a failed load never does, and a failed mark is invisible.
+describe('marking the game seen', () => {
+  it('marks the game seen once after a successful load', async () => {
+    render(<EventScreen />);
+    await screen.findByText(CLUB.name);
+    await waitFor(() => expect(markEventSeen).toHaveBeenCalledTimes(1));
+    expect(markEventSeen).toHaveBeenCalledWith('event-1');
+  });
+
+  it('does not mark it again when the screen reloads', async () => {
+    const { rerender } = render(<EventScreen />);
+    await screen.findByText(CLUB.name);
+    await waitFor(() => expect(markEventSeen).toHaveBeenCalledTimes(1));
+    // A fresh session object (token refresh) re-runs the load effect.
+    useSessionMock.mockReturnValue({
+      session: { user: { id: 'test-user' } },
+      loading: false,
+    });
+    rerender(<EventScreen />);
+    await waitFor(() => expect(fetchEvent).toHaveBeenCalledTimes(2));
+    await screen.findByText(CLUB.name);
+    expect(markEventSeen).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not mark it seen when the event fails to load', async () => {
+    fetchEvent.mockResolvedValue(null);
+    render(<EventScreen />);
+    await screen.findByText('That game could not be loaded.');
+    expect(markEventSeen).not.toHaveBeenCalled();
+  });
+
+  it('does not mark it seen when the club fails to load', async () => {
+    fetchClub.mockResolvedValue(null);
+    render(<EventScreen />);
+    await screen.findByText('That game could not be loaded.');
+    expect(markEventSeen).not.toHaveBeenCalled();
+  });
+
+  it('ignores a failed mark: the game still shows, with no error', async () => {
+    markEventSeen.mockRejectedValue(new Error('offline'));
+    render(<EventScreen />);
+    await screen.findByText(CLUB.name);
+    await waitFor(() => expect(markEventSeen).toHaveBeenCalled());
+    expect(screen.getByText('Thursday Mahjong')).toBeTruthy();
+    expect(screen.queryByText('That game could not be loaded.')).toBeNull();
+  });
+});
+
 describe('screen chrome', () => {
   // Pushed from the hub's Games section (and from Home), so popping returns
   // to wherever the caller came from.
   it('draws a back link that pops when there is history', async () => {
     canGoBack.mockReturnValue(true);
     render(<EventScreen />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Back to your clubs' }));
+    // The loading state has its own Back; wait for the loaded header.
+    await screen.findByText(CLUB.name);
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
     expect(back).toHaveBeenCalled();
     expect(replace).not.toHaveBeenCalled();
   });
@@ -409,7 +483,9 @@ describe('screen chrome', () => {
   it('falls back to the hub Games section when there is nothing to pop', async () => {
     canGoBack.mockReturnValue(false);
     render(<EventScreen />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Back to your clubs' }));
+    // The loading state has its own Back; wait for the loaded header.
+    await screen.findByText(CLUB.name);
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
     expect(back).not.toHaveBeenCalled();
     expect(replace).toHaveBeenCalledWith('/clubs/club-1/games');
   });
