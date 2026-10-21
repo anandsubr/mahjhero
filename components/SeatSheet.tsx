@@ -119,7 +119,7 @@ export default function SeatSheet({
                 }
                 style={[styles.primary, picked === null ? styles.primaryDisabled : null]}
               >
-                {picked !== null ? <TrophyIcon size={18} color="#ffffff" /> : null}
+                {picked !== null ? <TrophyIcon size={18} color="#fff" /> : null}
                 <Text style={styles.primaryText}>
                   {picked === null
                     ? 'Choose points'
@@ -214,7 +214,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     // neutral-900 at 40%.
-    backgroundColor: 'rgba(46, 43, 37, 0.4)',
+    backgroundColor: colors.scrim,
   },
   sheet: {
     width: '100%',
@@ -269,7 +269,7 @@ const styles = StyleSheet.create({
   },
   chipSelected: { backgroundColor: colors.accent[700] },
   chipText: { fontFamily: type.bodyBold, fontSize: 17, color: colors.text },
-  chipTextSelected: { color: '#ffffff' },
+  chipTextSelected: { color: '#fff' },
   primary: {
     height: 52,
     borderRadius: radius.pill,
@@ -281,7 +281,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   primaryDisabled: { backgroundColor: colors.neutral[400] },
-  primaryText: { fontFamily: type.bodyBold, fontSize: 16, color: '#ffffff' },
+  primaryText: { fontFamily: type.bodyBold, fontSize: 16, color: '#fff' },
   secondary: {
     height: 52,
     borderRadius: radius.pill,

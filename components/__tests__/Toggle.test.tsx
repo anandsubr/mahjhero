@@ -30,6 +30,15 @@ describe('Toggle', () => {
     expect(toggle.getAttribute('aria-checked')).toBe('true');
   });
 
+  // accent[600] (#c45f3b), not accentColor: the on track is a state
+  // indicator and has to reach WCAG 1.4.11's 3:1 on bg and surface.
+  it('fills the on track with accent[600]', () => {
+    render(<Toggle value onValueChange={() => {}} accessibilityLabel="Share it" />);
+    expect(
+      getComputedStyle(screen.getByRole('switch', { name: 'Share it' })).backgroundColor,
+    ).toBe('rgb(196, 95, 59)');
+  });
+
   it('renders aria-checked="false" when it is off', () => {
     render(
       <Toggle

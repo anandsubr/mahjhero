@@ -3,14 +3,6 @@ import { ImageBackground, StyleSheet, View, type StyleProp, type ViewStyle } fro
 import { coverColorValue } from '../../lib/club-hub';
 import { colors } from '../../lib/theme';
 
-/** `#rrggbb` → `rgba(r, g, b, alpha)`, so the scrim derives from the token. */
-function withAlpha(hex: string, alpha: number): string {
-  const n = Number.parseInt(hex.slice(1), 16);
-  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
-}
-
-const SCRIM = withAlpha(colors.accent2[900], 0.48);
-
 /**
  * A club's cover as a background: the photo under a 48% `accent2[900]`
  * scrim (Linen & Jade), or the club's cover colour. The colour also shows while the photo
@@ -56,7 +48,7 @@ export default function ClubCover({
         <View
           testID={`${testIDPrefix}-scrim`}
           pointerEvents="none"
-          style={[StyleSheet.absoluteFill, { backgroundColor: SCRIM }]}
+          style={[StyleSheet.absoluteFill, { backgroundColor: colors.coverScrim }]}
         />
         {children}
       </ImageBackground>

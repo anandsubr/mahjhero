@@ -119,7 +119,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     // neutral-900 at 40%.
-    backgroundColor: 'rgba(46, 43, 37, 0.4)',
+    backgroundColor: colors.scrim,
   },
   sheet: {
     width: '100%',

@@ -91,7 +91,7 @@ const ClubLeaderboard = forwardRef<ClubLeaderboardHandle, Props>(
                   testID={isMe ? 'leaderboard-row-mine' : undefined}
                 >
                   <View style={[styles.rank, podium && styles.rankPodium]}>
-                    {index === 0 ? <TrophyIcon size={12} color="#ffffff" /> : null}
+                    {index === 0 ? <TrophyIcon size={12} color="#fff" /> : null}
                     <Text style={[styles.rankText, podium && styles.rankTextPodium]}>
                       {index + 1}
                     </Text>
@@ -148,7 +148,7 @@ const styles = StyleSheet.create({
   },
   rankPodium: { backgroundColor: colors.accent[700] },
   rankText: { fontFamily: type.bodyBold, fontSize: 14, color: colors.neutral[700] },
-  rankTextPodium: { color: '#ffffff' },
+  rankTextPodium: { color: '#fff' },
   avatar: {
     width: 40,
     height: 40,

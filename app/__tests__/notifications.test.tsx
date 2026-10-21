@@ -105,6 +105,18 @@ describe('notifications screen', () => {
     expect(pushOnly.getAttribute('aria-selected')).toBe('false');
   });
 
+  // accent[600], not accentColor, so the chosen dot and ring reach WCAG
+  // 1.4.11's 3:1 against the card.
+  it('draws the selected radio ring and dot in accent[600]', async () => {
+    render(<NotificationSettings />);
+    const selected = await screen.findByRole('radio', { name: 'Push and email' });
+    const ring = selected.lastElementChild as Element;
+    expect(getComputedStyle(ring).borderTopColor).toBe('rgb(196, 95, 59)');
+    expect(getComputedStyle(ring.firstElementChild as Element).backgroundColor).toBe(
+      'rgb(196, 95, 59)',
+    );
+  });
+
   it('shows each channel with its subtitle', async () => {
     render(<NotificationSettings />);
     expect(await screen.findByText('Everything, both ways')).toBeTruthy();

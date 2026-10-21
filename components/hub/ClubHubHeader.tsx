@@ -7,10 +7,8 @@ import ClubCover from './ClubCover';
 import SectionButtons from './SectionButtons';
 import { shareClubCode, type HubSection } from '../../lib/club-hub';
 import type { Club } from '../../lib/clubs';
-import { layout, radius, type } from '../../lib/theme';
+import { colors, layout, radius, type } from '../../lib/theme';
 
-const WHITE_16 = 'rgba(255, 255, 255, 0.16)';
-const WHITE_26 = 'rgba(255, 255, 255, 0.26)';
 const COPIED_MS = 2000;
 
 /**
@@ -134,7 +132,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  iconPressed: { backgroundColor: WHITE_16 },
+  iconPressed: { backgroundColor: colors.onCover },
   name: {
     flex: 1,
     minWidth: 0,
@@ -156,11 +154,11 @@ const styles = StyleSheet.create({
     height: 32,
     paddingHorizontal: 10,
     borderRadius: radius.pill,
-    backgroundColor: WHITE_16,
+    backgroundColor: colors.onCover,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
   },
-  sharePressed: { backgroundColor: WHITE_26 },
+  sharePressed: { backgroundColor: colors.onCoverPressed },
   shareLabel: { fontFamily: type.bodyBold, fontSize: 13, color: '#fff' },
 });

@@ -350,7 +350,7 @@ function Avatar({
           testID={`badge-winner-${bookingId}`}
           accessibilityLabel="Won the last round"
         >
-          <TrophyIcon size={10} color="#ffffff" />
+          <TrophyIcon size={10} color="#fff" />
         </View>
       ) : null}
     </View>

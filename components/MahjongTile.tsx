@@ -133,7 +133,12 @@ export default function MahjongTile({ suit, size, selected = false, label }: Pro
 
   return (
     <View
-      style={[styles.tile, sizeStyle, selected ? styles.selected : null]}
+      style={[
+        styles.tile,
+        sizeStyle,
+        size === 'chip' && !label ? styles.chipCentered : null,
+        selected ? styles.selected : null,
+      ]}
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
       aria-hidden={true}
@@ -175,6 +180,12 @@ const styles = StyleSheet.create({
     paddingBottom: space[1],
     gap: 2,
     borderBottomWidth: 3,
+  },
+  // An unlabelled chip (components/home/ClubCard.tsx) has no label to make
+  // room for, so its glyph sits centred in the square (Linen & Jade §4).
+  chipCentered: {
+    justifyContent: 'center',
+    paddingBottom: 0,
   },
   mini: {
     width: 20,

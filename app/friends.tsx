@@ -246,7 +246,7 @@ export default function FriendsScreen() {
                           busy && styles.dimmed,
                         ]}
                       >
-                        <PlusIcon size={14} color="#ffffff" />
+                        <PlusIcon size={14} color="#fff" />
                         <Text style={styles.addText}>Add</Text>
                       </Pressable>
                     </View>
@@ -362,7 +362,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent[700],
   },
   addButtonActive: { backgroundColor: colors.accent[800] },
-  addText: { fontFamily: type.bodyBold, fontSize: 14, color: '#ffffff' },
+  addText: { fontFamily: type.bodyBold, fontSize: 14, color: '#fff' },
   dimmed: { opacity: 0.5 },
   search: {
     flexDirection: 'row',

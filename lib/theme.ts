@@ -70,10 +70,19 @@ const avatar: readonly AvatarPair[] = [
   { bg: '#f6e1e6', fg: '#7a3348' },
 ];
 
+/** `#rrggbb` -> `rgba(r, g, b, alpha)`, so translucent tokens derive from a
+ *  ramp step instead of repeating its channels by hand. */
+export function withAlpha(hex: string, alpha: number): string {
+  const n = Number.parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+}
+
+const TEXT = '#2a2321';
+
 export const colors = {
   bg: '#faf5ee',
   surface: '#f1e8dc',
-  text: '#2a2321',
+  text: TEXT,
   // The design's muted tone is `color-mix(in srgb, text 55%, transparent)`,
   // which flattens over --color-bg to #88827d -- and measures 3.50:1 there,
   // under AA's 4.5:1 for the 16px helper text this app uses it for. The
@@ -99,6 +108,30 @@ export const colors = {
   // it is only ever used as a hairline/border overlay, where alpha
   // composites correctly regardless of what's underneath.
   divider: 'rgba(42, 35, 33, 0.13)',
+  // Translucent overlays. Each was a hand-written rgba of an OLD palette
+  // value (ink #2e2b25, text #201e1d, accent-700 #8c491a) in the component
+  // that used it; they now derive from the Linen & Jade step they stood for.
+  //
+  // Bottom-sheet / modal backdrop: neutral-900 ink at 40%.
+  scrim: withAlpha(neutral[900], 0.4),
+  // The message composer's attachment sheet backdrop: text at 30%.
+  sheetScrimLight: withAlpha(TEXT, 0.3),
+  // Dims a photo thumbnail while it uploads (text at 45%), or flags a failed
+  // upload (accent-700 at 65%); colors.bg text sits on top.
+  photoBusy: withAlpha(TEXT, 0.45),
+  photoError: withAlpha(accent[700], 0.65),
+  // An image cell's loading placeholder: text at 8%.
+  photoPlaceholder: withAlpha(TEXT, 0.08),
+  // Full-screen photo viewer backdrop: near-black, palette-neutral on
+  // purpose so photos are judged on true black, not a tinted ground.
+  mediaBackdrop: 'rgba(0, 0, 0, 0.92)',
+  // White washes for controls drawn over the club cover (ClubHubHeader):
+  // resting fill and pressed fill.
+  onCover: withAlpha('#ffffff', 0.16),
+  onCoverPressed: withAlpha('#ffffff', 0.26),
+  // The club header scrim over a cover photo (Linen & Jade §4):
+  // accent-2-900 at 48%.
+  coverScrim: withAlpha(accent2[900], 0.48),
   avatar,
   neutral,
   accent,

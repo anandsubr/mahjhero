@@ -50,7 +50,7 @@ export default function DoorStatusControl({
         onPress={() => press('arrived')}
         style={[styles.choice, here && styles.hereOn]}
       >
-        <CheckIcon size={18} color={here ? '#ffffff' : colors.neutral[600]} />
+        <CheckIcon size={18} color={here ? '#fff' : colors.neutral[600]} />
       </Pressable>
       <Pressable
         accessibilityRole="button"
@@ -62,7 +62,7 @@ export default function DoorStatusControl({
         onPress={() => press('no_show')}
         style={[styles.choice, no && styles.noOn]}
       >
-        <XIcon size={17} color={no ? '#ffffff' : colors.neutral[600]} />
+        <XIcon size={17} color={no ? '#fff' : colors.neutral[600]} />
       </Pressable>
     </View>
   );

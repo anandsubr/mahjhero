@@ -1136,7 +1136,7 @@ export default function CheckInScreen() {
           <Text style={[styles.avatarText, { color: pair.fg }]}>{displayName.trim().charAt(0).toUpperCase() || '?'}</Text>
           {here ? (
             <View style={styles.hereBadge}>
-              <CheckIcon size={10} color="#ffffff" />
+              <CheckIcon size={10} color="#fff" />
             </View>
           ) : null}
         </View>
@@ -1383,7 +1383,7 @@ export default function CheckInScreen() {
           !windowOpen && styles.faded,
         ]}
       >
-        <UserPlusIcon size={18} color="#ffffff" />
+        <UserPlusIcon size={18} color="#fff" />
         <Text style={styles.walkInText}>Add a walk-in</Text>
       </Pressable>
     </View>
@@ -1544,7 +1544,7 @@ const styles = StyleSheet.create({
   chipOn: { backgroundColor: colors.accent[700] },
   chipText: { fontFamily: type.bodySemiBold, fontSize: 14, color: colors.text },
   chipCount: { fontFamily: type.bodyBold, fontSize: 12, color: colors.text, opacity: 0.75 },
-  chipTextOn: { color: '#ffffff' },
+  chipTextOn: { color: '#fff' },
   list: {
     width: '100%',
     maxWidth: layout.contentMaxWidth,
@@ -1642,7 +1642,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   walkInButtonPressed: { backgroundColor: colors.accent[800] },
-  walkInText: { fontFamily: type.bodyBold, fontSize: 16, color: '#ffffff' },
+  walkInText: { fontFamily: type.bodyBold, fontSize: 16, color: '#fff' },
   // The walk-in picker: SeatSheet's bottom-sheet shell.
   sheetRoot: { flex: 1, justifyContent: 'flex-end' },
   scrim: {
@@ -1651,7 +1651,7 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     left: 0,
-    backgroundColor: 'rgba(46, 43, 37, 0.4)',
+    backgroundColor: colors.scrim,
   },
   sheet: {
     width: '100%',

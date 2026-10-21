@@ -19,10 +19,10 @@ import { colors } from './theme';
 describe('COVER_COLORS', () => {
   it('lists the five tokens in order with labels and values', () => {
     expect(COVER_COLORS).toEqual([
-      { key: 'accent2_800', label: 'Dark green', value: colors.accent2[800] },
-      { key: 'accent2_700', label: 'Olive', value: colors.accent2[700] },
+      { key: 'accent2_800', label: 'Deep jade', value: colors.accent2[800] },
+      { key: 'accent2_700', label: 'Jade', value: colors.accent2[700] },
       { key: 'accent_700', label: 'Clay', value: colors.accent[700] },
-      { key: 'accent_800', label: 'Dark brown', value: colors.accent[800] },
+      { key: 'accent_800', label: 'Rust', value: colors.accent[800] },
       { key: 'neutral_800', label: 'Charcoal', value: colors.neutral[800] },
     ]);
   });

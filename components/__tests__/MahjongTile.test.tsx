@@ -12,6 +12,24 @@ describe('MahjongTile', () => {
     expect(style.lineHeight).toBe(style.fontSize);
   });
 
+  // README §4 / ClubCard: an unlabelled chip (the club tile on the Clubs
+  // screen) centres its glyph in the square instead of sitting it on the
+  // bottom edge where a label would go.
+  it('centres the glyph in an unlabelled chip tile', () => {
+    render(<MahjongTile suit="red-dragon" size="chip" />);
+    const tile = screen.getByTestId('glyph-red-dragon').parentElement as Element;
+    const style = getComputedStyle(tile);
+    expect(style.justifyContent).toBe('center');
+    expect(style.alignItems).toBe('center');
+    expect(style.paddingBottom).toBe('0px');
+  });
+
+  it('keeps a labelled chip tile bottom-aligned for its label', () => {
+    render(<MahjongTile suit="red-dragon" size="chip" label="RM" />);
+    const tile = screen.getByTestId('glyph-red-dragon').parentElement as Element;
+    expect(getComputedStyle(tile).justifyContent).toBe('flex-end');
+  });
+
   it('renders a label only for size="tab"', () => {
     const { rerender } = render(<MahjongTile suit="dots" size="tab" label="Club" />);
     expect(screen.getByText('Club')).toBeTruthy();

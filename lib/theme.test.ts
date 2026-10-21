@@ -372,3 +372,20 @@ describe('invited seat avatar clears AA', () => {
     expect(contrast(invitedAvatar.fg, invitedAvatar.bg)).toBeGreaterThanOrEqual(AA);
   });
 });
+
+// State indicators -- Toggle's and GameForm's on tracks, the notifications
+// radio ring and dot, TierPicker's selected pill -- are graphics whose fill
+// IS the state, so WCAG 1.4.11's 3:1 applies against the ground they sit on.
+// accentColor is 2.75:1 on bg; accent[600] is used instead. The knobs drawn
+// on the track (colors.bg in Toggle, '#fff' in GameForm) are checked too.
+describe('state indicators clear non-text contrast', () => {
+  it('accent[600] clears 3:1 on bg and on surface', () => {
+    expect(contrast(colors.accent[600], colors.bg)).toBeGreaterThanOrEqual(NON_TEXT);
+    expect(contrast(colors.accent[600], colors.surface)).toBeGreaterThanOrEqual(NON_TEXT);
+  });
+
+  it('the knob clears 3:1 on the accent[600] track', () => {
+    expect(contrast(colors.bg, colors.accent[600])).toBeGreaterThanOrEqual(NON_TEXT);
+    expect(contrast('#ffffff', colors.accent[600])).toBeGreaterThanOrEqual(NON_TEXT);
+  });
+});
