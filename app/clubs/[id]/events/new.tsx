@@ -420,7 +420,7 @@ export default function NewEventScreen() {
         <FormSection label="Details">
           <FormCard>
             <TextRow
-              label="What is it called?"
+              label="Name (optional)"
               value={title}
               onChangeText={setTitle}
               accessibilityLabel="Game name"

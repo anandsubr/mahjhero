@@ -1,5 +1,7 @@
 import { GENERIC_ERROR } from './constants';
 import { formatEventWhen } from './events';
+import { gameHeadline } from './home';
+import type { GameMode } from './clubs';
 import { supabase } from './supabase';
 
 export type ThreadKind = 'club' | 'game' | 'group' | 'direct';
@@ -82,7 +84,8 @@ export type ThreadDetail = {
   event_id: string | null;
   title: string | null;
   clubs: { name: string; timezone: string } | null;
-  events: { title: string; starts_at: string } | null;
+  /** title is NULL for an unnamed game; game_mode picks its fallback. */
+  events: { title: string | null; starts_at: string; game_mode: GameMode } | null;
   thread_members: { profile_id: string; profiles: { display_name: string } | null }[];
 };
 
@@ -130,7 +133,7 @@ export type ThreadDetail = {
  */
 export const THREAD_COLUMNS =
   'id, club_id, event_id, title, clubs(name, timezone), ' +
-  'events!message_threads_event_id_fkey(title, starts_at), ' +
+  'events!message_threads_event_id_fkey(title, starts_at, game_mode), ' +
   'thread_members(profile_id, profiles!thread_members_profile_id_fkey(display_name))';
 
 /*
@@ -689,7 +692,9 @@ export function sortThreads(rows: ThreadListRow[]): ThreadListRow[] {
  * finished game's, reached from the game screen.
  */
 export function threadTitleFor(thread: ThreadDetail, viewerId: string): string {
-  if (thread.event_id) return thread.events?.title ?? 'Game';
+  if (thread.event_id) {
+    return thread.events ? gameHeadline(thread.events.title, thread.events.game_mode) : 'Game';
+  }
   // The owner's call, made knowingly: the artboard renders
   // `'Everyone at ' + club.short` from a SHORT name its fixture carries
   // (`short: 'Riverside'`) that this app's `clubs` table has no column for.

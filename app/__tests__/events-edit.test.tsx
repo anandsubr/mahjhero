@@ -1402,3 +1402,67 @@ describe('Cancel this game', () => {
     expect(screen.queryByRole('button', { name: 'Cancel this game' })).toBeNull();
   });
 });
+
+/*
+ * The name is optional (20261021100000). Emptying the field clears it --
+ * sent as '' (the RPC's "clear it" signal; null still means "leave it
+ * alone") -- and an unnamed game opens with an empty field that does not
+ * count as a change.
+ */
+describe('optional name', () => {
+  it('labels the name field "Name (optional)"', async () => {
+    render(<EditEventScreen />);
+    await screen.findByDisplayValue('Thursday Mahjong');
+    expect(screen.getByText('Name (optional)')).toBeTruthy();
+    expect(screen.queryByText('What is it called?')).toBeNull();
+  });
+
+  it('clearing the name on a one-off sends title \'\' and saves', async () => {
+    render(<EditEventScreen />);
+    await screen.findByDisplayValue('Thursday Mahjong');
+    fireEvent.change(screen.getByLabelText('Game name'), { target: { value: '   ' } });
+    fireEvent.click(screen.getByText('Save'));
+
+    await vi.waitFor(() => expect(updateEvent).toHaveBeenCalled());
+    expect(updateEvent.mock.calls[0][1]).toMatchObject({ title: '', venueId: null, notes: null });
+    await vi.waitFor(() => expect(replace).toHaveBeenCalledWith('/clubs/club-1/events/event-1'));
+  });
+
+  it('opens an unnamed game with an empty field, and an untouched save leaves the name alone', async () => {
+    fetchEvent.mockResolvedValue({ ...ONE_OFF_EVENT, title: null as unknown as string });
+    render(<EditEventScreen />);
+    const field = (await screen.findByLabelText('Game name')) as HTMLInputElement;
+    await vi.waitFor(() => expect(screen.getByText('Save')).toBeTruthy());
+    expect(field.value).toBe('');
+    fireEvent.click(screen.getByText('Save'));
+
+    await vi.waitFor(() => expect(updateEvent).toHaveBeenCalled());
+    expect(updateEvent.mock.calls[0][1]).toMatchObject({ title: null });
+  });
+
+  it('naming an unnamed game sends the new name', async () => {
+    fetchEvent.mockResolvedValue({ ...ONE_OFF_EVENT, title: null as unknown as string });
+    render(<EditEventScreen />);
+    await screen.findByLabelText('Game name');
+    await vi.waitFor(() => expect(screen.getByText('Save')).toBeTruthy());
+    fireEvent.change(screen.getByLabelText('Game name'), { target: { value: ' Friday ' } });
+    fireEvent.click(screen.getByText('Save'));
+
+    await vi.waitFor(() => expect(updateEvent).toHaveBeenCalled());
+    expect(updateEvent.mock.calls[0][1]).toMatchObject({ title: 'Friday' });
+  });
+
+  it('clearing the name for the whole series sends title \'\'', async () => {
+    fetchEvent.mockResolvedValue(SERIES_EVENT);
+    fetchSeries.mockResolvedValue(SERIES);
+    render(<EditEventScreen />);
+    await screen.findByText('The whole series');
+    fireEvent.click(screen.getByText('The whole series'));
+    await screen.findByDisplayValue('Thursday Mahjong');
+    fireEvent.change(screen.getByLabelText('Game name'), { target: { value: '' } });
+    fireEvent.click(screen.getByText('Save'));
+
+    await vi.waitFor(() => expect(updateEventSeries).toHaveBeenCalled());
+    expect(updateEventSeries.mock.calls[0][1]).toMatchObject({ title: '' });
+  });
+});
