@@ -12,7 +12,7 @@ import { initialsFrom } from '../lib/dashboard';
 import { goBack } from '../lib/navigation';
 import {
   addFriend,
-  avatarColorFor,
+  avatarColorsFor,
   fetchAddablePeople,
   fetchFriends,
   removeFriend,
@@ -246,7 +246,7 @@ export default function FriendsScreen() {
                           busy && styles.dimmed,
                         ]}
                       >
-                        <PlusIcon size={14} color="#ffffff" />
+                        <PlusIcon size={14} color="#fff" />
                         <Text style={styles.addText}>Add</Text>
                       </Pressable>
                     </View>
@@ -268,9 +268,10 @@ export default function FriendsScreen() {
 }
 
 function Avatar({ id, name }: { id: string; name: string }) {
+  const pair = avatarColorsFor(id);
   return (
-    <View style={[styles.avatar, { backgroundColor: avatarColorFor(id) }]}>
-      <Text style={styles.avatarText}>{initialsFrom(name)}</Text>
+    <View style={[styles.avatar, { backgroundColor: pair.bg }]}>
+      <Text style={[styles.avatarText, { color: pair.fg }]}>{initialsFrom(name)}</Text>
     </View>
   );
 }
@@ -339,7 +340,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarText: { fontFamily: type.bodyBold, fontSize: 15, color: '#ffffff' },
+  avatarText: { fontFamily: type.bodyBold, fontSize: 15 },
   rowBody: { flex: 1, minWidth: 0 },
   name: { fontFamily: type.bodySemiBold, fontSize: 15, color: colors.text },
   meta: { fontFamily: type.bodyRegular, fontSize: 13, color: colors.neutral[700] },
@@ -361,7 +362,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent[700],
   },
   addButtonActive: { backgroundColor: colors.accent[800] },
-  addText: { fontFamily: type.bodyBold, fontSize: 14, color: '#ffffff' },
+  addText: { fontFamily: type.bodyBold, fontSize: 14, color: '#fff' },
   dimmed: { opacity: 0.5 },
   search: {
     flexDirection: 'row',

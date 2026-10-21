@@ -1,4 +1,4 @@
-import { Caprasimo_400Regular } from '@expo-google-fonts/caprasimo';
+import { DMSerifDisplay_400Regular } from '@expo-google-fonts/dm-serif-display';
 import {
   Figtree_400Regular,
   Figtree_600SemiBold,
@@ -13,18 +13,23 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Analytics } from '@vercel/analytics/react';
 import InAppBrowserBanner from '../components/InAppBrowserBanner';
 import { useAuthDeepLink } from '../lib/auth-deep-link';
+import { installFocusRing } from '../lib/focus-ring';
 import { SessionProvider } from '../lib/session';
 import { GuidesProvider } from '../lib/use-guides';
 
-// Keep the splash screen up until the design system's fonts (Caprasimo,
-// Figtree) are ready, so headings don't flash in the system face before
-// swapping to Caprasimo a beat later. Calling this at module scope means it
-// runs before the first render, which is required — a call inside the
-// component body can lose the race with that first render on a fast device.
+// Keep the splash screen up until the design system's fonts (DM Serif
+// Display, Figtree) are ready, so headings don't flash in the system face
+// before swapping to DM Serif Display a beat later. Calling this at module
+// scope means it runs before the first render, which is required — a call
+// inside the component body can lose the race with that first render on a
+// fast device.
 SplashScreen.preventAutoHideAsync().catch(() => {
   // Only rejects if called twice (e.g. Fast Refresh during development);
   // harmless either way, since the screen is already prevented from hiding.
 });
+
+// The web keyboard-focus ring (lib/focus-ring.ts); a no-op on native.
+installFocusRing();
 
 export default function RootLayout() {
   // Mounted at the root so an OAuth redirect (or an already-sent magic-link
@@ -41,7 +46,7 @@ export default function RootLayout() {
   // silently falls back to the system font for any unresolved
   // fontFamily name.
   const [fontsLoaded, fontError] = useFonts({
-    Caprasimo_400Regular,
+    DMSerifDisplay_400Regular,
     Figtree_400Regular,
     Figtree_600SemiBold,
     Figtree_700Bold,

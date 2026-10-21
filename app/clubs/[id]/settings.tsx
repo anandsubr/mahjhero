@@ -395,7 +395,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  swatchSelected: { borderColor: colors.accentColor },
+  swatchSelected: { borderColor: colors.accent[600] },
   swatch: { width: 34, height: 34, borderRadius: radius.pill },
   gameModeRow: {
     flexDirection: 'row',

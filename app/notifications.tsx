@@ -389,12 +389,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  radioOuterSelected: { borderColor: colors.accentColor },
+  // accent[600]: 3:1 non-text contrast for the state (lib/theme.test.ts).
+  radioOuterSelected: { borderColor: colors.accent[600] },
   radioInner: {
     width: 12,
     height: 12,
     borderRadius: radius.pill,
-    backgroundColor: colors.accentColor,
+    backgroundColor: colors.accent[600],
   },
   timeGrid: {
     flexDirection: 'row',

@@ -14,6 +14,7 @@ import Screen from '../../components/Screen';
 import { GENERIC_ERROR } from '../../lib/constants';
 import { initialsFrom } from '../../lib/dashboard';
 import {
+  avatarColorsFor,
   fetchAddablePeople,
   fetchFriends,
   type AddablePerson,
@@ -246,6 +247,7 @@ export default function NewMessageScreen() {
           ) : null}
           {candidates.map((c) => {
             const on = picked.includes(c.profile_id);
+            const tint = avatarColorsFor(c.profile_id);
             return (
               <Pressable
                 key={c.profile_id}
@@ -255,8 +257,8 @@ export default function NewMessageScreen() {
                 aria-selected={on}
                 style={[styles.person, on ? styles.personOn : null]}
               >
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>
+                <View style={[styles.avatar, { backgroundColor: tint.bg }]}>
+                  <Text style={[styles.avatarText, { color: tint.fg }]}>
                     {initialsFrom(c.display_name)}
                   </Text>
                 </View>
@@ -327,19 +329,18 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: 'transparent',
   },
-  personOn: { borderColor: colors.accentColor },
+  // accent[600]: 3:1 non-text contrast for the state (lib/theme.test.ts).
+  personOn: { borderColor: colors.accent[600] },
   avatar: {
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: colors.bg,
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarText: {
     fontFamily: type.bodyBold,
     fontSize: type.size.helper,
-    color: colors.text,
   },
   personBody: { flex: 1, minWidth: 0 },
   personName: {

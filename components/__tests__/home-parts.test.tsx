@@ -81,6 +81,18 @@ describe('MyGamesCalendar', () => {
 });
 
 describe('JoinClubCard', () => {
+  // Linen & Jade §4: the placeholder reads in normal case with no tracking;
+  // the typed code keeps its letter-spacing (and is still uppercased).
+  it('shows the placeholder without letter-spacing, spacing only the typed code', () => {
+    render(<JoinClubCard onJoined={() => {}} />);
+    const input = screen.getByLabelText('Club code') as HTMLInputElement;
+    expect(input.placeholder).toBe('Club code');
+    expect(getComputedStyle(input).letterSpacing).not.toBe('2px');
+    expect(getComputedStyle(input).textTransform).not.toBe('uppercase');
+    fireEvent.change(input, { target: { value: 'oak2' } });
+    expect(getComputedStyle(screen.getByLabelText('Club code')).letterSpacing).toBe('2px');
+  });
+
   it('disables Join until text is entered, uppercases input', () => {
     render(<JoinClubCard onJoined={() => {}} />);
     const join = screen.getByRole('button', { name: 'Join' });

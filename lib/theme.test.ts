@@ -1,5 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { colors } from './theme';
+import { colors, invitedAvatar, shadow, type } from './theme';
 
 /**
  * WCAG 2.1 relative luminance and contrast ratio, written out rather than
@@ -23,6 +25,16 @@ function contrast(a: string, b: string): number {
   const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
   return (hi + 0.05) / (lo + 0.05);
 }
+
+/*
+ * The "measured at" ratios quoted in the comments below were taken against
+ * the original Organic palette. Re-measured on Linen & Jade (2026-10-21):
+ * colors.bg on accent[700] 5.77:1 (was 5.72), on accent2[700] 5.89:1 (was
+ * 5.43), accent[700] on surface 5.16:1 (was 5.08), bg on accent[600]
+ * 3.84:1, on accent2[600] 3.98:1, accent2[800] on accent2[100] 8.73:1,
+ * neutral[700] 5.51:1 on bg and 4.92:1 on surface. Every assertion still
+ * holds; the assertions, not these numbers, are what is enforced.
+ */
 
 /** WCAG AA for body text. Most of the app's text is 16pt or larger, so the
  *  large-text allowance of 3:1 does not apply -- the one known exception is
@@ -132,6 +144,11 @@ describe('announcement text clears AA on the announcement background', () => {
 // family, direct and group the accent2 family, a shade apart within each
 // pair. All four put `colors.bg` (cream) glyph/initials on a saturated fill.
 //
+// Linen & Jade: a direct avatar is a person, so it now takes that person's
+// soft avatar pair (pinned in "avatar initials clear AA on their tint"
+// below) instead of accent2[700]. The accent2[700] pin stays: it is still
+// the Send button's armed fill and HomeHeader's own profile button.
+//
 // club and direct render INITIALS -- real text -- so they need AA's 4.5:1,
 // not the 3:1 non-text allowance; accent[700] was already pinned above (the
 // unread badge's own colour) at 5.72:1, reused rather than re-pinned. game
@@ -152,7 +169,7 @@ describe('announcement text clears AA on the announcement background', () => {
 // already pinned above ("muted text clears AA on both grounds").
 
 describe('thread row avatars clear contrast on their own fill', () => {
-  it('clears AA on accent2[700] (direct avatar initials)', () => {
+  it('clears AA on accent2[700] (formerly direct avatar initials)', () => {
     expect(contrast(colors.bg, colors.accent2[700])).toBeGreaterThanOrEqual(AA);
   });
 
@@ -239,5 +256,162 @@ describe('conversation screen text clears AA on the page background', () => {
   });
   it('accent2[700] (sender name, member count) on bg', () => {
     expect(contrast(colors.accent2[700], colors.bg)).toBeGreaterThanOrEqual(AA);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Linen & Jade: the tokens must equal docs/design/linen-jade/
+// theme-linen-jade.css, the design handoff's source of truth. Read from the
+// file itself rather than copied into this test, so a value typed wrong in
+// lib/theme.ts cannot also be typed wrong here and agree with itself.
+// ---------------------------------------------------------------------------
+
+const css = readFileSync(
+  join(__dirname, '..', 'docs', 'design', 'linen-jade', 'theme-linen-jade.css'),
+  'utf8',
+);
+
+function cssVar(name: string): string {
+  const match = css.match(new RegExp(`--${name}:\\s*(#[0-9a-fA-F]{6})\\s*;`));
+  if (!match) throw new Error(`--${name} not found in theme-linen-jade.css`);
+  return match[1].toLowerCase();
+}
+
+describe('Linen & Jade tokens equal the CSS', () => {
+  it('base colours', () => {
+    expect(colors.bg).toBe(cssVar('color-bg'));
+    expect(colors.surface).toBe(cssVar('color-surface'));
+    expect(colors.text).toBe(cssVar('color-text'));
+    expect(colors.accentColor).toBe(cssVar('color-accent'));
+    expect(colors.accent2Color).toBe(cssVar('color-accent-2'));
+  });
+
+  it.each([100, 200, 300, 400, 500, 600, 700, 800, 900] as const)(
+    'every ramp step %i',
+    (step) => {
+      expect(colors.neutral[step]).toBe(cssVar(`color-neutral-${step}`));
+      expect(colors.accent[step]).toBe(cssVar(`color-accent-${step}`));
+      expect(colors.accent2[step]).toBe(cssVar(`color-accent-2-${step}`));
+    },
+  );
+
+  it('six soft avatar pairs, in order', () => {
+    expect(colors.avatar).toHaveLength(6);
+    colors.avatar.forEach((pair, i) => {
+      expect(pair.bg).toBe(cssVar(`avatar-${i + 1}-bg`));
+      expect(pair.fg).toBe(cssVar(`avatar-${i + 1}-fg`));
+    });
+  });
+
+  // color-mix(in srgb, #2a2321 13%, transparent): the text colour at 13%.
+  it('divider is text at 13%', () => {
+    expect(colors.divider).toBe('rgba(42, 35, 33, 0.13)');
+  });
+
+  // color-mix(in srgb, #302b27 10/12/18%, transparent): ink is neutral-900.
+  it('shadows are ink at 10/12/18%', () => {
+    for (const s of [shadow.sm, shadow.md, shadow.lg]) {
+      expect(s.shadowColor).toBe(cssVar('color-neutral-900'));
+    }
+    expect(shadow.sm.shadowOpacity).toBe(0.1);
+    expect(shadow.md.shadowOpacity).toBe(0.12);
+    expect(shadow.lg.shadowOpacity).toBe(0.18);
+  });
+
+  it('heading face is DM Serif Display 400', () => {
+    expect(type.heading).toBe('DMSerifDisplay_400Regular');
+  });
+});
+
+// Every avatar pair is a deep initial on a light tint: real text, so AA.
+describe('avatar initials clear AA on their tint', () => {
+  it.each([0, 1, 2, 3, 4, 5])('avatar-%i', (i) => {
+    const { bg, fg } = colors.avatar[i];
+    expect(contrast(fg, bg)).toBeGreaterThanOrEqual(AA);
+  });
+
+  // HomeHeader's own profile button: white initial on accent2[700].
+  it('the current user\'s profile button: white on accent2[700]', () => {
+    expect(contrast('#ffffff', colors.accent2[700])).toBeGreaterThanOrEqual(AA);
+  });
+});
+
+// Linen & Jade ruling (Task 1 review): the brighter accent (#df7a55) carries
+// cream text at only 2.75:1, so Button's primary fill and ghost label move
+// to accent[700] -- the README's "accent text / primary buttons" step.
+// These pin the token pairs; components/__tests__/Button.test.tsx pins that
+// Button actually renders them.
+describe('button text/fill pairs clear AA', () => {
+  it('primary: colors.bg label on the accent[700] fill', () => {
+    expect(contrast(colors.bg, colors.accent[700])).toBeGreaterThanOrEqual(AA);
+  });
+
+  it('ghost: accent[700] label on bg and on surface', () => {
+    expect(contrast(colors.accent[700], colors.bg)).toBeGreaterThanOrEqual(AA);
+    expect(contrast(colors.accent[700], colors.surface)).toBeGreaterThanOrEqual(AA);
+  });
+
+  it('secondary: text on surface', () => {
+    expect(contrast(colors.text, colors.surface)).toBeGreaterThanOrEqual(AA);
+  });
+
+  it('dark: colors.bg on neutral[900]', () => {
+    expect(contrast(colors.bg, colors.neutral[900])).toBeGreaterThanOrEqual(AA);
+  });
+
+  it('destructive: accent[800] on accent[200]', () => {
+    expect(contrast(colors.accent[800], colors.accent[200])).toBeGreaterThanOrEqual(AA);
+  });
+});
+
+// components/SeatGrid.tsx's invited-seat sheet: not the invitee's own tint
+// (the viewer may not be allowed to know who it is), but still a real
+// initial, so AA.
+describe('invited seat avatar clears AA', () => {
+  it('fg on bg', () => {
+    expect(contrast(invitedAvatar.fg, invitedAvatar.bg)).toBeGreaterThanOrEqual(AA);
+  });
+});
+
+// State indicators -- Toggle's and GameForm's on tracks, the notifications
+// radio ring and dot, TierPicker's selected pill -- are graphics whose fill
+// IS the state, so WCAG 1.4.11's 3:1 applies against the ground they sit on.
+// accentColor is 2.75:1 on bg; accent[600] is used instead. The knobs drawn
+// on the track (colors.bg in Toggle, '#fff' in GameForm) are checked too.
+// lib/focus-ring.ts's keyboard ring is drawn on the page and on cards. The
+// spec's accent (accentColor) measured 2.75:1 on bg and 2.46:1 on surface,
+// under WCAG 1.4.11's 3:1, so it uses accent[600] like the state indicators.
+describe('the focus ring clears non-text contrast', () => {
+  it('clears 3:1 on bg and on surface', () => {
+    expect(contrast(colors.accent[600], colors.bg)).toBeGreaterThanOrEqual(NON_TEXT);
+    expect(contrast(colors.accent[600], colors.surface)).toBeGreaterThanOrEqual(NON_TEXT);
+  });
+});
+
+// components/TipCard.tsx: accent2[800] body text on the blush accent[100]
+// ground (Linen & Jade §4).
+describe('TipCard body text clears AA on its ground', () => {
+  it('clears AA for accent2[800] on accent[100]', () => {
+    expect(contrast(colors.accent2[800], colors.accent[100])).toBeGreaterThanOrEqual(AA);
+  });
+});
+
+// components/hub/MemberRow.tsx's Beginner skill chip: accent2[800] text on
+// an accent2[200] fill.
+describe('Beginner skill chip clears AA', () => {
+  it('clears AA for accent2[800] on accent2[200]', () => {
+    expect(contrast(colors.accent2[800], colors.accent2[200])).toBeGreaterThanOrEqual(AA);
+  });
+});
+
+describe('state indicators clear non-text contrast', () => {
+  it('accent[600] clears 3:1 on bg and on surface', () => {
+    expect(contrast(colors.accent[600], colors.bg)).toBeGreaterThanOrEqual(NON_TEXT);
+    expect(contrast(colors.accent[600], colors.surface)).toBeGreaterThanOrEqual(NON_TEXT);
+  });
+
+  it('the knob clears 3:1 on the accent[600] track', () => {
+    expect(contrast(colors.bg, colors.accent[600])).toBeGreaterThanOrEqual(NON_TEXT);
+    expect(contrast('#ffffff', colors.accent[600])).toBeGreaterThanOrEqual(NON_TEXT);
   });
 });

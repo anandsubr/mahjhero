@@ -54,9 +54,11 @@ type Props = {
  * finding: on the one screen used standing up in a dim hall, a 2px-vs-4px
  * difference on an otherwise identical grey line is easy to miss at a
  * glance, and a fill only 1.23–1.27:1 off the page background does not
- * help. `colors.accentColor`/`accent2Color` measure 3.03:1 / 3.14:1
- * against `colors.bg` — over the 3:1 WCAG 1.4.11 floor for non-text UI
- * boundaries — and are visibly a different hue from the neutral divider
+ * help. On Linen & Jade the terracotta border is `colors.accent[600]`
+ * (3.84:1 on `colors.bg`; the mid-tone `accentColor` dropped to 2.75:1)
+ * and the jade one `colors.accent2Color` (accent2[600], 3.98:1) — both over
+ * the 3:1 WCAG 1.4.11 floor for non-text UI boundaries, pinned in
+ * lib/theme.test.ts — and visibly a different hue from the neutral divider
  * (1.38:1 against bg) an unselected chip carries, so colour and width now
  * both signal selection rather than width alone; see
  * components/__tests__/CheckInControl.test.tsx's docstring and the task
@@ -147,7 +149,7 @@ const styles = StyleSheet.create({
   choiceOff: {
     backgroundColor: colors.accent[300],
     borderWidth: 4,
-    borderColor: colors.accentColor,
+    borderColor: colors.accent[600],
   },
   dim: { opacity: 0.4 },
   // `colors.text`, not `colors.bg` — see the contrast measurements in this

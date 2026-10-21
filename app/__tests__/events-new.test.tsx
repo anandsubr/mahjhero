@@ -632,6 +632,18 @@ describe('the "Require check-in" toggle', () => {
     ).toBe('false');
   });
 
+  // State indicators use accent[600] (#c45f3b), not accentColor: the on
+  // track has to read at WCAG 1.4.11's 3:1 against the card behind it.
+  it('fills the on track with accent[600]', async () => {
+    render(<NewEventScreen />);
+    await screen.findByText('New game');
+    const sw = screen.getByRole('switch', { name: 'Require check-in' });
+    fireEvent.click(sw);
+    expect(getComputedStyle(sw.lastElementChild as Element).backgroundColor).toBe(
+      'rgb(196, 95, 59)',
+    );
+  });
+
   it('passes the toggle through on submit', async () => {
     render(<NewEventScreen />);
     await screen.findByText('New game');

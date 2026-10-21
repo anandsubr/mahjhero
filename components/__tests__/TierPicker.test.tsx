@@ -28,6 +28,13 @@ describe('TierPicker', () => {
     ).toBe('false');
   });
 
+  it('fills the selected pill with accent[600] for 3:1 non-text contrast', () => {
+    render(<TierPicker tableLabel="Table 1" tier="advanced" onChange={vi.fn()} />);
+    expect(
+      getComputedStyle(screen.getByLabelText('Table 1: Advanced')).backgroundColor,
+    ).toBe('rgb(196, 95, 59)');
+  });
+
   it('calls onChange with the tapped tier', () => {
     const onChange = vi.fn();
     render(<TierPicker tableLabel="Table 1" tier="mixed" onChange={onChange} />);

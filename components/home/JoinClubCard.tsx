@@ -52,7 +52,9 @@ export default function JoinClubCard({ onJoined }: { onJoined: (clubId: string) 
           autoCapitalize="characters"
           autoCorrect={false}
           maxLength={16}
-          style={styles.input}
+          // Tracking only on the typed code: the placeholder reads in plain
+          // case with no letter-spacing (Linen & Jade §4).
+          style={[styles.input, code.length > 0 && styles.inputFilled]}
         />
         <Pressable
           accessibilityRole="button"
@@ -79,8 +81,9 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', gap: 8 },
   input: {
     flex: 1, minHeight: 48, borderRadius: radius.pill, backgroundColor: colors.bg,
-    paddingHorizontal: 16, fontFamily: type.bodyBold, fontSize: 16, letterSpacing: 2, color: colors.text,
+    paddingHorizontal: 16, fontFamily: type.bodyBold, fontSize: 16, color: colors.text,
   },
+  inputFilled: { letterSpacing: 2 },
   join: {
     minWidth: 76, minHeight: 48, borderRadius: radius.pill, backgroundColor: colors.accent[700],
     alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18,

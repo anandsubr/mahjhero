@@ -35,21 +35,6 @@ type ButtonProps = {
    * needs a larger target), so it defaults to true.
    */
   big?: boolean;
-  /**
-   * `.btn`'s base rule sets `font-family: var(--font-heading)` (Caprasimo,
-   * weight 400) with no override — that's the system's signature move, and
-   * it applies to every plain button in the design (primary CTAs, secondary
-   * CTAs, and even the ghost back/sign-out links) with no exceptions found
-   * in 1C-variant.html. The design overrides back to the body font only on
-   * bespoke option-style controls (the skill-level tiles, the
-   * notification-channel rows) that are NOT built from this component —
-   * see app/profile.tsx's SkillSegmented and app/notifications.tsx's inline
-   * channel rows, which set Figtree 700 / 600 directly. This prop exists so
-   * a future Button-based option control can opt into that body face
-   * instead of duplicating Button's layout by hand; no current call site
-   * needs it.
-   */
-  bodyFace?: boolean;
   disabled?: boolean;
   loading?: boolean;
   accessibilityLabel?: string;
@@ -81,8 +66,8 @@ type ButtonProps = {
 const spinnerColor: Record<ButtonVariant, string> = {
   primary: colors.bg,
   dark: colors.bg,
-  secondary: colors.accentColor,
-  ghost: colors.accentColor,
+  secondary: colors.accent[700],
+  ghost: colors.accent[700],
   destructive: colors.accent[800],
 };
 
@@ -92,7 +77,6 @@ export default function Button({
   variant = 'primary',
   block = false,
   big = true,
-  bodyFace = false,
   disabled = false,
   loading = false,
   accessibilityLabel,
@@ -143,7 +127,6 @@ export default function Button({
           <Text
             style={[
               styles.label,
-              bodyFace ? styles.labelBodyFace : null,
               variantTextStyles[variant],
               big ? styles.labelBig : null,
             ]}
@@ -190,13 +173,14 @@ const styles = StyleSheet.create({
     minHeight: undefined,
   },
   label: {
-    // .btn's base font-family is the HEADING face (Caprasimo, weight 400)
-    // with no override — the system's signature move, not a mistake.
-    fontFamily: type.heading,
+    // Figtree bold. The original Organic design set `.btn` in the heading
+    // face, and this component followed it; Linen & Jade drops that --
+    // "everything else, buttons included, uses Figtree", no display font
+    // inside a button (docs/design/linen-jade/README.md §2). The heading
+    // face is for titles only, so there is no longer a per-button opt-in
+    // to the body face: every Button already has it.
+    fontFamily: type.bodyBold,
     fontSize: type.size.body,
-  },
-  labelBodyFace: {
-    fontFamily: type.bodySemiBold,
   },
   labelBig: {
     fontSize: type.size.bodyLarge,
@@ -213,7 +197,11 @@ const styles = StyleSheet.create({
 const variantStyles = StyleSheet.create({
   primary: {
     // .btn-primary { background: var(--color-accent); color: var(--color-bg) }
-    backgroundColor: colors.accentColor,
+    // -- but Linen & Jade's brighter accent (#df7a55) carries cream text at
+    // only 2.75:1, so the fill is accent[700] (5.77:1), the step the
+    // Linen & Jade README names for primary buttons. Pinned in
+    // lib/theme.test.ts ("button text/fill pairs clear AA").
+    backgroundColor: colors.accent[700],
     ...shadow.sm,
   },
   secondary: {
@@ -230,7 +218,7 @@ const variantStyles = StyleSheet.create({
     backgroundColor: colors.neutral[900],
   },
   destructive: {
-    // The same pairing Tag's `accent` variant uses, at 8.37:1.
+    // The same pairing Tag's `accent` variant uses, at 7.77:1.
     backgroundColor: colors.accent[200],
   },
 });
@@ -240,8 +228,9 @@ const variantTextStyles = StyleSheet.create({
   // keeps the palette warm. Already correct here.
   primary: { color: colors.bg },
   secondary: { color: colors.text },
-  // .btn-ghost { color: var(--color-accent) }
-  ghost: { color: colors.accentColor },
+  // .btn-ghost { color: var(--color-accent) } -- accent[700] instead
+  // (5.77:1 on bg, 5.16:1 on surface): accentColor is 2.75:1 on bg.
+  ghost: { color: colors.accent[700] },
   dark: { color: colors.bg },
   destructive: { color: colors.accent[800] },
 });

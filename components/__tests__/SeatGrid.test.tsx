@@ -2,6 +2,13 @@ import { useState } from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import SeatGrid from '../SeatGrid';
+import { avatarColorsFor } from '../../lib/friends';
+
+/** '#ffe0d4' -> 'rgb(255, 224, 212)', the form getComputedStyle reports. */
+function rgb(hex: string): string {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  return `rgb(${r}, ${g}, ${b})`;
+}
 
 const seats = [
   { bookingId: 'b1', profileId: 'p1', name: 'Jane P.', isYou: false },
@@ -10,6 +17,19 @@ const seats = [
 ];
 
 describe('SeatGrid', () => {
+  // Linen & Jade: a seat's avatar is that PERSON's soft pair -- the same tint
+  // they get on Members, Board and Friends -- not a colour for the seat's
+  // position, and not a white initial on a dark fill.
+  it('draws each seated avatar in the person\'s own soft pair', () => {
+    render(<SeatGrid tableLabel="Table 1" capacity={4} seats={seats} />);
+    for (const [initial, profileId] of [['J', 'p1'], ['M', 'p2']] as const) {
+      const pair = avatarColorsFor(profileId);
+      const text = screen.getByText(initial);
+      expect(getComputedStyle(text).color).toBe(rgb(pair.fg));
+      expect(getComputedStyle(text.parentElement!).backgroundColor).toBe(rgb(pair.bg));
+    }
+  });
+
   it('draws every seat the table has, filled and empty', () => {
     render(<SeatGrid tableLabel="Table 1" capacity={4} seats={seats} />);
     expect(screen.getByText('Jane P.')).toBeTruthy();

@@ -65,10 +65,18 @@ const fetchAddablePeople = vi.fn();
 // The same candidate source app/messages/new.tsx already uses for its own
 // People picker, reused rather than a second way of gathering who is
 // addable — see this screen's own comment above `openAdding`.
-vi.mock('../../lib/friends', () => ({
-  fetchFriends: (...a: unknown[]) => fetchFriends(...a),
-  fetchAddablePeople: (...a: unknown[]) => fetchAddablePeople(...a),
-}));
+vi.mock('../../lib/friends', async () => {
+  // avatarColorsFor is pure and covered in lib/friends.test.ts; the real one
+  // keeps every avatar on this screen in the person's own soft pair.
+  const actual = await vi.importActual<typeof import('../../lib/friends')>(
+    '../../lib/friends',
+  );
+  return {
+    avatarColorsFor: actual.avatarColorsFor,
+    fetchFriends: (...a: unknown[]) => fetchFriends(...a),
+    fetchAddablePeople: (...a: unknown[]) => fetchAddablePeople(...a),
+  };
+});
 
 vi.mock('../../lib/messages', async () => {
   const actual =
@@ -664,7 +672,7 @@ describe('thread screen', () => {
     // getComputedStyle, not `.style`: react-native-web emits atomic CSS
     // classes here, not inline styles -- see profile.test.tsx and
     // Button.test.tsx for the same pattern.
-    expect(getComputedStyle(body).color).toBe('rgb(61, 71, 43)');
+    expect(getComputedStyle(body).color).toBe('rgb(29, 77, 61)');
   });
 
   // send()'s guard used to read `sending` from the render closure, which is
@@ -856,11 +864,11 @@ describe('thread screen', () => {
     render(<ThreadScreen />);
     await screen.findByText('We are one short for Tuesday.');
     const theirs = getComputedStyle(screen.getByTestId('bubble-m1'));
-    expect(theirs.backgroundColor).not.toBe('rgb(235, 221, 197)');
+    expect(theirs.backgroundColor).not.toBe('rgb(241, 232, 220)');
 
     const mineBubble = screen.getByText(MESSAGES[1].body).parentElement!;
     const mine = getComputedStyle(mineBubble);
-    expect(mine.backgroundColor).toBe('rgb(140, 73, 26)');
+    expect(mine.backgroundColor).toBe('rgb(158, 70, 38)');
     expect(mine.borderTopLeftRadius).toBe('20px');
     expect(mine.borderTopRightRadius).toBe('20px');
     expect(mine.borderBottomRightRadius).toBe('6px');
@@ -986,7 +994,7 @@ describe('thread screen', () => {
       render(<ThreadScreen />);
       await screen.findByText('We are one short for Tuesday.');
       const separator = screen.getByTestId('conversation-separator');
-      expect(getComputedStyle(separator).color).toBe('rgb(100, 92, 80)');
+      expect(getComputedStyle(separator).color).toBe('rgb(107, 98, 89)');
       expect(getComputedStyle(separator).textAlign).toBe('center');
       expect(screen.getByText('Today')).toBeTruthy();
     });
@@ -1207,6 +1215,29 @@ describe('thread screen', () => {
       expect(screen.getByTestId('thread-header-avatar-direct').textContent).toBe(
         'BR',
       );
+    });
+
+    // Final review I3: MessageGroup keys each sender avatar by author_id, so a
+    // header avatar keyed by name gave the same person two colours on one
+    // screen. The header now keys by the other member's profile id.
+    it("keys a direct thread's header avatar by the other member's id, matching their sender avatar", async () => {
+      const { avatarColorsFor } = await vi.importActual<typeof import('../../lib/friends')>(
+        '../../lib/friends',
+      );
+      // The fixture only proves something if the two keys hash apart.
+      expect(avatarColorsFor('other').bg).not.toBe(avatarColorsFor('Bob Reyes').bg);
+      fetchThread.mockResolvedValueOnce(DIRECT_THREAD);
+      fetchThreadMessages.mockResolvedValueOnce(MESSAGES);
+      render(<ThreadScreen />);
+      await screen.findByText('Bob Reyes');
+      const tint = (el: HTMLElement) => getComputedStyle(el).backgroundColor;
+      const probe = document.createElement('div');
+      probe.style.backgroundColor = avatarColorsFor('other').bg;
+      const header = screen.getByTestId('thread-header-avatar-direct');
+      expect(tint(header)).toBe(probe.style.backgroundColor);
+      const senders = await screen.findAllByTestId('sender-avatar');
+      expect(senders.length).toBeGreaterThan(0);
+      for (const s of senders) expect(tint(s)).toBe(tint(header));
     });
 
     // Tapping the name is the way into the members view -- same accessible
