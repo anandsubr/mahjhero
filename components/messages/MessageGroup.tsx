@@ -76,7 +76,14 @@ export default function MessageGroup({
   return (
     <View style={styles.theirsGroup}>
       <View style={styles.avatar}>
-        <ThreadAvatar kind="direct" name={authorName} size={28} initialsSize={12} testID="sender-avatar" />
+        <ThreadAvatar
+          kind="direct"
+          name={authorName}
+          personId={messages[0]?.author_id}
+          size={28}
+          initialsSize={12}
+          testID="sender-avatar"
+        />
       </View>
       <View style={styles.theirsColumn}>
         <Text style={styles.author}>{authorName}</Text>

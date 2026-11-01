@@ -6,7 +6,7 @@ import { FormCard } from './GameForm';
 import { TrophyIcon } from './icons';
 import { fetchClubLeaderboard, type LeaderboardEntry } from '../lib/leaderboard';
 import { initialsFrom } from '../lib/dashboard';
-import { avatarColorFor } from '../lib/friends';
+import { avatarColorsFor } from '../lib/friends';
 import { colors, radius, space, type } from '../lib/theme';
 
 export type ClubLeaderboardHandle = {
@@ -24,8 +24,8 @@ type Props = { clubId: string; userId: string | undefined };
  * draw is the hub header above this section now, so only the rows
  * themselves moved here.
  *
- * Same seeded avatar colours as the Friends screen, so a person looks the
- * same on both.
+ * Same seeded avatar pair (avatarColorsFor) as the Friends screen, so a
+ * person looks the same on both.
  */
 const ClubLeaderboard = forwardRef<ClubLeaderboardHandle, Props>(
   function ClubLeaderboard({ clubId, userId }, ref) {
@@ -83,6 +83,7 @@ const ClubLeaderboard = forwardRef<ClubLeaderboardHandle, Props>(
               const isMe = entry.profile_id === userId;
               const podium = index < 3;
               const name = displayName(entry);
+              const pair = avatarColorsFor(entry.profile_id);
               return (
                 <View
                   key={entry.profile_id}
@@ -90,16 +91,16 @@ const ClubLeaderboard = forwardRef<ClubLeaderboardHandle, Props>(
                   testID={isMe ? 'leaderboard-row-mine' : undefined}
                 >
                   <View style={[styles.rank, podium && styles.rankPodium]}>
-                    {index === 0 ? <TrophyIcon size={12} color="#ffffff" /> : null}
+                    {index === 0 ? <TrophyIcon size={12} color="#fff" /> : null}
                     <Text style={[styles.rankText, podium && styles.rankTextPodium]}>
                       {index + 1}
                     </Text>
                   </View>
                   <View
                     testID="leaderboard-avatar"
-                    style={[styles.avatar, { backgroundColor: avatarColorFor(entry.profile_id) }]}
+                    style={[styles.avatar, { backgroundColor: pair.bg }]}
                   >
-                    <Text style={styles.avatarText}>{initialsFrom(name)}</Text>
+                    <Text style={[styles.avatarText, { color: pair.fg }]}>{initialsFrom(name)}</Text>
                   </View>
                   <View style={styles.rowBody}>
                     <Text style={styles.name} numberOfLines={1}>
@@ -147,7 +148,7 @@ const styles = StyleSheet.create({
   },
   rankPodium: { backgroundColor: colors.accent[700] },
   rankText: { fontFamily: type.bodyBold, fontSize: 14, color: colors.neutral[700] },
-  rankTextPodium: { color: '#ffffff' },
+  rankTextPodium: { color: '#fff' },
   avatar: {
     width: 40,
     height: 40,
@@ -155,7 +156,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarText: { fontFamily: type.bodyBold, fontSize: 15, color: '#ffffff' },
+  avatarText: { fontFamily: type.bodyBold, fontSize: 15 },
   rowBody: { flex: 1, minWidth: 0 },
   name: { fontFamily: type.bodySemiBold, fontSize: 15, color: colors.text },
   meta: { fontFamily: type.bodyRegular, fontSize: 13, color: colors.neutral[700] },

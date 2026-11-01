@@ -142,7 +142,7 @@ const styles = StyleSheet.create({
     fontSize: type.size.helper,
     letterSpacing: 1.2,
     textTransform: 'uppercase',
-    color: colors.accentColor,
+    color: colors.accent[700],
   },
   name: {
     fontFamily: type.heading,

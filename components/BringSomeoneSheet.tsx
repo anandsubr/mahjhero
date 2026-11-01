@@ -394,7 +394,7 @@ function SheetButton({
       ]}
     >
       {busy && !secondary ? (
-        <ActivityIndicator size="small" color="#ffffff" />
+        <ActivityIndicator size="small" color="#fff" />
       ) : null}
       <Text style={secondary ? styles.secondaryText : styles.primaryText}>
         {children}
@@ -414,7 +414,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     // neutral-900 at 40%.
-    backgroundColor: "rgba(46, 43, 37, 0.4)",
+    backgroundColor: colors.scrim,
   },
   sheet: {
     width: "100%",
@@ -453,7 +453,7 @@ const styles = StyleSheet.create({
   },
   personOn: { backgroundColor: colors.accent[700] },
   personText: { fontFamily: type.bodyBold, fontSize: 15, color: colors.text },
-  personTextOn: { fontFamily: type.bodyBold, fontSize: 15, color: "#ffffff" },
+  personTextOn: { fontFamily: type.bodyBold, fontSize: 15, color: "#fff" },
   placement: { fontFamily: type.bodyRegular, fontSize: 15, color: colors.text },
   helper: {
     fontFamily: type.bodyRegular,
@@ -488,7 +488,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   primaryDisabled: { backgroundColor: colors.neutral[400] },
-  primaryText: { fontFamily: type.bodyBold, fontSize: 16, color: "#ffffff" },
+  primaryText: { fontFamily: type.bodyBold, fontSize: 16, color: "#fff" },
   secondary: {
     height: 52,
     borderRadius: radius.pill,

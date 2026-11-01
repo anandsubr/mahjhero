@@ -1,5 +1,6 @@
 import { Image, Pressable, StyleSheet, View } from 'react-native';
 import type { ClubMedia } from '../../lib/club-media';
+import { colors } from '../../lib/theme';
 
 type Props = {
   photos: ClubMedia[];
@@ -63,5 +64,5 @@ const styles = StyleSheet.create({
   topLeft: { borderTopLeftRadius: 14 },
   topRight: { borderTopRightRadius: 14 },
   image: { width: '100%', height: '100%' },
-  placeholder: { width: '100%', height: '100%', backgroundColor: 'rgba(32, 30, 29, 0.08)' },
+  placeholder: { width: '100%', height: '100%', backgroundColor: colors.photoPlaceholder },
 });

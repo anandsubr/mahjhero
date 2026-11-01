@@ -290,7 +290,7 @@ export function TablesCard({
           <View style={[styles.segmented, styles.segmentedOnBg, styles.levels]}>
             {TIER_OPTIONS.map((option) => {
               const selected = option.value === table.tier;
-              const color = selected ? '#ffffff' : colors.text;
+              const color = selected ? '#fff' : colors.text;
               return (
                 <Pressable
                   key={option.value}
@@ -482,7 +482,7 @@ export function ActionBar({
         ]}
       >
         {busy ? (
-          <ActivityIndicator color="#ffffff" />
+          <ActivityIndicator color="#fff" />
         ) : (
           <Text style={[styles.primaryText, disabled && styles.primaryTextDisabled]}>
             {primaryLabel}
@@ -615,7 +615,7 @@ const styles = StyleSheet.create({
   },
   smallChipText: { fontFamily: type.bodySemiBold, fontSize: 14, color: colors.text },
   selected: { backgroundColor: colors.accent[700] },
-  selectedText: { color: '#ffffff' },
+  selectedText: { color: '#fff' },
   segmented: {
     flexDirection: 'row',
     gap: 4,
@@ -713,9 +713,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  trackOn: { backgroundColor: colors.accentColor, justifyContent: 'flex-end' },
+  // accent[600]: 3:1 non-text contrast for the state (lib/theme.test.ts).
+  trackOn: { backgroundColor: colors.accent[600], justifyContent: 'flex-end' },
   trackOff: { backgroundColor: colors.neutral[400], justifyContent: 'flex-start' },
-  knob: { width: 24, height: 24, borderRadius: radius.pill, backgroundColor: '#ffffff', ...shadow.sm },
+  knob: { width: 24, height: 24, borderRadius: radius.pill, backgroundColor: '#fff', ...shadow.sm },
   ghost: { alignSelf: 'center', paddingVertical: 10, paddingHorizontal: 16, borderRadius: radius.pill },
   ghostPressed: { backgroundColor: colors.surface },
   ghostText: { fontFamily: type.bodyBold, fontSize: 15, color: colors.accent[700] },
@@ -749,7 +750,7 @@ const styles = StyleSheet.create({
   },
   primaryButtonPressed: { backgroundColor: colors.accent[800] },
   primaryButtonDisabled: { backgroundColor: colors.accent[300] },
-  primaryText: { fontFamily: type.bodyBold, fontSize: 16, color: '#ffffff' },
+  primaryText: { fontFamily: type.bodyBold, fontSize: 16, color: '#fff' },
   primaryTextDisabled: { color: colors.accent[100] },
   sheetRoot: { flex: 1, justifyContent: 'flex-end' },
   scrim: {
@@ -758,7 +759,7 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     left: 0,
-    backgroundColor: 'rgba(46, 43, 37, 0.4)',
+    backgroundColor: colors.scrim,
   },
   sheet: {
     width: '100%',

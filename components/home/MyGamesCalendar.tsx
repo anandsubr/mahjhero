@@ -95,7 +95,7 @@ export default function MyGamesCalendar({
                     {cell.day}
                   </Text>
                 </View>
-                <View style={styles.dots}>
+                <View style={styles.dots} testID="calendar-day-dots">
                   {dots.map((clubId) => (
                     <View key={clubId} style={[styles.dot, { backgroundColor: clubColor(clubId) }]} />
                   ))}
@@ -146,7 +146,7 @@ const styles = StyleSheet.create({
   grid: { flexDirection: 'row', flexWrap: 'wrap' },
   cell: { width: `${100 / 7}%`, height: 46, alignItems: 'center', justifyContent: 'center' },
   circle: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
-  today: { borderWidth: 2, borderColor: colors.accentColor },
+  today: { borderWidth: 2, borderColor: colors.accent[600] },
   selected: { backgroundColor: colors.accent[700] },
   dayNum: { fontFamily: type.bodyRegular, fontSize: 15, color: colors.text },
   pastText: { color: colors.neutral[600] },

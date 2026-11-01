@@ -107,7 +107,7 @@ export default function RoundTimer({ roundNumber, showRecordHint = false }: Prop
           accessibilityLabel={`Start ${roundLabel}, ${selectedMinutes}-minute timer`}
           style={({ pressed }) => [styles.primary, pressed ? styles.primaryPressed : null]}
         >
-          <PlayIcon size={14} color="#ffffff" />
+          <PlayIcon size={14} color="#fff" />
           <Text style={styles.primaryText}>
             {`Start ${roundLabel} · ${selectedMinutes} min`}
           </Text>
@@ -188,7 +188,7 @@ const styles = StyleSheet.create({
   },
   optionSelected: { backgroundColor: colors.accent[700] },
   optionText: { fontFamily: type.bodyBold, fontSize: 14, color: colors.text },
-  optionTextSelected: { color: '#ffffff' },
+  optionTextSelected: { color: '#fff' },
   primary: {
     height: 50,
     borderRadius: radius.pill,
@@ -199,7 +199,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   primaryPressed: { backgroundColor: colors.accent[800] },
-  primaryText: { fontFamily: type.bodyBold, fontSize: 16, color: '#ffffff' },
+  primaryText: { fontFamily: type.bodyBold, fontSize: 16, color: '#fff' },
   runningRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   runningText: { flex: 1, minWidth: 0 },
   status: { fontFamily: type.bodyBold, fontSize: 13, color: colors.accent2[700] },

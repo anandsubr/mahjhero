@@ -40,7 +40,7 @@ vi.mock('../../lib/friends', async () => {
   );
   return {
     sharedClubsLabel: actual.sharedClubsLabel,
-    avatarColorFor: actual.avatarColorFor,
+    avatarColorsFor: actual.avatarColorsFor,
     fetchFriends: (...a: unknown[]) => fetchFriends(...a),
     fetchAddablePeople: (...a: unknown[]) => fetchAddablePeople(...a),
     addFriend: (...a: unknown[]) => addFriend(...a),

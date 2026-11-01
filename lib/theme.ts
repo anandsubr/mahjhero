@@ -14,76 +14,137 @@
 // Colour
 // ---------------------------------------------------------------------------
 
+// Linen & Jade (docs/design/linen-jade/theme-linen-jade.css). Every ramp
+// step is copied verbatim from that file; lib/theme.test.ts reads the CSS
+// and asserts each one, so the two cannot drift apart.
 const neutral = {
-  100: '#f9f4ed',
-  200: '#eee7db',
-  300: '#dcd3c4',
-  400: '#c0b6a5',
-  500: '#a19786',
-  600: '#82796a',
-  700: '#645c50',
-  800: '#474238',
-  900: '#2e2b25',
+  100: '#fcf8f4',
+  200: '#f3ece4',
+  300: '#e5dbd0',
+  400: '#cbbfb2',
+  500: '#ab9f93',
+  600: '#8b8075',
+  700: '#6b6259',
+  800: '#4c453f',
+  900: '#302b27',
 } as const;
 
+// Terracotta, a notch brighter, with a blush top end.
 const accent = {
-  100: '#fff2eb',
-  200: '#ffe1d0',
-  300: '#ffc6a5',
-  400: '#f6a06b',
-  500: '#d67f48',
-  600: '#b2622d',
-  700: '#8c491a',
-  800: '#643312',
-  900: '#402310',
+  100: '#fff3ee',
+  200: '#ffe0d4',
+  300: '#ffc3ad',
+  400: '#f49c7c',
+  500: '#df7a55',
+  600: '#c45f3b',
+  700: '#9e4626',
+  800: '#72311a',
+  900: '#4a2011',
 } as const;
 
+// Jade, replacing olive.
 const accent2 = {
-  100: '#f0fae1',
-  200: '#e1eecc',
-  300: '#ccdbb2',
-  400: '#aebf92',
-  500: '#8fa073',
-  600: '#728157',
-  700: '#56633f',
-  800: '#3d472b',
-  900: '#272e1b',
+  100: '#e9f7f1',
+  200: '#d2ede2',
+  300: '#aedcc9',
+  400: '#7fc2a8',
+  500: '#55a588',
+  600: '#3b876c',
+  700: '#2a6a54',
+  800: '#1d4d3d',
+  900: '#123328',
 } as const;
+
+/** A person's initials avatar: a light tint behind a deep initial. */
+export type AvatarPair = { readonly bg: string; readonly fg: string };
+
+// The six soft avatar pairs (--avatar-1..6-bg/fg). Picked per person by
+// lib/friends.ts's avatarColorsFor, a stable hash of their id. Every pair
+// clears AA (6.37:1 at worst, avatar-3); lib/theme.test.ts pins each.
+const avatar: readonly AvatarPair[] = [
+  { bg: '#ffe0d4', fg: '#72311a' },
+  { bg: '#d2ede2', fg: '#1d4d3d' },
+  { bg: '#fbefc8', fg: '#6b5312' },
+  { bg: '#ece6f6', fg: '#4d3f73' },
+  { bg: '#e2eef6', fg: '#2c4f66' },
+  { bg: '#f6e1e6', fg: '#7a3348' },
+];
+
+/** `#rrggbb` -> `rgba(r, g, b, alpha)`, so translucent tokens derive from a
+ *  ramp step instead of repeating its channels by hand. */
+export function withAlpha(hex: string, alpha: number): string {
+  const n = Number.parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+}
+
+const TEXT = '#2a2321';
 
 export const colors = {
-  bg: '#f5ead8',
-  surface: '#ebddc5',
-  text: '#201e1d',
+  bg: '#faf5ee',
+  surface: '#f1e8dc',
+  text: TEXT,
   // The design's muted tone is `color-mix(in srgb, text 55%, transparent)`,
-  // which flattens over --color-bg to #807a71 — and measures 3.57:1 there,
-  // under AA's 4.5:1 for the 16px helper text this app uses it for. An
-  // earlier comment here called the flattening safe "because muted text is
-  // only ever placed directly on the page background, never on a card": both
-  // halves were wrong. The dashboard does put it on cards (3.17:1), and the
-  // background it named was already failing.
+  // which flattens over --color-bg to #88827d -- and measures 3.50:1 there,
+  // under AA's 4.5:1 for the 16px helper text this app uses it for. The
+  // dashboard also puts it on cards (surface), where it would be worse.
   //
-  // Darkened to a 65% mix of text over --color-surface: 0.65*(32,30,29) +
-  // 0.35*(235,221,197) = (103,97,88). One value covers both grounds —
-  // 5.15:1 on bg (#f5ead8), 4.58:1 on surface (#ebddc5) — so every screen in
-  // the app clears AA, not only the ones a card was added to. Still plainly
-  // muted against text (#201e1d). lib/theme.test.ts holds both ratios, so
-  // the next move of this palette cannot quietly drop below them.
-  textMuted: '#676158',
+  // So it is darkened to a 65% mix of text over --color-surface:
+  // 0.65*(42,35,33) + 0.35*(241,232,220) = (112,104,98) = #706862. One value
+  // covers both grounds -- 5.03:1 on bg (#faf5ee), 4.50:1 on surface
+  // (#f1e8dc, 4.503 unrounded) -- so every screen clears AA, not only the
+  // ones a card was added to. Still plainly muted against text (#2a2321).
+  // lib/theme.test.ts holds both ratios, so the next move of this palette
+  // cannot quietly drop below them.
+  textMuted: '#706862',
   // .field > label { color: color-mix(in srgb, text 70%, transparent) }.
   // Same flattening approach as textMuted: 0.70*text + 0.30*bg per channel
-  // = 0.70*(32,30,29) + 0.30*(245,234,216) = (96,91,85).
-  textLabel: '#605b55',
-  accentColor: '#c67139',
-  accent2Color: '#7a8a5e',
-  // 16% of --color-text (#201e1d) over the background — kept as rgba
-  // (rather than flattened to a hex) because it is only ever used as a
-  // hairline/border overlay, where alpha composites correctly regardless of
-  // what's underneath.
-  divider: 'rgba(32, 30, 29, 0.16)',
+  // = 0.70*(42,35,33) + 0.30*(250,245,238) = (104,98,95) = #68625f.
+  // 5.53:1 on bg, 4.95:1 on surface.
+  textLabel: '#68625f',
+  accentColor: '#df7a55',
+  accent2Color: '#3b876c',
+  // 13% of --color-text (#2a2321) -- `color-mix(in srgb, text 13%,
+  // transparent)` -- kept as rgba (rather than flattened to a hex) because
+  // it is only ever used as a hairline/border overlay, where alpha
+  // composites correctly regardless of what's underneath.
+  divider: 'rgba(42, 35, 33, 0.13)',
+  // Translucent overlays. Each was a hand-written rgba of an OLD palette
+  // value (ink #2e2b25, text #201e1d, accent-700 #8c491a) in the component
+  // that used it; they now derive from the Linen & Jade step they stood for.
+  //
+  // Bottom-sheet / modal backdrop: neutral-900 ink at 40%.
+  scrim: withAlpha(neutral[900], 0.4),
+  // The message composer's attachment sheet backdrop: text at 30%.
+  sheetScrimLight: withAlpha(TEXT, 0.3),
+  // Dims a photo thumbnail while it uploads (text at 45%), or flags a failed
+  // upload (accent-700 at 65%); colors.bg text sits on top.
+  photoBusy: withAlpha(TEXT, 0.45),
+  photoError: withAlpha(accent[700], 0.65),
+  // An image cell's loading placeholder: text at 8%.
+  photoPlaceholder: withAlpha(TEXT, 0.08),
+  // Full-screen photo viewer backdrop: near-black, palette-neutral on
+  // purpose so photos are judged on true black, not a tinted ground.
+  mediaBackdrop: 'rgba(0, 0, 0, 0.92)',
+  // White washes for controls drawn over the club cover (ClubHubHeader):
+  // resting fill and pressed fill.
+  onCover: withAlpha('#ffffff', 0.16),
+  onCoverPressed: withAlpha('#ffffff', 0.26),
+  // The club header scrim over a cover photo (Linen & Jade §4):
+  // accent-2-900 at 48%.
+  coverScrim: withAlpha(accent2[900], 0.48),
+  avatar,
   neutral,
   accent,
   accent2,
 } as const;
+
+/**
+ * components/SeatGrid.tsx's invited-seat sheet avatar. Deliberately NOT the
+ * invitee's own soft pair: the viewer may not be allowed to see who it is,
+ * and a person's tint is the same on every screen, so it would hint at them.
+ * neutral[700] on surface, 4.92:1 -- pinned in lib/theme.test.ts.
+ */
+export const invitedAvatar: AvatarPair = { bg: colors.surface, fg: colors.neutral[700] };
 
 // ---------------------------------------------------------------------------
 // Spacing (design system's --space-1..8, in px)
@@ -118,6 +179,9 @@ export const radius = {
 // Shadow (RN has no box-shadow; these are shadow* + elevation equivalents)
 // ---------------------------------------------------------------------------
 
+// --shadow-sm/md/lg: `color-mix(in srgb, #302b27 10/12/18%, transparent)`.
+// The ink is neutral-900; the mix percentage becomes shadowOpacity.
+
 type ShadowToken = {
   shadowColor: string;
   shadowOffset: { width: number; height: number };
@@ -128,23 +192,23 @@ type ShadowToken = {
 
 export const shadow: { sm: ShadowToken; md: ShadowToken; lg: ShadowToken } = {
   sm: {
-    shadowColor: '#2e2b25',
+    shadowColor: '#302b27',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.14,
+    shadowOpacity: 0.1,
     shadowRadius: 2,
     elevation: 1,
   },
   md: {
-    shadowColor: '#2e2b25',
+    shadowColor: '#302b27',
     shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.16,
+    shadowOpacity: 0.12,
     shadowRadius: 10,
     elevation: 3,
   },
   lg: {
-    shadowColor: '#2e2b25',
+    shadowColor: '#302b27',
     shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.22,
+    shadowOpacity: 0.18,
     shadowRadius: 32,
     elevation: 8,
   },
@@ -158,8 +222,12 @@ export const shadow: { sm: ShadowToken; md: ShadowToken; lg: ShadowToken } = {
 // reference these constants rather than the literal strings, and fall back
 // to the system face automatically if the custom fonts failed to load (see
 // FontProvider in app/_layout.tsx for how that fallback works).
+//
+// `heading` is DM Serif Display 400, for titles only: screen titles, the
+// wordmark, club name, calendar month and big dates. Everything else,
+// buttons included, is Figtree.
 export const type = {
-  heading: 'Caprasimo_400Regular',
+  heading: 'DMSerifDisplay_400Regular',
   bodyRegular: 'Figtree_400Regular',
   bodySemiBold: 'Figtree_600SemiBold',
   bodyBold: 'Figtree_700Bold',

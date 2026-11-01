@@ -65,7 +65,7 @@ const CLUB_HUB_HEADER_CODE_ROW_MASK = ['[data-testid="club-hub-code-row"]'];
 
 /**
  * The Members rows' initials avatar (components/hub/MemberRow.tsx) is filled
- * by `avatarColorFor(profile_id)`, and every seeded profile id is random per
+ * by `avatarColorsFor(profile_id)`, and every seeded profile id is random per
  * run -- so the circle's colour differs run to run (same class as the
  * leaderboard avatar). The circle is the View whose only child is the
  * two-letter initials Text; masking it hides the colour but the
@@ -76,7 +76,7 @@ const MEMBER_AVATAR_MASK = ['div:has(> div[dir="auto"]:text-matches("^[A-Z]{2}$"
 /**
  * The door screen's one-letter initials avatar
  * (app/clubs/[id]/events/[eventId]/check-in.tsx's `avatar` View) is filled by
- * its own `avatarColorFor(profile_id)`, and every seeded profile id is random
+ * the shared `avatarColorsFor(profile_id)`, and every seeded profile id is random
  * per run -- the "per-run avatar colour" `CLUB_CODE_MASK`'s comment above
  * already names, which left both check-in baselines failing on a rerun
  * against their own just-written PNG. Same shape as `MEMBER_AVATAR_MASK`,
@@ -84,6 +84,36 @@ const MEMBER_AVATAR_MASK = ['div:has(> div[dir="auto"]:text-matches("^[A-Z]{2}$"
  * row.
  */
 const CHECK_IN_AVATAR_MASK = ['div:has(> div[dir="auto"]:text-matches("^[A-Z]$"))'];
+
+/**
+ * The game screen's seat avatars (components/SeatGrid.tsx's `Avatar`) and
+ * round-log winner avatars (components/RoundLog.tsx) used to take a fixed
+ * colour per seat POSITION; since the Linen & Jade re-theme they take the
+ * person's own `avatarColorsFor(profile_id)` pair instead, and every seeded
+ * profile id (the signed-in member's included) is random per run. Same
+ * one-letter-initial shape as `CHECK_IN_AVATAR_MASK`; the name, seat
+ * status and controls beside each avatar still pin the tile.
+ */
+const SEAT_AVATAR_MASK = CHECK_IN_AVATAR_MASK;
+
+/**
+ * A conversation's sender avatars (components/messages/MessageGroup.tsx,
+ * `testID="sender-avatar"`) take the sender's `avatarColorsFor(author_id)`
+ * pair since the Linen & Jade re-theme -- random per run for the same
+ * reason as `SEAT_AVATAR_MASK`. The sender's name and bubble still pin the
+ * group.
+ */
+const SENDER_AVATAR_MASK = ['[data-testid="sender-avatar"]'];
+
+/**
+ * The Calendar's per-day club dots (components/home/MyGamesCalendar.tsx,
+ * `testID="calendar-day-dots"`) are coloured by `clubColor(clubId)`, a hash
+ * of the club id, and ordered by club id -- both random per run, so the
+ * dots under a day differ in colour and order run to run. Masking the dots
+ * row hides that; the day numbers, the selected day and the game list
+ * underneath still pin the calendar.
+ */
+const CALENDAR_DOTS_MASK = ['[data-testid="calendar-day-dots"]'];
 
 /** Fonts are fetched, so a screenshot taken before they land is a false diff. */
 async function settle(page: Page) {
@@ -639,6 +669,7 @@ test.describe('signed in', () => {
         await expect(page.getByRole('button', { name: 'Next month' })).toBeVisible();
         await captureScreen(page, vp, `home-calendar-${vp.name}.png`, [
           'div:has(> [data-testid^="glyph-"])',
+          ...CALENDAR_DOTS_MASK,
         ]);
       });
 
@@ -714,22 +745,22 @@ test.describe('signed in', () => {
       // pictured for a DIFFERENT club, Thursday Casuals, by `home my games`
       // and the `event *` baselines below -- this section's own
       // rendering (the segmented control, the pinned "Add to calendar" /
-      // "New game" footer, host-only) is what is actually new here, and the
-      // empty state's "New game" button is the host-only affordance this
-      // baseline would otherwise never show.
+      // "New game" footer, host-only) is what is actually new here. (The
+      // empty state no longer carries a second "New game" button of its
+      // own -- one per screen, the footer's, since the Linen & Jade
+      // re-theme.)
       test(`club games at ${vp.name}`, async ({ page }) => {
         await page.setViewportSize({ width: vp.width, height: vp.height });
         await page.goto(`/clubs/${seeded.clubId}/games`);
         await expect(page.getByText('Riverside Mah Jongg', { exact: true })).toBeVisible();
         await expect(page.getByText('Club code:')).toBeVisible();
         await expect(page.getByRole('tab', { name: 'Upcoming', selected: true })).toBeVisible();
-        await expect(page.getByText('No games here yet.')).toBeVisible();
-        // Two "New game" buttons render at once here: the empty state's own
-        // (host-only) and the pinned footer's, which is always there
-        // regardless of segment. `.first()` -- the empty-state one -- is
-        // proof the empty state itself renders the host affordance, not
-        // just the footer.
-        await expect(page.getByRole('button', { name: 'New game' }).first()).toBeVisible();
+        await expect(page.getByText('No games yet. Pick a night and invite your table.')).toBeVisible();
+        // Exactly one "New game" button now: the pinned footer's (host-only,
+        // there regardless of segment). The empty state's own copy of it was
+        // dropped in the Linen & Jade re-theme.
+        await expect(page.getByRole('button', { name: 'New game' })).toHaveCount(1);
+        await expect(page.getByRole('button', { name: 'New game' })).toBeVisible();
         await expect(page.getByRole('button', { name: 'Add to calendar' })).toBeVisible();
         // `CLUB_HUB_HEADER_CODE_ROW_MASK` -- see its own comment below.
         await captureScreen(page, vp, `club-games-${vp.name}.png`, CLUB_HUB_HEADER_CODE_ROW_MASK);
@@ -825,7 +856,7 @@ test.describe('signed in', () => {
         await expect(page.getByText('1 round won')).toBeVisible();
         await expect(page.getByText(`${points} pts`)).toBeVisible();
         // The winner's own avatar circle (`testID="leaderboard-avatar"`,
-        // components/ClubLeaderboard.tsx) is colored by `avatarColorFor`,
+        // components/ClubLeaderboard.tsx) is colored by `avatarColorsFor`,
         // hashed from `seedTableWithRound`'s FRESH filler profile id --
         // random every run, same class as `check-in`'s own per-run avatar
         // colour (docs/testing.md) -- confirmed here by four consecutive
@@ -1001,7 +1032,9 @@ test.describe('signed in', () => {
         await expect(page.getByLabel(friendName)).toBeVisible();
         await expect(page.getByLabel('Priyanka Menon')).toBeVisible();
         await page.getByLabel(friendName).click();
-        await captureScreen(page, vp, `message-new-${vp.name}.png`);
+        // Contacts' avatars take their `avatarColorsFor(profile_id)` pair since
+        // the Linen & Jade re-theme -- random per run, same as Members.
+        await captureScreen(page, vp, `message-new-${vp.name}.png`, MEMBER_AVATAR_MASK);
       });
 
       test(`flat thread empty at ${vp.name}`, async ({ page }) => {
@@ -1089,7 +1122,7 @@ test.describe('signed in', () => {
         await expect(
           page.getByText('Hall closed this week', { exact: true }),
         ).toBeVisible();
-        await captureScreen(page, vp, `thread-populated-${vp.name}.png`);
+        await captureScreen(page, vp, `thread-populated-${vp.name}.png`, SENDER_AVATAR_MASK);
       });
 
       // Image attachments, pictured for the first time. Every OTHER
@@ -1145,7 +1178,7 @@ test.describe('signed in', () => {
         await expect(page.locator('[data-testid="attachment-grid"]')).toHaveCount(3);
         await expect(singleImageButtons.last()).toBeVisible();
         await expect(page.getByRole('button', { name: 'View image 4 of 4' })).toBeVisible();
-        await captureScreen(page, vp, `thread-attachments-${vp.name}.png`);
+        await captureScreen(page, vp, `thread-attachments-${vp.name}.png`, SENDER_AVATAR_MASK);
       });
 
       // The full-screen viewer, opened on the SECOND of the four-image
@@ -1220,9 +1253,12 @@ test.describe('signed in', () => {
         // The compact header's club tile glyph (CompactHeader's
         // testID="thread-header-avatar-club", not the global mask's id) is
         // picked from the random club id, so it differs per run -- the same
-        // mask the retired `club board populated` baseline carried.
+        // mask the retired `club board populated` baseline carried. The
+        // replies' sender avatars are hashed from random author ids; see
+        // SENDER_AVATAR_MASK.
         await captureScreen(page, vp, `club-post-${vp.name}.png`, [
           '[data-testid="thread-header-avatar-club"]',
+          ...SENDER_AVATAR_MASK,
         ]);
       });
 
@@ -1301,7 +1337,7 @@ test.describe('signed in', () => {
         // its tiles render SeatGrid's own "Empty" label; Table 2 (seeded
         // full in e2e/session.ts) contributes none.
         await expect(page.getByText('Empty')).toHaveCount(2);
-        await captureScreen(page, vp, `event-detail-${vp.name}.png`);
+        await captureScreen(page, vp, `event-detail-${vp.name}.png`, SEAT_AVATAR_MASK);
       });
 
       // The rounds section, pictured for the first time -- and the only
@@ -1340,7 +1376,7 @@ test.describe('signed in', () => {
         // The pinned round bar (components/RoundTimer.tsx) -- needs no seeded
         // data at all, only a live game.
         await expect(page.getByText('Start round 2 · 15 min')).toBeVisible();
-        await captureScreen(page, vp, `event-detail-round-${vp.name}.png`);
+        await captureScreen(page, vp, `event-detail-round-${vp.name}.png`, SEAT_AVATAR_MASK);
       });
 
       test(`new event at ${vp.name}`, async ({ page }) => {
@@ -1453,7 +1489,7 @@ test.describe('signed in', () => {
         await expect(
           page.getByRole('button', { name: 'Join the waitlist' }),
         ).toBeVisible();
-        await captureScreen(page, vp, `event-full-${vp.name}.png`);
+        await captureScreen(page, vp, `event-full-${vp.name}.png`, SEAT_AVATAR_MASK);
       });
 
       // The signed-in member's own group, waitlisted, with a promotion
@@ -1479,7 +1515,7 @@ test.describe('signed in', () => {
         ).toBeVisible();
         await expect(page.getByText('2 hours 45 minutes left')).toBeVisible();
         await expect(page.getByText('Take the seat')).toBeVisible();
-        await captureScreen(page, vp, `event-offer-${vp.name}.png`);
+        await captureScreen(page, vp, `event-offer-${vp.name}.png`, SEAT_AVATAR_MASK);
       });
 
       // One table, three of its four seats taken by people who are not the
@@ -1500,7 +1536,7 @@ test.describe('signed in', () => {
         await expect(page.getByText('Needs a 4th')).toBeVisible();
         await expect(page.getByText('Last seat')).toBeVisible();
         await expect(page.getByText('Call for a 4th now')).toBeVisible();
-        await captureScreen(page, vp, `event-needs-a-fourth-${vp.name}.png`);
+        await captureScreen(page, vp, `event-needs-a-fourth-${vp.name}.png`, SEAT_AVATAR_MASK);
       });
 
       // The organizer's door screen (Task 15). `seeded.checkInEventId`

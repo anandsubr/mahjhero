@@ -55,6 +55,7 @@ const GLYPH_COLOR: Record<MahjongSuit, string> = {
 };
 
 const GLYPH_HEIGHT = 24;
+const CHARACTER_SIZE = 21;
 
 const CHARACTER_GLYPHS: Partial<Record<MahjongSuit, string>> = {
   'red-dragon': '中',
@@ -132,7 +133,12 @@ export default function MahjongTile({ suit, size, selected = false, label }: Pro
 
   return (
     <View
-      style={[styles.tile, sizeStyle, selected ? styles.selected : null]}
+      style={[
+        styles.tile,
+        sizeStyle,
+        size === 'chip' && !label ? styles.chipCentered : null,
+        selected ? styles.selected : null,
+      ]}
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants"
       aria-hidden={true}
@@ -175,6 +181,12 @@ const styles = StyleSheet.create({
     gap: 2,
     borderBottomWidth: 3,
   },
+  // An unlabelled chip (components/home/ClubCard.tsx) has no label to make
+  // room for, so its glyph sits centred in the square (Linen & Jade §4).
+  chipCentered: {
+    justifyContent: 'center',
+    paddingBottom: 0,
+  },
   mini: {
     width: 20,
     height: 20,
@@ -195,9 +207,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent[700],
     borderBottomColor: colors.accent[800],
   },
+  // line-height 1 (Linen & Jade §4) so the character centres in its tile.
   character: {
-    fontSize: 21,
-    lineHeight: GLYPH_HEIGHT,
+    fontSize: CHARACTER_SIZE,
+    lineHeight: CHARACTER_SIZE,
   },
   label: {
     fontFamily: type.heading,

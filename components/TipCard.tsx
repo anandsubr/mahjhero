@@ -9,9 +9,9 @@ import Tag from './Tag';
 /**
  * The one card every first-run guide renders through — the dashboard's
  * host checklist and player intro, and each screen's one-time tip — so they
- * all read as the same kind of thing. Styled like app/welcome.tsx's Invites
- * card: accent2-100 ground with accent2-800 body text (textMuted is only
- * measured against bg and surface, not this ground).
+ * all read as the same kind of thing. Blush accent-100 ground (Linen &
+ * Jade §4, replacing the lime accent2-100) with accent2-800 body text
+ * (textMuted is only measured against bg and surface, not this ground).
  */
 export function TipText({ children }: { children: ReactNode }) {
   return <Text style={styles.body}>{children}</Text>;
@@ -34,7 +34,7 @@ export default function TipCard({
 }) {
   return (
     <View testID={testID}>
-      <Card background={colors.accent2[100]} style={styles.card}>
+      <Card background={colors.accent[100]} style={styles.card}>
         {tag ? <Tag variant="accent2">{tag}</Tag> : null}
         <Text style={styles.title}>{title}</Text>
         {children}

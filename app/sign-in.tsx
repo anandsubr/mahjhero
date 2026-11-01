@@ -248,7 +248,7 @@ export default function SignIn() {
         variant="ghost"
         big={false}
         onPress={() => (router.canGoBack() ? router.back() : router.replace('/welcome'))}
-        icon={<ChevronLeftIcon color={colors.accentColor} />}
+        icon={<ChevronLeftIcon color={colors.accent[700]} />}
         accessibilityLabel="Back to the welcome screen"
         style={styles.backButton}
       >

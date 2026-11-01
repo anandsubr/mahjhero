@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import ThreadAvatar from '../ThreadAvatar';
+import { avatarColorsFor } from '../../lib/friends';
+
+/** '#ffe0d4' -> 'rgb(255, 224, 212)', the form getComputedStyle reports. */
+function rgb(hex: string): string {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  return `rgb(${r}, ${g}, ${b})`;
+}
 
 /**
  * The avatar treatment components/ThreadRow.tsx already renders per thread
@@ -19,6 +26,27 @@ describe('ThreadAvatar', () => {
   it('shows the other member’s initials for a direct thread', () => {
     render(<ThreadAvatar kind="direct" name="Bob Reyes" />);
     expect(screen.getByTestId('thread-avatar-direct').textContent).toBe('BR');
+  });
+
+  // Linen & Jade: a person's avatar is their soft pair, keyed by their id
+  // when the caller has it (the conversation screen's sender avatars), so
+  // they match the same person on Members and Board.
+  it('draws a direct avatar in the person\'s soft pair, keyed by id', () => {
+    render(<ThreadAvatar kind="direct" name="Bob Reyes" personId="p-bob" />);
+    const pair = avatarColorsFor('p-bob');
+    const avatar = screen.getByTestId('thread-avatar-direct');
+    expect(getComputedStyle(avatar).backgroundColor).toBe(rgb(pair.bg));
+    expect(getComputedStyle(screen.getByText('BR')).color).toBe(rgb(pair.fg));
+  });
+
+  // The thread list carries no id for the other member, only their name.
+  it('falls back to the name when no id is given', () => {
+    render(<ThreadAvatar kind="direct" name="Bob Reyes" />);
+    const pair = avatarColorsFor('Bob Reyes');
+    expect(getComputedStyle(screen.getByTestId('thread-avatar-direct')).backgroundColor).toBe(
+      rgb(pair.bg),
+    );
+    expect(getComputedStyle(screen.getByText('BR')).color).toBe(rgb(pair.fg));
   });
 
   it('shows a people glyph, not initials, for a group thread', () => {

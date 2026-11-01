@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 import { Text } from '../Text';
-import { avatarColorFor } from '../../lib/friends';
+import { avatarColorsFor } from '../../lib/friends';
 import { memberInitials } from '../../lib/members';
 import type { FeedComment } from '../../lib/board';
 import { colors, type } from '../../lib/theme';
@@ -21,21 +21,24 @@ export default function CommentsPeek({ comments, total, onPress }: Props) {
       accessibilityLabel={`Open post, ${total} ${total === 1 ? 'comment' : 'comments'}`}
       style={styles.block}
     >
-      {comments.map((c) => (
-        <View key={c.id} style={styles.row}>
-          <View style={[styles.avatar, { backgroundColor: avatarColorFor(c.authorId) }]}>
-            <Text style={styles.initials}>{memberInitials(c.authorName)}</Text>
+      {comments.map((c) => {
+        const pair = avatarColorsFor(c.authorId);
+        return (
+          <View key={c.id} style={styles.row}>
+            <View style={[styles.avatar, { backgroundColor: pair.bg }]}>
+              <Text style={[styles.initials, { color: pair.fg }]}>{memberInitials(c.authorName)}</Text>
+            </View>
+            <View style={styles.text}>
+              <Text style={styles.name} numberOfLines={1}>
+                {c.authorName}
+              </Text>
+              <Text style={styles.body} numberOfLines={2}>
+                {c.body.trim() !== '' ? c.body : 'Photo'}
+              </Text>
+            </View>
           </View>
-          <View style={styles.text}>
-            <Text style={styles.name} numberOfLines={1}>
-              {c.authorName}
-            </Text>
-            <Text style={styles.body} numberOfLines={2}>
-              {c.body.trim() !== '' ? c.body : 'Photo'}
-            </Text>
-          </View>
-        </View>
-      ))}
+        );
+      })}
       {total > comments.length ? <Text style={styles.viewAll}>{`View all ${total} comments`}</Text> : null}
     </Pressable>
   );
@@ -45,7 +48,7 @@ const styles = StyleSheet.create({
   block: { backgroundColor: colors.surface, borderRadius: 18, padding: 14, gap: 12 },
   row: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
   avatar: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
-  initials: { fontFamily: type.bodyBold, fontSize: 12, color: '#fff' },
+  initials: { fontFamily: type.bodyBold, fontSize: 12 },
   text: { flex: 1, minWidth: 0 },
   name: { fontFamily: type.bodyBold, fontSize: 14, color: colors.accent[700] },
   body: { fontFamily: type.bodyRegular, fontSize: 15, color: colors.text },

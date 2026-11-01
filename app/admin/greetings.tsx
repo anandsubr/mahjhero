@@ -229,7 +229,7 @@ const styles = StyleSheet.create({
   edit: {
     fontFamily: type.bodySemiBold,
     fontSize: type.size.helper,
-    color: colors.accentColor,
+    color: colors.accent[700],
   },
   remove: {
     fontFamily: type.bodySemiBold,

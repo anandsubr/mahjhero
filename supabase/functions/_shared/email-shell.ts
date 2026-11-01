@@ -41,7 +41,7 @@ export function renderShell(
 
   const cta = body.cta
     ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 24px;">
-         <tr><td style="border-radius:999px;background:${brand.accent};">
+         <tr><td style="border-radius:999px;background:${brand.button};">
            <a href="${escapeHtml(body.cta.url)}"
               style="display:inline-block;padding:14px 28px;font-size:16px;font-weight:600;color:#ffffff;text-decoration:none;">${escapeHtml(body.cta.label)}</a>
          </td></tr>

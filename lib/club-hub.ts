@@ -15,14 +15,14 @@ export type CoverColor =
   | 'neutral_800';
 
 export const COVER_COLORS: { key: CoverColor; label: string; value: string }[] = [
-  { key: 'accent2_800', label: 'Dark green', value: colors.accent2[800] },
-  { key: 'accent2_700', label: 'Olive', value: colors.accent2[700] },
+  { key: 'accent2_800', label: 'Deep jade', value: colors.accent2[800] },
+  { key: 'accent2_700', label: 'Jade', value: colors.accent2[700] },
   { key: 'accent_700', label: 'Clay', value: colors.accent[700] },
-  { key: 'accent_800', label: 'Dark brown', value: colors.accent[800] },
+  { key: 'accent_800', label: 'Rust', value: colors.accent[800] },
   { key: 'neutral_800', label: 'Charcoal', value: colors.neutral[800] },
 ];
 
-/** Resolves a cover-colour key to its hex value. An unknown key is dark green, same as the DB default. */
+/** Resolves a cover-colour key to its hex value. An unknown key is deep jade, same as the DB default. */
 export function coverColorValue(key: string): string {
   return COVER_COLORS.find((c) => c.key === key)?.value ?? COVER_COLORS[0].value;
 }

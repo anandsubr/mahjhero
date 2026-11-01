@@ -271,7 +271,7 @@ describe('profile screen', () => {
     const signOut = await screen.findByRole('button', { name: 'Sign out' });
     // `getComputedStyle`, not `.style`: react-native-web emits atomic CSS
     // classes rather than inline styles.
-    expect(getComputedStyle(signOut).backgroundColor).toBe('rgb(235, 221, 197)');
+    expect(getComputedStyle(signOut).backgroundColor).toBe('rgb(241, 232, 220)');
   });
 
   // The only way to /friends and /how-it-works -- nothing else in the app

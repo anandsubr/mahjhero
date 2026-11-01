@@ -9,8 +9,9 @@ vi.mock('./supabase', () => ({
 }));
 
 import { GENERIC_ERROR } from './constants';
+import { colors } from './theme';
 import {
-  avatarColorFor,
+  avatarColorsFor,
   addFriend,
   fetchAddablePeople,
   fetchFriends,
@@ -33,14 +34,25 @@ describe('sharedClubsLabel', () => {
   });
 });
 
-describe('avatarColorFor', () => {
-  it('gives the same person the same colour every time', () => {
-    expect(avatarColorFor('p1')).toBe(avatarColorFor('p1'));
+describe('avatarColorsFor', () => {
+  it('gives the same person the same pair every time', () => {
+    expect(avatarColorsFor('p1')).toEqual(avatarColorsFor('p1'));
   });
 
-  it('spreads different people across more than one colour', () => {
+  it('only ever answers one of the six soft pairs', () => {
+    const ids = Array.from({ length: 50 }, (_, i) => `profile-${i}`);
+    for (const id of ids) {
+      expect(colors.avatar).toContainEqual(avatarColorsFor(id));
+    }
+  });
+
+  it('spreads different people across more than one pair', () => {
     const ids = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
-    expect(new Set(ids.map(avatarColorFor)).size).toBeGreaterThan(1);
+    expect(new Set(ids.map((id) => avatarColorsFor(id).bg)).size).toBeGreaterThan(1);
+  });
+
+  it('still answers a pair for an empty id', () => {
+    expect(colors.avatar).toContainEqual(avatarColorsFor(''));
   });
 });
 

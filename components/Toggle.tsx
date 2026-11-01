@@ -68,7 +68,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   trackOn: {
-    backgroundColor: colors.accentColor,
+    // accent[600], not accentColor: a state indicator needs WCAG 1.4.11's
+    // 3:1 against its ground (lib/theme.test.ts).
+    backgroundColor: colors.accent[600],
     justifyContent: 'flex-end',
   },
   trackOff: {

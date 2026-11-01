@@ -1,0 +1,58 @@
+/* Linen & Jade — theme override for the Organic tokens. Load AFTER styles.css. Layout untouched; only colour + type. */
+@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Figtree:wght@400;600;700&display=swap');
+:root {
+  --color-bg: #faf5ee;
+  --color-surface: #f1e8dc;
+  --color-text: #2a2321;
+  --color-accent: #df7a55;
+  --color-accent-2: #3b876c;
+  --color-divider: color-mix(in srgb, #2a2321 13%, transparent);
+
+  --color-neutral-100: #fcf8f4;
+  --color-neutral-200: #f3ece4;
+  --color-neutral-300: #e5dbd0;
+  --color-neutral-400: #cbbfb2;
+  --color-neutral-500: #ab9f93;
+  --color-neutral-600: #8b8075;
+  --color-neutral-700: #6b6259;
+  --color-neutral-800: #4c453f;
+  --color-neutral-900: #302b27;
+
+  /* terracotta, a notch brighter, with a blush top end */
+  --color-accent-100: #fff3ee;
+  --color-accent-200: #ffe0d4;
+  --color-accent-300: #ffc3ad;
+  --color-accent-400: #f49c7c;
+  --color-accent-500: #df7a55;
+  --color-accent-600: #c45f3b;
+  --color-accent-700: #9e4626;
+  --color-accent-800: #72311a;
+  --color-accent-900: #4a2011;
+
+  /* jade replaces olive */
+  --color-accent-2-100: #e9f7f1;
+  --color-accent-2-200: #d2ede2;
+  --color-accent-2-300: #aedcc9;
+  --color-accent-2-400: #7fc2a8;
+  --color-accent-2-500: #55a588;
+  --color-accent-2-600: #3b876c;
+  --color-accent-2-700: #2a6a54;
+  --color-accent-2-800: #1d4d3d;
+  --color-accent-2-900: #123328;
+
+  /* soft avatar palette: light tint + deep initial */
+  --avatar-1-bg: #ffe0d4; --avatar-1-fg: #72311a;
+  --avatar-2-bg: #d2ede2; --avatar-2-fg: #1d4d3d;
+  --avatar-3-bg: #fbefc8; --avatar-3-fg: #6b5312;
+  --avatar-4-bg: #ece6f6; --avatar-4-fg: #4d3f73;
+  --avatar-5-bg: #e2eef6; --avatar-5-fg: #2c4f66;
+  --avatar-6-bg: #f6e1e6; --avatar-6-fg: #7a3348;
+
+  --font-heading: "DM Serif Display", Georgia, serif;
+  --font-heading-weight: 400;
+  --font-body: "Figtree", system-ui, sans-serif;
+
+  --shadow-sm: 0 1px 2px color-mix(in srgb, #302b27 10%, transparent);
+  --shadow-md: 0 3px 10px color-mix(in srgb, #302b27 12%, transparent);
+  --shadow-lg: 0 12px 32px color-mix(in srgb, #302b27 18%, transparent);
+}

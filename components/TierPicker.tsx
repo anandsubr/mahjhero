@@ -131,7 +131,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   selected: {
-    backgroundColor: colors.accentColor,
+    // accent[600]: 3:1 non-text contrast for the state (lib/theme.test.ts).
+    backgroundColor: colors.accent[600],
     borderColor: 'transparent',
   },
   unselected: {

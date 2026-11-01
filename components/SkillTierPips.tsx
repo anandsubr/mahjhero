@@ -14,7 +14,7 @@ type Props = {
    * Pip/dash colour. Defaults to the muted display colour (this component's
    * most common home, next to TableCard's tier text on a card background).
    * TierPicker overrides this per option/selection state, since a selected
-   * pill's background is `colors.accentColor` and a pip drawn in that same
+   * pill's background is `colors.accent[600]` and a pip drawn in that same
    * colour would be invisible against it.
    */
   color?: string;

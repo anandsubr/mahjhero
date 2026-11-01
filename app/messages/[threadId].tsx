@@ -254,6 +254,14 @@ export default function ThreadScreen() {
   // branches threadTitleFor above already reads, exported as threadKindFor
   // so this doesn't carry a second copy of that branching.
   const kind = thread ? threadKindFor(thread, viewerId) : null;
+  // A direct thread's header avatar is keyed by the other member's profile
+  // id, as MessageGroup keys each sender avatar by author_id, so the same
+  // person is the same colour twice on one screen. (The inbox list has no
+  // member ids and keeps the name hash.)
+  const otherMemberId =
+    thread && kind === 'direct'
+      ? (thread.thread_members.find((m) => m.profile_id !== viewerId)?.profile_id ?? null)
+      : null;
   const memberCount = thread?.thread_members.length ?? 0;
   const memberCountText = `${memberCount} ${memberCount === 1 ? 'member' : 'members'}`;
   const membersLabel = `${title}, ${memberCountText}, view members`;
@@ -284,6 +292,7 @@ export default function ThreadScreen() {
         backLabel="Back"
         kind={thread ? kind : null}
         title={title}
+        personId={otherMemberId}
         subtitle={kind === 'group' ? memberCountText : null}
         onOpenDetails={canManageMembers ? () => setMembersOpen((v) => !v) : undefined}
         detailsLabel={membersLabel}

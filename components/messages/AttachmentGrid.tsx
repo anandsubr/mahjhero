@@ -163,10 +163,10 @@ const styles = StyleSheet.create({
   cellSingle: { width: GRID_WIDTH },
   cellGrid: { width: (GRID_WIDTH - space[1]) / 2 },
   image: { width: '100%', height: '100%' },
-  placeholder: { width: '100%', height: '100%', backgroundColor: 'rgba(32, 30, 29, 0.08)' },
+  placeholder: { width: '100%', height: '100%', backgroundColor: colors.photoPlaceholder },
   viewerBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.92)',
+    backgroundColor: colors.mediaBackdrop,
     alignItems: 'center',
     justifyContent: 'center',
   },

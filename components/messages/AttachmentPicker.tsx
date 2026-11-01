@@ -281,11 +281,11 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(32, 30, 29, 0.45)',
+    backgroundColor: colors.photoBusy,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  overlayError: { backgroundColor: 'rgba(140, 73, 26, 0.65)' },
+  overlayError: { backgroundColor: colors.photoError },
   overlayText: { color: colors.bg, fontFamily: type.bodyBold, fontSize: type.size.body },
   removeButton: {
     position: 'absolute',
@@ -326,7 +326,7 @@ const styles = StyleSheet.create({
   sheetBackdrop: {
     flex: 1,
     justifyContent: 'flex-end',
-    backgroundColor: 'rgba(32, 30, 29, 0.3)',
+    backgroundColor: colors.sheetScrimLight,
   },
   sheet: {
     backgroundColor: colors.bg,

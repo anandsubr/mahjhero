@@ -3,9 +3,10 @@ import { Text } from '../Text';
 import Tag from '../Tag';
 import { MessageCircleIcon, UserPlusIcon } from '../icons';
 import type { ClubMember } from '../../lib/clubs';
-import { avatarColorFor } from '../../lib/friends';
+import { avatarColorsFor } from '../../lib/friends';
 import { memberInitials, memberName, skillLabel } from '../../lib/members';
-import { colors, type } from '../../lib/theme';
+import type { SkillLevel } from '../../lib/profile';
+import { colors, radius, type, type AvatarPair } from '../../lib/theme';
 
 type Props = {
   member: ClubMember;
@@ -23,9 +24,16 @@ type Props = {
 const AVATAR_SIZE = 46;
 const ICON_BUTTON_SIZE = 44;
 
+/** Skill chip colours per level (Linen & Jade §4); Intermediate is avatar-3. */
+const SKILL_CHIP: Record<SkillLevel, AvatarPair> = {
+  beginner: { bg: colors.accent2[200], fg: colors.accent2[800] },
+  intermediate: colors.avatar[2],
+  advanced: { bg: colors.accent[200], fg: colors.accent[800] },
+};
+
 /**
  * One person in the club hub's Members section (frame 1e): initials avatar,
- * name with a Host/Co-organizer tag, skill level as text, and on the right
+ * name with a Host/Co-organizer tag, skill level as a coloured chip, and on the right
  * Add friend (or a "Friend" tag) before Message. Presentational -- the
  * section owns the calls and busy state.
  */
@@ -39,6 +47,7 @@ export default function MemberRow({
   adding,
 }: Props) {
   const name = memberName(member);
+  const pair = avatarColorsFor(member.profile_id);
   const skill = skillLabel(member.skill_level);
   const roleTag =
     member.role === 'host' ? 'Host' : member.role === 'co_organizer' ? 'Co-organizer' : null;
@@ -46,11 +55,11 @@ export default function MemberRow({
   return (
     <View style={styles.row}>
       <View
-        style={[styles.avatar, { backgroundColor: avatarColorFor(member.profile_id) }]}
+        style={[styles.avatar, { backgroundColor: pair.bg }]}
         accessibilityElementsHidden
         importantForAccessibility="no-hide-descendants"
       >
-        <Text style={styles.initials}>{memberInitials(name)}</Text>
+        <Text style={[styles.initials, { color: pair.fg }]}>{memberInitials(name)}</Text>
       </View>
       <View style={styles.body}>
         <View style={styles.text}>
@@ -60,7 +69,11 @@ export default function MemberRow({
             </Text>
             {roleTag ? <Tag size="small">{roleTag}</Tag> : null}
           </View>
-          {skill ? <Text style={styles.skill}>{skill}</Text> : null}
+          {skill && member.skill_level ? (
+            <View style={[styles.skillChip, { backgroundColor: SKILL_CHIP[member.skill_level].bg }]}>
+              <Text style={[styles.skill, { color: SKILL_CHIP[member.skill_level].fg }]}>{skill}</Text>
+            </View>
+          ) : null}
         </View>
         {isSelf ? null : (
           <View style={styles.actions}>
@@ -124,7 +137,6 @@ const styles = StyleSheet.create({
   initials: {
     fontFamily: type.bodyBold,
     fontSize: 16,
-    color: '#fff',
   },
   // The divider runs under the text block and buttons, not under the avatar.
   body: {
@@ -154,10 +166,15 @@ const styles = StyleSheet.create({
     color: colors.text,
     flexShrink: 1,
   },
+  skillChip: {
+    alignSelf: 'flex-start',
+    borderRadius: radius.pill,
+    paddingVertical: 2,
+    paddingHorizontal: 9,
+  },
   skill: {
-    fontFamily: type.bodyRegular,
-    fontSize: 13,
-    color: colors.neutral[700],
+    fontFamily: type.bodyBold,
+    fontSize: 12,
   },
   actions: {
     flexDirection: 'row',

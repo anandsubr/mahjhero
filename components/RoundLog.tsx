@@ -1,6 +1,7 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 import { Text } from './Text';
 import { TrashIcon, TrophyIcon } from './icons';
+import { avatarColorsFor } from '../lib/friends';
 import { colors, radius, type } from '../lib/theme';
 
 export type DisplayRound = {
@@ -13,9 +14,6 @@ export type DisplayRound = {
 type Props = {
   /** Newest first. */
   rounds: DisplayRound[];
-  /** The winner's seat colour, so a row's avatar matches their seat tile.
-   *  Optional: defaults to one neutral colour for every row. */
-  colorFor?: (profileId: string) => string;
   canDelete: boolean;
   busy?: boolean;
   onDelete: (roundId: string) => void;
@@ -36,7 +34,6 @@ type Props = {
  */
 export default function RoundLog({
   rounds,
-  colorFor,
   canDelete,
   busy = false,
   onDelete,
@@ -54,6 +51,9 @@ export default function RoundLog({
         rounds.map((round, index) => {
           const roundNumber = played - index;
           const initial = round.winner_name.trim().charAt(0).toUpperCase() || '?';
+          // The winner's own soft pair -- the same tint as their seat tile
+          // above, and as them on every other screen.
+          const pair = avatarColorsFor(round.winner_profile_id);
           return (
             <View
               key={round.id}
@@ -62,10 +62,10 @@ export default function RoundLog({
               <View
                 style={[
                   styles.avatar,
-                  { backgroundColor: colorFor?.(round.winner_profile_id) ?? colors.neutral[800] },
+                  { backgroundColor: pair.bg },
                 ]}
               >
-                <Text style={styles.avatarText}>{initial}</Text>
+                <Text style={[styles.avatarText, { color: pair.fg }]}>{initial}</Text>
               </View>
               <View style={styles.rowText}>
                 <Text style={styles.winner} numberOfLines={1}>
@@ -135,7 +135,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarText: { fontFamily: type.bodyBold, fontSize: 13, color: '#ffffff' },
+  avatarText: { fontFamily: type.bodyBold, fontSize: 13 },
   rowText: { flex: 1, minWidth: 0 },
   winner: { fontFamily: type.bodyBold, fontSize: 15, color: colors.text },
   points: { flexDirection: 'row', alignItems: 'center', gap: 4 },

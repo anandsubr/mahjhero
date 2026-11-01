@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import MemberRow from '../hub/MemberRow';
 import type { ClubMember } from '../../lib/clubs';
+import { avatarColorsFor } from '../../lib/friends';
+import { colors, radius, type } from '../../lib/theme';
 
 const skillPips = vi.fn((_props: unknown) => null);
 vi.mock('../SkillLevelPips', () => ({
@@ -40,7 +42,22 @@ function renderRow(overrides: Partial<Parameters<typeof MemberRow>[0]> = {}) {
   return { onMessage, onAddFriend };
 }
 
+/** '#ffe0d4' -> 'rgb(255, 224, 212)', the form getComputedStyle reports. */
+function rgb(hex: string): string {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
 describe('MemberRow', () => {
+  // Linen & Jade: a soft tint with a deep initial, not white on a dark fill.
+  it('draws the avatar in the person\'s own soft pair', () => {
+    renderRow();
+    const pair = avatarColorsFor(PRIYA.profile_id);
+    const initials = screen.getByText('PS');
+    expect(getComputedStyle(initials).color).toBe(rgb(pair.fg));
+    expect(getComputedStyle(initials.parentElement!).backgroundColor).toBe(rgb(pair.bg));
+  });
+
   it('renders initials, name, role tag and skill text, without skill pips', () => {
     renderRow();
     expect(screen.getByText('PS')).toBeTruthy();
@@ -48,6 +65,27 @@ describe('MemberRow', () => {
     expect(screen.getByText('Host')).toBeTruthy();
     expect(screen.getByText('Advanced')).toBeTruthy();
     expect(skillPips).not.toHaveBeenCalled();
+  });
+
+  // Linen & Jade §4: skill level is a pill chip (12px 700, padding 2/9),
+  // coloured per level.
+  it.each([
+    ['beginner', 'Beginner', colors.accent2[200], colors.accent2[800]],
+    ['intermediate', 'Intermediate', colors.avatar[2].bg, colors.avatar[2].fg],
+    ['advanced', 'Advanced', colors.accent[200], colors.accent[800]],
+  ] as const)('draws %s skill as a coloured chip', (level, label, bg, fg) => {
+    renderRow({ member: { ...PRIYA, skill_level: level } });
+    const text = screen.getByText(label);
+    const style = getComputedStyle(text);
+    expect(style.color).toBe(rgb(fg));
+    expect(style.fontSize).toBe('12px');
+    expect(style.fontFamily).toContain(type.bodyBold);
+    const chip = getComputedStyle(text.parentElement!);
+    expect(chip.backgroundColor).toBe(rgb(bg));
+    expect(chip.borderTopLeftRadius).toBe(`${radius.pill}px`);
+    expect(chip.paddingTop).toBe('2px');
+    expect(chip.paddingLeft).toBe('9px');
+    expect(chip.alignSelf).toBe('flex-start');
   });
 
   it('tags a co-organizer and omits skill when none is set', () => {

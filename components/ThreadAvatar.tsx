@@ -3,6 +3,7 @@ import { Text } from './Text';
 import { CalendarIcon, PeopleIcon } from './icons';
 import MahjongTile from './MahjongTile';
 import { glyphForClub, initialsFrom } from '../lib/dashboard';
+import { avatarColorsFor } from '../lib/friends';
 import type { ThreadKind } from '../lib/messages';
 import { colors, type } from '../lib/theme';
 
@@ -18,7 +19,8 @@ const DEFAULT_SIZE = 52;
  * larger size instead of a second copy that can drift from the list row's.
  *
  *   club    the club's own initials
- *   direct  the OTHER member's initials (the thread's own title)
+ *   direct  the OTHER member's initials (the thread's own title), in
+ *           that person's soft avatar pair -- see `personId`
  *   group   a people glyph -- no single person to initial
  *   game    a calendar glyph
  *
@@ -38,6 +40,7 @@ export default function ThreadAvatar({
   clubId,
   initialsSize,
   tileSize = 'chip',
+  personId,
 }: {
   kind: ThreadKind;
   /** Club name (club) or the other member's/thread's title (direct).
@@ -66,6 +69,13 @@ export default function ThreadAvatar({
    *  no initials) fits the compact conversation header's 40pt avatar slot,
    *  where the club's name already sits right beside it. */
   tileSize?: 'chip' | 'section';
+  /** direct only: the person's profile id, so their avatar is the same soft
+   *  pair (lib/friends.ts's avatarColorsFor) as on Members, the board and
+   *  everywhere else. The conversation screen's sender avatars have it; the
+   *  thread list and header do not (fetch_my_threads returns only the other
+   *  member's name), so they fall back to hashing `name` -- stable, but not
+   *  guaranteed to match that person's id-keyed tint elsewhere. */
+  personId?: string;
 }) {
   const dim = { width: size, height: size, borderRadius: size / 2 };
   const glyphSize = Math.round(size * (24 / DEFAULT_SIZE));
@@ -107,9 +117,13 @@ export default function ThreadAvatar({
     );
   }
   // direct
+  const pair = avatarColorsFor(personId ?? name);
   return (
-    <View testID={testID ?? 'thread-avatar-direct'} style={[styles.avatar, dim, styles.avatarDirect]}>
-      <Text style={initialsStyle}>{initialsFrom(name)}</Text>
+    <View
+      testID={testID ?? 'thread-avatar-direct'}
+      style={[styles.avatar, dim, { backgroundColor: pair.bg }]}
+    >
+      <Text style={[initialsStyle, { color: pair.fg }]}>{initialsFrom(name)}</Text>
     </View>
   );
 }
@@ -120,13 +134,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // Each kind's own fill -- club and game share the warm accent family,
-  // direct and group the cool one, distinguished within each pair by shade.
-  // Every pairing is pinned in lib/theme.test.ts ("thread row avatars clear
-  // contrast on their own fill").
+  // Each non-person kind's own fill -- club and game the warm accent
+  // family, group the cool one. Every pairing is pinned in
+  // lib/theme.test.ts ("thread row avatars clear contrast on their own
+  // fill"). A direct thread is a person, so it takes that person's soft
+  // avatar pair instead (inline above), pinned there too.
   avatarClub: { backgroundColor: colors.accent[700] },
   avatarGame: { backgroundColor: colors.accent[600] },
-  avatarDirect: { backgroundColor: colors.accent2[700] },
   avatarGroup: { backgroundColor: colors.accent2[600] },
   avatarInitials: {
     fontFamily: type.bodyBold,

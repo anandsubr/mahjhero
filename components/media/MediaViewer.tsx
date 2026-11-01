@@ -128,7 +128,7 @@ export default function MediaViewer({
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.92)' },
+  backdrop: { flex: 1, backgroundColor: colors.mediaBackdrop },
   imageArea: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   close: {
     position: 'absolute',

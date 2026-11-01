@@ -20,6 +20,12 @@ type Props = {
   titleOnly?: boolean;
   /** A club's id, to draw it as its own mahjong tile rather than a circle. */
   clubId?: string | null;
+  /**
+   * A direct thread's other member: keys the avatar's tint by their profile
+   * id, the same key MessageGroup's sender avatars use, so the header and
+   * the bubbles agree. Omitted, a direct avatar hashes the name.
+   */
+  personId?: string | null;
   /** Overrides the avatar's testID (default `thread-header-avatar-<kind>`). */
   avatarTestID?: string;
   /** The line under the title, e.g. "4 members" or a club's rhythm. */
@@ -66,6 +72,7 @@ export default function CompactHeader({
   title,
   titleOnly = false,
   clubId,
+  personId,
   avatarTestID,
   subtitle,
   onOpenDetails,
@@ -83,6 +90,7 @@ export default function CompactHeader({
           <ThreadAvatar
             kind={kind}
             name={title}
+            personId={personId ?? undefined}
             size={40}
             initialsSize={17}
             testID={avatarTestID ?? `thread-header-avatar-${kind}`}

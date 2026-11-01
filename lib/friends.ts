@@ -1,6 +1,6 @@
 import { GENERIC_ERROR } from './constants';
 import { supabase } from './supabase';
-import { colors } from './theme';
+import { colors, type AvatarPair } from './theme';
 
 /** A `fetch_friends` row. `club_names` is the clubs you STILL share — it is
  *  empty for a friend you acquired in a club one of you has since left, which
@@ -32,23 +32,19 @@ export function sharedClubsLabel(clubNames: string[]): string {
   return clubNames.join(' · ');
 }
 
-/** The friends handoff's avatar fills, all dark enough for a white initial. */
-const AVATAR_COLORS = [
-  colors.accent2[700],
-  colors.accent[700],
-  colors.neutral[800],
-  colors.accent2[800],
-  colors.accent[600],
-];
-
-/** A stable avatar fill per person, so someone keeps their colour as they
- *  move from "People in your clubs" into "Your friends". */
-export function avatarColorFor(profileId: string): string {
+/**
+ * A person's soft avatar pair (Linen & Jade: a light tint behind a deep
+ * initial), stable per person so someone keeps their colour on every screen
+ * -- Friends, Members, the board, check-in, seats, the leaderboard. Every
+ * person avatar in the app goes through this one helper and this one hash;
+ * pass the profile id wherever the caller has it.
+ */
+export function avatarColorsFor(profileId: string): AvatarPair {
   let hash = 0;
   for (let i = 0; i < profileId.length; i++) {
     hash = (hash * 31 + profileId.charCodeAt(i)) | 0;
   }
-  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+  return colors.avatar[Math.abs(hash) % colors.avatar.length];
 }
 
 /**

@@ -183,7 +183,7 @@ describe('cover', () => {
 
   it('rings the selected swatch and saves a tapped colour', async () => {
     render(<ClubSettingsScreen />);
-    const green = await screen.findByRole('radio', { name: 'Dark green' });
+    const green = await screen.findByRole('radio', { name: 'Deep jade' });
     expect(green.getAttribute('aria-checked')).toBe('true');
     expect(screen.getByRole('radio', { name: 'Clay' }).getAttribute('aria-checked')).toBe('false');
     fetchClub.mockResolvedValue({ ...CLUB, cover_color: 'accent_700' });
@@ -197,7 +197,7 @@ describe('cover', () => {
   it('shows a colour failure inline', async () => {
     setClubCoverColor.mockResolvedValue({ error: 'Something went wrong.' });
     render(<ClubSettingsScreen />);
-    fireEvent.click(await screen.findByRole('radio', { name: 'Olive' }));
+    fireEvent.click(await screen.findByRole('radio', { name: 'Jade' }));
     expect(await screen.findByText('Something went wrong.')).toBeTruthy();
   });
 });
@@ -205,7 +205,7 @@ describe('cover', () => {
 describe('refresh after a change', () => {
   it('says so inline when the change saved but the refetch failed', async () => {
     render(<ClubSettingsScreen />);
-    const olive = await screen.findByRole('radio', { name: 'Olive' });
+    const olive = await screen.findByRole('radio', { name: 'Jade' });
     fetchClub.mockResolvedValueOnce(null);
     fireEvent.click(olive);
     await waitFor(() => expect(setClubCoverColor).toHaveBeenCalledWith('c1', 'accent2_700'));

@@ -81,7 +81,7 @@ describe('Button: the destructive variant', () => {
   // Not in the design system, which draws sign-out as a ghost link. The one
   // control on the profile screen that ends the session needs more weight
   // than a text link, and the pairing is the one Tag's `accent` variant
-  // already uses: accent-200 ground, accent-800 text, 8.37:1.
+  // already uses: accent-200 ground, accent-800 text, 7.77:1.
   it('renders accent-800 on accent-200', () => {
     render(
       <Button onPress={() => {}} variant="destructive" accessibilityLabel="Sign out">
@@ -97,8 +97,8 @@ describe('Button: the destructive variant', () => {
     // of which variant is applied. `getComputedStyle` resolves the atomic
     // class the same way a browser would and reports the real rendered
     // colour; there is no jest-dom in this repo, so no `toHaveStyle` either.
-    expect(getComputedStyle(button).backgroundColor).toBe('rgb(255, 225, 208)');
-    expect(getComputedStyle(screen.getByText('Sign out')).color).toBe('rgb(100, 51, 18)');
+    expect(getComputedStyle(button).backgroundColor).toBe('rgb(255, 224, 212)');
+    expect(getComputedStyle(screen.getByText('Sign out')).color).toBe('rgb(114, 49, 26)');
   });
 
   it('is still a button that reports its disabled state', () => {
@@ -110,5 +110,43 @@ describe('Button: the destructive variant', () => {
     expect(
       screen.getByRole('button', { name: 'Sign out' }).getAttribute('aria-disabled'),
     ).toBe('true');
+  });
+});
+
+// Linen & Jade: "Everything else, buttons included, uses Figtree" -- no
+// display face inside a button (docs/design/linen-jade/README.md §2).
+describe('Button: the label face', () => {
+  it('sets every variant\'s label in Figtree bold, not the heading face', () => {
+    for (const variant of ['primary', 'secondary', 'ghost', 'dark', 'destructive'] as const) {
+      const { unmount } = render(
+        <Button onPress={() => {}} variant={variant}>
+          {`Label ${variant}`}
+        </Button>,
+      );
+      expect(getComputedStyle(screen.getByText(`Label ${variant}`)).fontFamily).toBe(
+        'Figtree_700Bold',
+      );
+      unmount();
+    }
+  });
+});
+
+// The Linen & Jade accent (#df7a55) is too bright for cream text (2.75:1),
+// so primary fills and ghost labels use accent[700] (#9e4626) instead.
+describe('Button: accent variants use accent[700]', () => {
+  it('fills primary with accent[700] behind a cream label', () => {
+    render(<Button onPress={() => {}}>Create game</Button>);
+    const button = screen.getByRole('button', { name: 'Create game' });
+    expect(getComputedStyle(button).backgroundColor).toBe('rgb(158, 70, 38)');
+    expect(getComputedStyle(screen.getByText('Create game')).color).toBe('rgb(250, 245, 238)');
+  });
+
+  it('sets the ghost label in accent[700]', () => {
+    render(
+      <Button onPress={() => {}} variant="ghost">
+        Back
+      </Button>,
+    );
+    expect(getComputedStyle(screen.getByText('Back')).color).toBe('rgb(158, 70, 38)');
   });
 });

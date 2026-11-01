@@ -287,7 +287,7 @@ export default function ProfileScreen() {
             ]}
           >
             {saving ? (
-              <ActivityIndicator color="#ffffff" />
+              <ActivityIndicator color="#fff" />
             ) : (
               <Text style={[styles.saveText, !canSave && styles.saveTextDisabled]}>
                 Save changes
@@ -412,7 +412,7 @@ function SkillSegmented({
     <View accessibilityRole="radiogroup" style={styles.segmented}>
       {LEVELS.map((level) => {
         const selected = value === level.value;
-        const tint = selected ? '#ffffff' : colors.text;
+        const tint = selected ? '#fff' : colors.text;
         return (
           <Pressable
             key={level.value}
@@ -510,7 +510,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarInitial: { fontFamily: type.heading, fontSize: 28, color: '#ffffff' },
+  avatarInitial: { fontFamily: type.heading, fontSize: 28, color: '#fff' },
   identityText: { flex: 1, minWidth: 0, gap: 4, alignItems: 'flex-start' },
   identityName: { fontFamily: type.bodyBold, fontSize: 19, color: colors.text, alignSelf: 'stretch' },
   levelTag: {
@@ -561,7 +561,7 @@ const styles = StyleSheet.create({
   },
   savePressed: { backgroundColor: colors.accent[800] },
   saveDisabled: { backgroundColor: colors.accent[300] },
-  saveText: { fontFamily: type.bodyBold, fontSize: 16, color: '#ffffff' },
+  saveText: { fontFamily: type.bodyBold, fontSize: 16, color: '#fff' },
   saveTextDisabled: { color: colors.accent[100] },
   saved: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 6 },
   savedText: { fontFamily: type.bodySemiBold, fontSize: 13, color: colors.accent2[700] },
