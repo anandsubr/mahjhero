@@ -341,7 +341,8 @@ export default function EditEventScreen() {
           loadedEvent.starts_at,
           loadedClub.timezone,
         );
-        setEventTitle(loadedEvent.title);
+        // An unnamed game (NULL) edits as an empty field.
+        setEventTitle(loadedEvent.title ?? '');
         setEventVenueId(loadedEvent.venue_id);
         setEventVenueName(loadedEvent.venue_name);
         setEventNotes(loadedEvent.notes);
@@ -363,7 +364,7 @@ export default function EditEventScreen() {
           loadedEvent.capacity === null ? '' : String(loadedEvent.capacity),
         );
         setOriginal({
-          title: loadedEvent.title,
+          title: loadedEvent.title ?? '',
           venueId: loadedEvent.venue_id,
           notes: loadedEvent.notes,
           date: eventDateInZone(loadedEvent.starts_at, loadedClub.timezone),
@@ -391,7 +392,7 @@ export default function EditEventScreen() {
         setFutureCount(loadedFutureCount);
 
         if (loadedSeries) {
-          setSeriesTitle(loadedSeries.title);
+          setSeriesTitle(loadedSeries.title ?? '');
           setSeriesVenueId(loadedSeries.venue_id);
           setSeriesVenueName(loadedSeries.venue_name);
           setSeriesNotes(loadedSeries.notes);
@@ -694,7 +695,9 @@ export default function EditEventScreen() {
       // Only what actually changed -- see the file-level comment above this
       // component for why `updateEvent` needs that discipline and
       // `updateEventSeries` does not.
-      const titleChanged = original ? title.trim() !== original.title : false;
+      // An emptied field is sent as '' -- update_event's "clear the name"
+      // signal (20261021100000); an untouched one as null.
+      const titleChanged = original ? title.trim() !== original.title.trim() : false;
       const venueChanged = original ? venueId !== original.venueId : false;
       const notesChanged = original ? notes !== original.notes : false;
       const startTimeChanged = original ? startTime !== original.startTime : false;
@@ -834,7 +837,7 @@ export default function EditEventScreen() {
         <FormSection label="Details">
           <FormCard>
             <TextRow
-              label="What is it called?"
+              label="Name (optional)"
               value={title}
               onChangeText={setTitle}
               accessibilityLabel="Game name"

@@ -1584,10 +1584,15 @@ describe.runIf(reachable || required)('deliberate refusals reach the host as ref
     expect(count).toBe(0);
   });
 
-  it('updateEvent with a cleared title says what the create screen says', async () => {
+  // The name is optional (20261021100000): clearing it is a save, not a
+  // refusal, and it lands as NULL. Restored afterwards so the rest of this
+  // block still works on a named game.
+  it('updateEvent with a cleared title clears it to NULL', async () => {
     const { error } = await updateEvent(eventId, { title: '   ' });
-    expect(error).toBe('Give the game a name.');
-    expect(error).not.toBe(GENERIC_ERROR);
+    expect(error).toBeNull();
+    const { data } = await admin.from('events').select('title').eq('id', eventId).single();
+    expect(data!.title).toBeNull();
+    expect((await updateEvent(eventId, { title: 'A real future game' })).error).toBeNull();
   });
 
   it('updateEvent moving a game backwards into the past says so', async () => {
@@ -1596,10 +1601,12 @@ describe.runIf(reachable || required)('deliberate refusals reach the host as ref
     expect(error).not.toBe(GENERIC_ERROR);
   });
 
-  it('updateEventSeries with a cleared title says the same thing', async () => {
+  it('updateEventSeries with a cleared title clears it to NULL', async () => {
     const { error } = await updateEventSeries(seriesId, { title: '   ' });
-    expect(error).toBe('Give the game a name.');
-    expect(error).not.toBe(GENERIC_ERROR);
+    expect(error).toBeNull();
+    const { data } = await admin.from('event_series').select('title').eq('id', seriesId).single();
+    expect(data!.title).toBeNull();
+    expect((await updateEventSeries(seriesId, { title: 'A real series' })).error).toBeNull();
   });
 
   it('updateEventSeries with an end date before the start says so', async () => {
@@ -2718,6 +2725,8 @@ describe.runIf(reachable || required)('messages schema contract', () => {
     expect(row.event_id).toBe(eventId);
     expect((row.clubs as { name: string }).name).toBe('Messages Contract Club');
     expect((row.events as { title: string }).title).toBe('Contract Mahjong Night');
+    // game_mode rides along so threadTitleFor can name an unnamed game.
+    expect((row.events as { game_mode: string }).game_mode).toBe('open_play');
     // Game threads never populate thread_members -- membership is derived
     // from bookings, not materialized -- so the embed must resolve to an
     // empty array, not a missing key or an error.

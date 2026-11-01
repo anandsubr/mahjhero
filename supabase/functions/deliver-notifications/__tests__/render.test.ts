@@ -243,6 +243,22 @@ describe('renderMessage', () => {
     expect(message.text).not.toContain('undefined');
   });
 
+  // The name is optional (20261021100000). outbox_render_context names an
+  // unnamed game itself (event_headline: "Open play", or "Private game" when
+  // invite-only), so the templates read naturally with it; only a row whose
+  // game is gone arrives with a null title, and keeps the generic wording.
+  it('reads naturally for an unnamed game', () => {
+    expect(
+      renderMessage(row({ kind: 'waitlist_promoted', event_title: 'Open play' }), APP).subject,
+    ).toBe("You're in for Open play");
+    expect(
+      renderMessage(row({ kind: 'event_cancelled', event_title: 'Private game' }), APP).subject,
+    ).toBe('Private game is cancelled');
+    expect(
+      renderMessage(row({ kind: 'event_cancelled', event_id: null, event_title: null }), APP).subject,
+    ).toBe('A game is cancelled');
+  });
+
   // The two default offsets want different words. "Tuesday night is
   // tomorrow" and "Tuesday night starts soon" are not interchangeable.
   it('words a day-ahead reminder differently from a two-hour one', () => {

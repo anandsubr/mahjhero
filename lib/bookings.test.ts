@@ -486,7 +486,7 @@ describe('BOOKING_REFUSALS (self-audit against the migrations)', () => {
     'this event is not part of a series':
       'raised by reset_event_to_series — mapped by lib/events.ts’s own RPC_ERROR_MESSAGES, not this module’s',
     'title is required':
-      'raised by create_event/create_event_series/update_event/update_event_series — mapped by lib/events.ts’s own RPC_ERROR_MESSAGES, not this module’s',
+      'historical: no longer raised since 20261021100000_optional_game_name (the name is optional), but older migration bodies still contain it — and it was never this module’s',
     'too many tables':
       'raised by add_event_table — mapped by lib/events.ts’s own RPC_ERROR_MESSAGES, not this module’s',
     'venue not available to this club':

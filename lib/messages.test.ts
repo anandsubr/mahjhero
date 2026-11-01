@@ -262,6 +262,31 @@ describe('threadTitleFor', () => {
     expect(threadTitleFor(thread(), 'me')).toBe('Sara Lindqvist');
   });
 
+  // The name is optional (20261021100000): a game thread for an unnamed game
+  // is headed by the same fallback as everywhere else.
+  it('heads an unnamed game\'s thread with its fallback', () => {
+    expect(
+      threadTitleFor(
+        thread({
+          club_id: 'c1',
+          event_id: 'e1',
+          events: { title: null, starts_at: '2026-09-03T23:00:00Z', game_mode: 'open_play' },
+        }),
+        'me',
+      ),
+    ).toBe('Open play');
+    expect(
+      threadTitleFor(
+        thread({
+          club_id: 'c1',
+          event_id: 'e1',
+          events: { title: ' ', starts_at: '2026-09-03T23:00:00Z', game_mode: 'invite_only' },
+        }),
+        'me',
+      ),
+    ).toBe('Private game');
+  });
+
   // The owner's call: the artboard renders 'Everyone at ' + club.short from
   // a short name this app's clubs table has no column for, so substituting
   // the full name wrapped to two lines in the header and truncated in the

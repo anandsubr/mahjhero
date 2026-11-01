@@ -978,3 +978,40 @@ describe('cost to play and minimum spend', () => {
     expect(call.minSpendCents).toBe(0);
   });
 });
+
+/*
+ * The name is optional (20261021100000). The field says so, and leaving it
+ * blank still creates the game -- one-off or series -- with no refusal.
+ */
+describe('optional name', () => {
+  it('labels the name field "Name (optional)" and keeps the placeholder', async () => {
+    render(<NewEventScreen />);
+    await screen.findByText('New game');
+    expect(screen.getByText('Name (optional)')).toBeTruthy();
+    expect(screen.queryByText('What is it called?')).toBeNull();
+    expect(screen.getByPlaceholderText('Tuesday night mahjong')).toBeTruthy();
+  });
+
+  it('creates a one-off game with no name', async () => {
+    render(<NewEventScreen />);
+    await screen.findByText('New game');
+    pickVenue();
+    fireEvent.click(screen.getByText('Create game'));
+
+    await vi.waitFor(() => expect(createEvent).toHaveBeenCalled());
+    expect(createEvent.mock.calls[0][0].title).toBe('');
+    await vi.waitFor(() => expect(back).toHaveBeenCalled());
+    expect(screen.queryByText('Give the game a name.')).toBeNull();
+  });
+
+  it('creates a series with no name', async () => {
+    render(<NewEventScreen />);
+    await screen.findByText('New game');
+    fireEvent.click(screen.getByText('Every week'));
+    pickVenue();
+    fireEvent.click(screen.getByText('Create game'));
+
+    await vi.waitFor(() => expect(createEventSeries).toHaveBeenCalled());
+    expect(createEventSeries.mock.calls[0][0].title).toBe('');
+  });
+});

@@ -37,6 +37,7 @@ import {
   formatFeeCents,
   type SeatingMode,
 } from '../../../../../lib/events';
+import { gameHeadline } from '../../../../../lib/home';
 import { fetchEventPayments, setPaymentStatus } from '../../../../../lib/payments';
 import { goBack } from '../../../../../lib/navigation';
 import { useSession } from '../../../../../lib/session';
@@ -594,7 +595,8 @@ export default function CheckInScreen() {
       // client contract still lands on the behaviour this screen has always
       // had.
       setSeatingMode(event.seating_mode ?? 'assigned_tables');
-      setEventTitle(event.title ?? '');
+      // An unnamed game is headed by its fallback, as everywhere else.
+      setEventTitle(gameHeadline(event.title, event.game_mode));
       setStartsAt(event.starts_at);
       setVenueName(event.venue_name ?? '');
       setFeeCents(event.fee_cents ?? 0);
