@@ -141,6 +141,18 @@ describe('needAFourthAlerts', () => {
     expect(alerts[0].text).toContain('Thursday night');
   });
 
+  // The name is optional (20261021100000): an unnamed game reads as its
+  // fallback, never "— null".
+  it('names an unnamed game by its fallback', () => {
+    const alerts = needAFourthAlerts({
+      events: [event({ bookings: threeSeated, title: null })],
+      clubs: CLUBS,
+      userId: 'me',
+      now: NOW,
+    });
+    expect(alerts[0].text).toMatch(/ — Open play$/);
+  });
+
   it('stays silent for an event the viewer is already in', () => {
     const alerts = needAFourthAlerts({
       events: [
