@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Dottie &amp; the Sparrows — mahjong cards by MahjHero</title>
+<meta name="description" content="An original American mahjong card series. Every card is an episode: a new scene on the cover, a new set of hands inside, and a new story on the back." />
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23c67139'/%3E%3Ctext x='32' y='44' font-size='34' text-anchor='middle' fill='%23f5ead8'%3E%E4%B8%AD%3C/text%3E%3C/svg%3E" />
+<meta property="og:type" content="website" />
+<meta property="og:url" content="https://mahjhero.com/sparrows/" />
+<meta property="og:title" content="Dottie &amp; the Sparrows — mahjong cards by MahjHero" />
+<meta property="og:description" content="An original American mahjong card series. Every card is an episode: a new scene on the cover, a new set of hands inside, and a new story on the back." />
+<meta property="og:image" content="https://mahjhero.com/sparrows/img/lineup.webp" />
+<meta name="twitter:card" content="summary_large_image" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,600;0,9..144,800;1,9..144,600;1,9..144,800&family=Nunito:wght@500;700;800&display=swap" />
+<style>
+/* Layout: a storybook scroll. Hero with the cast, four friend chapters, two pets, then the card anatomy and the episode shelf. Polka dots in the four suit colors stitch the sections together. */
+:root{
+  --paper:#FBF6EC; --sheet:#FFFDF8; --plate:#FBF3E2;
+  --ink:#2E2420; --cocoa:#5E3B2E; --muted:#7A6455; --line:#E4D6BF;
+  --gold:#B88A4A; --blush:#D9776B;
+  --dots:#1D4F91; --bams:#1E6B35; --craks:#B8261C; --winds:#C4542F;
+  --display:'Fraunces', 'Iowan Old Style', Georgia, serif;
+  --body:'Nunito', 'Avenir Next', 'Segoe UI', system-ui, sans-serif;
+  --radius:18px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#1C1613; --sheet:#251D19; --plate:#FBF3E2;
+    --ink:#F2E8DA; --cocoa:#EBCBA5; --muted:#BFA892; --line:#3F332C;
+    --gold:#D9AE6E; --blush:#EE9A8D;
+    --dots:#86ABE6; --bams:#77C08F; --craks:#F08177; --winds:#F29C76;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#1C1613; --sheet:#251D19; --plate:#FBF3E2;
+  --ink:#F2E8DA; --cocoa:#EBCBA5; --muted:#BFA892; --line:#3F332C;
+  --gold:#D9AE6E; --blush:#EE9A8D;
+  --dots:#86ABE6; --bams:#77C08F; --craks:#F08177; --winds:#F29C76;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--paper);color:var(--ink);font-family:var(--body);font-size:17px;line-height:1.6;font-weight:500;
+  padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px))}
+.wrap{max-width:1080px;margin:0 auto}
+h1,h2,h3{font-family:var(--display);color:var(--cocoa);text-wrap:balance;margin:0;line-height:1.05}
+h2{font-style:italic;font-weight:800;font-size:clamp(30px,4.4vw,44px)}
+h3{font-style:italic;font-weight:800;font-size:30px}
+p{margin:0}
+a{color:var(--cocoa)}
+.eyebrow{font-weight:800;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
+.dots{height:12px;background:
+  radial-gradient(circle at 6px 6px, var(--dots) 3.2px, transparent 3.6px) 0 0/48px 12px,
+  radial-gradient(circle at 18px 6px, var(--bams) 3.2px, transparent 3.6px) 0 0/48px 12px,
+  radial-gradient(circle at 30px 6px, var(--craks) 3.2px, transparent 3.6px) 0 0/48px 12px,
+  radial-gradient(circle at 42px 6px, var(--winds) 3.2px, transparent 3.6px) 0 0/48px 12px;
+  margin-inline:calc(-1 * max(16px, env(safe-area-inset-left, 0px)))}
+section{padding-block:64px}
+.sec-head{display:flex;flex-direction:column;gap:10px;max-width:640px;margin-bottom:34px}
+.sec-head p{color:var(--muted)}
+
+/* hero */
+.hero{padding-block:44px 56px;display:grid;gap:28px}
+.hero-top{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);gap:36px;align-items:end}
+.hero h1{font-size:clamp(46px,8.2vw,92px);font-weight:800;font-style:italic;letter-spacing:-.01em}
+.hero h1 span{display:block;font-size:.42em;font-style:normal;font-weight:600;color:var(--muted);letter-spacing:.02em;margin-bottom:6px}
+.lede{font-size:19px;max-width:34em}
+.origin{display:flex;gap:16px;align-items:center;background:var(--sheet);border:1px solid var(--line);border-radius:var(--radius);padding:16px 20px}
+.origin .han{font-family:'Noto Serif SC','Songti SC',serif;font-size:44px;line-height:1;color:var(--cocoa)}
+.origin p{font-size:15px;color:var(--muted)}
+.origin b{color:var(--ink)}
+.plate{background:var(--plate);border-radius:var(--radius);overflow:hidden}
+.lineup{border:1px solid var(--line)}
+.lineup img{display:block;width:100%;height:auto}
+.caption{font-size:14px;color:var(--muted);margin-top:8px}
+
+/* friends */
+.friends{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px}
+.friend{display:grid;grid-template-columns:150px minmax(0,1fr);gap:20px;background:var(--sheet);border:1px solid var(--line);border-radius:var(--radius);padding:20px;position:relative}
+.friend::before{content:"";position:absolute;left:20px;right:20px;top:0;height:4px;border-radius:0 0 4px 4px;background:var(--c)}
+.friend .plate{display:flex;align-items:flex-end;justify-content:center;padding:10px 6px 0;height:250px}
+.friend .plate img{height:100%;width:auto;object-fit:contain}
+.friend .body{display:flex;flex-direction:column;gap:10px;min-width:0}
+.role{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.chip{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:800;padding:4px 10px;border-radius:999px;border:1.5px solid var(--c);color:var(--c)}
+.chip i{width:9px;height:9px;border-radius:50%;background:var(--c)}
+.chip.soft{border-color:var(--line);color:var(--muted)}
+.friend p.story{font-size:16px}
+.says{font-family:var(--display);font-style:italic;font-weight:600;color:var(--cocoa);font-size:17px;border-top:1px dashed var(--line);padding-top:10px}
+
+.pets{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px;margin-top:22px}
+.pet{display:grid;grid-template-columns:130px minmax(0,1fr);gap:18px;align-items:center;background:transparent;border:1.5px dashed var(--line);border-radius:var(--radius);padding:18px}
+.pet .plate{height:150px;display:flex;align-items:center;justify-content:center}
+.pet .plate img{height:100%;width:100%;object-fit:cover}
+.pet .plate.contain img{object-fit:contain;padding:6px}
+.pet .body{display:flex;flex-direction:column;gap:8px;min-width:0}
+.pet h3{font-size:24px}
+.pet p{font-size:15.5px}
+.flock{margin-top:22px;text-align:center;color:var(--muted);font-size:15.5px;max-width:640px;margin-inline:auto}
+.flock b{color:var(--ink)}
+
+/* how it works */
+.how{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:36px;align-items:start}
+.anatomy{list-style:none;margin:0;padding:0;display:grid;gap:14px}
+.anatomy li{display:grid;grid-template-columns:118px minmax(0,1fr);gap:14px;padding-bottom:14px;border-bottom:1px solid var(--line)}
+.anatomy li:last-child{border-bottom:0}
+.anatomy b{font-family:var(--display);font-style:italic;font-weight:800;color:var(--cocoa);font-size:18px;line-height:1.25}
+.anatomy span{font-size:15.5px}
+.owners{background:var(--sheet);border:1px solid var(--line);border-radius:var(--radius);padding:20px}
+.owners h3{font-size:22px;margin-bottom:4px}
+.owners .note{font-size:14px;color:var(--muted);margin-bottom:12px}
+.tablewrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:14.5px;min-width:440px}
+th,td{text-align:left;padding:8px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:800}
+td:first-child{font-weight:800;white-space:nowrap}
+td .sw{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;background:var(--c)}
+td.hands{font-variant-numeric:tabular-nums;color:var(--muted);white-space:nowrap}
+.rules{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-top:30px}
+.rule{border-top:2px solid var(--cocoa);padding-top:10px}
+.rule b{display:block;font-family:var(--display);font-style:italic;font-weight:800;color:var(--cocoa);font-size:18px;margin-bottom:4px}
+.rule p{font-size:15px;color:var(--muted)}
+
+/* episodes */
+.shelf{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}
+.ep{background:var(--sheet);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;display:flex;flex-direction:column}
+.ep img{display:block;width:100%;height:auto;aspect-ratio:4/3;object-fit:cover;max-width:100%}
+.ep .in{padding:20px 22px 22px;display:flex;flex-direction:column;gap:10px}
+.ep .meta{display:flex;flex-wrap:wrap;gap:8px}
+.ep blockquote{margin:0;font-size:15.5px;border-left:3px solid var(--gold);padding-left:14px;color:var(--ink)}
+.next{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px;margin-top:24px}
+.soon{border:1.5px dashed var(--line);border-radius:var(--radius);padding:18px 20px;display:flex;flex-direction:column;gap:6px}
+.soon h3{font-size:22px}
+.soon p{font-size:15px;color:var(--muted)}
+
+footer{padding-block:40px 56px;display:flex;flex-direction:column;gap:10px;align-items:center;text-align:center}
+footer .sig{font-family:var(--display);font-style:italic;font-weight:800;color:var(--cocoa);font-size:26px}
+footer p{font-size:14px;color:var(--muted);max-width:620px}
+
+/* site chrome + buying */
+body{margin:0}
+.topbar{display:flex;justify-content:space-between;align-items:center;gap:12px;padding-block:14px}
+.brand{font-family:var(--display);font-weight:800;font-size:22px;color:var(--cocoa);text-decoration:none}
+.brand span{color:var(--blush)}
+.topbar-link{font-weight:800;font-size:15px;color:var(--cocoa);text-decoration:none;border-bottom:2px solid var(--gold);padding-block:10px 2px}
+/*
+  Buy buttons point at Etsy listings. Leave an href empty until its listing is
+  live: the button hides itself, and when an episode has no live listing yet
+  the "Coming to Etsy soon" note shows instead. The same links appear on the
+  home page (marketing/index.html) -- update both.
+*/
+.buys{display:flex;flex-wrap:wrap;gap:10px;margin-top:6px}
+.buy{display:inline-flex;align-items:center;justify-content:center;min-height:46px;padding:10px 20px;border-radius:999px;font-weight:800;font-size:16px;text-decoration:none}
+.buy.primary{background:var(--cocoa);color:var(--sheet)}
+.buy.secondary{border:1.5px solid var(--cocoa);color:var(--cocoa)}
+.buy[href=""]{display:none}
+.buy-soon{display:none;font-size:15px;color:var(--muted);font-weight:700}
+.buys:not(:has(.buy:not([href=""]))) .buy-soon{display:block}
+.buy-note{font-size:14px;color:var(--muted)}
+footer .home{font-weight:800}
+@media (max-width:880px){
+  .hero-top,.how{grid-template-columns:minmax(0,1fr)}
+  .friends,.pets,.shelf,.next{grid-template-columns:minmax(0,1fr)}
+  .rules{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:520px){
+  .friend{grid-template-columns:minmax(0,1fr)}
+  .friend .plate{height:230px}
+  .pet{grid-template-columns:96px minmax(0,1fr)}
+  .pet .plate{height:110px}
+  .anatomy li{grid-template-columns:minmax(0,1fr);gap:4px}
+  .rules{grid-template-columns:minmax(0,1fr)}
+  section{padding-block:48px}
+}
+@media (prefers-reduced-motion:no-preference){
+  .friend .plate img{transition:transform .35s ease}
+  .friend:hover .plate img{transform:translateY(-4px) rotate(-1deg)}
+}
+</style>
+</head>
+<body>
+
+<nav class="topbar wrap" aria-label="Site">
+  <a class="brand" href="/">Mahj<span>Hero</span></a>
+  <a class="topbar-link" href="#episodes">Buy the cards</a>
+</nav>
+<div class="dots" aria-hidden="true"></div>
+<div class="wrap">
+
+<header class="hero">
+  <div class="hero-top">
+    <div style="display:flex;flex-direction:column;gap:18px;min-width:0">
+      <p class="eyebrow">A mahjong card series</p>
+      <h1><span>Thursday mahjong with</span>Dottie &amp; the Sparrows</h1>
+      <p class="lede">Dottie, Bea, Kiki and Birdie have played American mahjong at the same table for twenty years. Each card in this series is one of their adventures: a new scene on the cover, a new set of hands inside, and a new story on the back.</p>
+    </div>
+    <div class="origin">
+      <div class="han" lang="zh">麻雀</div>
+      <p><b>Why sparrows?</b> The game's name comes from <i>máquè</i>, the Chinese word for sparrow. Players say the clatter of tiles sounds like a flock chattering. Our four friends took the name for their club.</p>
+    </div>
+  </div>
+  <figure style="margin:0">
+    <div class="plate lineup"><img src="img/lineup.webp" width="1600" height="893" alt="Bea, Dottie, Kiki and Birdie standing side by side, with Soap the white cat and Jojo the magpie at their feet"></div>
+    <figcaption class="caption">Left to right: Bea, Dottie with Soap, Kiki with Jojo, and Birdie.</figcaption>
+  </figure>
+</header>
+
+<div class="dots" aria-hidden="true"></div>
+
+<section id="meet" aria-labelledby="meet-h">
+  <div class="sec-head">
+    <p class="eyebrow">The cast</p>
+    <h2 id="meet-h">Meet the Sparrows</h2>
+    <p>Each friend wears the color of the tile suit she stands for, so the cast teaches the card. A hand printed in Dottie's blue is a hand in Dots.</p>
+  </div>
+
+  <div class="friends">
+    <article class="friend" style="--c:var(--dots)">
+      <div class="plate"><img src="img/dottie.webp" width="363" height="760" alt="Dottie in a blue polka-dot wrap dress with a sparrow-print tote and a score pad"></div>
+      <div class="body">
+        <h3>Dottie</h3>
+        <div class="role"><span class="chip"><i></i>Dots</span><span class="chip soft">Owns the 2468 hands</span></div>
+        <p class="story">Dottie started the Thursday game, and twenty years later she still sets the table. She keeps the score pad, the snacks and the peace, in that order. She swears she isn't competitive, then throws a fist in the air when she wins. Her tote has tiny sparrows printed all over it. Nobody remembers who gave it to her.</p>
+        <p class="says">"Same time next Thursday?"</p>
+      </div>
+    </article>
+
+    <article class="friend" style="--c:var(--bams)">
+      <div class="plate"><img src="img/bea.webp" width="282" height="760" alt="Bea in a green shirt and straw sun hat, with a trowel in her pocket"></div>
+      <div class="body">
+        <h3>Bea</h3>
+        <div class="role"><span class="chip"><i></i>Bams</span><span class="chip soft">Owns the 13579 hands</span></div>
+        <p class="story">Bea grows bamboo, tomatoes and an unreasonable number of herbs. She is calm in a way that unsettles the others, and she quietly wins more often than anyone keeps track of. She never takes off her straw hat, not even indoors. At Christmas she tucks a sprig of holly in the band. When chaos breaks out, she pours another round.</p>
+        <p class="says">"I've seen this before."</p>
+      </div>
+    </article>
+
+    <article class="friend" style="--c:var(--craks)">
+      <div class="plate"><img src="img/kiki.webp" width="280" height="760" alt="Kiki in a red dress with big dark curls and statement earrings"></div>
+      <div class="body">
+        <h3>Kiki</h3>
+        <div class="role"><span class="chip"><i></i>Craks</span><span class="chip soft">Owns the 369 hands</span></div>
+        <p class="story">Kiki is the loudest person at any table and the life of every party. She orders the mimosas, then a second round "for luck." Her gasps can be heard across the patio. She is famously terrible at concealed hands because her face gives everything away. She has not won an episode yet, and she would like everyone to know she is due.</p>
+        <p class="says">"One more round. For luck."</p>
+      </div>
+    </article>
+
+    <article class="friend" style="--c:var(--winds)">
+      <div class="plate"><img src="img/birdie.webp" width="392" height="760" alt="Birdie with a silver pixie cut, coral scarf and sparrow brooch, holding postcards and a bouquet"></div>
+      <div class="body">
+        <h3>Birdie</h3>
+        <div class="role"><span class="chip"><i></i>Winds &amp; Flowers</span><span class="chip soft">Owns the winds and dragons</span></div>
+        <p class="story">Birdie is the oldest of the four and the most unflappable. She is always just back from somewhere: Lisbon, Kyoto, her sister's place in Tucson. She arrives last, waving a postcard, and brings gifts wrapped in paper from far away. The little sparrow brooch on her lapel was her mother's. She won on Christmas Eve, and she has not let anyone forget it.</p>
+        <p class="says">"Did I tell you about the time in Lisbon?"</p>
+      </div>
+    </article>
+  </div>
+
+  <div class="pets">
+    <article class="pet">
+      <div class="plate"><img src="img/soap.webp" width="577" height="600" alt="Soap, a fluffy white cat, tangled in gold tinsel"></div>
+      <div class="body">
+        <h3>Soap</h3>
+        <div class="role"><span class="chip soft">The white dragon · Owns the singles and pairs</span></div>
+        <p>Dottie's cat, named for the white dragon tile, which players call the Soap. Soap is unbothered by mahjong, the friends and most of the world. He naps in bread baskets, picnic baskets and occasionally the tile box. When anything goes missing, he is the first suspect. He is never the culprit.</p>
+      </div>
+    </article>
+    <article class="pet">
+      <div class="plate contain"><img src="img/jojo.webp" width="501" height="760" alt="Jojo the magpie in a gold jester collar, holding a mahjong tile in his beak"></div>
+      <div class="body">
+        <h3>Jojo</h3>
+        <div class="role"><span class="chip soft">The Joker · Owns the quints</span></div>
+        <p>A magpie in a jester's collar who adopted the group one spring and never left. Magpies love anything shiny, and Jojo loves mahjong tiles most of all. He has stolen tiles, a cake topper and, one Christmas, the star off the tree. He hides somewhere on every cover. Finding him is half the fun.</p>
+      </div>
+    </article>
+  </div>
+  <p class="flock">And look closely at every cover for <b>the other sparrows</b>: a few real ones, pecking at crumbs or peering through a window. They see everything, and they never tell.</p>
+</section>
+
+<div class="dots" aria-hidden="true"></div>
+
+<section id="cards" aria-labelledby="cards-h">
+  <div class="sec-head">
+    <p class="eyebrow">How the series works</p>
+    <h2 id="cards-h">Every card is an episode</h2>
+    <p>Each card is a working American mahjong card, the large-print tri-fold size, played with standard rules. It also tells one chapter of the Sparrows' story.</p>
+  </div>
+
+  <div class="how">
+    <ul class="anatomy">
+      <li><b>The cover</b><span>One scene from the episode: the four friends at the table, a winner mid-celebration, Jojo hiding somewhere, and a few sparrows watching.</span></li>
+      <li><b>Meet the Sparrows</b><span>The fold-in key. It shows which friend stands for which suit, so new players can read the card at a glance.</span></li>
+      <li><b>The hands</b><span>26 or so winning hands named for the episode. Each friend owns the same section on every card, so you always know where to find your favorites.</span></li>
+      <li><b>The story</b><span>A short chapter on the back panel that tells what happened that night, with small vignettes from the cover.</span></li>
+    </ul>
+
+    <div class="owners">
+      <h3>Who owns which hands</h3>
+      <p class="note">The section names change with every episode. The owner stays the same.</p>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th scope="col">Friend</th><th scope="col">Hands</th><th scope="col">Brunch Club</th><th scope="col">Christmas</th></tr></thead>
+          <tbody>
+            <tr style="--c:var(--dots)"><td><span class="sw"></span>Dottie</td><td class="hands">2468</td><td>Dottie's Reservation</td><td>Dottie's Cookie Swap</td></tr>
+            <tr style="--c:var(--bams)"><td><span class="sw"></span>Bea</td><td class="hands">13579</td><td>Bea's Garden Plate</td><td>Bea's Evergreens</td></tr>
+            <tr style="--c:var(--craks)"><td><span class="sw"></span>Kiki</td><td class="hands">369</td><td>Kiki's Rosé</td><td>Kiki's Eggnog</td></tr>
+            <tr style="--c:var(--winds)"><td><span class="sw"></span>Birdie</td><td class="hands">Winds</td><td>Birdie's Postcards</td><td>Birdie's Sleigh Ride</td></tr>
+            <tr style="--c:var(--muted)"><td><span class="sw"></span>Jojo</td><td class="hands">Quints</td><td>Jojo's Heist</td><td>Jojo's Mischief</td></tr>
+            <tr style="--c:var(--line)"><td><span class="sw"></span>Soap</td><td class="hands">Singles &amp; pairs</td><td>Soap's Nap</td><td>Soap's Snow Day</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="rules">
+    <div class="rule"><b>The winner rotates</b><p>Each episode, a different friend wins. Dottie took No. 1 and Birdie took No. 2. Kiki and Bea are due.</p></div>
+    <div class="rule"><b>Find Jojo</b><p>The magpie is hidden on every cover, always holding something that isn't his.</p></div>
+    <div class="rule"><b>Soap gets blamed</b><p>Whatever goes missing, everyone looks at the cat first. It is never the cat.</p></div>
+    <div class="rule"><b>Bea has seen it</b><p>Every story has a moment of chaos, and every time, Bea has seen this before.</p></div>
+  </div>
+</section>
+
+<div class="dots" aria-hidden="true"></div>
+
+<section id="episodes" aria-labelledby="ep-h">
+  <div class="sec-head">
+    <p class="eyebrow">The shelf</p>
+    <h2 id="ep-h">The adventures so far</h2>
+    <p>Every episode comes two ways, both sold through the MahjHero shop on Etsy: a printed, laminated card mailed to you, or a printable PDF you can take to a print shop like FedEx Office or The UPS Store.</p>
+  </div>
+
+  <div class="shelf">
+    <article class="ep">
+      <img loading="lazy" src="img/brunch.webp" width="1400" height="1045" alt="The Sparrows at a bistro patio table: Dottie wins, Kiki gasps over a mimosa, Bea butters a croissant and Birdie holds a postcard">
+      <div class="in">
+        <p class="eyebrow">A Sparrows Story · No. 1</p>
+        <h3>Thursday at the Bistro</h3>
+        <div class="meta"><span class="chip" style="--c:var(--dots)"><i></i>Winner: Dottie</span><span class="chip soft">Brunch Club card · 26 hands</span></div>
+        <blockquote>Every Thursday at ten, the Sparrows claim the corner table under the yellow awning. This Thursday, Dottie was one tile from Mahjong. Nobody noticed Jojo up on the awning with a stolen tile in his beak.</blockquote>
+        <div class="buys">
+          <a class="buy primary" href="" target="_blank" rel="noopener" data-etsy="brunch-printed">Printed card</a>
+          <a class="buy secondary" href="" target="_blank" rel="noopener" data-etsy="brunch-pdf">Printable PDF</a>
+          <p class="buy-soon">Coming to Etsy soon.</p>
+        </div>
+      </div>
+    </article>
+    <article class="ep">
+      <img loading="lazy" src="img/christmas.webp" width="1400" height="1045" alt="Christmas Eve at Dottie's: Birdie wins while Dottie clutches her cheeks, Jojo sits on top of the tree holding the star, and Soap is tangled in tinsel">
+      <div class="in">
+        <p class="eyebrow">A Sparrows Story · No. 2</p>
+        <h3>The Night Jojo Stole the Star</h3>
+        <div class="meta"><span class="chip" style="--c:var(--winds)"><i></i>Winner: Birdie</span><span class="chip soft">Christmas card · 27 hands</span></div>
+        <blockquote>Halfway through the night, Birdie laid her tiles down and laughed. Then someone looked up. The star was gone. In its place sat a Red Dragon tile, and on top of that sat Jojo.</blockquote>
+        <div class="buys">
+          <a class="buy primary" href="" target="_blank" rel="noopener" data-etsy="christmas-printed">Printed card</a>
+          <a class="buy secondary" href="" target="_blank" rel="noopener" data-etsy="christmas-pdf">Printable PDF</a>
+          <p class="buy-soon">Coming to Etsy soon.</p>
+        </div>
+      </div>
+    </article>
+  </div>
+
+  <div class="next">
+    <div class="soon">
+      <p class="eyebrow">In the sketchbook · No. 3</p>
+      <h3>Kiki's Last Night Out</h3>
+      <p>Kiki is getting married, and the Sparrows throw her a rooftop bachelorette under string lights. Finally, it's Kiki's turn to win. Jojo has his eye on the cake topper.</p>
+    </div>
+    <div class="soon">
+      <p class="eyebrow">In the sketchbook · No. 4</p>
+      <h3>The Garden Party</h3>
+      <p>Spring in Bea's garden, among the flower beds and potted bamboo. Bea wins, the others act shocked, and Kiki's hat is far too big. Soap chases a butterfly.</p>
+    </div>
+  </div>
+</section>
+
+<div class="dots" aria-hidden="true"></div>
+
+<footer>
+  <p class="sig">Same time next Thursday.</p>
+  <p>Dottie &amp; the Sparrows is an original card series for American mahjong. Every card plays with standard American mahjong rules. Not affiliated with the National Mah Jongg League.</p>
+  <p>Made by <a class="home" href="/">MahjHero</a>, the app that keeps your mahjong table full.</p>
+</footer>
+
+</div>
+
+</body></html>
