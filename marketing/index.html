@@ -344,6 +344,38 @@
   .final-cta-heading { font-size: 40px; }
   .final-cta-body { font-size: 18px; color: var(--text-muted); max-width: 480px; }
 
+  /* SPARROWS_STYLES */
+  .sparrows-inner { display: flex; flex-direction: column; gap: 35.2px; }
+  .sparrows-head { display: flex; flex-direction: column; gap: 13.2px; max-width: 640px; }
+  .sparrows-eyebrow { font-size: 14px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-label); }
+  .sparrows-heading { font-size: 34px; line-height: 1.15; }
+  .sparrows-body { font-size: 18px; color: var(--text-muted); }
+  .sparrows-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 22px; }
+  .episode { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+  .episode img { width: 100%; height: auto; aspect-ratio: 4 / 3; object-fit: cover; }
+  .episode-body { padding: 22px 26px 26px; display: flex; flex-direction: column; gap: 8.8px; }
+  .episode-number { font-size: 14px; font-weight: 700; color: var(--text-label); }
+  .episode-title { font-size: 24px; line-height: 1.2; }
+  .episode-meta { font-size: 16px; color: var(--text-muted); }
+  /*
+    Buy buttons point at Etsy listings. Leave an href empty until its listing
+    is live: the button hides itself, and when an episode has no live listing
+    yet the "Coming to Etsy soon" note shows instead. The same links appear on
+    marketing/sparrows/index.html -- update both.
+  */
+  .episode-buys { display: flex; flex-wrap: wrap; gap: 8.8px; margin-top: 8.8px; }
+  .btn-buy { font-size: 16px; padding: 12px 22px; }
+  /* accent-700 ground: the plain accent under light text is ~3:1, short of AA at this size */
+  .btn-buy.btn-primary { background: var(--accent-700); }
+  .btn-buy[href=""] { display: none; }
+  .episode-soon { display: none; font-size: 16px; font-weight: 700; color: var(--text-muted); }
+  .episode-buys:not(:has(.btn-buy:not([href=""]))) .episode-soon { display: block; }
+  .sparrows-next { font-size: 16px; color: var(--text-muted); max-width: 640px; }
+  .sparrows-link { color: var(--accent-700); font-weight: 700; text-decoration: none; border-bottom: 1px solid var(--accent-300); }
+  @media (max-width: 680px) {
+    .sparrows-grid { grid-template-columns: 1fr; }
+  }
+
   /* FOOTER_STYLES */
   .site-footer { padding: 35.2px 0; }
   .site-footer-inner {
@@ -354,6 +386,7 @@
     gap: 13.2px;
   }
   .wordmark-small { font-size: 20px; }
+  .footer-links { display: flex; flex-wrap: wrap; gap: 22px; }
   .footer-contact {
     font-size: 16px;
     color: var(--text-muted);
@@ -634,10 +667,59 @@
       </p>
     </div>
   </section>
+  <section class="sparrows" id="cards">
+    <div class="wrap sparrows-inner">
+      <div class="sparrows-head">
+        <p class="sparrows-eyebrow">Mahjong cards from MahjHero</p>
+        <h2 class="sparrows-heading">Dottie &amp; the Sparrows</h2>
+        <p class="sparrows-body">
+          Four friends, one Thursday table, twenty years of mahjong. Each card
+          in this series is a working American mahjong card and one of their
+          adventures. Get it printed and laminated, or as a PDF to print at
+          FedEx Office or The UPS Store.
+        </p>
+      </div>
+      <div class="sparrows-grid">
+        <article class="card episode">
+          <img src="sparrows/img/brunch.webp" width="1400" height="1045" loading="lazy" alt="The Sparrows at a bistro patio table: Dottie wins, Kiki gasps over a mimosa, Bea butters a croissant and Birdie holds a postcard" />
+          <div class="episode-body">
+            <p class="episode-number">A Sparrows Story &middot; No. 1</p>
+            <h3 class="episode-title">Thursday at the Bistro</h3>
+            <p class="episode-meta">Brunch Club card &middot; 26 hands &middot; Winner: Dottie</p>
+            <div class="episode-buys">
+              <a class="btn btn-primary btn-buy" href="" target="_blank" rel="noopener">Printed card</a>
+              <a class="btn btn-secondary btn-buy" href="" target="_blank" rel="noopener">Printable PDF</a>
+              <p class="episode-soon">Coming to Etsy soon.</p>
+            </div>
+          </div>
+        </article>
+        <article class="card episode">
+          <img src="sparrows/img/christmas.webp" width="1400" height="1045" loading="lazy" alt="Christmas Eve at Dottie&rsquo;s: Birdie wins while Dottie clutches her cheeks, Jojo sits on top of the tree holding the star, and Soap is tangled in tinsel" />
+          <div class="episode-body">
+            <p class="episode-number">A Sparrows Story &middot; No. 2</p>
+            <h3 class="episode-title">The Night Jojo Stole the Star</h3>
+            <p class="episode-meta">Christmas card &middot; 27 hands &middot; Winner: Birdie</p>
+            <div class="episode-buys">
+              <a class="btn btn-primary btn-buy" href="" target="_blank" rel="noopener">Printed card</a>
+              <a class="btn btn-secondary btn-buy" href="" target="_blank" rel="noopener">Printable PDF</a>
+              <p class="episode-soon">Coming to Etsy soon.</p>
+            </div>
+          </div>
+        </article>
+      </div>
+      <p class="sparrows-next">
+        Coming next: Kiki&rsquo;s bachelorette and a garden party at Bea&rsquo;s.
+        <a class="sparrows-link" href="/sparrows/">Meet the Sparrows</a>
+      </p>
+    </div>
+  </section>
   <footer class="site-footer">
     <div class="wrap site-footer-inner">
       <div class="wordmark wordmark-small">Mahj<span class="wordmark-accent">Hero</span></div>
-      <a class="footer-contact" href="mailto:hello@mahjhero.com">hello@mahjhero.com</a>
+      <div class="footer-links">
+        <a class="footer-contact" href="/sparrows/">Mahjong cards</a>
+        <a class="footer-contact" href="mailto:hello@mahjhero.com">hello@mahjhero.com</a>
+      </div>
     </div>
   </footer>
   <script>
