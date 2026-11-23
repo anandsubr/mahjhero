@@ -236,9 +236,9 @@ async function main() {
 
   // --- games --------------------------------------------------------------
   const games = [
-    { title: 'Thursday Afternoon Mahjong', days: 2, time: '13:00', tables: 1, notes: 'Bring your own tile set if you like. Tea and snacks provided.' },
-    { title: 'Saturday Social Game', days: 5, time: '14:00', tables: 2, notes: 'All levels welcome. We rotate tables after each round.' },
-    { title: 'Evening Beginners Night', days: 9, time: '18:30', tables: 2, notes: 'A relaxed night for newer players. Card provided.' },
+    { title: 'Thursday Afternoon Mahjong', days: 7, time: '13:00', tables: 1, notes: 'Bring your own tile set if you like. Tea and snacks provided.' },
+    { title: 'Saturday Social Game', days: 10, time: '14:00', tables: 2, notes: 'All levels welcome. We rotate tables after each round.' },
+    { title: 'Evening Beginners Night', days: 14, time: '18:30', tables: 2, notes: 'A relaxed night for newer players. Card provided.' },
   ];
   const eventIds: string[] = [];
   for (const g of games) {
