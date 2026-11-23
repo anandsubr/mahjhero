@@ -521,6 +521,10 @@ secret = "env(PROD_APPLE_SECRET)"
 
 # Hosted defaults for the smallest compute size. The local values above
 # (20/100) would otherwise be pushed and lower the client limit.
+# Matches the hosted project (SMS sign-in is not enabled, so this is inert).
+[remotes.prod.auth.sms]
+enable_confirmations = true
+
 [remotes.prod.db.pooler]
 default_pool_size = 15
 max_client_conn = 200
