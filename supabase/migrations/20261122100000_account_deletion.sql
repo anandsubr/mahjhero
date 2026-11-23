@@ -135,7 +135,31 @@ begin
   end if;
 
   /*
-   * a. Future seats, waitlist places and invites go through the normal
+   * a. A group the person made for other people stays theirs to answer
+   *    for: promote_waitlist sends the group's offers to created_by and
+   *    accept_promotion_offer only takes them from created_by. It passes to
+   *    the earliest-booked person still live in it. A group with nobody
+   *    live in it keeps created_by and is anonymised by the FK below.
+   *    Done before the cancels in b, so an offer one of them sets off for
+   *    such a group goes to its new creator, not to the person leaving.
+   */
+  update public.booking_groups g
+     set created_by = (
+       select b.profile_id from public.bookings b
+        where b.group_id = g.id
+          and b.profile_id <> target
+          and b.status in ('confirmed', 'waitlisted', 'invited')
+        order by b.created_at, b.id
+        limit 1)
+   where g.created_by = target
+     and exists (
+       select 1 from public.bookings b
+        where b.group_id = g.id
+          and b.profile_id <> target
+          and b.status in ('confirmed', 'waitlisted', 'invited'));
+
+  /*
+   * b. Future seats, waitlist places and invites go through the normal
    *    paths so the waitlist promotes and the booker hears about it exactly
    *    as if the person had done it themselves. Those paths take their
    *    caller from auth.uid(), so the person's identity is assumed for the
@@ -165,30 +189,9 @@ begin
     end if;
   end loop;
 
+  -- '' when the caller had none: auth.uid() reads '' as null (nullif).
   perform set_config('request.jwt.claims', coalesce(saved_claims, ''), true);
   perform set_config('request.jwt.claim.sub', coalesce(saved_sub, ''), true);
-
-  /*
-   * b. A group the person made for other people stays theirs to answer
-   *    for: promote_waitlist sends the group's offers to created_by and
-   *    accept_promotion_offer only takes them from created_by. It passes to
-   *    the earliest-booked person still live in it. A group with nobody
-   *    live in it keeps created_by and is anonymised by the FK below.
-   */
-  update public.booking_groups g
-     set created_by = (
-       select b.profile_id from public.bookings b
-        where b.group_id = g.id
-          and b.profile_id <> target
-          and b.status in ('confirmed', 'waitlisted', 'invited')
-        order by b.created_at, b.id
-        limit 1)
-   where g.created_by = target
-     and exists (
-       select 1 from public.bookings b
-        where b.group_id = g.id
-          and b.profile_id <> target
-          and b.status in ('confirmed', 'waitlisted', 'invited'));
 
   -- c. Every remaining booking of theirs (history, closed rows), then any
   -- group of theirs left with no bookings at all (offers cascade).

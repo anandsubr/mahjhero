@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(44);
+select plan(45);
 
 /*
  * delete_account_data (20261122100000) followed by the auth user's delete --
@@ -140,6 +140,70 @@ insert into public.bookings
    'c1c1c1c1-0000-0000-0000-000000000001',
    'bbbbbbbb-0000-0000-0000-000000000002',
    'aaaaaaaa-0000-0000-0000-000000000001', 'invited', false);
+
+-- A second full game, the week after. Tara holds a seat beside Cara, and
+-- has queued Ben and Dev together in a group of her own making: when her
+-- seat frees, the one seat cannot take both, so the group is offered it.
+insert into public.events
+  (id, club_id, title, venue_id, starts_at, ends_at, created_by) values
+  ('e2e2e2e2-0000-0000-0000-000000000002',
+   'c1c1c1c1-0000-0000-0000-000000000001', 'Next Thursday',
+   '11111111-0000-0000-0000-000000000001',
+   now() + interval '14 days', now() + interval '14 days 3 hours',
+   'bbbbbbbb-0000-0000-0000-000000000002');
+insert into public.event_tables
+  (id, event_id, club_id, label, capacity, position) values
+  ('7ab1e000-0000-0000-0000-000000000002',
+   'e2e2e2e2-0000-0000-0000-000000000002',
+   'c1c1c1c1-0000-0000-0000-000000000001', 'Table 1', 2, 1);
+insert into public.booking_groups
+  (id, event_id, club_id, created_by, preferred_table_id, status,
+   waitlisted_at) values
+  ('9909aaaa-0000-0000-0000-000000000006',
+   'e2e2e2e2-0000-0000-0000-000000000002',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   'aaaaaaaa-0000-0000-0000-000000000001',
+   '7ab1e000-0000-0000-0000-000000000002', 'confirmed', null),
+  ('9909aaaa-0000-0000-0000-000000000008',
+   'e2e2e2e2-0000-0000-0000-000000000002',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   'cccccccc-0000-0000-0000-000000000003',
+   '7ab1e000-0000-0000-0000-000000000002', 'confirmed', null),
+  ('9909aaaa-0000-0000-0000-000000000007',
+   'e2e2e2e2-0000-0000-0000-000000000002',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   'aaaaaaaa-0000-0000-0000-000000000001',
+   null, 'waitlisted', now());
+insert into public.bookings
+  (id, group_id, event_id, club_id, event_table_id, profile_id, booked_by,
+   status, created_at) values
+  ('b00c0000-0000-0000-0000-000000000006',
+   '9909aaaa-0000-0000-0000-000000000006',
+   'e2e2e2e2-0000-0000-0000-000000000002',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   '7ab1e000-0000-0000-0000-000000000002',
+   'aaaaaaaa-0000-0000-0000-000000000001',
+   'aaaaaaaa-0000-0000-0000-000000000001', 'confirmed', now()),
+  ('b00c0000-0000-0000-0000-000000000008',
+   '9909aaaa-0000-0000-0000-000000000008',
+   'e2e2e2e2-0000-0000-0000-000000000002',
+   'c1c1c1c1-0000-0000-0000-000000000001',
+   '7ab1e000-0000-0000-0000-000000000002',
+   'cccccccc-0000-0000-0000-000000000003',
+   'cccccccc-0000-0000-0000-000000000003', 'confirmed', now()),
+  ('b00c0000-0000-0000-0000-000000000007',
+   '9909aaaa-0000-0000-0000-000000000007',
+   'e2e2e2e2-0000-0000-0000-000000000002',
+   'c1c1c1c1-0000-0000-0000-000000000001', null,
+   'bbbbbbbb-0000-0000-0000-000000000002',
+   'aaaaaaaa-0000-0000-0000-000000000001', 'waitlisted',
+   now() - interval '1 minute'),
+  ('b00c0000-0000-0000-0000-000000000009',
+   '9909aaaa-0000-0000-0000-000000000007',
+   'e2e2e2e2-0000-0000-0000-000000000002',
+   'c1c1c1c1-0000-0000-0000-000000000001', null,
+   'dddddddd-0000-0000-0000-000000000004',
+   'aaaaaaaa-0000-0000-0000-000000000001', 'waitlisted', now());
 
 -- Tara played last week, and recorded Cara's win.
 insert into public.booking_groups
@@ -345,6 +409,12 @@ select is(
       and kind = 'waitlist_promoted'),
   1,
   'and is told, exactly as a normal cancel tells them');
+select is(
+  (select array_agg(recipient_id) from public.notification_outbox
+    where event_id = 'e2e2e2e2-0000-0000-0000-000000000002'
+      and kind = 'promotion_offer'),
+  array['bbbbbbbb-0000-0000-0000-000000000002'::uuid],
+  'a waitlisted group she made for others is offered her freed seat through its new creator, not her');
 select is(
   (select count(*)::int from public.bookings
     where profile_id = 'aaaaaaaa-0000-0000-0000-000000000001'),
