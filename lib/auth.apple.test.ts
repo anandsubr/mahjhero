@@ -22,6 +22,7 @@ vi.mock('expo-apple-authentication', () => ({
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Crypto from 'expo-crypto';
 import { signInWithApple } from './auth';
+import { GENERIC_ERROR } from './constants';
 import { fetchProfile, updateProfile } from './profile';
 import { supabase } from './supabase';
 
@@ -92,6 +93,6 @@ describe('signInWithApple', () => {
       data: {},
       error: { message: 'bad token' },
     } as never);
-    expect(await signInWithApple()).toEqual({ error: 'bad token' });
+    expect(await signInWithApple()).toEqual({ error: GENERIC_ERROR });
   });
 });

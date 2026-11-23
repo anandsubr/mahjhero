@@ -332,7 +332,8 @@ export async function signInWithApple(): Promise<{ error: string | null }> {
       nonce: rawNonce,
     });
     if (error) {
-      return { error: error.message };
+      console.error('signInWithIdToken failed', error);
+      return { error: GENERIC_ERROR };
     }
 
     const given = credential.fullName?.givenName?.trim() ?? '';
