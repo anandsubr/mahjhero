@@ -382,4 +382,14 @@ describe('profile screen', () => {
       expect(screen.queryByTestId('settings-row-spinner')).toBeNull();
     });
   });
+
+  it('offers Delete account above Sign out, leading to the delete screen', async () => {
+    fetchProfile.mockResolvedValueOnce({ ...MEMBER, id: 'test-user', display_name: 'Anand' });
+    render(<ProfileScreen />);
+    const del = await screen.findByRole('button', { name: 'Delete account' });
+    const out = screen.getByRole('button', { name: 'Sign out' });
+    expect(del.compareDocumentPosition(out) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.click(del);
+    expect(push).toHaveBeenCalledWith('/delete-account');
+  });
 });

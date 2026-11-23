@@ -2,12 +2,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 
 const push = vi.fn();
+let searchParams: Record<string, string> = {};
 
 vi.mock('expo-router', () => ({
   Redirect: ({ href }: { href: string }) => (
     <div data-testid="redirect" data-href={href} />
   ),
   useRouter: () => ({ push }),
+  useLocalSearchParams: () => searchParams,
 }));
 
 const useSessionMock = vi.fn(
@@ -24,6 +26,7 @@ import Welcome from '../welcome';
 describe('welcome screen', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    searchParams = {};
     useSessionMock.mockReturnValue({ session: null, loading: false });
   });
 
@@ -41,6 +44,15 @@ describe('welcome screen', () => {
     expect(screen.getByText('Got an invite link?')).toBeTruthy();
     expect(screen.queryByText(/Sara Lindqvist/)).toBeNull();
     expect(screen.queryByText(/Riverside/)).toBeNull();
+  });
+
+  it('shows the deletion notice only after an account was deleted', () => {
+    const { unmount } = render(<Welcome />);
+    expect(screen.queryByText('Your account was deleted.')).toBeNull();
+    unmount();
+    searchParams = { deleted: '1' };
+    render(<Welcome />);
+    expect(screen.getByText('Your account was deleted.')).toBeTruthy();
   });
 
   it('sends both buttons to sign in', () => {

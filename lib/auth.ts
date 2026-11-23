@@ -6,6 +6,7 @@ import * as QueryParams from 'expo-auth-session/build/QueryParams';
 import { Platform } from 'react-native';
 import { isAuthRetryableFetchError } from '@supabase/supabase-js';
 import { GENERIC_ERROR } from './constants';
+import { fetchProfile, updateProfile } from './profile';
 import { supabase } from './supabase';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -286,6 +287,76 @@ export async function signInWithProvider(
     // for diagnosis — otherwise a DNS failure, a Supabase outage, and a CORS
     // misconfiguration are indistinguishable from the outside.
     console.error('signInWithProvider failed', cause);
+    return { error: GENERIC_ERROR };
+  }
+}
+
+function randomNonce(Crypto: typeof import('expo-crypto')): string {
+  return Array.from(Crypto.getRandomBytes(32), (b) =>
+    b.toString(16).padStart(2, '0'),
+  ).join('');
+}
+
+/**
+ * Native Sign in with Apple (iOS). Apple signs `sha256(rawNonce)` into the
+ * identity token; Supabase checks it against the raw nonce we pass back.
+ * Never rejects. Backing out of Apple's sheet resolves `{ error: null }`.
+ *
+ * Apple returns the person's name only on the very first authorization, so
+ * it is saved to the profile right away, and only when no name is set yet.
+ */
+export async function signInWithApple(): Promise<{ error: string | null }> {
+  try {
+    // Loaded on demand: both modules need native code, and importing them at
+    // the top would break every web/test import of this file.
+    const AppleAuthentication = await import('expo-apple-authentication');
+    const Crypto = await import('expo-crypto');
+    const rawNonce = randomNonce(Crypto);
+    const hashedNonce = await Crypto.digestStringAsync(
+      Crypto.CryptoDigestAlgorithm.SHA256,
+      rawNonce,
+    );
+    const credential = await AppleAuthentication.signInAsync({
+      requestedScopes: [
+        AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+        AppleAuthentication.AppleAuthenticationScope.EMAIL,
+      ],
+      nonce: hashedNonce,
+    });
+    if (!credential.identityToken) {
+      return { error: GENERIC_ERROR };
+    }
+    const { data, error } = await supabase.auth.signInWithIdToken({
+      provider: 'apple',
+      token: credential.identityToken,
+      nonce: rawNonce,
+    });
+    if (error) {
+      return { error: error.message };
+    }
+
+    const given = credential.fullName?.givenName?.trim() ?? '';
+    const family = credential.fullName?.familyName?.trim() ?? '';
+    const fullName = [given, family].filter(Boolean).join(' ');
+    const userId = data?.user?.id;
+    if (fullName && userId) {
+      // Best effort: failing to save a name must not fail a sign-in that
+      // already succeeded.
+      try {
+        const profile = await fetchProfile(userId);
+        if (profile && !profile.display_name.trim()) {
+          await updateProfile(userId, { display_name: fullName });
+        }
+      } catch (cause) {
+        console.error('saving Apple name failed', cause);
+      }
+    }
+    return { error: null };
+  } catch (cause) {
+    if ((cause as { code?: string } | null)?.code === 'ERR_REQUEST_CANCELED') {
+      return { error: null };
+    }
+    console.error('signInWithApple failed', cause);
     return { error: GENERIC_ERROR };
   }
 }

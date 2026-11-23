@@ -11,6 +11,7 @@ import {
   availableProviders,
   isValidEmail,
   sendSignInCode,
+  signInWithApple,
   signInWithProvider,
   verifySignInCode,
 } from '../lib/auth';
@@ -144,7 +145,9 @@ export default function SignIn() {
     setError(null);
     setPendingProvider(provider);
     try {
-      const { error: providerError } = await signInWithProvider(provider);
+      const { error: providerError } = await (provider === 'apple' && Platform.OS === 'ios'
+        ? signInWithApple()
+        : signInWithProvider(provider));
       if (providerError) setError(providerError);
     } finally {
       setPendingProvider(null);

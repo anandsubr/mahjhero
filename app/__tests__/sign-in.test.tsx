@@ -29,14 +29,15 @@ vi.mock('../../lib/session', () => ({
 // expo-web-browser and expo-linking, none of which resolve under Vitest, and
 // none of which this test exercises.
 vi.mock('../../lib/auth', () => ({
-  availableProviders: () => ['google'],
+  availableProviders: () => ['google', 'apple'],
+  signInWithApple: vi.fn(async () => ({ error: null })),
   isValidEmail: (value: string) => value.includes('@'),
   sendSignInCode: vi.fn(async () => ({ error: null })),
   verifySignInCode: vi.fn(async () => ({ error: null })),
   signInWithProvider: vi.fn(async () => ({ error: null })),
 }));
 
-import { sendSignInCode, verifySignInCode } from '../../lib/auth';
+import { sendSignInCode, signInWithProvider, verifySignInCode } from '../../lib/auth';
 import SignIn from '../sign-in';
 
 /**
@@ -256,5 +257,13 @@ describe('sign-in screen', () => {
     expect(
       screen.getByRole('button', { name: 'Email me a sign-in code' }),
     ).toBeTruthy();
+  });
+
+  it('keeps the web OAuth flow for Apple on web', async () => {
+    render(<SignIn />);
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Continue with Apple' }));
+    });
+    expect(signInWithProvider).toHaveBeenCalledWith('apple');
   });
 });

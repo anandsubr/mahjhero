@@ -350,6 +350,18 @@ export default function ProfileScreen() {
       </FormSection>
 
       <Pressable
+        onPress={() => router.push('/delete-account')}
+        accessibilityRole="button"
+        accessibilityLabel="Delete account"
+        style={({ pressed, hovered }: { pressed: boolean; hovered?: boolean }) => [
+          styles.deleteAccount,
+          (pressed || hovered) && styles.deleteAccountActive,
+        ]}
+      >
+        <Text style={styles.deleteAccountText}>Delete account</Text>
+      </Pressable>
+
+      <Pressable
         onPress={onSignOut}
         disabled={signingOut}
         accessibilityRole="button"
@@ -591,6 +603,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
   },
+  deleteAccount: {
+    minHeight: 44,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteAccountActive: { backgroundColor: colors.accent[100] },
+  deleteAccountText: { fontFamily: type.bodyBold, fontSize: 15, color: colors.accent[800] },
   signOutActive: { backgroundColor: colors.accent[100] },
   signOutText: { fontFamily: type.bodyBold, fontSize: 15, color: colors.accent[700] },
 });
