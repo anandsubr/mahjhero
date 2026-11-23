@@ -1,7 +1,7 @@
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { Text } from '../Text';
 import Tag from '../Tag';
-import { MessageCircleIcon, UserPlusIcon } from '../icons';
+import { MessageCircleIcon, MoreHorizontalIcon, UserPlusIcon } from '../icons';
 import type { ClubMember } from '../../lib/clubs';
 import { avatarColorsFor } from '../../lib/friends';
 import { memberInitials, memberName, skillLabel } from '../../lib/members';
@@ -19,6 +19,8 @@ type Props = {
   messaging: boolean;
   /** Add friend is in flight for this row: spinner, disabled. */
   adding: boolean;
+  /** Opens the person's Report / Block sheet. Never shown on your own row. */
+  onMore?: () => void;
 };
 
 const AVATAR_SIZE = 46;
@@ -45,6 +47,7 @@ export default function MemberRow({
   onAddFriend,
   messaging,
   adding,
+  onMore,
 }: Props) {
   const name = memberName(member);
   const pair = avatarColorsFor(member.profile_id);
@@ -113,6 +116,16 @@ export default function MemberRow({
                 <MessageCircleIcon size={22} color={colors.accent[700]} />
               )}
             </Pressable>
+            {onMore ? (
+              <Pressable
+                onPress={onMore}
+                accessibilityRole="button"
+                accessibilityLabel={`More options for ${name}`}
+                style={styles.iconButton}
+              >
+                <MoreHorizontalIcon size={22} color={colors.neutral[700]} />
+              </Pressable>
+            ) : null}
           </View>
         )}
       </View>

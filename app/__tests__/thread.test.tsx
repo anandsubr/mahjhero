@@ -106,6 +106,33 @@ vi.mock('../../lib/messages', async () => {
 // tests below carry no attachments at all, so this never fires for them;
 // the "batches every attachment ... in one call" test further down sets its
 // own return value and asserts the call directly.
+const reportContent = vi.fn();
+const blockUser = vi.fn();
+const unblockUser = vi.fn();
+const fetchMyBlocks = vi.fn();
+vi.mock('../../lib/moderation', async () => {
+  const actual =
+    await vi.importActual<typeof import('../../lib/moderation')>('../../lib/moderation');
+  return {
+    ...actual,
+    reportContent: (...a: unknown[]) => reportContent(...a),
+    blockUser: (...a: unknown[]) => blockUser(...a),
+    unblockUser: (...a: unknown[]) => unblockUser(...a),
+    fetchMyBlocks: (...a: unknown[]) => fetchMyBlocks(...a),
+  };
+});
+
+/** A held press -- see 'picks the reply target with a long press' below. */
+function longPress(el: HTMLElement) {
+  vi.useFakeTimers();
+  act(() => {
+    fireEvent.mouseDown(el);
+    vi.advanceTimersByTime(600);
+  });
+  fireEvent.mouseUp(el);
+  vi.useRealTimers();
+}
+
 const getSignedUrls = vi.fn();
 vi.mock('../../lib/attachments', () => ({
   pickImages: vi.fn(),
@@ -328,6 +355,10 @@ describe('thread screen', () => {
       { profile_id: 'p2', display_name: 'Carol Diaz', club_name: 'Riverside' },
     ]);
     getSignedUrls.mockReset();
+    reportContent.mockResolvedValue({ data: 'r1', error: null });
+    blockUser.mockResolvedValue({ error: null });
+    unblockUser.mockResolvedValue({ error: null });
+    fetchMyBlocks.mockResolvedValue({ data: [], error: null });
     getSignedUrls.mockResolvedValue({});
   });
 
@@ -833,9 +864,94 @@ describe('thread screen', () => {
     fireEvent.mouseUp(bubble);
     vi.useRealTimers();
 
+    // The long press opens the message's action sheet; Reply quotes it.
+    const sheet = screen.getByTestId('action-sheet');
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Reply' }));
+
     expect(
       await screen.findByText('Sara Lindqvist: We are one short for Tuesday.'),
     ).toBeTruthy();
+  });
+
+  it("offers Reply, Report and Block {name} on somebody else's message", async () => {
+    render(<ThreadScreen />);
+    longPress(await screen.findByTestId('bubble-m1'));
+    const sheet = screen.getByTestId('action-sheet');
+    expect(
+      within(sheet)
+        .getAllByRole('button')
+        .map((b) => b.getAttribute('aria-label')),
+    ).toEqual(['Reply', 'Report', 'Block Sara Lindqvist', 'Cancel']);
+  });
+
+  it('offers only Reply on your own message', async () => {
+    render(<ThreadScreen />);
+    longPress(await screen.findByTestId('bubble-m2'));
+    const sheet = screen.getByTestId('action-sheet');
+    expect(within(sheet).getByRole('button', { name: 'Reply' })).toBeTruthy();
+    expect(within(sheet).queryByRole('button', { name: 'Report' })).toBeNull();
+    expect(within(sheet).queryByRole('button', { name: /^Block/ })).toBeNull();
+  });
+
+  it('reports a message with a reason and details, then thanks the reporter', async () => {
+    render(<ThreadScreen />);
+    longPress(await screen.findByTestId('bubble-m1'));
+    fireEvent.click(within(screen.getByTestId('action-sheet')).getByRole('button', { name: 'Report' }));
+    const sheet = screen.getByTestId('report-sheet');
+    for (const reason of ['Spam', 'Harassment or bullying', 'Inappropriate content', 'Something else']) {
+      expect(within(sheet).getByRole('radio', { name: reason })).toBeTruthy();
+    }
+    const submit = within(sheet).getByRole('button', { name: 'Submit' });
+    expect(submit.getAttribute('aria-disabled')).toBe('true');
+    fireEvent.click(within(sheet).getByRole('radio', { name: 'Harassment or bullying' }));
+    fireEvent.change(within(sheet).getByLabelText('Details (optional)'), {
+      target: { value: 'Keeps messaging me' },
+    });
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Submit' }));
+    expect(await screen.findByText("Thanks. We'll review this within 24 hours.")).toBeTruthy();
+    expect(reportContent).toHaveBeenCalledWith({
+      kind: 'message',
+      targetId: 'm1',
+      reason: 'harassment',
+      details: 'Keeps messaging me',
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    expect(screen.queryByTestId('report-sheet')).toBeNull();
+  });
+
+  it('shows a failed report in the sheet and keeps it open', async () => {
+    reportContent.mockResolvedValue({ error: 'Could not reach MahjHero. Check your connection and try again.' });
+    render(<ThreadScreen />);
+    longPress(await screen.findByTestId('bubble-m1'));
+    fireEvent.click(within(screen.getByTestId('action-sheet')).getByRole('button', { name: 'Report' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Spam' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Submit' }));
+    expect(
+      await within(screen.getByTestId('report-sheet')).findByText(
+        'Could not reach MahjHero. Check your connection and try again.',
+      ),
+    ).toBeTruthy();
+  });
+
+  it('blocks the author after confirming, then refetches the conversation', async () => {
+    render(<ThreadScreen />);
+    longPress(await screen.findByTestId('bubble-m1'));
+    fireEvent.click(
+      within(screen.getByTestId('action-sheet')).getByRole('button', { name: 'Block Sara Lindqvist' }),
+    );
+    const confirm = screen.getByTestId('confirm-sheet');
+    expect(within(confirm).getByText('Block Sara Lindqvist?')).toBeTruthy();
+    expect(
+      within(confirm).getByText(
+        "You won't see their messages, posts or photos, and you can't message each other. They won't be told.",
+      ),
+    ).toBeTruthy();
+    const before = fetchThreadMessages.mock.calls.length;
+    fetchThreadMessages.mockResolvedValue([MESSAGES[1]]);
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Block' }));
+    await waitFor(() => expect(blockUser).toHaveBeenCalledWith('other'));
+    await waitFor(() => expect(fetchThreadMessages.mock.calls.length).toBeGreaterThan(before));
+    await waitFor(() => expect(screen.queryByText('We are one short for Tuesday.')).toBeNull());
   });
 
   // Discoverability is the accepted cost of moving off a visible control --

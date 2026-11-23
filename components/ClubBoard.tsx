@@ -11,6 +11,8 @@ import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { Text } from './Text';
 import ErrorBanner from './ErrorBanner';
 import PostCard from './board/PostCard';
+import ActionSheet from './moderation/ActionSheet';
+import { blockLabel, useModeration } from './moderation/useModeration';
 import { GENERIC_ERROR } from '../lib/constants';
 import { getSignedUrls } from '../lib/attachments';
 import {
@@ -73,6 +75,8 @@ const ClubBoard = forwardRef<ClubBoardHandle, Props>(function ClubBoard(
   const [loadingMore, setLoadingMore] = useState(false);
   const [hearting, setHearting] = useState<ReadonlySet<string>>(new Set());
   const [urls, setUrls] = useState<Record<string, string>>({});
+  // The post whose "…" sheet is open: Report, Block {name}.
+  const [actionsFor, setActionsFor] = useState<FeedPost | null>(null);
 
   // Every first-page load bumps this; a response (first page or older page)
   // whose sequence is no longer current is dropped, so a refresh landing
@@ -208,10 +212,30 @@ const ClubBoard = forwardRef<ClubBoardHandle, Props>(function ClubBoard(
   }, [posts]);
 
   const openPost = (postId: string) => router.push(`/messages/club/${threadId}/${postId}`);
+  const moderation = useModeration({ onBlocked: () => void load() });
+  const viewerId = session?.user.id;
 
   return (
     <>
       <Text style={styles.caption}>Everyone in the club sees posts here</Text>
+
+      {actionsFor ? (
+        <ActionSheet
+          actions={[
+            {
+              label: 'Report',
+              onPress: () => moderation.startReport('message', actionsFor.id, 'Report this post'),
+            },
+            {
+              label: blockLabel(actionsFor.authorName),
+              destructive: true,
+              onPress: () => moderation.startBlock(actionsFor.authorId, actionsFor.authorName),
+            },
+          ]}
+          onClose={() => setActionsFor(null)}
+        />
+      ) : null}
+      {moderation.sheets}
 
       {error ? <ErrorBanner message={error} /> : null}
 
@@ -231,6 +255,7 @@ const ClubBoard = forwardRef<ClubBoardHandle, Props>(function ClubBoard(
               onOpen={() => openPost(post.id)}
               onToggleHeart={() => void toggleHeart(post.id)}
               hearting={hearting.has(post.id)}
+              onMore={post.authorId !== viewerId ? () => setActionsFor(post) : undefined}
             />
           ))}
           {hasMore ? (

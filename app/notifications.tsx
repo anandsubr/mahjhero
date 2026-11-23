@@ -1,7 +1,6 @@
 import { Redirect, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import type { ReactNode } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { Text } from '../components/Text';
 import BackRow from '../components/BackRow';
 import ErrorBanner from '../components/ErrorBanner';
@@ -16,40 +15,16 @@ import {
 import Screen from '../components/Screen';
 import TimeField from '../components/TimeField';
 import {
-  BellIcon,
   CheckIcon,
-  MailIcon,
   MoonIcon,
-  SmartphoneIcon,
   UserPlusIcon,
 } from '../components/icons';
 import { GENERIC_ERROR } from '../lib/constants';
 import { goBack } from '../lib/navigation';
 import { fetchPreferences, updatePreferences } from '../lib/profile';
-import type { NotificationPreferences, NotifyChannel } from '../lib/profile';
+import type { NotificationPreferences } from '../lib/profile';
 import { useSession } from '../lib/session';
-import { colors, radius, type } from '../lib/theme';
-
-// Display order matches the design (default channel first, then the two
-// single-channel options), which also happens to read naturally. This is a
-// presentation-only ordering — NotifyChannel and everything stored is
-// untouched.
-const CHANNELS: NotifyChannel[] = ['both', 'push', 'email'];
-const CHANNEL_LABEL: Record<NotifyChannel, string> = {
-  both: 'Push and email',
-  push: 'Push only',
-  email: 'Email only',
-};
-const CHANNEL_SUBTITLE: Record<NotifyChannel, string> = {
-  both: 'Everything, both ways',
-  push: 'Alerts on this phone',
-  email: 'Nothing on your phone',
-};
-const CHANNEL_ICON: Record<NotifyChannel, (color: string) => ReactNode> = {
-  both: (color) => <BellIcon size={18} color={color} />,
-  push: (color) => <SmartphoneIcon size={18} color={color} />,
-  email: (color) => <MailIcon size={18} color={color} />,
-};
+import { colors, type } from '../lib/theme';
 
 function samePreferences(a: NotificationPreferences, b: NotificationPreferences): boolean {
   return (
@@ -177,7 +152,7 @@ export default function NotificationSettings() {
     // (see below), so their values are stale and unverified — possibly not
     // valid HH:MM at all. Submitting them anyway would make updatePreferences
     // run pair validation against fields the member can no longer see or
-    // fix, failing every future save (e.g. a channel-only change) with an
+    // fix, failing every future save (e.g. a mute-only change) with an
     // error that points at a field that isn't on screen. Omitting both
     // together keeps the pair check satisfied and leaves the stored values
     // untouched, which is harmless since they're unused while disabled.
@@ -248,45 +223,6 @@ export default function NotificationSettings() {
         {backRow}
         <FormTitle>Notifications</FormTitle>
       </View>
-
-      <FormSection label="How should we reach you?">
-        <FormCard>
-          {CHANNELS.map((channel) => {
-            const selected = prefs.notify_channel === channel;
-            return (
-              <Pressable
-                key={channel}
-                style={({ pressed }) => [styles.channelRow, pressed && styles.pressed]}
-                onPress={() => change({ notify_channel: channel })}
-                accessibilityRole="radio"
-                // The label alone, not label + subtitle, so a screen reader
-                // announces the choice itself.
-                accessibilityLabel={CHANNEL_LABEL[channel]}
-                // Flat `aria-selected`, not `accessibilityState={{ selected }}`
-                // (which this used to send): react-native-web's createDOMProps
-                // has no handling for `accessibilityState` at all, so every
-                // channel row rendered `role="radio"` with no state a screen
-                // reader could read. See components/Toggle.tsx's docstring for
-                // the full account; React Native's own Pressable resolves
-                // `selected: ariaSelected ?? accessibilityState?.selected`, so
-                // this one prop still reaches the native accessibility tree
-                // too. app/__tests__/notifications.test.tsx asserts the
-                // rendered attribute.
-                aria-selected={selected}
-              >
-                <View style={styles.channelIcon}>{CHANNEL_ICON[channel](colors.accent[700])}</View>
-                <View style={styles.channelText}>
-                  <Text style={styles.channelLabel}>{CHANNEL_LABEL[channel]}</Text>
-                  <Text style={styles.channelSubtitle}>{CHANNEL_SUBTITLE[channel]}</Text>
-                </View>
-                <View style={[styles.radioOuter, selected && styles.radioOuterSelected]}>
-                  {selected ? <View style={styles.radioInner} /> : null}
-                </View>
-              </Pressable>
-            );
-          })}
-        </FormCard>
-      </FormSection>
 
       <FormSection label="Quiet hours">
         <FormCard>
@@ -359,44 +295,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   top: { gap: 4 },
-  channelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    minHeight: 58,
-    paddingVertical: 10,
-    paddingLeft: 12,
-    paddingRight: 16,
-  },
-  pressed: { opacity: 0.85 },
-  channelIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: colors.bg,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  channelText: { flex: 1, minWidth: 0 },
-  channelLabel: { fontFamily: type.bodySemiBold, fontSize: 15, color: colors.text },
-  channelSubtitle: { fontFamily: type.bodyRegular, fontSize: 13, color: colors.neutral[700] },
-  radioOuter: {
-    width: 24,
-    height: 24,
-    borderRadius: radius.pill,
-    borderWidth: 2,
-    borderColor: colors.neutral[400],
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  // accent[600]: 3:1 non-text contrast for the state (lib/theme.test.ts).
-  radioOuterSelected: { borderColor: colors.accent[600] },
-  radioInner: {
-    width: 12,
-    height: 12,
-    borderRadius: radius.pill,
-    backgroundColor: colors.accent[600],
-  },
   timeGrid: {
     flexDirection: 'row',
     gap: 8,

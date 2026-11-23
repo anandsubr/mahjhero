@@ -54,7 +54,7 @@ describe('notifications screen', () => {
   // Profile on top -- and a deep link with no history still lands there.
   it('pops back to Profile when there is history', async () => {
     render(<NotificationSettings />);
-    await screen.findByText('Push and email');
+    await screen.findByText('Pause notifications overnight');
     fireEvent.click(screen.getByRole('button', { name: 'Back to Profile' }));
     expect(back).toHaveBeenCalled();
     expect(push).not.toHaveBeenCalled();
@@ -64,7 +64,7 @@ describe('notifications screen', () => {
   it('falls back to Profile when there is nothing to pop', async () => {
     canGoBack.mockReturnValue(false);
     render(<NotificationSettings />);
-    await screen.findByText('Push and email');
+    await screen.findByText('Pause notifications overnight');
     fireEvent.click(screen.getByRole('button', { name: 'Back to Profile' }));
     expect(replace).toHaveBeenCalledWith('/profile');
     expect(back).not.toHaveBeenCalled();
@@ -82,46 +82,12 @@ describe('notifications screen', () => {
     }
   });
 
-  it('lists the default channel first', async () => {
+  it('no longer offers a push/email channel choice', async () => {
     render(<NotificationSettings />);
-    await screen.findByText('Push and email');
-    const options = screen.getAllByText(/Push and email|Push only|Email only/);
-    expect(options[0].textContent).toBe('Push and email');
-  });
-
-  // Guards against `accessibilityState={{ selected }}` creeping back in:
-  // react-native-web's createDOMProps has no handling for
-  // `accessibilityState` at all (components/Toggle.tsx's docstring has the
-  // full account), so that prop renders `role="radio"` with no state at all
-  // -- a screen reader could not tell the chosen channel from the others.
-  // Both states are pinned against their literal strings, not
-  // `not.toBe('true')`, since a missing attribute would also satisfy that.
-  it('marks the selected channel with aria-selected, and the others as not selected', async () => {
-    render(<NotificationSettings />);
-    const selected = await screen.findByRole('radio', { name: 'Push and email' });
-    expect(selected.getAttribute('aria-selected')).toBe('true');
-
-    const pushOnly = screen.getByRole('radio', { name: 'Push only' });
-    expect(pushOnly.getAttribute('aria-selected')).toBe('false');
-  });
-
-  // accent[600], not accentColor, so the chosen dot and ring reach WCAG
-  // 1.4.11's 3:1 against the card.
-  it('draws the selected radio ring and dot in accent[600]', async () => {
-    render(<NotificationSettings />);
-    const selected = await screen.findByRole('radio', { name: 'Push and email' });
-    const ring = selected.lastElementChild as Element;
-    expect(getComputedStyle(ring).borderTopColor).toBe('rgb(196, 95, 59)');
-    expect(getComputedStyle(ring.firstElementChild as Element).backgroundColor).toBe(
-      'rgb(196, 95, 59)',
-    );
-  });
-
-  it('shows each channel with its subtitle', async () => {
-    render(<NotificationSettings />);
-    expect(await screen.findByText('Everything, both ways')).toBeTruthy();
-    expect(screen.getByText('Alerts on this phone')).toBeTruthy();
-    expect(screen.getByText('Nothing on your phone')).toBeTruthy();
+    await screen.findByText('Pause notifications overnight');
+    expect(screen.queryByText(/Push and email|Push only|Email only/)).toBeNull();
+    expect(screen.queryByText('Alerts on this phone')).toBeNull();
+    expect(screen.queryByRole('radio')).toBeNull();
   });
 
   it('shows From and Until tiles while quiet hours are on, and hides them when off', async () => {
@@ -141,28 +107,27 @@ describe('notifications screen', () => {
 
   it('shows the save bar only once something changes, and Discard puts it back', async () => {
     render(<NotificationSettings />);
-    await screen.findByText('Push and email');
+    await screen.findByText('Pause notifications overnight');
     expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull();
 
-    fireEvent.click(screen.getByRole('radio', { name: 'Push only' }));
+    fireEvent.click(screen.getByRole('switch', { name: 'Mute need a fourth alerts' }));
     expect(screen.getByRole('button', { name: 'Save changes' })).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
     expect(screen.queryByRole('button', { name: 'Save changes' })).toBeNull();
-    expect(screen.getByRole('radio', { name: 'Push and email' }).getAttribute('aria-selected')).toBe('true');
     expect(updatePreferences).not.toHaveBeenCalled();
   });
 
   it('saves the change, hides the bar and says Saved', async () => {
     render(<NotificationSettings />);
-    await screen.findByText('Push and email');
-    fireEvent.click(screen.getByRole('radio', { name: 'Email only' }));
+    await screen.findByText('Pause notifications overnight');
+    fireEvent.click(screen.getByRole('switch', { name: 'Mute need a fourth alerts' }));
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
 
     await waitFor(() =>
       expect(updatePreferences).toHaveBeenCalledWith(
         'test-user',
-        expect.objectContaining({ notify_channel: 'email' }),
+        expect.objectContaining({ mute_need_a_fourth: true, notify_channel: 'both' }),
       ),
     );
     expect(await screen.findByText('Saved')).toBeTruthy();
@@ -172,8 +137,8 @@ describe('notifications screen', () => {
   it('keeps the bar and shows the error when a save fails', async () => {
     vi.mocked(updatePreferences).mockResolvedValueOnce({ error: 'Quiet hours need both a start and an end.' });
     render(<NotificationSettings />);
-    await screen.findByText('Push and email');
-    fireEvent.click(screen.getByRole('radio', { name: 'Email only' }));
+    await screen.findByText('Pause notifications overnight');
+    fireEvent.click(screen.getByRole('switch', { name: 'Mute need a fourth alerts' }));
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
 
     expect(await screen.findByText('Quiet hours need both a start and an end.')).toBeTruthy();

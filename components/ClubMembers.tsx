@@ -16,6 +16,7 @@ import Tag from './Tag';
 import TextField from './TextField';
 import TipCard, { TipText } from './TipCard';
 import MemberRow from './hub/MemberRow';
+import { usePersonActions } from './moderation/usePersonActions';
 import { SearchIcon, SendIcon, TrashIcon, UserPlusIcon } from './icons';
 import {
   canInvite,
@@ -29,7 +30,7 @@ import type { Club, ClubInvite, ClubMember, ClubRole } from '../lib/clubs';
 import { isValidEmail } from '../lib/auth';
 import { GENERIC_ERROR } from '../lib/constants';
 import { addFriend, fetchFriends } from '../lib/friends';
-import { filterMembers, orderMembers } from '../lib/members';
+import { filterMembers, memberName, orderMembers } from '../lib/members';
 import { createGroupThread } from '../lib/messages';
 import { useSession } from '../lib/session';
 import { useGuides } from '../lib/use-guides';
@@ -110,6 +111,7 @@ const ClubMembers = forwardRef<ClubMembersHandle, Props>(function ClubMembers(
   // deleting one invite has no bearing on any other row.
   const [deletingInviteId, setDeletingInviteId] = useState<string | null>(null);
   const loadingRef = useRef(false);
+  const personActions = usePersonActions();
 
   const load = useCallback(async () => {
     if (!club.id || loadingRef.current) return;
@@ -267,6 +269,7 @@ const ClubMembers = forwardRef<ClubMembersHandle, Props>(function ClubMembers(
 
   return (
     <View style={styles.root}>
+      {personActions.sheets}
       {importedCount !== null && importedCount !== undefined && importedCount > 0 ? (
         <Card>
           <Text style={styles.confirmation}>
@@ -365,6 +368,9 @@ const ClubMembers = forwardRef<ClubMembersHandle, Props>(function ClubMembers(
               onAddFriend={() => onAddFriend(member)}
               messaging={messagingId === member.profile_id}
               adding={addingIds.has(member.profile_id)}
+              onMore={() =>
+                personActions.open({ id: member.profile_id, name: memberName(member) })
+              }
             />
             {friendError?.id === member.profile_id ? (
               <Text style={styles.rowError} accessibilityRole="alert">

@@ -140,6 +140,14 @@ describe('roundTotals', () => {
     ]);
   });
 
+  it('skips rounds whose winner has since deleted their account', () => {
+    const rounds = [
+      round({ id: 'r1', winner_profile_id: null, points: 8 }),
+      round({ id: 'r2', winner_profile_id: 'p2', points: 5 }),
+    ];
+    expect(roundTotals(rounds)).toEqual([{ profileId: 'p2', points: 5 }]);
+  });
+
   it('returns an empty array for an empty log', () => {
     expect(roundTotals([])).toEqual([]);
   });

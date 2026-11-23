@@ -71,6 +71,24 @@ vi.mock('../../lib/messages', async () => {
 // resolves them in one batched call, rather than leaving each MessageBubble
 // to ask for its own (see AttachmentGrid's `urls` prop docstring). Most
 // tests below carry no attachments at all, so this never fires for them.
+const blockUser = vi.fn();
+vi.mock('../../lib/moderation', async () => {
+  const actual =
+    await vi.importActual<typeof import('../../lib/moderation')>('../../lib/moderation');
+  return { ...actual, blockUser: (...a: unknown[]) => blockUser(...a) };
+});
+
+/** react-native-web's timer-driven long press -- see thread.test.tsx. */
+function longPress(el: HTMLElement) {
+  vi.useFakeTimers();
+  act(() => {
+    fireEvent.mouseDown(el);
+    vi.advanceTimersByTime(600);
+  });
+  fireEvent.mouseUp(el);
+  vi.useRealTimers();
+}
+
 const getSignedUrls = vi.fn();
 vi.mock('../../lib/attachments', () => ({
   pickImages: vi.fn(),
@@ -128,6 +146,33 @@ describe('a club post', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('blocking a reply author refetches the post', async () => {
+    blockUser.mockResolvedValue({ error: null });
+    fetchPostMessages.mockResolvedValue([root, reply]);
+    render(<PostScreen />);
+    longPress(await screen.findByTestId('bubble-m1'));
+    fireEvent.click(
+      within(screen.getByTestId('action-sheet')).getByRole('button', { name: 'Block Sara Lindqvist' }),
+    );
+    fetchPostMessages.mockResolvedValue([root]);
+    fireEvent.click(within(screen.getByTestId('confirm-sheet')).getByRole('button', { name: 'Block' }));
+    await waitFor(() => expect(blockUser).toHaveBeenCalledWith('other'));
+    await waitFor(() => expect(screen.queryByText('We are one short for Tuesday.')).toBeNull());
+    expect(back).not.toHaveBeenCalled();
+  });
+
+  it("blocking the post's own author goes back to the board", async () => {
+    blockUser.mockResolvedValue({ error: null });
+    render(<PostScreen />);
+    longPress(await screen.findByTestId('bubble-p1'));
+    fireEvent.click(
+      within(screen.getByTestId('action-sheet')).getByRole('button', { name: 'Block Alice Chen' }),
+    );
+    fireEvent.click(within(screen.getByTestId('confirm-sheet')).getByRole('button', { name: 'Block' }));
+    await waitFor(() => expect(blockUser).toHaveBeenCalledWith('a1'));
+    await waitFor(() => expect(back.mock.calls.length + replace.mock.calls.length).toBeGreaterThan(0));
   });
 
   it('renders the root and its replies', async () => {

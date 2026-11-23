@@ -73,6 +73,21 @@ describe('TableCard', () => {
     expect(screen.getByText('Ravi K. booked this for you')).toBeTruthy();
   });
 
+  it('names a booker who has since deleted their account "Former member"', () => {
+    render(
+      <TableCard
+        table={table}
+        occupants={[
+          { ...occupants[0], profile_id: 'p9', display_name: 'You',
+            booked_by: null, booked_by_name: null },
+        ]}
+        youId="p9"
+        onTakeSeat={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('Former member booked this for you')).toBeTruthy();
+  });
+
   it('calls for a fourth when it is one short and close', () => {
     render(
       <TableCard

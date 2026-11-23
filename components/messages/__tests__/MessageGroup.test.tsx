@@ -94,6 +94,27 @@ describe('MessageGroup', () => {
     expect(onReply).toHaveBeenCalledWith(first);
   });
 
+  it('opens the action sheet on long press when given onActions, with an accessible twin', () => {
+    const onReply = vi.fn();
+    const onActions = vi.fn();
+    const first = message();
+    render(
+      <MessageGroup messages={[first]} mine={false} authorName="Alice Chen" onReply={onReply} onActions={onActions} />,
+    );
+    const bubble = screen.getByTestId('bubble-m1');
+    vi.useFakeTimers();
+    act(() => {
+      fireEvent.mouseDown(bubble);
+      vi.advanceTimersByTime(600);
+    });
+    fireEvent.mouseUp(bubble);
+    vi.useRealTimers();
+    expect(onActions).toHaveBeenCalledWith(first);
+    expect(onReply).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByLabelText('More options for Alice Chen'));
+    expect(onActions).toHaveBeenCalledTimes(2);
+  });
+
   it('renders the quoted stub for a reply, on either side', () => {
     const quoted = message({
       reply_to_id: 'm0',

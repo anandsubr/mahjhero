@@ -64,6 +64,12 @@ vi.mock('../../lib/club-media', async (importOriginal) => {
   };
 });
 
+const reportContent = vi.fn();
+vi.mock('../../lib/moderation', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/moderation')>();
+  return { ...actual, reportContent: (...a: unknown[]) => reportContent(...a) };
+});
+
 const pickImages = vi.fn();
 vi.mock('../../lib/attachments', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../lib/attachments')>();
@@ -341,18 +347,68 @@ describe('club hub Photos & Files section', () => {
   });
 
   describe('Remove', () => {
-    it('a non-uploader member sees no Remove in the viewer or on a file', async () => {
+    it('a non-uploader member sees no Remove in the viewer or on a file, only Report', async () => {
       fetchClubMedia.mockResolvedValueOnce([media(1)]);
       renderSection('member');
       fireEvent.click(await screen.findByRole('button', { name: 'Open photo 1 of 1' }));
       expect(await screen.findByText('Added by Priya Shah · Tue 29 Sept')).toBeTruthy();
       expect(screen.queryByRole('button', { name: 'Remove' })).toBeNull();
+      expect(screen.getByRole('button', { name: 'Report' })).toBeTruthy();
       fireEvent.click(screen.getByRole('button', { name: 'Close image viewer' }));
 
       fetchClubMedia.mockResolvedValueOnce([media(2, { kind: 'file' })]);
       fireEvent.click(screen.getByRole('tab', { name: 'Files' }));
       await screen.findByText('doc2.pdf');
-      expect(screen.queryByRole('button', { name: 'More options' })).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: 'More options' }));
+      expect(screen.queryByRole('button', { name: 'Remove' })).toBeNull();
+      expect(screen.getByRole('button', { name: 'Report' })).toBeTruthy();
+    });
+
+    it("reports someone else's photo from the viewer and someone else's file from its menu", async () => {
+      reportContent.mockResolvedValue({ data: 'r1', error: null });
+      fetchClubMedia.mockResolvedValueOnce([media(1)]);
+      renderSection('member');
+      fireEvent.click(await screen.findByRole('button', { name: 'Open photo 1 of 1' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Report' }));
+      fireEvent.click(screen.getByRole('radio', { name: 'Inappropriate content' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Submit' }));
+      expect(await screen.findByText("Thanks. We'll review this within 24 hours.")).toBeTruthy();
+      expect(reportContent).toHaveBeenCalledWith({
+        kind: 'club_media',
+        targetId: 'm1',
+        reason: 'inappropriate',
+        details: '',
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Close image viewer' }));
+
+      fetchClubMedia.mockResolvedValueOnce([media(2, { kind: 'file' })]);
+      fireEvent.click(screen.getByRole('tab', { name: 'Files' }));
+      await screen.findByText('doc2.pdf');
+      fireEvent.click(screen.getByRole('button', { name: 'More options' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Report' }));
+      fireEvent.click(screen.getByRole('radio', { name: 'Spam' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Submit' }));
+      await waitFor(() =>
+        expect(reportContent).toHaveBeenLastCalledWith(
+          expect.objectContaining({ kind: 'club_media', targetId: 'm2', reason: 'spam' }),
+        ),
+      );
+    });
+
+    it('the uploader is not offered Report on their own photo or file', async () => {
+      fetchClubMedia.mockResolvedValueOnce([media(1, { uploadedBy: 'me' })]);
+      renderSection('member');
+      fireEvent.click(await screen.findByRole('button', { name: 'Open photo 1 of 1' }));
+      expect(await screen.findByRole('button', { name: 'Remove' })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Report' })).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: 'Close image viewer' }));
+
+      fetchClubMedia.mockResolvedValueOnce([media(2, { kind: 'file', uploadedBy: 'me' })]);
+      fireEvent.click(screen.getByRole('tab', { name: 'Files' }));
+      await screen.findByText('doc2.pdf');
+      fireEvent.click(screen.getByRole('button', { name: 'More options' }));
+      expect(screen.queryByRole('button', { name: 'Report' })).toBeNull();
     });
 
     it('the uploader removes their photo after confirming', async () => {

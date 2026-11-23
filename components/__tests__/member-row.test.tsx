@@ -49,6 +49,27 @@ function rgb(hex: string): string {
 }
 
 describe('MemberRow', () => {
+  it('offers More options when given onMore, never on your own row', () => {
+    const onMore = vi.fn();
+    const { unmount } = render(
+      <MemberRow
+        member={PRIYA}
+        isSelf={false}
+        isFriend={false}
+        onMessage={vi.fn()}
+        onAddFriend={vi.fn()}
+        messaging={false}
+        adding={false}
+        onMore={onMore}
+      />,
+    );
+    fireEvent.click(screen.getByLabelText('More options for Priya Shah'));
+    expect(onMore).toHaveBeenCalled();
+    unmount();
+    renderRow({ isSelf: true, onMore });
+    expect(screen.queryByLabelText('More options for Priya Shah')).toBeNull();
+  });
+
   // Linen & Jade: a soft tint with a deep initial, not white on a dark fill.
   it('draws the avatar in the person\'s own soft pair', () => {
     renderRow();

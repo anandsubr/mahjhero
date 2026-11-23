@@ -3,6 +3,14 @@ import type { SkillLevel } from './profile';
 
 const BLANK_NAME_LABEL = 'Member';
 
+/** Who an actor column names once its person has deleted their account. */
+export const FORMER_MEMBER = 'Former member';
+
+/** An actor's name (booked_by_name, a round's winner, ...), or "Former member" when it is gone. */
+export function actorName(name: string | null | undefined): string {
+  return name ?? FORMER_MEMBER;
+}
+
 const SKILL_LABELS: Record<SkillLevel, string> = {
   beginner: 'Beginner',
   intermediate: 'Intermediate',

@@ -3,12 +3,12 @@
     "name": "MahjHero",
     "slug": "mahjhero",
     "scheme": "mahjhero",
-    "version": "0.2.3",
+    "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "icon": "./assets/icon.png",
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
       "bundleIdentifier": "app.mahjhero.client",
       "usesAppleSignIn": true,
       "infoPlist": {

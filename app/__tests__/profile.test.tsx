@@ -3,6 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ProfileScreen from '../profile';
 
+const openLegal = vi.hoisted(() => vi.fn());
+vi.mock('../../lib/legal', () => ({ openLegal }));
+
 const { push, replace, back, canGoBack } = vi.hoisted(() => ({
   push: vi.fn(),
   replace: vi.fn(),
@@ -279,6 +282,7 @@ describe('profile screen', () => {
   it.each([
     ['Notifications', '/notifications'],
     ['Friends', '/friends'],
+    ['Blocked people', '/blocked'],
     ['How it works', '/how-it-works'],
   ])('the %s row opens %s', async (title, href) => {
     fetchProfile.mockResolvedValueOnce({
@@ -319,6 +323,27 @@ describe('profile screen', () => {
     render(<ProfileScreen />);
     fireEvent.click(await screen.findByRole('button', { name: 'Greetings' }));
     expect(push).toHaveBeenCalledWith('/admin/greetings');
+  });
+
+  it('shows a Reports admin row for an admin only', async () => {
+    fetchProfile.mockResolvedValue({
+      id: 'you',
+      display_name: 'Anand',
+      skill_level: null,
+      avatar_url: null,
+      timezone: 'America/New_York',
+      is_admin: true,
+    });
+    render(<ProfileScreen />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Reports' }));
+    expect(push).toHaveBeenCalledWith('/admin/reports');
+  });
+
+  it('hides the Reports row from an ordinary member', async () => {
+    fetchProfile.mockResolvedValue(MEMBER);
+    render(<ProfileScreen />);
+    await screen.findByText('Friends');
+    expect(screen.queryByText('Reports')).toBeNull();
   });
 
   describe('Reset calendar link', () => {
@@ -381,5 +406,33 @@ describe('profile screen', () => {
       await waitFor(() => expect(row.getAttribute('aria-busy')).toBe('false'));
       expect(screen.queryByTestId('settings-row-spinner')).toBeNull();
     });
+  });
+
+  it('offers Delete account above Sign out, leading to the delete screen', async () => {
+    fetchProfile.mockResolvedValueOnce({ ...MEMBER, id: 'test-user', display_name: 'Anand' });
+    render(<ProfileScreen />);
+    const del = await screen.findByRole('button', { name: 'Delete account' });
+    const out = screen.getByRole('button', { name: 'Sign out' });
+    expect(del.compareDocumentPosition(out) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.click(del);
+    expect(push).toHaveBeenCalledWith('/delete-account');
+  });
+
+  it('has a Legal group whose rows open the privacy policy and terms', async () => {
+    fetchProfile.mockResolvedValue(MEMBER);
+    render(<ProfileScreen />);
+    expect(await screen.findByText('Legal')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Privacy policy' }));
+    expect(openLegal).toHaveBeenCalledWith('privacy');
+    fireEvent.click(screen.getByRole('button', { name: 'Terms' }));
+    expect(openLegal).toHaveBeenCalledWith('terms');
+  });
+
+  it('describes Notifications without mentioning push', async () => {
+    fetchProfile.mockResolvedValue(MEMBER);
+    render(<ProfileScreen />);
+    await screen.findByText('Legal');
+    expect(screen.getByText('Email alerts and quiet hours')).toBeTruthy();
+    expect(screen.queryByText(/push/i)).toBeNull();
   });
 });

@@ -5,9 +5,11 @@ import { supabase } from './supabase';
 export type TableRound = {
   id: string;
   event_table_id: string;
-  winner_profile_id: string;
+  /** Null once the winner has deleted their account. */
+  winner_profile_id: string | null;
   points: number;
-  recorded_by: string;
+  /** Null once the recorder has deleted their account. */
+  recorded_by: string | null;
   created_at: string;
 };
 
@@ -95,6 +97,9 @@ export function roundTotals(
   const order: string[] = [];
   const totals = new Map<string, number>();
   for (const r of rounds) {
+    // A winner who has since deleted their account is no longer seated, so
+    // there is no row to put their total on.
+    if (r.winner_profile_id === null) continue;
     if (!totals.has(r.winner_profile_id)) {
       order.push(r.winner_profile_id);
       totals.set(r.winner_profile_id, 0);

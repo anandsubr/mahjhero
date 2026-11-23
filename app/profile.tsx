@@ -11,14 +11,18 @@ import {
   BellIcon,
   CalendarIcon,
   CheckIcon,
+  ClipboardListIcon,
   ChevronRightIcon,
   CircleHelpIcon,
+  LockIcon,
   LogOutIcon,
   MessageCircleIcon,
   PeopleIcon,
+  UserMinusIcon,
 } from '../components/icons';
 import { resetCalendarFeed } from '../lib/calendar-feed';
 import { GENERIC_ERROR } from '../lib/constants';
+import { openLegal } from '../lib/legal';
 import { goBack } from '../lib/navigation';
 import { fetchProfile, isCompleteProfile, updateProfile } from '../lib/profile';
 import type { SkillLevel } from '../lib/profile';
@@ -307,7 +311,7 @@ export default function ProfileScreen() {
           <SettingsRow
             icon={<BellIcon size={18} color={colors.accent[700]} />}
             title="Notifications"
-            subtitle="Push and email, plus quiet hours"
+            subtitle="Email alerts and quiet hours"
             onPress={() => router.push('/notifications')}
           />
           <SettingsRow
@@ -315,6 +319,12 @@ export default function ProfileScreen() {
             title="Friends"
             subtitle="The people you can hold seats with"
             onPress={() => router.push('/friends')}
+          />
+          <SettingsRow
+            icon={<UserMinusIcon size={18} color={colors.accent[700]} />}
+            title="Blocked people"
+            subtitle="People whose messages, posts and photos you don't see"
+            onPress={() => router.push('/blocked')}
           />
           <SettingsRow
             icon={<CircleHelpIcon size={18} color={colors.accent[700]} />}
@@ -342,12 +352,49 @@ export default function ProfileScreen() {
               onPress={() => router.push('/admin/greetings')}
             />
           ) : null}
+          {isAdmin ? (
+            <SettingsRow
+              icon={<ClipboardListIcon size={18} color={colors.accent[700]} />}
+              title="Reports"
+              subtitle="Review reported content"
+              onPress={() => router.push('/admin/reports')}
+            />
+          ) : null}
         </FormCard>
         {resetNotice ? (
           <NoticeBanner message={resetNotice} onDismiss={() => setResetNotice(null)} />
         ) : null}
         {resetError ? <ErrorBanner message={resetError} /> : null}
       </FormSection>
+
+      <FormSection label="Legal">
+        <FormCard>
+          <SettingsRow
+            icon={<LockIcon size={18} color={colors.accent[700]} />}
+            title="Privacy policy"
+            subtitle="How we handle your data"
+            onPress={() => void openLegal('privacy')}
+          />
+          <SettingsRow
+            icon={<ClipboardListIcon size={18} color={colors.accent[700]} />}
+            title="Terms"
+            subtitle="The rules for using MahjHero"
+            onPress={() => void openLegal('terms')}
+          />
+        </FormCard>
+      </FormSection>
+
+      <Pressable
+        onPress={() => router.push('/delete-account')}
+        accessibilityRole="button"
+        accessibilityLabel="Delete account"
+        style={({ pressed, hovered }: { pressed: boolean; hovered?: boolean }) => [
+          styles.deleteAccount,
+          (pressed || hovered) && styles.deleteAccountActive,
+        ]}
+      >
+        <Text style={styles.deleteAccountText}>Delete account</Text>
+      </Pressable>
 
       <Pressable
         onPress={onSignOut}
@@ -591,6 +638,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
   },
+  deleteAccount: {
+    minHeight: 44,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteAccountActive: { backgroundColor: colors.accent[100] },
+  deleteAccountText: { fontFamily: type.bodyBold, fontSize: 15, color: colors.accent[800] },
   signOutActive: { backgroundColor: colors.accent[100] },
   signOutText: { fontFamily: type.bodyBold, fontSize: 15, color: colors.accent[700] },
 });

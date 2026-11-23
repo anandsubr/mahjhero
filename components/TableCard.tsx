@@ -5,6 +5,7 @@ import RoundLog, { type DisplayRound } from './RoundLog';
 import SeatGrid from './SeatGrid';
 import Tag from './Tag';
 import type { SeatOccupant, SkillTier } from '../lib/bookings';
+import { actorName } from '../lib/members';
 import { roundTotals } from '../lib/rounds';
 import { colors, type } from '../lib/theme';
 
@@ -199,7 +200,7 @@ export default function TableCard({
 
       {bookedForYou ? (
         <Text style={styles.help}>
-          {bookedForYou.booked_by_name} booked this for you
+          {actorName(bookedForYou.booked_by_name)} booked this for you
         </Text>
       ) : null}
 

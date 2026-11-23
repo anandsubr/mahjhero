@@ -352,16 +352,6 @@ export function LogOutIcon({ size = 18, color = colors.text }: { size?: number; 
   );
 }
 
-/** Notifications (app/notifications.tsx): the "Push only" channel. */
-export function SmartphoneIcon({ size = 18, color = colors.text }: { size?: number; color?: string }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.75} strokeLinecap="round" strokeLinejoin="round">
-      <Rect x={5} y={2} width={14} height={20} rx={2} />
-      <Path d="M12 18h.01" />
-    </Svg>
-  );
-}
-
 /** Notifications (app/notifications.tsx): quiet hours. */
 export function MoonIcon({ size = 18, color = colors.text }: { size?: number; color?: string }) {
   return (

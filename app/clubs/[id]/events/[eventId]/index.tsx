@@ -85,6 +85,7 @@ import {
   type EventTable,
 } from '../../../../../lib/events';
 import { gameHeadline } from '../../../../../lib/home';
+import { actorName } from '../../../../../lib/members';
 import { openThreadForEvent } from '../../../../../lib/messages';
 import {
   deleteRound,
@@ -1111,7 +1112,7 @@ export default function EventScreen() {
       {myInvite && canBook ? (
         <Card>
           <Text style={styles.inviteBanner}>
-            {`${myInvite.booked_by_name} invited you to this game${
+            {`${actorName(myInvite.booked_by_name)} invited you to this game${
               myInvite.event_table_id
                 ? ` — ${tables.find((t) => t.id === myInvite.event_table_id)?.label ?? 'a table'}`
                 : myInvite.invite_holds_seat === false
@@ -1273,9 +1274,12 @@ export default function EventScreen() {
                     .map((r) => ({
                       id: r.id,
                       winner_profile_id: r.winner_profile_id,
-                      winner_name:
-                        roster.find((m) => m.profile_id === r.winner_profile_id)
-                          ?.display_name ?? 'Unknown',
+                      winner_name: actorName(
+                        r.winner_profile_id === null
+                          ? null
+                          : roster.find((m) => m.profile_id === r.winner_profile_id)
+                              ?.display_name,
+                      ),
                       points: r.points,
                     }));
                   const iAmSeatedHere = seating.some(

@@ -360,6 +360,7 @@ export default function ThreadScreen() {
               viewerId={viewerId}
               onReply={setReplyTo}
               attachmentUrls={attachmentUrls}
+              onBlocked={() => void load()}
             />
           </ScrollView>
 

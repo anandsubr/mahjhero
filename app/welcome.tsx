@@ -1,9 +1,11 @@
-import { Redirect, useRouter } from 'expo-router';
+import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Text } from '../components/Text';
 import Svg, { Circle, Path } from 'react-native-svg';
 import Button from '../components/Button';
 import Card from '../components/Card';
+import NoticeBanner from '../components/NoticeBanner';
 import Screen from '../components/Screen';
 import Tag from '../components/Tag';
 import { useSession } from '../lib/session';
@@ -76,6 +78,8 @@ function TileHero() {
 export default function Welcome() {
   const { session, loading } = useSession();
   const router = useRouter();
+  const { deleted } = useLocalSearchParams<{ deleted?: string }>();
+  const [noticeDismissed, setNoticeDismissed] = useState(false);
 
   // The same guard app/sign-in.tsx carries, for the same reason:
   // app/index.tsx has already unmounted by the time anyone is standing here,
@@ -88,6 +92,12 @@ export default function Welcome() {
 
   return (
     <Screen scroll contentStyle={styles.content}>
+      {deleted === '1' && !noticeDismissed ? (
+        <NoticeBanner
+          message="Your account was deleted."
+          onDismiss={() => setNoticeDismissed(true)}
+        />
+      ) : null}
       <TileHero />
 
       <View>

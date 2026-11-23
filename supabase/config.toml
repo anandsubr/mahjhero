@@ -188,7 +188,7 @@ enable_anonymous_sign_ins = false
 # Allow/disallow testing manual linking of accounts
 enable_manual_linking = false
 # Passwords shorter than this value will be rejected as weak. Minimum 6, recommended 8 or more.
-minimum_password_length = 6
+minimum_password_length = 12
 # Passwords that do not meet the following requirements will be rejected as weak. Supported values
 # are: `letters_digits`, `lower_upper_letters_digits`, `lower_upper_letters_digits_symbols`
 password_requirements = ""
@@ -237,7 +237,8 @@ double_confirm_changes = true
 # assumes every session's auth.users.email is a confirmed, owned address.
 enable_confirmations = true
 # If enabled, users will need to reauthenticate or have logged in recently to change their password.
-secure_password_change = false
+# On: only the App Review account uses a password, so nobody should be able to add one from a borrowed session.
+secure_password_change = true
 # Controls the minimum amount of time that must pass before sending another signup confirmation or password reset email.
 max_frequency = "1s"
 # Number of characters used in the email OTP.
@@ -438,6 +439,16 @@ verify_jwt = false
 [functions.send-club-invite]
 verify_jwt = true
 
+# Account deletion (App Store 5.1.1(v)). The gateway verifies the JWT and the
+# handler re-verifies it via auth.getUser(); it deletes only that user.
+[functions.delete-account]
+verify_jwt = true
+
+# Emails ADMIN_EMAIL about a new content report. The handler re-verifies the
+# caller via auth.getUser() and only acts on reports they filed.
+[functions.notify-report]
+verify_jwt = true
+
 # Calendar apps fetch this with no Supabase session (they can't sign in);
 # the per-member token in the query string is the only key.
 [functions.calendar-feed]
@@ -504,11 +515,16 @@ skip_nonce_check = false
 
 [remotes.prod.auth.external.apple]
 enabled = true
-client_id = "app.mahjhero.client.signin"
+# Services ID for web sign-in, then the bundle id for native iOS identity tokens.
+client_id = "app.mahjhero.client.signin,app.mahjhero.client"
 secret = "env(PROD_APPLE_SECRET)"
 
 # Hosted defaults for the smallest compute size. The local values above
 # (20/100) would otherwise be pushed and lower the client limit.
+# Matches the hosted project (SMS sign-in is not enabled, so this is inert).
+[remotes.prod.auth.sms]
+enable_confirmations = true
+
 [remotes.prod.db.pooler]
 default_pool_size = 15
 max_client_conn = 200

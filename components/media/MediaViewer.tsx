@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Image, Modal, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { Text } from '../Text';
 import { ConfirmSheet } from '../GameForm';
+import ReportSheet from '../moderation/ReportSheet';
 import { ChevronLeftIcon, ChevronRightIcon, XIcon } from '../icons';
 import type { ClubMedia } from '../../lib/club-media';
 import { MONTHS } from '../../lib/home';
@@ -16,11 +17,14 @@ export function mediaCaption(m: Pick<ClubMedia, 'uploaderName' | 'createdAt'>): 
 }
 
 type Props = {
-  items: { url: string | null; caption: string }[];
+  /** `id` is the club_media id, needed only to report it. */
+  items: { url: string | null; caption: string; id?: string }[];
   startIndex: number;
   onClose: () => void;
   canRemove: (index: number) => boolean;
   onRemove: (index: number) => void;
+  /** Someone else's photo: offers Report. */
+  canReport?: (index: number) => boolean;
   /** Shown in the footer, e.g. a failed Remove; the parent clears it. */
   error?: string | null;
   /** Called when the user moves to the previous or next photo. */
@@ -34,11 +38,13 @@ export default function MediaViewer({
   onClose,
   canRemove,
   onRemove,
+  canReport = () => false,
   error = null,
   onNavigate,
 }: Props) {
   const [index, setIndex] = useState(startIndex);
   const [confirming, setConfirming] = useState(false);
+  const [reporting, setReporting] = useState<string | null>(null);
   const { width, height } = useWindowDimensions();
   const safeIndex = Math.min(index, items.length - 1);
   const current = items[safeIndex];
@@ -99,6 +105,16 @@ export default function MediaViewer({
             ) : null}
             <Text style={styles.caption}>{current.caption}</Text>
           </View>
+          {canReport(safeIndex) && current.id && !reporting ? (
+            <Pressable
+              onPress={() => setReporting(current.id ?? null)}
+              accessibilityRole="button"
+              accessibilityLabel="Report"
+              style={styles.remove}
+            >
+              <Text style={styles.removeText}>Report</Text>
+            </Pressable>
+          ) : null}
           {canRemove(safeIndex) && !confirming ? (
             <Pressable
               onPress={() => setConfirming(true)}
@@ -121,6 +137,14 @@ export default function MediaViewer({
             onRemove(safeIndex);
           }}
           onCancel={() => setConfirming(false)}
+        />
+      ) : null}
+      {reporting ? (
+        <ReportSheet
+          kind="club_media"
+          targetId={reporting}
+          title="Report this photo"
+          onClose={() => setReporting(null)}
         />
       ) : null}
     </Modal>

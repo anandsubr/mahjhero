@@ -6,7 +6,8 @@ import { colors, radius, type } from '../lib/theme';
 
 export type DisplayRound = {
   id: string;
-  winner_profile_id: string;
+  /** Null once the winner has deleted their account. */
+  winner_profile_id: string | null;
   winner_name: string;
   points: number;
 };
@@ -53,7 +54,7 @@ export default function RoundLog({
           const initial = round.winner_name.trim().charAt(0).toUpperCase() || '?';
           // The winner's own soft pair -- the same tint as their seat tile
           // above, and as them on every other screen.
-          const pair = avatarColorsFor(round.winner_profile_id);
+          const pair = avatarColorsFor(round.winner_profile_id ?? round.id);
           return (
             <View
               key={round.id}
