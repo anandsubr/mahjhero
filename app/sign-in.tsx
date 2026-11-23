@@ -286,7 +286,7 @@ export default function SignIn() {
       <Text style={styles.heading}>Sign in to MahjHero</Text>
       <Text style={styles.body}>
         {usePassword
-          ? 'Enter your email address and password.'
+          ? 'Sign in with your email address and password.'
           : "No password to remember. We'll email you a one-time code that signs you straight in."}
       </Text>
       <TextField
