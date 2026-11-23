@@ -11,6 +11,7 @@ import {
   BellIcon,
   CalendarIcon,
   CheckIcon,
+  ClipboardListIcon,
   ChevronRightIcon,
   CircleHelpIcon,
   LogOutIcon,
@@ -347,6 +348,14 @@ export default function ProfileScreen() {
               title="Greetings"
               subtitle="Daily greeting. Not shown in the app right now"
               onPress={() => router.push('/admin/greetings')}
+            />
+          ) : null}
+          {isAdmin ? (
+            <SettingsRow
+              icon={<ClipboardListIcon size={18} color={colors.accent[700]} />}
+              title="Reports"
+              subtitle="Review reported content"
+              onPress={() => router.push('/admin/reports')}
             />
           ) : null}
         </FormCard>

@@ -123,3 +123,96 @@ export async function fetchMyBlocks(): Promise<{
     return { error: GENERIC_ERROR };
   }
 }
+
+export const ADMIN_ONLY_ERROR = 'Only admins can see reports.';
+export const REPORT_EXCERPT_MAX = 300;
+
+export type AdminReport = {
+  id: string;
+  kind: ReportKind;
+  reason: ReportReason;
+  details: string | null;
+  createdAt: string;
+  reporterName: string;
+  reportedName: string;
+  /** Message body, or the file/photo name; null once the content is gone. */
+  excerpt: string | null;
+  mediaKind: 'photo' | 'file' | null;
+  clubName: string | null;
+};
+
+type ReportRow = {
+  id: string;
+  kind: ReportKind;
+  reason: ReportReason;
+  details: string | null;
+  created_at: string;
+  reporter_name: string | null;
+  reported_name: string | null;
+  message_id: string | null;
+  message_body: string | null;
+  media_id: string | null;
+  media_kind: 'photo' | 'file' | null;
+  media_name: string | null;
+  club_name: string | null;
+};
+
+function clip(text: string): string {
+  return text.length > REPORT_EXCERPT_MAX ? `${text.slice(0, REPORT_EXCERPT_MAX).trimEnd()}…` : text;
+}
+
+function mapReport(r: ReportRow): AdminReport {
+  let excerpt: string | null = null;
+  if (r.kind === 'message' && r.message_id) excerpt = clip(r.message_body ?? '');
+  else if (r.kind === 'club_media' && r.media_id) excerpt = clip(r.media_name ?? '');
+  return {
+    id: r.id,
+    kind: r.kind,
+    reason: r.reason,
+    details: r.details,
+    createdAt: r.created_at,
+    reporterName: r.reporter_name?.trim() || 'Former member',
+    reportedName: r.reported_name?.trim() || 'Former member',
+    excerpt,
+    mediaKind: r.media_kind,
+    clubName: r.club_name,
+  };
+}
+
+/** Open reports, newest first. Admin only: anyone else gets ADMIN_ONLY_ERROR. */
+export async function fetchReports(): Promise<{ data?: AdminReport[]; error: string | null }> {
+  try {
+    const { data, error } = await supabase.rpc('fetch_reports', { p_status: 'open' });
+    if (error) {
+      if (error.code === '42501') return { error: ADMIN_ONLY_ERROR };
+      console.error('fetchReports failed', error);
+      return { error: GENERIC_ERROR };
+    }
+    return { data: ((data ?? []) as ReportRow[]).map(mapReport), error: null };
+  } catch (cause) {
+    console.error('fetchReports failed', cause);
+    return { error: GENERIC_ERROR };
+  }
+}
+
+/**
+ * Removes the reported content or dismisses the report. The storage paths
+ * resolve_report returns are ignored: an admin cannot delete the objects.
+ */
+export async function resolveReport(
+  id: string,
+  action: 'remove' | 'dismiss',
+): Promise<{ error: string | null }> {
+  try {
+    const { error } = await supabase.rpc('resolve_report', { p_report: id, p_action: action });
+    if (error) {
+      if (error.code === '42501') return { error: ADMIN_ONLY_ERROR };
+      console.error('resolveReport failed', error);
+      return { error: GENERIC_ERROR };
+    }
+    return { error: null };
+  } catch (cause) {
+    console.error('resolveReport failed', cause);
+    return { error: GENERIC_ERROR };
+  }
+}

@@ -322,6 +322,27 @@ describe('profile screen', () => {
     expect(push).toHaveBeenCalledWith('/admin/greetings');
   });
 
+  it('shows a Reports admin row for an admin only', async () => {
+    fetchProfile.mockResolvedValue({
+      id: 'you',
+      display_name: 'Anand',
+      skill_level: null,
+      avatar_url: null,
+      timezone: 'America/New_York',
+      is_admin: true,
+    });
+    render(<ProfileScreen />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Reports' }));
+    expect(push).toHaveBeenCalledWith('/admin/reports');
+  });
+
+  it('hides the Reports row from an ordinary member', async () => {
+    fetchProfile.mockResolvedValue(MEMBER);
+    render(<ProfileScreen />);
+    await screen.findByText('Friends');
+    expect(screen.queryByText('Reports')).toBeNull();
+  });
+
   describe('Reset calendar link', () => {
     it('explains the row, and asks before resetting', async () => {
       fetchProfile.mockResolvedValue(MEMBER);
