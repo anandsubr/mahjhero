@@ -3,7 +3,7 @@ begin;
 -- search_path. Every test file needs this line or plan() will not resolve.
 set local search_path to extensions, public;
 
-select plan(127);
+select plan(130);
 
 /*
  * Guards the privileges themselves, not the policies.
@@ -1253,6 +1253,30 @@ select ok(
 select ok(
   has_column_privilege('authenticated', 'public.profiles', 'display_name', 'UPDATE'),
   'authenticated can still UPDATE profiles.display_name'
+);
+
+-- ---------------------------------------------------------------------------
+-- delete_account_data (20261122100000) is the only service-role-only
+-- function: the delete-account edge function resolves the target from the
+-- caller's JWT, so no client may name an account to delete. Direction 2 of
+-- the allowlist above already catches an authenticated grant; named here
+-- too, alongside the positive service_role case nothing else asserts.
+-- ---------------------------------------------------------------------------
+
+select ok(
+  not has_function_privilege(
+    'authenticated', 'public.delete_account_data(uuid)', 'EXECUTE'),
+  'authenticated cannot execute delete_account_data'
+);
+select ok(
+  not has_function_privilege(
+    'anon', 'public.delete_account_data(uuid)', 'EXECUTE'),
+  'anon cannot execute delete_account_data'
+);
+select ok(
+  has_function_privilege(
+    'service_role', 'public.delete_account_data(uuid)', 'EXECUTE'),
+  'service_role can execute delete_account_data'
 );
 
 select * from finish();

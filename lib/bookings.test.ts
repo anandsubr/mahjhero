@@ -512,6 +512,8 @@ describe('BOOKING_REFUSALS (self-audit against the migrations)', () => {
     'club name needs a letter or number':
       'raised by create_club — lib/clubs.ts’s function, not this module’s',
     'not signed in': 'raised by create_club — lib/clubs.ts’s function, not this module’s',
+    'no such account':
+      'raised by delete_account_data on a null target — service-role only, called by the delete-account edge function, never by a client',
     // set_club_code's non-organizer guard (42501). Unlike the club-code
     // entries just below, codeError has no case for this one — it falls
     // through to GENERIC_ERROR, same real gap as the three entries above.
