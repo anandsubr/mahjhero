@@ -476,7 +476,7 @@ test.describe('signed in', () => {
     test(`notifications at ${vp.name}`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/notifications');
-      await expect(page.getByText('How should we reach you?')).toBeVisible();
+      await expect(page.getByText('Pause notifications overnight')).toBeVisible();
       await captureScreen(page, vp, `notifications-${vp.name}.png`);
     });
 
