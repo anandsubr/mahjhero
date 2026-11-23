@@ -16,6 +16,7 @@ import {
   verifySignInCode,
 } from '../lib/auth';
 import type { OAuthProvider } from '../lib/auth';
+import { openLegal } from '../lib/legal';
 import { GENERIC_ERROR } from '../lib/constants';
 import { useSession } from '../lib/session';
 import { colors, space, type } from '../lib/theme';
@@ -305,6 +306,25 @@ export default function SignIn() {
           </Button>
         ))}
       </View>
+      <Text style={styles.legal}>
+        By continuing, you agree to the{' '}
+        <Text
+          style={styles.legalLink}
+          accessibilityRole="link"
+          onPress={() => void openLegal('terms')}
+        >
+          Terms
+        </Text>{' '}
+        and{' '}
+        <Text
+          style={styles.legalLink}
+          accessibilityRole="link"
+          onPress={() => void openLegal('privacy')}
+        >
+          Privacy Policy
+        </Text>
+        .
+      </Text>
     </Screen>
   );
 }
@@ -362,6 +382,18 @@ const styles = StyleSheet.create({
   },
   providerGroup: {
     gap: space[3],
+  },
+  legal: {
+    fontFamily: type.bodyRegular,
+    fontSize: type.size.helper,
+    lineHeight: 20,
+    color: colors.textMuted,
+    textAlign: 'center',
+  },
+  legalLink: {
+    fontFamily: type.bodySemiBold,
+    color: colors.accent[700],
+    textDecorationLine: 'underline',
   },
   backButton: {
     alignSelf: 'flex-start',

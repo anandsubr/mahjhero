@@ -14,6 +14,7 @@ import {
   ClipboardListIcon,
   ChevronRightIcon,
   CircleHelpIcon,
+  LockIcon,
   LogOutIcon,
   MessageCircleIcon,
   PeopleIcon,
@@ -21,6 +22,7 @@ import {
 } from '../components/icons';
 import { resetCalendarFeed } from '../lib/calendar-feed';
 import { GENERIC_ERROR } from '../lib/constants';
+import { openLegal } from '../lib/legal';
 import { goBack } from '../lib/navigation';
 import { fetchProfile, isCompleteProfile, updateProfile } from '../lib/profile';
 import type { SkillLevel } from '../lib/profile';
@@ -309,7 +311,7 @@ export default function ProfileScreen() {
           <SettingsRow
             icon={<BellIcon size={18} color={colors.accent[700]} />}
             title="Notifications"
-            subtitle="Push and email, plus quiet hours"
+            subtitle="Email alerts and quiet hours"
             onPress={() => router.push('/notifications')}
           />
           <SettingsRow
@@ -363,6 +365,23 @@ export default function ProfileScreen() {
           <NoticeBanner message={resetNotice} onDismiss={() => setResetNotice(null)} />
         ) : null}
         {resetError ? <ErrorBanner message={resetError} /> : null}
+      </FormSection>
+
+      <FormSection label="Legal">
+        <FormCard>
+          <SettingsRow
+            icon={<LockIcon size={18} color={colors.accent[700]} />}
+            title="Privacy policy"
+            subtitle="How we handle your data"
+            onPress={() => void openLegal('privacy')}
+          />
+          <SettingsRow
+            icon={<ClipboardListIcon size={18} color={colors.accent[700]} />}
+            title="Terms"
+            subtitle="The rules for using MahjHero"
+            onPress={() => void openLegal('terms')}
+          />
+        </FormCard>
       </FormSection>
 
       <Pressable

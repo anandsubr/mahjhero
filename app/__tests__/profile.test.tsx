@@ -3,6 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import ProfileScreen from '../profile';
 
+const openLegal = vi.hoisted(() => vi.fn());
+vi.mock('../../lib/legal', () => ({ openLegal }));
+
 const { push, replace, back, canGoBack } = vi.hoisted(() => ({
   push: vi.fn(),
   replace: vi.fn(),
@@ -413,5 +416,23 @@ describe('profile screen', () => {
     expect(del.compareDocumentPosition(out) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     fireEvent.click(del);
     expect(push).toHaveBeenCalledWith('/delete-account');
+  });
+
+  it('has a Legal group whose rows open the privacy policy and terms', async () => {
+    fetchProfile.mockResolvedValue(MEMBER);
+    render(<ProfileScreen />);
+    expect(await screen.findByText('Legal')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Privacy policy' }));
+    expect(openLegal).toHaveBeenCalledWith('privacy');
+    fireEvent.click(screen.getByRole('button', { name: 'Terms' }));
+    expect(openLegal).toHaveBeenCalledWith('terms');
+  });
+
+  it('describes Notifications without mentioning push', async () => {
+    fetchProfile.mockResolvedValue(MEMBER);
+    render(<ProfileScreen />);
+    await screen.findByText('Legal');
+    expect(screen.getByText('Email alerts and quiet hours')).toBeTruthy();
+    expect(screen.queryByText(/push/i)).toBeNull();
   });
 });

@@ -38,6 +38,9 @@ vi.mock('../../lib/auth', () => ({
 }));
 
 import { sendSignInCode, signInWithProvider, verifySignInCode } from '../../lib/auth';
+const openLegal = vi.fn();
+vi.mock('../../lib/legal', () => ({ openLegal: (...a: unknown[]) => openLegal(...a) }));
+
 import SignIn from '../sign-in';
 
 /**
@@ -265,5 +268,14 @@ describe('sign-in screen', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Continue with Apple' }));
     });
     expect(signInWithProvider).toHaveBeenCalledWith('apple');
+  });
+
+  it('shows the legal line with Terms and Privacy Policy links', () => {
+    render(<SignIn />);
+    expect(screen.getByText(/By continuing, you agree to the/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('link', { name: 'Terms' }));
+    expect(openLegal).toHaveBeenCalledWith('terms');
+    fireEvent.click(screen.getByRole('link', { name: 'Privacy Policy' }));
+    expect(openLegal).toHaveBeenCalledWith('privacy');
   });
 });
