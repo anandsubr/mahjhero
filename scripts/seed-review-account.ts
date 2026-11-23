@@ -13,6 +13,12 @@
  * service key is only used to mint those sessions and to read back ids), so
  * clubs, tables, seats, waitlists and threads obey the app's invariants.
  *
+ * SEED_CONFIRM_HOST must equal the host of SEED_SUPABASE_URL (e.g. 127.0.0.1:54321).
+ *
+ * Games are keyed by title and their dates are relative to the FIRST run.
+ * Re-seeding months later does not move them; the old games must be removed
+ * first (then they are recreated relative to today).
+ *
  * Never commit the service-role key or the password; both come from the
  * environment and are never printed.
  */
@@ -26,9 +32,26 @@ if (missing.length > 0) {
   console.error(`Missing required environment variables: ${missing.join(', ')}`);
   process.exit(1);
 }
-const URL = process.env.SEED_SUPABASE_URL as string;
+const SUPABASE_URL = process.env.SEED_SUPABASE_URL as string;
 const SERVICE_KEY = process.env.SEED_SERVICE_ROLE_KEY as string;
 const REVIEW_PASSWORD = process.env.REVIEW_PASSWORD as string;
+
+// Deliberate guard: the operator must restate the target host, so a stale
+// SEED_SUPABASE_URL in a shell cannot silently seed the wrong project.
+let seedHost: string;
+try {
+  seedHost = new globalThis.URL(SUPABASE_URL).host;
+} catch {
+  console.error('SEED_SUPABASE_URL is not a valid URL.');
+  process.exit(1);
+}
+console.log(`Seeding ${seedHost}`);
+if (process.env.SEED_CONFIRM_HOST !== seedHost) {
+  console.error(
+    `Refusing to run: set SEED_CONFIRM_HOST=${seedHost} to confirm this is the intended target.`,
+  );
+  process.exit(1);
+}
 
 const REVIEW_EMAIL = 'review@mahjhero.com';
 const CLUB_NAME = 'Willow Creek Mahjong (Demo)';
@@ -44,7 +67,7 @@ const DEMO = [
   { email: 'demo5@mahjhero.com', name: 'Barbara Nguyen', skill: 'advanced' },
 ] as const;
 
-const admin = createClient(URL, SERVICE_KEY, {
+const admin = createClient(SUPABASE_URL, SERVICE_KEY, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 
@@ -95,7 +118,7 @@ async function ensureProfile(id: string, name: string, skill: string, extra = {}
 
 /** A client acting as this user, so auth.uid() is set inside the RPCs. */
 async function actingAs(email: string, password: string): Promise<SupabaseClient> {
-  const client = createClient(URL, SERVICE_KEY, {
+  const client = createClient(SUPABASE_URL, SERVICE_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
   const { error } = await client.auth.signInWithPassword({ email, password });
@@ -150,10 +173,16 @@ async function main() {
   // --- club ---------------------------------------------------------------
   const { data: clubRow, error: clubErr } = await admin
     .from('clubs')
-    .select('id, code')
+    .select('id, created_by')
     .eq('name', CLUB_NAME)
     .maybeSingle();
   if (clubErr) fail('look up club', clubErr);
+  if (clubRow && clubRow.created_by !== demoIds[0]) {
+    console.error(
+      `A club named "${CLUB_NAME}" already exists with a different creator; refusing to touch it.`,
+    );
+    process.exit(1);
+  }
   let clubId = clubRow?.id as string | undefined;
   if (!clubId) {
     clubId = await rpc<string>(hostClient, 'create_club', {

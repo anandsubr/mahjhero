@@ -163,6 +163,28 @@ describe('sign-in screen', () => {
       expect(screen.queryByText("That email and password don't match.")).toBeNull();
     });
 
+    it('asks for both fields when either is empty, without calling sign-in', async () => {
+      render(<SignIn />);
+      openPasswordMode();
+      fireEvent.change(screen.getByLabelText('Email address'), {
+        target: { value: 'review@mahjhero.com' },
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+      });
+      expect(screen.getByText('Enter your email address and password.')).toBeTruthy();
+      expect(signInWithPassword).not.toHaveBeenCalled();
+    });
+
+    it('still reaches the code-entry step after toggling to password mode and back', async () => {
+      render(<SignIn />);
+      openPasswordMode();
+      fireEvent.click(screen.getByRole('button', { name: 'Use an email code instead' }));
+      await sendCode('jane@example.com');
+      expect(sendSignInCode).toHaveBeenCalledWith('jane@example.com');
+      expect(screen.getByText('Enter your code')).toBeTruthy();
+    });
+
     it('redirects home once the session arrives', () => {
       sessionResult = { session: { user: { id: 'u' } }, loading: false };
       render(<SignIn />);
