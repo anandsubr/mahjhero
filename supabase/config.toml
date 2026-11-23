@@ -443,6 +443,11 @@ verify_jwt = true
 [functions.delete-account]
 verify_jwt = true
 
+# Emails ADMIN_EMAIL about a new content report. The handler re-verifies the
+# caller via auth.getUser() and only acts on reports they filed.
+[functions.notify-report]
+verify_jwt = true
+
 # Calendar apps fetch this with no Supabase session (they can't sign in);
 # the per-member token in the query string is the only key.
 [functions.calendar-feed]
