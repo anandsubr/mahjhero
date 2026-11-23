@@ -63,7 +63,8 @@ export async function handleDeleteAccount(
   const userId = data?.user?.id;
   if (userError || !userId) return json({ error: 'unauthorized' }, 401);
 
-  // Revoke with Apple first (best effort); never blocks deletion.
+  // Revocation runs first on purpose: the code is single-use, so if the RPC
+  // fails and the client retries, the retry simply proceeds without revocation.
   if (code) {
     const result = await (d.revoke ?? revokeAppleToken)(code, d.appleEnv, d.fetchImpl);
     if (!result.revoked) console.warn('delete-account: apple revocation skipped', result.reason);
@@ -79,12 +80,16 @@ export async function handleDeleteAccount(
 
   const byBucket = new Map<string, string[]>();
   for (const f of files ?? []) {
-    byBucket.set(f.bucket, [...(byBucket.get(f.bucket) ?? []), f.path]);
+    const list = byBucket.get(f.bucket);
+    if (list) list.push(f.path);
+    else byBucket.set(f.bucket, [f.path]);
   }
   for (const [bucket, paths] of byBucket) {
-    const { error } = await d.adminClient.storage.from(bucket).remove(paths);
-    // Orphaned files are not worth blocking deletion over.
-    if (error) console.error('delete-account: storage remove failed', bucket, error);
+    for (let i = 0; i < paths.length; i += 1000) {
+      const { error } = await d.adminClient.storage.from(bucket).remove(paths.slice(i, i + 1000));
+      // Orphaned files are not worth blocking deletion over.
+      if (error) console.error('delete-account: storage remove failed', bucket, error);
+    }
   }
 
   const { error: deleteError } = await d.adminClient.auth.admin.deleteUser(userId);
