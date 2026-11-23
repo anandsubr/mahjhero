@@ -36,8 +36,10 @@ export type SeatOccupant = {
   skill_level: SkillLevel | null;
   event_table_id: string | null;
   status: 'confirmed' | 'waitlisted' | 'invited';
-  booked_by: string;
-  booked_by_name: string;
+  /** Null once the booker has deleted their account. */
+  booked_by: string | null;
+  /** Null once the booker has deleted their account -- shown as "Former member". */
+  booked_by_name: string | null;
   group_status: BookingGroupStatus;
   waitlist_position: number | null;
   created_at: string;
@@ -69,8 +71,10 @@ export type MyBooking = {
   event_table_id: string | null;
   table_label: string | null;
   status: BookingStatus;
-  booked_by: string;
-  booked_by_name: string;
+  /** Null once the booker has deleted their account. */
+  booked_by: string | null;
+  /** Null once the booker has deleted their account -- shown as "Former member". */
+  booked_by_name: string | null;
   offer_id: string | null;
   offer_seats: number | null;
   offer_expires_at: string | null;

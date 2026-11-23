@@ -9,7 +9,8 @@ import { bookingErrorMessage } from './bookings';
 export type PaymentRow = {
   profile_id: string;
   paid_at: string;
-  marked_by: string;
+  /** Null once whoever marked it has deleted their account. */
+  marked_by: string | null;
 };
 
 /**

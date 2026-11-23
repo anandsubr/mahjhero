@@ -73,6 +73,25 @@ describe('NeedsYouStack', () => {
     expect(n.acceptClubInvite).toHaveBeenCalled();
   });
 
+  it('names a game invite\'s sender "Former member" once they have deleted their account', () => {
+    const invite = {
+      booking_id: 'b7',
+      event_title: 'Tuesday Open Play',
+      club_name: 'Oakfield',
+      starts_at: '2026-12-01T23:00:00Z',
+      club_timezone: 'America/New_York',
+      table_label: null,
+      invite_holds_seat: true,
+      booked_by: null,
+      booked_by_name: null,
+    } as unknown as MyBooking;
+    render(<NeedsYouStack needs={needs({ gameInvites: [invite] })} />);
+    expect(screen.getByText('Former member invited you to Tuesday Open Play')).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: "Decline Former member's invite to Tuesday Open Play" }),
+    ).toBeTruthy();
+  });
+
   it('shows a live seat offer with Take the seat', () => {
     const offer = {
       booking_id: 'b1', event_title: 'Thursday', club_name: 'Test Club',

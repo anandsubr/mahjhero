@@ -8,6 +8,7 @@ import NoticeBanner from '../NoticeBanner';
 import { offerCountdown, type MyBooking } from '../../lib/bookings';
 import type { PendingInvite } from '../../lib/clubs';
 import { formatEventWhen } from '../../lib/events';
+import { actorName } from '../../lib/members';
 import type { NeedsYou } from '../../lib/use-needs-you';
 import { colors, space, type } from '../../lib/theme';
 
@@ -89,7 +90,7 @@ function GameInviteCards({
         return (
           <Card key={invite.booking_id}>
             <Text style={styles.inviteHeading}>
-              {`${invite.booked_by_name} invited you to ${invite.event_title}${where}`}
+              {`${actorName(invite.booked_by_name)} invited you to ${invite.event_title}${where}`}
             </Text>
             <Text style={styles.help}>
               {`${invite.club_name} · ${formatEventWhen(invite.starts_at, invite.club_timezone)}`}
@@ -107,7 +108,7 @@ function GameInviteCards({
               big={false}
               disabled={busy}
               onPress={() => onDecline(invite)}
-              accessibilityLabel={`Decline ${invite.booked_by_name}'s invite to ${invite.event_title}`}
+              accessibilityLabel={`Decline ${actorName(invite.booked_by_name)}'s invite to ${invite.event_title}`}
             >
               Decline
             </Button>
