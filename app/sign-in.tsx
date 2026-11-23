@@ -12,6 +12,7 @@ import {
   isValidEmail,
   sendSignInCode,
   signInWithApple,
+  signInWithPassword,
   signInWithProvider,
   verifySignInCode,
 } from '../lib/auth';
@@ -39,6 +40,9 @@ export default function SignIn() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
+  const [password, setPassword] = useState('');
+  const [usePassword, setUsePassword] = useState(false);
+  const [signingIn, setSigningIn] = useState(false);
   const [status, setStatus] = useState<'idle' | 'sending' | 'code-entry'>('idle');
   const [verifying, setVerifying] = useState(false);
   const [resending, setResending] = useState(false);
@@ -51,7 +55,7 @@ export default function SignIn() {
   // One in-flight auth attempt at a time, whichever route started it. On
   // native `openAuthSessionAsync` takes seconds, and a second tap opens a
   // second auth session on top of the first.
-  const busy = status === 'sending' || verifying || resending || pendingProvider !== null;
+  const busy = status === 'sending' || verifying || signingIn || resending || pendingProvider !== null;
 
   // The code step's mail icon is decorative; while the keyboard is up it is
   // dropped so "Verify code" still fits above the number pad on a small
@@ -131,6 +135,27 @@ export default function SignIn() {
     // the session in this same mounted screen (lib/session.ts's
     // onAuthStateChange subscription picks it up), and the redirect below
     // fires in place.
+  }
+
+  async function onPasswordSignIn() {
+    if (busy) return;
+    if (!isValidEmail(email) || !password) {
+      setError('Enter your email address and password.');
+      return;
+    }
+    setError(null);
+    setSigningIn(true);
+    const { error: signInError } = await signInWithPassword(email, password);
+    setSigningIn(false);
+    if (signInError) setError(signInError);
+    // On success the session provider's auth subscription picks the session
+    // up and the redirect below fires, exactly as for a verified code.
+  }
+
+  function switchMode(next: boolean) {
+    setUsePassword(next);
+    setPassword('');
+    setError(null);
   }
 
   function onUseDifferentEmail() {
@@ -260,7 +285,9 @@ export default function SignIn() {
       </Button>
       <Text style={styles.heading}>Sign in to MahjHero</Text>
       <Text style={styles.body}>
-        No password to remember. We'll email you a one-time code that signs you straight in.
+        {usePassword
+          ? 'Enter your email address and password.'
+          : "No password to remember. We'll email you a one-time code that signs you straight in."}
       </Text>
       <TextField
         label="Email address"
@@ -271,20 +298,59 @@ export default function SignIn() {
         autoCorrect={false}
         keyboardType="email-address"
         textContentType="emailAddress"
-        returnKeyType="send"
-        onSubmitEditing={() => void onSubmit()}
+        returnKeyType={usePassword ? 'next' : 'send'}
+        onSubmitEditing={() => {
+          if (!usePassword) void onSubmit();
+        }}
         accessibilityLabel="Email address"
       />
+      {usePassword ? (
+        <TextField
+          label="Password"
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry
+          autoCapitalize="none"
+          autoCorrect={false}
+          autoComplete="password"
+          textContentType="password"
+          returnKeyType="go"
+          onSubmitEditing={() => void onPasswordSignIn()}
+          accessibilityLabel="Password"
+        />
+      ) : null}
       {error ? <ErrorBanner message={error} /> : null}
+      {usePassword ? (
+        <Button
+          variant="primary"
+          block
+          onPress={onPasswordSignIn}
+          disabled={busy}
+          loading={signingIn}
+          accessibilityLabel="Sign in"
+        >
+          Sign in
+        </Button>
+      ) : (
+        <Button
+          variant="primary"
+          block
+          onPress={onSubmit}
+          disabled={busy}
+          loading={status === 'sending'}
+          accessibilityLabel="Email me a sign-in code"
+        >
+          Email me a sign-in code
+        </Button>
+      )}
       <Button
-        variant="primary"
-        block
-        onPress={onSubmit}
+        variant="ghost"
+        big={false}
+        onPress={() => switchMode(!usePassword)}
         disabled={busy}
-        loading={status === 'sending'}
-        accessibilityLabel="Email me a sign-in code"
+        style={styles.modeLink}
       >
-        Email me a sign-in code
+        {usePassword ? 'Use an email code instead' : 'Use a password instead'}
       </Button>
       <View style={styles.dividerRow}>
         <View style={styles.dividerLine} />
@@ -394,6 +460,9 @@ const styles = StyleSheet.create({
     fontFamily: type.bodySemiBold,
     color: colors.accent[700],
     textDecorationLine: 'underline',
+  },
+  modeLink: {
+    alignSelf: 'flex-start',
   },
   backButton: {
     alignSelf: 'flex-start',

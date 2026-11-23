@@ -35,9 +35,10 @@ vi.mock('../../lib/auth', () => ({
   sendSignInCode: vi.fn(async () => ({ error: null })),
   verifySignInCode: vi.fn(async () => ({ error: null })),
   signInWithProvider: vi.fn(async () => ({ error: null })),
+  signInWithPassword: vi.fn(async () => ({ error: null })),
 }));
 
-import { sendSignInCode, signInWithProvider, verifySignInCode } from '../../lib/auth';
+import { sendSignInCode, signInWithPassword, signInWithProvider, verifySignInCode } from '../../lib/auth';
 const openLegal = vi.fn();
 vi.mock('../../lib/legal', () => ({ openLegal: (...a: unknown[]) => openLegal(...a) }));
 
@@ -122,6 +123,67 @@ describe('sign-in screen', () => {
     expect(
       screen.getByRole('button', { name: 'Email me a sign-in code' }),
     ).toBeTruthy();
+  });
+
+  describe('password sign-in', () => {
+    function openPasswordMode() {
+      fireEvent.click(screen.getByRole('button', { name: 'Use a password instead' }));
+    }
+
+    it('swaps the code form for email, password and Sign in, keeping providers and legal', () => {
+      render(<SignIn />);
+      openPasswordMode();
+      expect(screen.getByLabelText('Email address')).toBeTruthy();
+      expect(screen.getByLabelText('Password')).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Sign in' })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Email me a sign-in code' })).toBeNull();
+      expect(screen.getByRole('button', { name: 'Continue with Google' })).toBeTruthy();
+      expect(screen.getByText('Privacy Policy')).toBeTruthy();
+    });
+
+    it('swaps back with "Use an email code instead"', () => {
+      render(<SignIn />);
+      openPasswordMode();
+      fireEvent.click(screen.getByRole('button', { name: 'Use an email code instead' }));
+      expect(screen.queryByLabelText('Password')).toBeNull();
+      expect(screen.getByRole('button', { name: 'Email me a sign-in code' })).toBeTruthy();
+    });
+
+    it('signs in with the typed credentials', async () => {
+      render(<SignIn />);
+      openPasswordMode();
+      fireEvent.change(screen.getByLabelText('Email address'), {
+        target: { value: 'review@mahjhero.com' },
+      });
+      fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'secret' } });
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+      });
+      expect(signInWithPassword).toHaveBeenCalledWith('review@mahjhero.com', 'secret');
+      expect(screen.queryByText("That email and password don't match.")).toBeNull();
+    });
+
+    it('redirects home once the session arrives', () => {
+      sessionResult = { session: { user: { id: 'u' } }, loading: false };
+      render(<SignIn />);
+      expect(screen.getByTestId('redirect').getAttribute('data-href')).toBe('/');
+    });
+
+    it('shows the exact error for bad credentials', async () => {
+      vi.mocked(signInWithPassword).mockResolvedValueOnce({
+        error: "That email and password don't match.",
+      });
+      render(<SignIn />);
+      openPasswordMode();
+      fireEvent.change(screen.getByLabelText('Email address'), {
+        target: { value: 'review@mahjhero.com' },
+      });
+      fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'nope' } });
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+      });
+      expect(screen.getByText("That email and password don't match.")).toBeTruthy();
+    });
   });
 
   it('moves to the code-entry step after sending a code', async () => {

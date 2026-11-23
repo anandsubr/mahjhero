@@ -73,6 +73,35 @@ export async function verifySignInCode(
 }
 
 /**
+ * Password sign-in exists for the App Store reviewer's account (there is no
+ * sign-up or reset by password). Never rejects, for the same reason as
+ * sendSignInCode. Bad credentials get one fixed message; GoTrue's wording is
+ * the same for an unknown email and a wrong password, and stays that way here.
+ */
+export async function signInWithPassword(
+  email: string,
+  password: string,
+): Promise<{ error: string | null }> {
+  try {
+    const { error } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    });
+    if (!error) return { error: null };
+    if (isAuthRetryableFetchError(error)) return { error: GENERIC_ERROR };
+    const code = (error as { code?: string }).code;
+    if (code === 'invalid_credentials' || /invalid login credentials/i.test(error.message)) {
+      return { error: "That email and password don't match." };
+    }
+    console.error('signInWithPassword failed', error);
+    return { error: GENERIC_ERROR };
+  } catch (cause) {
+    console.error('signInWithPassword failed', cause);
+    return { error: GENERIC_ERROR };
+  }
+}
+
+/**
  * Four genuinely different outcomes, because two callers need to tell them
  * apart and a boolean cannot:
  *

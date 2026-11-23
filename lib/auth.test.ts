@@ -7,6 +7,7 @@ vi.mock('./supabase', () => ({
       verifyOtp: vi.fn().mockRejectedValue(new Error('network down')),
       signInWithOAuth: vi.fn().mockRejectedValue(new Error('network down')),
       setSession: vi.fn(),
+      signInWithPassword: vi.fn().mockRejectedValue(new Error('network down')),
     },
   },
 }));
@@ -28,7 +29,7 @@ vi.mock('expo-web-browser', () => ({
   openAuthSessionAsync: vi.fn(),
 }));
 
-import { availableProviders, isValidEmail, sendSignInCode, signInWithProvider, verifySignInCode } from './auth';
+import { availableProviders, isValidEmail, sendSignInCode, signInWithPassword, signInWithProvider, verifySignInCode } from './auth';
 import { supabase } from './supabase';
 import * as WebBrowser from 'expo-web-browser';
 
@@ -106,6 +107,58 @@ describe('verifySignInCode', () => {
       error: new AuthRetryableFetchError('Failed to fetch', 0),
     } as never);
     await expect(verifySignInCode('jane@example.com', '123456')).resolves.toEqual({
+      error: 'Could not reach MahjHero. Check your connection and try again.',
+    });
+  });
+});
+
+describe('signInWithPassword', () => {
+  it('resolves with the generic error instead of rejecting when the call throws', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await expect(signInWithPassword('a@b.co', 'pw')).resolves.toEqual({
+      error: 'Could not reach MahjHero. Check your connection and try again.',
+    });
+  });
+
+  it('trims the email and passes the password through untouched', async () => {
+    vi.mocked(supabase.auth.signInWithPassword).mockResolvedValueOnce({
+      data: { session: null, user: null },
+      error: null,
+    } as never);
+    await expect(signInWithPassword('  a@b.co ', ' pw ')).resolves.toEqual({ error: null });
+    expect(supabase.auth.signInWithPassword).toHaveBeenLastCalledWith({
+      email: 'a@b.co',
+      password: ' pw ',
+    });
+  });
+
+  it('maps invalid_credentials to the fixed mismatch message', async () => {
+    vi.mocked(supabase.auth.signInWithPassword).mockResolvedValueOnce({
+      data: { session: null, user: null },
+      error: { message: 'Invalid login credentials', code: 'invalid_credentials' },
+    } as never);
+    await expect(signInWithPassword('a@b.co', 'bad')).resolves.toEqual({
+      error: "That email and password don't match.",
+    });
+  });
+
+  it('maps the bare "Invalid login credentials" wording too', async () => {
+    vi.mocked(supabase.auth.signInWithPassword).mockResolvedValueOnce({
+      data: { session: null, user: null },
+      error: { message: 'Invalid login credentials' },
+    } as never);
+    await expect(signInWithPassword('a@b.co', 'bad')).resolves.toEqual({
+      error: "That email and password don't match.",
+    });
+  });
+
+  it('reports a retryable fetch failure with the generic message', async () => {
+    const { AuthRetryableFetchError } = await import('@supabase/supabase-js');
+    vi.mocked(supabase.auth.signInWithPassword).mockResolvedValueOnce({
+      data: { session: null, user: null },
+      error: new AuthRetryableFetchError('Failed to fetch', 0),
+    } as never);
+    await expect(signInWithPassword('a@b.co', 'pw')).resolves.toEqual({
       error: 'Could not reach MahjHero. Check your connection and try again.',
     });
   });
