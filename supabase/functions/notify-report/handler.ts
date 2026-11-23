@@ -171,8 +171,8 @@ export async function handleNotifyReport(
     await d.sender.send({
       to: d.adminEmail,
       subject: sanitizeSubject(body.subject),
-      html: renderShell(body, 'MahjHero', adminUrl),
-      text: renderText(body, 'MahjHero', adminUrl),
+      html: renderShell(body, 'MahjHero reports', adminUrl),
+      text: renderText(body, 'MahjHero reports', adminUrl),
     });
   } catch (cause) {
     console.error('notify-report: email failed', cause);
