@@ -60,6 +60,10 @@ export default function ActionSheet({
     run?.();
   }
 
+  // Note: if the parent unmounts this sheet while it is still dismissing
+  // (iOS, between setVisible(false) and onDismiss / the fallback), the
+  // cleanup above clears the timer and the chosen action is dropped. Callers
+  // unmount it only from `onClose`, which runs before the action.
   function choose(run: (() => void) | null) {
     if (done.current || !visible) return;
     pending.current = run;

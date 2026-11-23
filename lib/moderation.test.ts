@@ -64,6 +64,15 @@ describe('reportContent', () => {
     });
   });
 
+  it('resolves even when notify-report never settles', async () => {
+    rpc.mockResolvedValue({ data: 'r1', error: null } as never);
+    invoke.mockReturnValue(new Promise(() => {}) as never);
+    await expect(
+      reportContent({ kind: 'message', targetId: 'm1', reason: 'spam' }),
+    ).resolves.toEqual({ data: 'r1', error: null });
+    expect(invoke).toHaveBeenCalled();
+  });
+
   it('maps a refusal to the generic error and sends no email', async () => {
     rpc.mockResolvedValue({
       data: null,

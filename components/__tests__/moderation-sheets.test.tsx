@@ -1,16 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { Platform } from 'react-native';
 
 const reportContent = vi.fn();
+const blockUser = vi.fn();
 vi.mock('../../lib/moderation', async () => {
   const actual =
     await vi.importActual<typeof import('../../lib/moderation')>('../../lib/moderation');
-  return { ...actual, reportContent: (...a: unknown[]) => reportContent(...a) };
+  return {
+    ...actual,
+    reportContent: (...a: unknown[]) => reportContent(...a),
+    blockUser: (...a: unknown[]) => blockUser(...a),
+  };
 });
 
 import ActionSheet from '../moderation/ActionSheet';
 import ReportSheet from '../moderation/ReportSheet';
+import { CONFIRM_DISMISS_MS, useModeration } from '../moderation/useModeration';
 import { GENERIC_ERROR } from '../../lib/constants';
 
 beforeEach(() => {
@@ -103,5 +109,69 @@ describe('ReportSheet', () => {
     expect(await screen.findByText(GENERIC_ERROR)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Submit' }));
     await waitFor(() => expect(screen.getByText("Thanks. We'll review this within 24 hours.")).toBeTruthy());
+  });
+});
+
+describe('useModeration block failures', () => {
+  const realOS = Platform.OS;
+  afterEach(() => {
+    (Platform as { OS: string }).OS = realOS;
+    vi.useRealTimers();
+  });
+
+  function Harness() {
+    const m = useModeration();
+    return (
+      <>
+        <button onClick={() => m.startBlock('p2', 'Bea')}>start</button>
+        {m.sheets}
+      </>
+    );
+  }
+
+  async function blockOnce() {
+    fireEvent.click(screen.getByText('start'));
+    fireEvent.click(within(screen.getByTestId('confirm-sheet')).getByRole('button', { name: 'Block' }));
+  }
+
+  it('shows the OK sheet again on a second identical failure', async () => {
+    blockUser.mockResolvedValue({ error: GENERIC_ERROR });
+    render(<Harness />);
+    await blockOnce();
+    expect(await screen.findByText(GENERIC_ERROR)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+    expect(screen.queryByText(GENERIC_ERROR)).toBeNull();
+    await blockOnce();
+    expect(await screen.findByText(GENERIC_ERROR)).toBeTruthy();
+    expect(blockUser).toHaveBeenCalledTimes(2);
+  });
+
+  it('clears a standing failure before the next attempt', async () => {
+    blockUser.mockResolvedValueOnce({ error: GENERIC_ERROR });
+    let settle!: (v: { error: string | null }) => void;
+    blockUser.mockReturnValueOnce(new Promise((r) => (settle = r)));
+    render(<Harness />);
+    await blockOnce();
+    expect(await screen.findByText(GENERIC_ERROR)).toBeTruthy();
+    await blockOnce();
+    expect(screen.queryByText(GENERIC_ERROR)).toBeNull();
+    await act(async () => settle({ error: GENERIC_ERROR }));
+    expect(await screen.findByText(GENERIC_ERROR)).toBeTruthy();
+  });
+
+  it('on iOS, holds a fast failure until the confirm sheet has gone', async () => {
+    blockUser.mockResolvedValue({ error: GENERIC_ERROR });
+    render(<Harness />);
+    fireEvent.click(screen.getByText('start'));
+    const confirm = screen.getByTestId('confirm-sheet');
+    // Only the block's own timing is under test; set iOS once the sheet is up.
+    (Platform as { OS: string }).OS = 'ios';
+    const started = Date.now();
+    await act(async () => {
+      fireEvent.click(within(confirm).getByRole('button', { name: 'Block' }));
+    });
+    expect(screen.queryByText(GENERIC_ERROR)).toBeNull();
+    await waitFor(() => expect(screen.getByText(GENERIC_ERROR)).toBeTruthy(), { timeout: 2000 });
+    expect(Date.now() - started).toBeGreaterThanOrEqual(CONFIRM_DISMISS_MS - 20);
   });
 });
