@@ -438,6 +438,11 @@ verify_jwt = false
 [functions.send-club-invite]
 verify_jwt = true
 
+# Account deletion (App Store 5.1.1(v)). The gateway verifies the JWT and the
+# handler re-verifies it via auth.getUser(); it deletes only that user.
+[functions.delete-account]
+verify_jwt = true
+
 # Calendar apps fetch this with no Supabase session (they can't sign in);
 # the per-member token in the query string is the only key.
 [functions.calendar-feed]
