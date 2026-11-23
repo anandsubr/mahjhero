@@ -296,6 +296,15 @@ export default function PostScreen() {
               viewerId={viewerId}
               onReply={setReplyTo}
               attachmentUrls={attachmentUrls}
+              onBlocked={(personId) => {
+                // Blocking the post's own author hides the whole post.
+                const root = messages.find((m) => m.id === postId);
+                if (root?.author_id === personId) {
+                  goBack(router, thread?.club_id ? `/clubs/${thread.club_id}/board` : '/messages');
+                } else {
+                  void load();
+                }
+              }}
             />
           </ScrollView>
 

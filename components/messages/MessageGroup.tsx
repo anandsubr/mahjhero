@@ -12,6 +12,9 @@ type Props = {
   mine: boolean;
   authorName: string;
   onReply: (message: ThreadMessage) => void;
+  /** Long press: opens the message's action sheet. Without it a long press
+   *  replies, as it always did. */
+  onActions?: (message: ThreadMessage) => void;
   /** `storage_path` -> signed URL, resolved once per screen load by the
    *  caller -- see AttachmentGrid's own `urls` prop docstring. */
   attachmentUrls?: Record<string, string>;
@@ -41,6 +44,7 @@ export default function MessageGroup({
   mine,
   authorName,
   onReply,
+  onActions,
   attachmentUrls = {},
 }: Props) {
   if (mine) {
@@ -50,7 +54,7 @@ export default function MessageGroup({
           <Pressable
             key={m.id}
             testID={`bubble-${m.id}`}
-            onLongPress={() => onReply(m)}
+            onLongPress={() => (onActions ?? onReply)(m)}
             tabIndex={-1}
             style={styles.mineMessage}
           >
@@ -91,7 +95,7 @@ export default function MessageGroup({
           <Pressable
             key={m.id}
             testID={`bubble-${m.id}`}
-            onLongPress={() => onReply(m)}
+            onLongPress={() => (onActions ?? onReply)(m)}
             tabIndex={-1}
             style={styles.theirsMessage}
           >
@@ -118,6 +122,14 @@ export default function MessageGroup({
             ) : (
               <HiddenReply message={m} onReply={onReply} />
             )}
+            {onActions ? (
+              <Pressable
+                onPress={() => onActions(m)}
+                accessibilityRole="button"
+                accessibilityLabel={`More options for ${authorName || 'this message'}`}
+                style={styles.hiddenReply}
+              />
+            ) : null}
           </Pressable>
         ))}
       </View>

@@ -16,6 +16,7 @@ import {
   LogOutIcon,
   MessageCircleIcon,
   PeopleIcon,
+  UserMinusIcon,
 } from '../components/icons';
 import { resetCalendarFeed } from '../lib/calendar-feed';
 import { GENERIC_ERROR } from '../lib/constants';
@@ -315,6 +316,12 @@ export default function ProfileScreen() {
             title="Friends"
             subtitle="The people you can hold seats with"
             onPress={() => router.push('/friends')}
+          />
+          <SettingsRow
+            icon={<UserMinusIcon size={18} color={colors.accent[700]} />}
+            title="Blocked people"
+            subtitle="People whose messages, posts and photos you don't see"
+            onPress={() => router.push('/blocked')}
           />
           <SettingsRow
             icon={<CircleHelpIcon size={18} color={colors.accent[700]} />}

@@ -183,6 +183,7 @@ export default function PhotosSection() {
   }
 
   const canRemove = (item: ClubMedia) => item.uploadedBy === me || isOrganizer;
+  const canReport = (item: ClubMedia) => item.uploadedBy !== me;
 
   async function remove(item: ClubMedia, fromViewer = false) {
     setErrors([]);
@@ -336,6 +337,7 @@ export default function PhotosSection() {
                   onOpen={() => void openFile(f)}
                   canRemove={canRemove(f)}
                   onRemove={() => void remove(f)}
+                  canReport={canReport(f)}
                 />
               </View>
             ))}
@@ -358,7 +360,11 @@ export default function PhotosSection() {
       </HubSection>
       {viewerIndex !== null && photosList.length > 0 ? (
         <MediaViewer
-          items={photosList.map((p) => ({ url: urls[p.storagePath] ?? null, caption: mediaCaption(p) }))}
+          items={photosList.map((p) => ({
+            id: p.id,
+            url: urls[p.storagePath] ?? null,
+            caption: mediaCaption(p),
+          }))}
           startIndex={viewerIndex}
           onClose={() => {
             setViewerError(null);
@@ -367,6 +373,7 @@ export default function PhotosSection() {
           error={viewerError}
           onNavigate={() => setViewerError(null)}
           canRemove={(i) => (photosList[i] ? canRemove(photosList[i]) : false)}
+          canReport={(i) => (photosList[i] ? canReport(photosList[i]) : false)}
           onRemove={(i) => {
             const p = photosList[i];
             if (p) void remove(p, true);

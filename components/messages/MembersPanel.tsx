@@ -4,9 +4,12 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { Text } from '../Text';
 import Button from '../Button';
 import ErrorBanner from '../ErrorBanner';
+import { MoreHorizontalIcon } from '../icons';
+import { usePersonActions } from '../moderation/usePersonActions';
 import { GENERIC_ERROR } from '../../lib/constants';
 import { fetchAddablePeople, fetchFriends } from '../../lib/friends';
 import { addToGroupThread, leaveGroupThread, type ThreadDetail } from '../../lib/messages';
+import { useSession } from '../../lib/session';
 import { colors, radius, space, type } from '../../lib/theme';
 
 /** A candidate for Add people -- the same shape app/messages/new.tsx's own
@@ -45,6 +48,11 @@ type Props = {
  */
 export default function MembersPanel({ thread, onChanged, onLeaveError }: Props) {
   const router = useRouter();
+  const { session } = useSession();
+  const viewerId = session?.user.id;
+  // Report / Block / Unblock on each other member. A block hides their
+  // messages here, so the conversation refetches.
+  const personActions = usePersonActions({ onChanged: () => void onChanged() });
 
   const [addingOpen, setAddingOpen] = useState(false);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
@@ -130,11 +138,25 @@ export default function MembersPanel({ thread, onChanged, onLeaveError }: Props)
 
   return (
     <View style={styles.membersPanel}>
-      {thread.thread_members.map((m) => (
-        <Text key={m.profile_id} style={styles.memberName}>
-          {m.profiles?.display_name ?? 'Member'}
-        </Text>
-      ))}
+      {personActions.sheets}
+      {thread.thread_members.map((m) => {
+        const name = m.profiles?.display_name ?? 'Member';
+        return (
+          <View key={m.profile_id} style={styles.memberRow}>
+            <Text style={[styles.memberName, styles.memberNameFill]}>{name}</Text>
+            {m.profile_id !== viewerId ? (
+              <Pressable
+                onPress={() => personActions.open({ id: m.profile_id, name: m.profiles?.display_name ?? null })}
+                accessibilityRole="button"
+                accessibilityLabel={`More options for ${name}`}
+                style={styles.memberMore}
+              >
+                <MoreHorizontalIcon size={20} color={colors.neutral[700]} />
+              </Pressable>
+            ) : null}
+          </View>
+        );
+      })}
 
       {addError ? <ErrorBanner message={addError} /> : null}
 
@@ -224,6 +246,9 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     padding: space[4],
   },
+  memberRow: { flexDirection: 'row', alignItems: 'center', minHeight: 44 },
+  memberNameFill: { flex: 1, minWidth: 0 },
+  memberMore: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', marginRight: -12 },
   memberName: {
     fontFamily: type.bodySemiBold,
     fontSize: type.size.body,

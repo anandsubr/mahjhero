@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { Text } from '../Text';
 import { ConfirmSheet } from '../GameForm';
+import ReportSheet from '../moderation/ReportSheet';
 import { DownloadIcon, FileIcon, MoreHorizontalIcon } from '../icons';
 import { fileTypeLabel, formatBytes, type ClubMedia } from '../../lib/club-media';
 import { colors } from '../../lib/theme';
@@ -13,11 +14,14 @@ type Props = {
   /** Uploader, or a host / co-organizer. */
   canRemove: boolean;
   onRemove: () => void;
+  /** Someone else's file: the menu offers Report. */
+  canReport?: boolean;
 };
 
-export default function FileRow({ file, onOpen, canRemove, onRemove }: Props) {
+export default function FileRow({ file, onOpen, canRemove, onRemove, canReport = false }: Props) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [reporting, setReporting] = useState(false);
   const type = fileTypeLabel(file.fileName);
 
   return (
@@ -50,7 +54,7 @@ export default function FileRow({ file, onOpen, canRemove, onRemove }: Props) {
         >
           <DownloadIcon size={20} color={colors.neutral[700]} />
         </Pressable>
-        {canRemove ? (
+        {canRemove || canReport ? (
           <Pressable
             onPress={() => setMenuOpen((o) => !o)}
             accessibilityRole="button"
@@ -62,15 +66,40 @@ export default function FileRow({ file, onOpen, canRemove, onRemove }: Props) {
           </Pressable>
         ) : null}
       </View>
-      {menuOpen && !confirming ? (
-        <Pressable
-          onPress={() => setConfirming(true)}
-          accessibilityRole="button"
-          accessibilityLabel="Remove"
-          style={styles.menuItem}
-        >
-          <Text style={styles.menuText}>Remove</Text>
-        </Pressable>
+      {menuOpen && !confirming && !reporting ? (
+        <View style={styles.menu}>
+          {canReport ? (
+            <Pressable
+              onPress={() => setReporting(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Report"
+              style={styles.menuItem}
+            >
+              <Text style={styles.menuText}>Report</Text>
+            </Pressable>
+          ) : null}
+          {canRemove ? (
+            <Pressable
+              onPress={() => setConfirming(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Remove"
+              style={styles.menuItem}
+            >
+              <Text style={styles.menuText}>Remove</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
+      {reporting ? (
+        <ReportSheet
+          kind="club_media"
+          targetId={file.id}
+          title="Report this file"
+          onClose={() => {
+            setReporting(false);
+            setMenuOpen(false);
+          }}
+        />
       ) : null}
       {confirming ? (
         <ConfirmSheet
@@ -105,8 +134,8 @@ const styles = StyleSheet.create({
   name: { fontSize: 15, fontWeight: '700', color: colors.text },
   meta: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
   iconButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  menu: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8 },
   menuItem: {
-    alignSelf: 'flex-end',
     minHeight: 44,
     paddingHorizontal: 16,
     justifyContent: 'center',

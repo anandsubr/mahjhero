@@ -5,6 +5,7 @@ import Tag from '../Tag';
 import AttachmentGrid from '../messages/AttachmentGrid';
 import HeartPill from './HeartPill';
 import CommentsPeek from './CommentsPeek';
+import { MoreHorizontalIcon } from '../icons';
 import { avatarColorsFor } from '../../lib/friends';
 import { isHostRole, memberInitials } from '../../lib/members';
 import { commentCountLabel, postTimeLabel, type FeedPost } from '../../lib/board';
@@ -16,6 +17,8 @@ type Props = {
   onOpen: () => void;
   onToggleHeart: () => void;
   hearting: boolean;
+  /** Opens the post's Report / Block sheet; omitted on your own posts. */
+  onMore?: () => void;
 };
 
 const MAX_LINES = 8;
@@ -30,7 +33,7 @@ function looksLong(body: string): boolean {
   return body.split('\n').length > MAX_LINES || body.length > MAX_CHARS;
 }
 
-export default function PostCard({ post, attachmentUrls, onOpen, onToggleHeart, hearting }: Props) {
+export default function PostCard({ post, attachmentUrls, onOpen, onToggleHeart, hearting, onMore }: Props) {
   const [measuredLong, setMeasuredLong] = useState(false);
   // null = the DOM overflow check isn't available (native, or no layout
   // engine), so the text heuristic is the fallback.
@@ -72,6 +75,16 @@ export default function PostCard({ post, attachmentUrls, onOpen, onToggleHeart, 
             {post.unread ? <View style={styles.dot} testID="unread-dot" accessibilityLabel="Unread" /> : null}
           </View>
         </View>
+        {onMore ? (
+          <Pressable
+            onPress={onMore}
+            accessibilityRole="button"
+            accessibilityLabel="Post options"
+            style={({ pressed }) => [styles.moreButton, pressed && styles.moreButtonPressed]}
+          >
+            <MoreHorizontalIcon size={20} color={colors.neutral[700]} />
+          </Pressable>
+        ) : null}
       </View>
 
       {post.body.trim() !== '' ? (
@@ -124,6 +137,8 @@ const styles = StyleSheet.create({
   avatar: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   initials: { fontFamily: type.bodyBold, fontSize: 16 },
   headerText: { flex: 1, minWidth: 0 },
+  moreButton: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', marginRight: -10 },
+  moreButtonPressed: { backgroundColor: colors.surface },
   nameRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 },
   name: { fontFamily: type.bodyBold, fontSize: 16, color: colors.accent[700], flexShrink: 1 },
   timeRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },

@@ -59,6 +59,18 @@ vi.mock('../../lib/board', async () => {
   };
 });
 
+const reportContent = vi.fn();
+const blockUser = vi.fn();
+vi.mock('../../lib/moderation', async () => {
+  const actual =
+    await vi.importActual<typeof import('../../lib/moderation')>('../../lib/moderation');
+  return {
+    ...actual,
+    reportContent: (...a: unknown[]) => reportContent(...a),
+    blockUser: (...a: unknown[]) => blockUser(...a),
+  };
+});
+
 const getSignedUrls = vi.fn();
 vi.mock('../../lib/attachments', () => ({
   pickImages: vi.fn(),
@@ -119,6 +131,53 @@ describe('the club board', () => {
     expect(screen.getByRole('button', { name: 'Heart this post' })).toBeTruthy();
     expect(screen.getByText('Comment')).toBeTruthy();
     expect(fetchClubFeed).toHaveBeenCalledWith('t1', undefined, 30);
+  });
+
+  it("offers Report and Block on someone else's post, nothing on your own", async () => {
+    fetchClubFeed.mockResolvedValue([
+      post('p1', { body: 'Theirs' }),
+      post('p2', { body: 'Mine', authorId: 'me', authorName: 'Me' }),
+    ]);
+    render(<ClubBoard threadId="t1" />);
+    await screen.findByText('Theirs');
+    expect(screen.getAllByRole('button', { name: 'Post options' })).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Post options' }));
+    const sheet = screen.getByTestId('action-sheet');
+    expect(
+      within(sheet)
+        .getAllByRole('button')
+        .map((b) => b.getAttribute('aria-label')),
+    ).toEqual(['Report', 'Block Alice Chen', 'Cancel']);
+  });
+
+  it('reports a post as a message report', async () => {
+    reportContent.mockResolvedValue({ data: 'r1', error: null });
+    fetchClubFeed.mockResolvedValue([post('p1', { body: 'Theirs' })]);
+    render(<ClubBoard threadId="t1" />);
+    await screen.findByText('Theirs');
+    fireEvent.click(screen.getByRole('button', { name: 'Post options' }));
+    fireEvent.click(within(screen.getByTestId('action-sheet')).getByRole('button', { name: 'Report' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Spam' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Submit' }));
+    expect(await screen.findByText("Thanks. We'll review this within 24 hours.")).toBeTruthy();
+    expect(reportContent).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'message', targetId: 'p1', reason: 'spam' }),
+    );
+  });
+
+  it('blocks a post author after confirming and reloads the feed', async () => {
+    blockUser.mockResolvedValue({ error: null });
+    fetchClubFeed.mockResolvedValue([post('p1', { body: 'Theirs' })]);
+    render(<ClubBoard threadId="t1" />);
+    await screen.findByText('Theirs');
+    fetchClubFeed.mockResolvedValue([]);
+    fireEvent.click(screen.getByRole('button', { name: 'Post options' }));
+    fireEvent.click(
+      within(screen.getByTestId('action-sheet')).getByRole('button', { name: 'Block Alice Chen' }),
+    );
+    fireEvent.click(within(screen.getByTestId('confirm-sheet')).getByRole('button', { name: 'Block' }));
+    await waitFor(() => expect(blockUser).toHaveBeenCalledWith('a1'));
+    await waitFor(() => expect(screen.queryByText('Theirs')).toBeNull());
   });
 
   it('says so when the board is empty', async () => {

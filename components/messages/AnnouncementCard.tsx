@@ -8,6 +8,9 @@ import { colors, radius, space, type } from '../../lib/theme';
 type Props = {
   message: ThreadMessage;
   onReply: (message: ThreadMessage) => void;
+  /** Long press: opens the message's action sheet. Without it a long press
+   *  replies, as it always did. */
+  onActions?: (message: ThreadMessage) => void;
   /** `storage_path` -> signed URL, resolved once per screen load by the
    *  caller -- see AttachmentGrid's own `urls` prop docstring. */
   attachmentUrls?: Record<string, string>;
@@ -23,7 +26,12 @@ type Props = {
  * the conversation moved to the Messages 2a layout -- the handoff doesn't
  * cover announcements.
  */
-export default function AnnouncementCard({ message: m, onReply, attachmentUrls = {} }: Props) {
+export default function AnnouncementCard({
+  message: m,
+  onReply,
+  onActions,
+  attachmentUrls = {},
+}: Props) {
   // An announcement's subject IS the body's first line (deriveSubject's own
   // contract) -- so printing `m.body` verbatim under a subject that already
   // said it once repeats it. Only what this card prints drops the duplicate.
@@ -32,7 +40,7 @@ export default function AnnouncementCard({ message: m, onReply, attachmentUrls =
   return (
     <Pressable
       testID={`bubble-${m.id}`}
-      onLongPress={() => onReply(m)}
+      onLongPress={() => (onActions ?? onReply)(m)}
       tabIndex={-1}
       style={styles.card}
     >
@@ -63,6 +71,14 @@ export default function AnnouncementCard({ message: m, onReply, attachmentUrls =
         accessibilityLabel={`Reply to ${m.profiles?.display_name ?? 'this message'}`}
         style={styles.hiddenReply}
       />
+      {onActions ? (
+        <Pressable
+          onPress={() => onActions(m)}
+          accessibilityRole="button"
+          accessibilityLabel="More options for this announcement"
+          style={styles.hiddenReply}
+        />
+      ) : null}
     </Pressable>
   );
 }

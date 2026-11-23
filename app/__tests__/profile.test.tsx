@@ -279,6 +279,7 @@ describe('profile screen', () => {
   it.each([
     ['Notifications', '/notifications'],
     ['Friends', '/friends'],
+    ['Blocked people', '/blocked'],
     ['How it works', '/how-it-works'],
   ])('the %s row opens %s', async (title, href) => {
     fetchProfile.mockResolvedValueOnce({

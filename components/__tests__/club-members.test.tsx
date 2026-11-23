@@ -1,6 +1,6 @@
 import { createRef } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import ClubMembers, { type ClubMembersHandle } from '../ClubMembers';
 import type { Club } from '../../lib/clubs';
 import { GENERIC_ERROR } from '../../lib/constants';
@@ -40,6 +40,21 @@ vi.mock('../../lib/messages', async (importOriginal) => {
   return {
     ...actual,
     createGroupThread: (...args: unknown[]) => createGroupThread(...args),
+  };
+});
+
+const reportContent = vi.fn();
+const blockUser = vi.fn();
+const unblockUser = vi.fn();
+const fetchMyBlocks = vi.fn();
+vi.mock('../../lib/moderation', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../lib/moderation')>();
+  return {
+    ...actual,
+    reportContent: (...args: unknown[]) => reportContent(...args),
+    blockUser: (...args: unknown[]) => blockUser(...args),
+    unblockUser: (...args: unknown[]) => unblockUser(...args),
+    fetchMyBlocks: (...args: unknown[]) => fetchMyBlocks(...args),
   };
 });
 
@@ -105,6 +120,10 @@ beforeEach(() => {
   fetchFriends.mockResolvedValue([]);
   addFriend.mockResolvedValue({ error: null });
   createGroupThread.mockResolvedValue({ id: 'thread-9', error: null });
+  reportContent.mockResolvedValue({ data: 'r1', error: null });
+  blockUser.mockResolvedValue({ error: null });
+  unblockUser.mockResolvedValue({ error: null });
+  fetchMyBlocks.mockResolvedValue({ data: [], error: null });
 });
 
 /**
@@ -117,6 +136,39 @@ beforeEach(() => {
  * this file never exercises them.
  */
 describe('ClubMembers', () => {
+  it("offers Report and Block on someone else's row, not on your own", async () => {
+    fetchRoster.mockResolvedValue(THREE);
+    render(<ClubMembers club={CLUB} role="member" />);
+    await screen.findByText('Ada (you)');
+    expect(screen.queryByLabelText('More options for Ada')).toBeNull();
+    fireEvent.click(screen.getByLabelText('More options for Zed Quinn'));
+    const sheet = screen.getByTestId('action-sheet');
+    expect(within(sheet).getByRole('button', { name: 'Report' })).toBeTruthy();
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Block Zed Quinn' }));
+    fireEvent.click(within(screen.getByTestId('confirm-sheet')).getByRole('button', { name: 'Block' }));
+    await waitFor(() => expect(blockUser).toHaveBeenCalledWith('p-zed'));
+    // Now blocked, the same row offers Unblock instead.
+    fireEvent.click(screen.getByLabelText('More options for Zed Quinn'));
+    fireEvent.click(
+      within(screen.getByTestId('action-sheet')).getByRole('button', { name: 'Unblock Zed Quinn' }),
+    );
+    await waitFor(() => expect(unblockUser).toHaveBeenCalledWith('p-zed'));
+  });
+
+  it('reports a person as a profile report', async () => {
+    fetchRoster.mockResolvedValue(THREE);
+    render(<ClubMembers club={CLUB} role="member" />);
+    await screen.findByText('Ada (you)');
+    fireEvent.click(screen.getByLabelText('More options for Priya Shah'));
+    fireEvent.click(within(screen.getByTestId('action-sheet')).getByRole('button', { name: 'Report' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Something else' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Submit' }));
+    expect(await screen.findByText("Thanks. We'll review this within 24 hours.")).toBeTruthy();
+    expect(reportContent).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'profile', targetId: 'p-priya', reason: 'other' }),
+    );
+  });
+
   it('renders the member list', async () => {
     fetchRoster.mockResolvedValue(MEMBER_ROLE);
     render(<ClubMembers club={CLUB} role="member" />);
