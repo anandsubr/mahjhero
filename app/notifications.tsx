@@ -152,7 +152,7 @@ export default function NotificationSettings() {
     // (see below), so their values are stale and unverified — possibly not
     // valid HH:MM at all. Submitting them anyway would make updatePreferences
     // run pair validation against fields the member can no longer see or
-    // fix, failing every future save (e.g. a channel-only change) with an
+    // fix, failing every future save (e.g. a mute-only change) with an
     // error that points at a field that isn't on screen. Omitting both
     // together keeps the pair check satisfied and leaves the stored values
     // untouched, which is harmless since they're unused while disabled.

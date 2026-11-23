@@ -514,7 +514,8 @@ skip_nonce_check = false
 
 [remotes.prod.auth.external.apple]
 enabled = true
-client_id = "app.mahjhero.client.signin"
+# Services ID for web sign-in, then the bundle id for native iOS identity tokens.
+client_id = "app.mahjhero.client.signin,app.mahjhero.client"
 secret = "env(PROD_APPLE_SECRET)"
 
 # Hosted defaults for the smallest compute size. The local values above
