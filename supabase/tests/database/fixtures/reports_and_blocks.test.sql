@@ -1,7 +1,7 @@
 begin;
 set local search_path to extensions, public;
 
-select plan(82);
+select plan(87);
 
 /*
  * Reports and blocks (20261122110000).
@@ -116,6 +116,13 @@ insert into public.messages (id, thread_id, author_id, body, created_at) values
    'bbbbbbbb-0000-0000-0000-000000000002', 'Bob in DM',
    now() - interval '2 hours');
 
+-- Bob's first group message carries an image.
+insert into public.message_attachments
+  (message_id, thread_id, storage_path, width, height, sort_order) values
+  ('90000000-0000-0000-0000-000000000001',
+   '22222222-0000-0000-0000-000000000002',
+   '22222222-0000-0000-0000-000000000002/bob.jpg', 800, 600, 0);
+
 insert into public.club_media
   (id, club_id, kind, storage_path, file_name, mime_type, size_bytes,
    uploaded_by) values
@@ -173,6 +180,13 @@ select is(
   2, 'before blocking, Alice sees Bob''s two board messages');
 select ok(public.can_post_thread('33333333-0000-0000-0000-000000000003'),
   'before blocking, Alice can post in the DM');
+select is(
+  (select count(*)::int from public.fetch_post_messages('a1000000-0000-0000-0000-000000000001')),
+  2, 'before blocking, Alice can open Bob''s post and its reply');
+select is(
+  (select count(*)::int from public.message_attachments
+    where message_id = '90000000-0000-0000-0000-000000000001'),
+  1, 'before blocking, Alice can read Bob''s attachment row');
 
 select throws_ok(
   $$ select public.block_user('aaaaaaaa-0000-0000-0000-000000000001') $$,
@@ -274,6 +288,10 @@ select is(
   (select count(*)::int from public.club_media
     where uploaded_by = 'bbbbbbbb-0000-0000-0000-000000000002'),
   0, 'RLS: a direct select on club_media hides Bob''s rows from Alice');
+select is(
+  (select count(*)::int from public.message_attachments
+    where message_id = '90000000-0000-0000-0000-000000000001'),
+  0, 'RLS: a direct select on message_attachments hides Bob''s attachment from Alice');
 
 -- Contact.
 select ok(not public.can_post_thread('33333333-0000-0000-0000-000000000003'),
@@ -348,6 +366,15 @@ select ok(public.can_post_thread('33333333-0000-0000-0000-000000000003'),
 select is(
   (select count(*)::int from public.fetch_club_feed('11111111-0000-0000-0000-000000000001')),
   2, 'and Bob''s post is back in the feed');
+select is(
+  (select count(*)::int from public.fetch_club_media('c1c1c1c1-0000-0000-0000-000000000001', 'photo')
+    where uploaded_by = 'bbbbbbbb-0000-0000-0000-000000000002'),
+  1, 'and Bob''s photo is back in the media');
+select is(
+  (select last_body from public.fetch_my_threads()
+    where thread_id = '22222222-0000-0000-0000-000000000002'),
+  'Bob latest in group',
+  'and the group preview shows Bob''s latest message again');
 
 -- ---------------------------------------------------------------------
 -- Reports: as Cara.

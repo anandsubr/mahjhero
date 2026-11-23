@@ -20,7 +20,8 @@
  *        - the blocker stops seeing the blocked person's messages, posts,
  *          replies and media: every read RPC the client uses is copied from
  *          its LATEST definition with only a block filter added (marked
- *          `-- CHANGED (blocks)`), and the messages / club_media select
+ *          `-- CHANGED (blocks)`), and the messages / club_media /
+ *          message_attachments select
  *          policies get the same filter so a direct table read (or a
  *          realtime INSERT payload, which RLS also gates) cannot leak what
  *          the RPCs hide.
@@ -617,6 +618,17 @@ alter policy messages_select on public.messages
 alter policy club_media_select_member on public.club_media
   using (public.is_club_member(club_id)
          and not public.is_blocked_by_me(uploaded_by));  -- CHANGED (blocks)
+
+-- 20260905020000's message_attachments_select, plus the block filter. The
+-- explicit is_blocked_by_me is not redundant with the messages policy it
+-- reads through: it keeps this rule right even if that policy changes.
+alter policy message_attachments_select on public.message_attachments
+  using (public.can_read_thread(thread_id)
+         -- CHANGED (blocks)
+         and exists (
+           select 1 from public.messages m
+            where m.id = message_id
+              and not public.is_blocked_by_me(m.author_id)));
 
 -- ---------------------------------------------------------------------
 -- 4c. Visibility: the read RPCs. Each copied from its latest definition;
