@@ -514,6 +514,34 @@ describe('BOOKING_REFUSALS (self-audit against the migrations)', () => {
     'not signed in': 'raised by create_club — lib/clubs.ts’s function, not this module’s',
     'no such account':
       'raised by delete_account_data on a null target — service-role only, called by the delete-account edge function, never by a client',
+    // Reports and blocks (20261122110000). report_content / block_user /
+    // unblock_user are called from the report and block UI, and
+    // fetch_reports / resolve_report from the admin reports screen — none
+    // from lib/bookings.ts. Those modules map their own errors.
+    'you cannot report this':
+      'raised by report_content for content the caller cannot read — the report/block module’s, not this module’s',
+    'unknown report kind':
+      'raised by report_content — the report sheet only sends message, club_media or profile; not this module’s',
+    'unknown report reason':
+      'raised by report_content — the report sheet only sends its four fixed reasons; not this module’s',
+    'report details are too long':
+      'raised by report_content over 500 characters — the report sheet caps details first; not this module’s',
+    'you cannot report yourself':
+      'raised by report_content — Report is hidden on your own content; not this module’s',
+    'you cannot block yourself':
+      'raised by block_user — Block is hidden on yourself; not this module’s',
+    'no such person':
+      'raised by block_user for an unknown id — the UI only blocks people it has listed; not this module’s',
+    'unknown report status':
+      'raised by fetch_reports (admin only) — the admin screen sends a fixed status; not this module’s',
+    'unknown report action':
+      'raised by resolve_report (admin only) — the admin screen sends remove or dismiss; not this module’s',
+    'no such report':
+      'raised by resolve_report (admin only) — not this module’s',
+    'that report is already resolved':
+      'raised by resolve_report (admin only) when another admin got there first — not this module’s',
+    'a profile report can only be dismissed':
+      'raised by resolve_report (admin only) — the admin screen offers only Dismiss on a profile report; not this module’s',
     // set_club_code's non-organizer guard (42501). Unlike the club-code
     // entries just below, codeError has no case for this one — it falls
     // through to GENERIC_ERROR, same real gap as the three entries above.

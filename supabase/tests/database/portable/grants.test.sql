@@ -875,7 +875,14 @@ select is(
        'public.reset_calendar_feed_token()',
        'public.add_club_media(uuid, text, text, text, text, int, int, int)',
        'public.remove_club_media(uuid)',
-       'public.fetch_club_media(uuid, text, timestamptz, int)'
+       'public.fetch_club_media(uuid, text, timestamptz, int)',
+       'public.is_blocked_by_me(uuid)',
+       'public.report_content(text, uuid, text, text)',
+       'public.block_user(uuid)',
+       'public.unblock_user(uuid)',
+       'public.fetch_my_blocks()',
+       'public.fetch_reports(text)',
+       'public.resolve_report(uuid, text)'
      ]) as f
    ) expected
    where not exists (
@@ -991,7 +998,14 @@ select is(
          'public.reset_calendar_feed_token()',
          'public.add_club_media(uuid, text, text, text, text, int, int, int)',
          'public.remove_club_media(uuid)',
-         'public.fetch_club_media(uuid, text, timestamptz, int)'
+         'public.fetch_club_media(uuid, text, timestamptz, int)',
+         'public.is_blocked_by_me(uuid)',
+         'public.report_content(text, uuid, text, text)',
+         'public.block_user(uuid)',
+         'public.unblock_user(uuid)',
+         'public.fetch_my_blocks()',
+         'public.fetch_reports(text)',
+         'public.resolve_report(uuid, text)'
        ]) as f
        where to_regprocedure(f) = p.oid::regprocedure
      )),
