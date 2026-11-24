@@ -54,7 +54,13 @@ if (process.env.SEED_CONFIRM_HOST !== seedHost) {
 }
 
 const REVIEW_EMAIL = 'review@mahjhero.com';
-const CLUB_NAME = 'Willow Creek Mahjong (Demo)';
+const CLUB_NAME = 'Willow Creek Mahjong';
+// Earlier runs named the club this; it's renamed in place so the reviewer
+// keeps the same club.
+const OLD_CLUB_NAME = 'Willow Creek Mahjong (Demo)';
+// The reviewer's display name shows in App Store screenshots, so it reads as
+// a member, not as "App Review".
+const REVIEW_NAME = 'Ruth Kaplan';
 const CLUB_TZ = 'America/New_York';
 const VENUE_NAME = 'Willow Creek Community Center';
 const GROUP_TITLE = 'Saturday carpool';
@@ -145,8 +151,8 @@ async function rpc<T>(client: SupabaseClient, fn: string, args: Record<string, u
 
 async function main() {
   // --- people -------------------------------------------------------------
-  const reviewerId = await ensureUser(REVIEW_EMAIL, REVIEW_PASSWORD, 'App Review');
-  await ensureProfile(reviewerId, 'App Review', 'intermediate', {
+  const reviewerId = await ensureUser(REVIEW_EMAIL, REVIEW_PASSWORD, REVIEW_NAME);
+  await ensureProfile(reviewerId, REVIEW_NAME, 'intermediate', {
     // Dismiss first-run tips so the reviewer lands on a clean Home.
     dismissed_guides: [...STATIC_GUIDE_KEYS],
   });
@@ -173,15 +179,28 @@ async function main() {
   // --- club ---------------------------------------------------------------
   const { data: clubRow, error: clubErr } = await admin
     .from('clubs')
-    .select('id, created_by')
-    .eq('name', CLUB_NAME)
+    .select('id, name, created_by')
+    .in('name', [CLUB_NAME, OLD_CLUB_NAME])
+    .eq('created_by', demoIds[0])
     .maybeSingle();
   if (clubErr) fail('look up club', clubErr);
-  if (clubRow && clubRow.created_by !== demoIds[0]) {
-    console.error(
-      `A club named "${CLUB_NAME}" already exists with a different creator; refusing to touch it.`,
-    );
-    process.exit(1);
+  if (!clubRow) {
+    const { data: clash, error: clashErr } = await admin
+      .from('clubs')
+      .select('id')
+      .eq('name', CLUB_NAME)
+      .limit(1);
+    if (clashErr) fail('look up club name', clashErr);
+    if ((clash ?? []).length > 0) {
+      console.error(
+        `A club named "${CLUB_NAME}" already exists with a different creator; refusing to touch it.`,
+      );
+      process.exit(1);
+    }
+  }
+  if (clubRow && clubRow.name !== CLUB_NAME) {
+    const { error: renameErr } = await admin.from('clubs').update({ name: CLUB_NAME }).eq('id', clubRow.id);
+    if (renameErr) fail('rename club', renameErr);
   }
   let clubId = clubRow?.id as string | undefined;
   if (!clubId) {
@@ -291,11 +310,42 @@ async function main() {
 
   // Game 1: one table of four, full, with a waitlisted fifth.
   for (const e of [host, linda, susan, helen, barbara]) await book(eventIds[0], e, idOf(e));
-  // Game 2: the reviewer is in.
+  // Game 2: the reviewer is in, with a full first table and two at the second.
   for (const e of [host, linda]) await book(eventIds[1], e, idOf(e));
   await book(eventIds[1], REVIEW_EMAIL, reviewerId);
+  for (const e of [susan, helen, barbara]) await book(eventIds[1], e, idOf(e));
   // Game 3: a few signed up.
   for (const e of [susan, barbara]) await book(eventIds[2], e, idOf(e));
+
+  // --- seat everyone ----------------------------------------------------
+  // Booking admits people to a game; the host then seats them at tables
+  // ("Seat at …" in the app). Do the same here so tables aren't left empty.
+  for (const eventId of eventIds) {
+    const { data: tables, error: tErr } = await admin
+      .from('event_tables')
+      .select('id, position')
+      .eq('event_id', eventId)
+      .order('position');
+    if (tErr) fail('read tables', tErr);
+    const { data: unseated, error: uErr } = await admin
+      .from('bookings')
+      .select('id, created_at')
+      .eq('event_id', eventId)
+      .eq('status', 'confirmed')
+      .is('event_table_id', null)
+      .order('created_at');
+    if (uErr) fail('read unseated bookings', uErr);
+    for (const b of unseated ?? []) {
+      for (const t of tables ?? []) {
+        const { error } = await hostClient.rpc('place_booking', {
+          target_booking: b.id,
+          target_table: t.id,
+        });
+        if (!error) break;
+        if (!/table full/.test(error.message)) fail('seat a player', error);
+      }
+    }
+  }
 
   // --- board post with a reply -------------------------------------------
   const thread = { id: await rpc<string>(clients[host], 'open_thread_for_club', { target_club: clubId }) };
