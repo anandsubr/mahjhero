@@ -79,7 +79,7 @@ export default function HomeGuides({
         >
           <TipText>1. Join a group with its code, or accept an invite.</TipText>
           <TipText>2. When you’re invited to a game, accept it here on Home.</TipText>
-          <TipText>3. Your games show up here under My games.</TipText>
+          <TipText>3. Your games show up here under Games.</TipText>
         </TipCard>
       ) : null}
     </>

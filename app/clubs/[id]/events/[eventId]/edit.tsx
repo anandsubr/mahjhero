@@ -12,8 +12,10 @@ import {
   FormSection,
   FormTitle,
   GhostLink,
+  ChipsRow,
   MoneyCards,
   Segmented,
+  SmallChip,
   StartTimeRow,
   TablesCard,
   TextRow,
@@ -25,7 +27,7 @@ import { ClipboardCheckIcon, LockIcon } from '../../../../../components/icons';
 import Screen from '../../../../../components/Screen';
 import TimeField from '../../../../../components/TimeField';
 import VenuePicker from '../../../../../components/VenuePicker';
-import { setMahjNightDetails } from '../../../../../lib/mahj-nights';
+import { setMahjNightDetails, type MoneyNorm } from '../../../../../lib/mahj-nights';
 import type { SkillTier } from '../../../../../lib/bookings';
 import { fetchClub, type Club, type GameMode } from '../../../../../lib/clubs';
 import {
@@ -219,6 +221,9 @@ export default function EditEventScreen() {
   // Mahj Night only (pivot batch 2): the public area label and the badge.
   const [nightArea, setNightArea] = useState('');
   const [nightBeginners, setNightBeginners] = useState(false);
+  const [nightSets, setNightSets] = useState(1);
+  const [nightMoney, setNightMoney] = useState<MoneyNorm>('none');
+  const [nightMoneyNote, setNightMoneyNote] = useState('');
   const isNight = event?.event_type === 'mahj_night';
   const [eventCheckInRequired, setEventCheckInRequired] = useState(false);
   const [eventGameMode, setEventGameMode] = useState<GameMode>('open_play');
@@ -370,6 +375,9 @@ export default function EditEventScreen() {
         );
         setNightArea(loadedEvent.public_area ?? '');
         setNightBeginners(loadedEvent.beginners_welcome ?? false);
+        setNightSets(loadedEvent.host_sets ?? 1);
+        setNightMoney(loadedEvent.money_norm ?? 'none');
+        setNightMoneyNote(loadedEvent.money_note ?? '');
         setOriginal({
           title: loadedEvent.title ?? '',
           venueId: loadedEvent.venue_id,
@@ -759,12 +767,21 @@ export default function EditEventScreen() {
       if (
         isNight &&
         (nightArea.trim() !== (event.public_area ?? '') ||
-          nightBeginners !== (event.beginners_welcome ?? false))
+          nightBeginners !== (event.beginners_welcome ?? false) ||
+          nightSets !== (event.host_sets ?? 1) ||
+          nightMoney !== (event.money_norm ?? 'none') ||
+          nightMoneyNote.trim() !== (event.money_note ?? ''))
       ) {
-        const ok = await setMahjNightDetails(event.id, nightArea, nightBeginners);
+        const ok = await setMahjNightDetails(event.id, {
+          area: nightArea,
+          beginnersWelcome: nightBeginners,
+          sets: nightSets,
+          money: nightMoney,
+          moneyNote: nightMoneyNote,
+        });
         if (!ok) {
           setSaving(false);
-          setError('Could not save the area or the beginners badge. Try again.');
+          setError('Could not save the night\'s details. Try again.');
           return;
         }
       }
@@ -911,11 +928,49 @@ export default function EditEventScreen() {
               <ToggleRow
                 icon={null}
                 title="Beginners welcome"
-                helper="Shows a badge on the invite, and guests can ask for a learning seat."
+                helper="Shows a badge on the invite. The seating plan puts someone who can teach at each table."
                 value={nightBeginners}
                 onValueChange={setNightBeginners}
               />
             </FormCard>
+          </FormSection>
+        ) : null}
+
+        {isNight ? (
+          <FormSection label="Sets and money" helper="MahjHero never handles money; this only shows on the invite.">
+            <FormCard>
+              <ChipsRow label="How many sets do you have?">
+                {[0, 1, 2, 3, 4, 5].map((n) => (
+                  <SmallChip
+                    key={n}
+                    label={String(n)}
+                    accessibilityLabel={`${n} ${n === 1 ? 'set' : 'sets'}`}
+                    selected={nightSets === n}
+                    onPress={() => setNightSets(n)}
+                  />
+                ))}
+              </ChipsRow>
+            </FormCard>
+            <Segmented
+              options={[
+                { value: 'none' as const, label: 'No money' },
+                { value: 'quarters' as const, label: 'Quarters' },
+                { value: 'host_choice' as const, label: "Host's choice" },
+              ]}
+              value={nightMoney}
+              onChange={setNightMoney}
+            />
+            {nightMoney === 'host_choice' ? (
+              <FormCard>
+                <TextRow
+                  label="What are you playing for?"
+                  value={nightMoneyNote}
+                  onChangeText={(v) => setNightMoneyNote(v.slice(0, 60))}
+                  accessibilityLabel="What are you playing for?"
+                  placeholder="A dollar a game"
+                />
+              </FormCard>
+            ) : null}
           </FormSection>
         ) : null}
 

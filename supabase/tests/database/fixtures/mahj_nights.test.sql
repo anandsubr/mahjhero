@@ -97,7 +97,7 @@ grant all on rsvp to service_role;
 
 select is(
   (select r ->> 'outcome' from public.submit_rsvp(
-     (select link_token from night), 'Ana Lopez', 'Guest-One@example.com', 'going', true, '1.2.3.4') r),
+     (select link_token from night), 'Ana Lopez', 'Guest-One@example.com', 'going', true, false, false, false, '1.2.3.4') r),
   'created', 'a guest can RSVP without signing in');
 insert into rsvp select rsvp_secret from public.event_rsvps where lower(email) = 'guest-one@example.com';
 
@@ -113,7 +113,7 @@ select is(
 
 select is(
   (select r ->> 'outcome' from public.submit_rsvp(
-     (select link_token from night), 'Someone Else', 'guest-one@example.com', 'no', false, '5.6.7.8') r),
+     (select link_token from night), 'Someone Else', 'guest-one@example.com', 'no', false, false, false, false, '5.6.7.8') r),
   'exists', 'the same email without the secret changes nothing');
 select is(
   (select status::text from public.event_rsvps where lower(email) = 'guest-one@example.com'),
@@ -121,26 +121,27 @@ select is(
 
 select is(
   (select r ->> 'outcome' from public.submit_rsvp(
-     (select link_token from night), 'Ana Lopez', 'guest-one@example.com', 'maybe', true, '1.2.3.4',
+     (select link_token from night), 'Ana Lopez', 'guest-one@example.com', 'maybe', true, false, false, false, '1.2.3.4',
      (select secret from rsvp)) r),
   'updated', 'with the secret, the guest can change their answer');
 
 -- One table: four seats, host included. Ana is a maybe; three yeses fill it.
 select lives_ok(
-  $$select public.submit_rsvp((select link_token from night), 'B', 'b@example.com', 'going', false, '9.9.9.1');
-    select public.submit_rsvp((select link_token from night), 'C', 'c@example.com', 'going', false, '9.9.9.2');
-    select public.submit_rsvp((select link_token from night), 'D', 'd@example.com', 'going', false, '9.9.9.3')$$,
+  $$select public.submit_rsvp((select link_token from night), 'B', 'b@example.com', 'going', false, false, false, false, '9.9.9.1');
+    select public.submit_rsvp((select link_token from night), 'C', 'c@example.com', 'going', false, false, false, false, '9.9.9.2');
+    select public.submit_rsvp((select link_token from night), 'D', 'd@example.com', 'going', false, false, false, false, '9.9.9.3')$$,
   'three more yeses fit at one table');
-select throws_ok(
-  $$select public.submit_rsvp((select link_token from night), 'E', 'e@example.com', 'going', false, '9.9.9.4')$$,
-  'P0001', 'full', 'a yes past the seats is refused');
+select is(
+  (select r ->> 'status' from public.submit_rsvp(
+     (select link_token from night), 'E', 'e@example.com', 'going', false, false, false, false, '9.9.9.4') r),
+  'waitlist', 'a yes past the seats joins the waitlist (batch 2b)');
 
 reset role;
 insert into public.rsvp_attempts (club_id, client_ip)
 select (select club_id from night), '6.6.6.6' from generate_series(1, 20);
 set local role service_role;
 select throws_ok(
-  $$select public.submit_rsvp((select link_token from night), 'F', 'f@example.com', 'maybe', false, '6.6.6.6')$$,
+  $$select public.submit_rsvp((select link_token from night), 'F', 'f@example.com', 'maybe', false, false, false, false, '6.6.6.6')$$,
   'P0001', 'rate_limited', 'too many tries from one address are refused');
 
 select is(
@@ -155,7 +156,7 @@ select is(
 select is(
   jsonb_array_length(public.event_page((select link_token from night), null,
     'aaaaaaaa-0000-0000-0000-00000000d001') -> 'rsvps'),
-  4, 'the host sees every RSVP');
+  5, 'the host sees every RSVP, the waitlisted one included');
 
 -- ---------------------------------------------------------------------------
 -- Link off, reset; claim

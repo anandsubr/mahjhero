@@ -541,6 +541,8 @@ describe.runIf(reachable || required)('events schema contract', () => {
         'capacity',
         // Pivot batch 2: what makes a game a Mahj Night.
         'event_type', 'public_area', 'beginners_welcome',
+        // Batch 2b: the night's sets and money choice.
+        'host_sets', 'money_norm', 'money_note',
         'event_tables', 'bookings',
       ].sort(),
     );

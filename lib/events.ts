@@ -37,6 +37,9 @@ export type ClubEvent = {
   event_type?: 'regular' | 'mahj_night';
   public_area?: string;
   beginners_welcome?: boolean;
+  host_sets?: number;
+  money_norm?: 'none' | 'quarters' | 'host_choice';
+  money_note?: string;
   club_id: string;
   series_id: string | null;
   /** NULL for an unnamed game -- show it with lib/home.ts gameHeadline. */
@@ -215,7 +218,7 @@ export const EVENT_COLUMNS =
   'id, club_id, series_id, title, venue_id, notes, starts_at, ends_at, ' +
   'status, occurrence_date, overrides, check_in_required, fee_cents, ' +
   'min_spend_cents, game_mode, seating_mode, capacity, event_type, public_area, ' +
-  'beginners_welcome, venues(name), ' +
+  'beginners_welcome, host_sets, money_norm, money_note, venues(name), ' +
   'event_tables(id, capacity, label), ' +
   'bookings(profile_id, status, event_table_id, group_id, invite_holds_seat)';
 

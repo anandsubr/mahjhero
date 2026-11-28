@@ -46,6 +46,9 @@ describe('Host a Mahj Night', () => {
     fireEvent.change(screen.getByLabelText('Area to show on the invite'), { target: { value: 'Suwanee' } });
     fireEvent.click(screen.getByRole('button', { name: '3 tables' }));
     fireEvent.click(screen.getByRole('button', { name: 'Peony theme' }));
+    fireEvent.click(screen.getByRole('button', { name: '2 sets' }));
+    fireEvent.click(screen.getByRole('button', { name: "Host's choice" }));
+    fireEvent.change(screen.getByLabelText('What are you playing for?'), { target: { value: 'A dollar a game' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create the night' }));
     await waitFor(() => expect(createMahjNight).toHaveBeenCalled());
     expect(createMahjNight.mock.calls[0][0]).toMatchObject({
@@ -57,8 +60,19 @@ describe('Host a Mahj Night', () => {
       beginnersWelcome: true,
       startTime: '19:00',
       durationMinutes: 180,
+      sets: 2,
+      money: 'host_choice',
+      moneyNote: 'A dollar a game',
     });
     await waitFor(() => expect(replace).toHaveBeenCalledWith('/e/tok_abcdefghijklmnopqrstuvwx?created=1'));
+  });
+
+  it('says how many more sets the tables need', () => {
+    render(<NewMahjNightScreen />);
+    fireEvent.click(screen.getByRole('button', { name: '3 tables' }));
+    expect(screen.getByText(/2 more sets needed for 3 tables/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '3 sets' }));
+    expect(screen.getByText(/Enough for every table/)).toBeTruthy();
   });
 
   it('shows the error when creating fails', async () => {

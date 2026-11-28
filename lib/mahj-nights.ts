@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform, Share } from 'react-native';
 import { supabase } from './supabase';
+import type { MyGame } from './my-games';
 
 /**
  * Mahj Nights (pivot batch 2): a one-off party. Underneath it is a hidden
@@ -13,6 +14,9 @@ import { supabase } from './supabase';
  */
 
 export type RsvpStatus = 'going' | 'maybe' | 'no';
+/** What an RSVP ends up as: a yes on a full night joins the waitlist (batch 2b). */
+export type StoredRsvpStatus = RsvpStatus | 'waitlist';
+export type MoneyNorm = 'none' | 'quarters' | 'host_choice';
 
 export type EventPage = {
   tier: 'public' | 'guest' | 'host';
@@ -28,7 +32,22 @@ export type EventPage = {
   tables: number;
   seats: number;
   going_count: number;
-  my_rsvp: { name: string; email: string; status: RsvpStatus; is_beginner: boolean } | null;
+  money_norm: MoneyNorm;
+  money_note: string;
+  /** People at each table (host included), from the seating plan. */
+  table_counts: number[];
+  table_capacities: number[];
+  my_rsvp: {
+    name: string;
+    email: string;
+    status: StoredRsvpStatus;
+    is_beginner: boolean;
+    can_teach: boolean;
+    brings_set: boolean;
+    has_card: boolean;
+  } | null;
+  /** This guest's suggested table, once they've said yes. */
+  my_table?: number;
   // guest and host
   club_id?: string;
   event_id?: string;
@@ -39,15 +58,27 @@ export type EventPage = {
   link_token?: string;
   link_enabled?: boolean;
   beginner_count?: number;
-  rsvps?: {
-    id: string;
-    name: string;
-    email: string;
-    status: RsvpStatus;
-    is_beginner: boolean;
-    signed_in: boolean;
-    created_at: string;
-  }[];
+  teacher_count?: number;
+  host_sets?: number;
+  guest_sets?: number;
+  card_count?: number;
+  rsvps?: HostRsvp[];
+};
+
+export type HostRsvp = {
+  id: string;
+  name: string;
+  email: string;
+  status: StoredRsvpStatus;
+  is_beginner: boolean;
+  can_teach: boolean;
+  brings_set: boolean;
+  has_card: boolean;
+  signed_in: boolean;
+  created_at: string;
+  /** Suggested (or host-chosen) table; null unless going. */
+  table: number | null;
+  table_pinned: boolean;
 };
 
 export type NewMahjNight = {
@@ -61,6 +92,9 @@ export type NewMahjNight = {
   themeId: string;
   beginnersWelcome: boolean;
   note: string;
+  sets: number;
+  money: MoneyNorm;
+  moneyNote: string;
 };
 
 export type CreatedNight = { clubId: string; eventId: string; linkToken: string };
@@ -89,6 +123,9 @@ export async function createMahjNight(
     beginners: night.beginnersWelcome,
     host_note: night.note,
     night_timezone: deviceTimezone(),
+    sets: night.sets,
+    money: night.money,
+    money_text: night.money === 'host_choice' ? night.moneyNote : '',
   });
   if (error || !data) {
     console.error('createMahjNight failed', error);
@@ -133,11 +170,14 @@ export type RsvpInput = {
   email: string;
   status: RsvpStatus;
   isBeginner: boolean;
+  isTeacher: boolean;
+  bringsSet: boolean;
+  hasCard: boolean;
   secret: string | null;
 };
 
 export type RsvpResult =
-  | { outcome: 'created' | 'updated'; secret: string }
+  | { outcome: 'created' | 'updated'; secret: string; status: StoredRsvpStatus }
   | { outcome: 'exists' }
   | { outcome: 'error'; message: string };
 
@@ -212,52 +252,82 @@ export type MyNight = {
   linkToken: string;
   themeId: string | null;
   startsAt: string;
+  endsAt: string;
   timezone: string;
   area: string;
   cancelled: boolean;
+  isHost: boolean;
+  /** This viewer's own answer; null for a host who hasn't RSVP'd. */
+  rsvpStatus: StoredRsvpStatus | null;
+  goingCount: number;
+  seats: number;
 };
 
 /**
- * Upcoming Mahj Nights whose group I'm in (as host, or as a guest who signed
- * in). RLS on clubs and events already limits this to my memberships.
- * Null on failure.
+ * Upcoming Mahj Nights I host or have answered (not "no"), with my own part
+ * in each -- my_mahj_nights (20261129120000). Null on failure.
  */
-export async function fetchMyMahjNights(now: Date = new Date()): Promise<MyNight[] | null> {
+export async function fetchMyMahjNights(): Promise<MyNight[] | null> {
   try {
-    const { data, error } = await supabase
-      .from('clubs')
-      .select('id, name, link_token, theme_id, timezone, events(id, title, starts_at, ends_at, public_area, status, event_type)')
-      .eq('kind', 'event');
+    const { data, error } = await supabase.rpc('my_mahj_nights');
     if (error) {
       console.error('fetchMyMahjNights failed', error);
       return null;
     }
     type Row = {
-      id: string; name: string; link_token: string; theme_id: string | null; timezone: string;
-      events: { id: string; title: string | null; starts_at: string; ends_at: string;
-        public_area: string; status: string; event_type: string }[];
+      club_id: string; event_id: string; title: string; starts_at: string; ends_at: string;
+      timezone: string; area: string; link_token: string; theme_id: string | null;
+      cancelled: boolean; is_host: boolean; rsvp_status: StoredRsvpStatus | null;
+      going_count: number; seats: number;
     };
-    const nights: MyNight[] = [];
-    for (const c of (data ?? []) as unknown as Row[]) {
-      const e = (c.events ?? []).find((x) => x.event_type === 'mahj_night');
-      if (!e || new Date(e.ends_at) < now) continue;
-      nights.push({
-        clubId: c.id,
-        eventId: e.id,
-        title: e.title ?? c.name,
-        linkToken: c.link_token,
-        themeId: c.theme_id,
-        startsAt: e.starts_at,
-        timezone: c.timezone,
-        area: e.public_area,
-        cancelled: e.status === 'cancelled',
-      });
-    }
-    return nights.sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+    return ((data ?? []) as Row[]).map((r) => ({
+      clubId: r.club_id,
+      eventId: r.event_id,
+      title: r.title,
+      linkToken: r.link_token,
+      themeId: r.theme_id,
+      startsAt: r.starts_at,
+      endsAt: r.ends_at,
+      timezone: r.timezone,
+      area: r.area,
+      cancelled: r.cancelled,
+      isHost: r.is_host,
+      rsvpStatus: r.rsvp_status,
+      goingCount: r.going_count,
+      seats: r.seats,
+    }));
   } catch (cause) {
     console.error('fetchMyMahjNights failed', cause);
     return null;
   }
+}
+
+/** A night as a row of Home's Games list (see lib/home.ts mergeNights). */
+export function nightAsGame(n: MyNight): MyGame {
+  return {
+    eventId: n.eventId,
+    clubId: n.clubId,
+    clubName: 'Mahj Night',
+    title: n.title,
+    gameMode: 'open_play',
+    seatingMode: 'assigned_tables',
+    startsAt: n.startsAt,
+    timezone: n.timezone,
+    venueName: n.area,
+    seatsTaken: n.goingCount,
+    capacity: n.seats,
+    myStatus: n.isHost
+      ? 'hosting'
+      : n.rsvpStatus === 'going'
+        ? 'going'
+        : n.rsvpStatus === 'waitlist'
+          ? 'waitlisted'
+          : 'maybe',
+    waitlistPosition: null,
+    tableLabel: null,
+    updated: false,
+    linkToken: n.linkToken,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -282,18 +352,35 @@ export async function setNightLinkEnabled(clubId: string, enabled: boolean): Pro
   return true;
 }
 
-export async function setMahjNightDetails(
-  eventId: string,
-  area: string,
-  beginnersWelcome: boolean,
-): Promise<boolean> {
+export type NightDetails = {
+  area: string;
+  beginnersWelcome: boolean;
+  sets: number;
+  money: MoneyNorm;
+  moneyNote: string;
+};
+
+export async function setMahjNightDetails(eventId: string, d: NightDetails): Promise<boolean> {
   const { error } = await supabase.rpc('set_mahj_night_details', {
     target_event: eventId,
-    area_label: area,
-    beginners: beginnersWelcome,
+    area_label: d.area,
+    beginners: d.beginnersWelcome,
+    sets: d.sets,
+    money: d.money,
+    money_text: d.money === 'host_choice' ? d.moneyNote : '',
   });
   if (error) {
     console.error('setMahjNightDetails failed', error);
+    return false;
+  }
+  return true;
+}
+
+/** The host moves a guest to a table, or (null) back to the suggested plan. */
+export async function setRsvpTable(rsvpId: string, table: number | null): Promise<boolean> {
+  const { error } = await supabase.rpc('set_rsvp_table', { target_rsvp: rsvpId, table_no: table });
+  if (error) {
+    console.error('setRsvpTable failed', error);
     return false;
   }
   return true;
@@ -440,4 +527,50 @@ export function formatNightWhen(startsAt: string, timezone: string): string {
     hour: 'numeric', minute: '2-digit', timeZone: timezone,
   }).format(d);
   return `${day} · ${time}`;
+}
+
+// ---------------------------------------------------------------------------
+// The planner's wording (pivot batch 2b)
+// ---------------------------------------------------------------------------
+
+/** "Table 1 full · Table 2: 3 of 4 · Table 3: open". */
+export function tableLine(counts: number[], capacities: number[]): string {
+  return capacities
+    .map((cap, i) => {
+      const n = counts[i] ?? 0;
+      if (n >= cap) return `Table ${i + 1} full`;
+      if (n === 0) return `Table ${i + 1}: open`;
+      return `Table ${i + 1}: ${n} of ${cap}`;
+    })
+    .join(' · ');
+}
+
+/**
+ * "1 more makes a full table" while a table is part-filled and seats
+ * remain; null otherwise. Counts the first part-filled table.
+ */
+export function oneMoreLine(counts: number[], capacities: number[]): string | null {
+  const t = capacities.findIndex((cap, i) => (counts[i] ?? 0) > 0 && (counts[i] ?? 0) < cap);
+  if (t === -1) return null;
+  const need = capacities[t] - (counts[t] ?? 0);
+  return need === 1 ? '1 more makes a full table' : `${need} more make a full table`;
+}
+
+export function moneyLine(norm: MoneyNorm, note: string): string {
+  if (norm === 'quarters') return 'Quarters';
+  if (norm === 'host_choice' && note.trim()) return note.trim();
+  return 'No money';
+}
+
+/**
+ * The host's warning when the yeses outgrow the sets: tables that can run
+ * are the smaller of the tables planned and the sets available.
+ */
+export function setsWarning(going: number, tables: number, sets: number): string | null {
+  const runnable = Math.min(tables, sets);
+  const seats = runnable * 4;
+  if (going <= seats) return null;
+  const setWord = sets === 1 ? 'set' : 'sets';
+  if (seats === 0) return `You have ${going} going and no sets. Ask someone to bring a set.`;
+  return `You have ${going} going and ${sets} ${setWord}. Ask someone to bring a set, or cap at ${seats}.`;
 }

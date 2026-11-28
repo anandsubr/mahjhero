@@ -1,4 +1,5 @@
 import type { Body } from '../_shared/email-types.ts';
+import { planSeating, type SeatingInput } from '../_shared/seating.ts';
 
 /**
  * The pure half of the mahj-night function: request parsing, the RSVP
@@ -6,6 +7,8 @@ import type { Body } from '../_shared/email-types.ts';
  */
 
 export type RsvpStatus = 'going' | 'maybe' | 'no';
+/** What an RSVP ends up as: a yes on a full night joins the waitlist. */
+export type StoredStatus = RsvpStatus | 'waitlist';
 
 export type RsvpRequest = {
   token: string;
@@ -13,6 +16,9 @@ export type RsvpRequest = {
   email: string;
   status: RsvpStatus;
   isBeginner: boolean;
+  isTeacher: boolean;
+  bringsSet: boolean;
+  hasCard: boolean;
   secret: string | null;
 };
 
@@ -32,7 +38,10 @@ export function parseRsvpRequest(body: unknown): RsvpRequest | null {
     name: b.name.trim(),
     email: b.email.trim(),
     status: b.status as RsvpStatus,
-    isBeginner: b.isBeginner === true,
+    isBeginner: b.isBeginner === true && b.isTeacher !== true,
+    isTeacher: b.isTeacher === true,
+    bringsSet: b.bringsSet === true,
+    hasCard: b.hasCard === true,
     secret,
   };
 }
@@ -79,7 +88,7 @@ export function eventLink(appUrl: string, token: string, secret: string): string
 export type RsvpEmailFacts = {
   kind: 'confirm' | 'resend';
   name: string;
-  status: RsvpStatus;
+  status: StoredStatus;
   title: string;
   hostFirstName: string;
   startsAt: string;
@@ -88,10 +97,11 @@ export type RsvpEmailFacts = {
   link: string;
 };
 
-const ANSWER: Record<RsvpStatus, string> = {
+const ANSWER: Record<StoredStatus, string> = {
   going: "You're going",
   maybe: "You're a maybe",
   no: "You can't make it",
+  waitlist: "You're on the waitlist",
 };
 
 /**
@@ -125,10 +135,49 @@ export function buildRsvpEmail(f: RsvpEmailFacts): Body {
       `Hi ${first},`,
       f.status === 'going'
         ? `Thanks for saying yes to ${host}${f.title}. Your link has the address and who else is coming.`
-        : `Thanks for letting ${f.hostFirstName || 'the host'} know. You can change your answer any time with your link.`,
+        : f.status === 'waitlist'
+          ? `Every seat is taken for now. If one opens, your link will show a Count me in button: the first to tap it gets the seat.`
+          : `Thanks for letting ${f.hostFirstName || 'the host'} know. You can change your answer any time with your link.`,
       `${when}${where}.`,
     ],
     cta: { label: 'Open your invite', url: f.link },
     footerNote: 'Keep this email: the link is how you get back to your invite.',
   };
+}
+
+/**
+ * The event page as it leaves the server (pivot batch 2b). event_page hands
+ * over `_seating` (every yes, with experience and any table the host chose)
+ * and `_my_rsvp_id`; this runs the seating plan on them, adds what this
+ * viewer may see of it, and strips every `_` key so other guests' ids and
+ * experience never reach a browser that isn't the host's.
+ *
+ *   everyone   table_counts / table_capacities ("Table 1 full · ...")
+ *   a yes      my_table
+ *   the host   table + table_pinned on each RSVP
+ */
+export function shapePage(raw: Record<string, unknown>): Record<string, unknown> {
+  const seating = raw._seating as SeatingInput | undefined;
+  const myId = raw._my_rsvp_id as string | null | undefined;
+  const page: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(raw)) if (!k.startsWith('_')) page[k] = v;
+  if (!seating) return page;
+
+  const plan = planSeating(seating);
+  page.table_counts = plan.counts;
+  page.table_capacities = seating.capacities;
+
+  const mine = page.my_rsvp as { status?: string } | null | undefined;
+  if (myId && mine?.status === 'going' && plan.tables[myId]) {
+    page.my_table = plan.tables[myId].table;
+  }
+
+  if (page.tier === 'host' && Array.isArray(page.rsvps)) {
+    page.rsvps = (page.rsvps as { id: string }[]).map((r) => ({
+      ...r,
+      table: plan.tables[r.id]?.table ?? null,
+      table_pinned: plan.tables[r.id]?.pinned ?? false,
+    }));
+  }
+  return page;
 }

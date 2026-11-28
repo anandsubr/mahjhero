@@ -19,6 +19,8 @@ export function statusTag(game: MyGame): { label: string; tone: 'going' | 'hosti
       };
     case 'not':
       return { label: 'Not going', tone: 'neutral' };
+    case 'maybe':
+      return { label: 'Maybe', tone: 'neutral' };
     case 'invited':
       return { label: 'Invited', tone: 'hosting' };
     case 'going':

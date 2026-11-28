@@ -125,3 +125,18 @@ describe('RoundTimer', () => {
     expect(screen.getByRole('button', { name: 'End round' })).toBeTruthy();
   });
 });
+
+describe('RoundTimer on a beginners-welcome Mahj Night', () => {
+  it('labels round 1 as a practice round', () => {
+    render(<RoundTimer roundNumber={1} practice />);
+    expect(screen.getByText('Practice round: open hands')).toBeTruthy();
+  });
+
+  it('only round 1, and only when asked', () => {
+    const { unmount } = render(<RoundTimer roundNumber={2} practice />);
+    expect(screen.queryByText('Practice round: open hands')).toBeNull();
+    unmount();
+    render(<RoundTimer roundNumber={1} />);
+    expect(screen.queryByText('Practice round: open hands')).toBeNull();
+  });
+});

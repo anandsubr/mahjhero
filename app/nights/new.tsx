@@ -9,6 +9,7 @@ import ThemeArt from '../../components/night/ThemeArt';
 import {
   ActionBar,
   ChipsRow,
+  Segmented,
   FormCard,
   FormHeader,
   FormSection,
@@ -20,7 +21,7 @@ import {
   formStyles,
 } from '../../components/GameForm';
 import Screen from '../../components/Screen';
-import { createMahjNight } from '../../lib/mahj-nights';
+import { createMahjNight, type MoneyNorm } from '../../lib/mahj-nights';
 import { DEFAULT_THEME_ID, NIGHT_THEMES } from '../../lib/themes';
 import { useSession } from '../../lib/session';
 import { dateToDateString } from '../../lib/time';
@@ -28,6 +29,12 @@ import { colors, type } from '../../lib/theme';
 
 const DURATIONS = [120, 180, 240];
 const TABLE_CHOICES = [1, 2, 3, 4, 5];
+const SET_CHOICES = [0, 1, 2, 3, 4, 5];
+const MONEY_OPTIONS: { value: MoneyNorm; label: string }[] = [
+  { value: 'none', label: 'No money' },
+  { value: 'quarters', label: 'Quarters' },
+  { value: 'host_choice', label: "Host's choice" },
+];
 
 /**
  * Host a Mahj Night (pivot batch 2): one screen, then straight to the event
@@ -49,6 +56,9 @@ export default function NewMahjNightScreen() {
   const [themeId, setThemeId] = useState(DEFAULT_THEME_ID);
   const [beginners, setBeginners] = useState(true);
   const [note, setNote] = useState('');
+  const [sets, setSets] = useState(1);
+  const [money, setMoney] = useState<MoneyNorm>('none');
+  const [moneyNote, setMoneyNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -82,6 +92,9 @@ export default function NewMahjNightScreen() {
       themeId,
       beginnersWelcome: beginners,
       note,
+      sets,
+      money,
+      moneyNote,
     });
     setSaving(false);
     if (createError || !data) {
@@ -186,6 +199,47 @@ export default function NewMahjNightScreen() {
         </FormCard>
       </FormSection>
 
+      <FormSection
+        label="How many sets do you have?"
+        helper={
+          sets >= tables
+            ? 'Enough for every table. Guests can say they will bring one too.'
+            : `${tables - sets} more ${tables - sets === 1 ? 'set' : 'sets'} needed for ${tables} tables. Guests can offer to bring one when they RSVP.`
+        }
+      >
+        <FormCard>
+          <View style={styles.chips}>
+            {SET_CHOICES.map((n) => (
+              <SmallChip
+                key={n}
+                label={String(n)}
+                accessibilityLabel={`${n} ${n === 1 ? 'set' : 'sets'}`}
+                selected={sets === n}
+                onPress={() => setSets(n)}
+              />
+            ))}
+          </View>
+        </FormCard>
+      </FormSection>
+
+      <FormSection
+        label="Playing for money?"
+        helper="Shown on the invite so nobody's surprised. MahjHero never handles money."
+      >
+        <Segmented options={MONEY_OPTIONS} value={money} onChange={setMoney} />
+        {money === 'host_choice' ? (
+          <FormCard>
+            <TextRow
+              label="What are you playing for?"
+              value={moneyNote}
+              onChangeText={(v) => setMoneyNote(v.slice(0, 60))}
+              accessibilityLabel="What are you playing for?"
+              placeholder="A dollar a game"
+            />
+          </FormCard>
+        ) : null}
+      </FormSection>
+
       <FormSection label="Theme">
         <View style={styles.themes}>
           {NIGHT_THEMES.map((t) => {
@@ -212,7 +266,7 @@ export default function NewMahjNightScreen() {
           <ToggleRow
             icon={null}
             title="Beginners welcome"
-            helper="Shows a badge on the invite, and guests can ask for a learning seat."
+            helper="Shows a badge on the invite. The seating plan puts someone who can teach at each table."
             value={beginners}
             onValueChange={setBeginners}
           />
