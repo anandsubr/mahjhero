@@ -26,7 +26,7 @@ import {
   hostChecklistKey,
   type HostChecklistCounts,
 } from '../lib/guides';
-import { gameDateKey, homeDefault, localDateKey, mergeNights, upcomingSummary } from '../lib/home';
+import { gameDateKey, homeDefault, localDateKey, mergeNights } from '../lib/home';
 import { fetchClubsNextGame, fetchMyGames, type MyGame } from '../lib/my-games';
 import { fetchProfile } from '../lib/profile';
 import { useSession } from '../lib/session';
@@ -280,7 +280,6 @@ export default function HomeScreen() {
 
   const roleFor = (clubId: string): ClubRole =>
     roles?.find((r) => r.club_id === clubId)?.role ?? 'member';
-  const nightIds = new Set(nights.map((n) => n.clubId));
   const allGames = upcomingGames ?? [];
   const hostingCount = allGames.filter((g) => g.myStatus === 'hosting').length;
   const games = filter === 'hosting' ? allGames.filter((g) => g.myStatus === 'hosting') : allGames;
@@ -301,40 +300,28 @@ export default function HomeScreen() {
 
       {view === 'myGames' ? (
         <View style={styles.section}>
-          {/* With the filter: All / Hosting on the left and List / Calendar on
-              the right of one row, the count line under them. Without it,
-              the count line takes the filter's place. */}
-          {(() => {
-            const summary = (
-              <Text style={styles.sub}>
-                {filter === 'hosting'
-                  ? `${games.length} you're hosting`
-                  : upcomingSummary(games, nightIds)}
-              </Text>
-            );
-            const showFilter = hostingCount > 0 || filter === 'hosting';
-            return (
-              <>
-                <View style={styles.subRow}>
-                  {showFilter ? (
-                    <View style={styles.filters} testID="games-filter">
-                      <SmallChip label="All" selected={filter === 'all'} onPress={() => setFilter('all')} />
-                      <SmallChip
-                        label={`Hosting (${hostingCount})`}
-                        accessibilityLabel="Only games you're hosting"
-                        selected={filter === 'hosting'}
-                        onPress={() => setFilter('hosting')}
-                      />
-                    </View>
-                  ) : (
-                    summary
-                  )}
-                  <MyGamesModeToggle mode={mode} onChange={chooseMode} />
-                </View>
-                {showFilter ? summary : null}
-              </>
-            );
-          })()}
+          {/* All / Hosting, each with its count, on the left; List / Calendar
+              on the right. The filter only appears once you host something;
+              the Games tab already carries the total. */}
+          <View style={[styles.subRow, !(hostingCount > 0 || filter === 'hosting') && styles.subRowEnd]}>
+            {hostingCount > 0 || filter === 'hosting' ? (
+              <View style={styles.filters} testID="games-filter">
+                <SmallChip
+                  label={`All (${allGames.length})`}
+                  accessibilityLabel="All games"
+                  selected={filter === 'all'}
+                  onPress={() => setFilter('all')}
+                />
+                <SmallChip
+                  label={`Hosting (${hostingCount})`}
+                  accessibilityLabel="Only games you're hosting"
+                  selected={filter === 'hosting'}
+                  onPress={() => setFilter('hosting')}
+                />
+              </View>
+            ) : null}
+            <MyGamesModeToggle mode={mode} onChange={chooseMode} />
+          </View>
 
           {failed ? (
             <View style={styles.errorBlock}>
@@ -437,6 +424,7 @@ const styles = StyleSheet.create({
   section: { gap: 12 },
   filters: { flexDirection: 'row', gap: 6, flexShrink: 1 },
   subRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  subRowEnd: { justifyContent: 'flex-end' },
   sub: { fontFamily: type.bodyRegular, fontSize: 13, color: colors.neutral[700], flexShrink: 1 },
   errorBlock: { gap: 8, alignItems: 'flex-start' },
   emptyCard: {

@@ -117,7 +117,7 @@ describe('HomeScreen', () => {
     fetchMyGames.mockResolvedValue([GAME]);
     render(<HomeScreen />);
     expect(await screen.findByText('Tuesday game')).toBeTruthy();
-    expect(screen.getByText('1 upcoming across 1 group')).toBeTruthy();
+    expect(screen.queryByText(/upcoming across/)).toBeNull();
     expect(screen.getByRole('button', { name: /^Games/ }).getAttribute('aria-selected')).toBe('true');
   });
 
@@ -145,7 +145,6 @@ describe('HomeScreen', () => {
     expect(screen.getByText('Mahj Night')).toBeTruthy();
     expect(screen.getByText('Maybe')).toBeTruthy();
     expect(screen.getByText('5/8')).toBeTruthy();
-    expect(screen.getByText('2 upcoming across 1 group and 1 Mahj Night')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /Friday Mahj/ }));
     expect(push).toHaveBeenCalledWith('/e/tok_night');
   });
@@ -156,11 +155,12 @@ describe('HomeScreen', () => {
     render(<HomeScreen />);
     await screen.findByText('Friday Mahj');
     expect(screen.getByText('Tuesday game')).toBeTruthy();
+    expect(screen.getByText('All (2)')).toBeTruthy();
+    expect(screen.getByText('Hosting (1)')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: "Only games you're hosting" }));
-    expect(screen.getByText("1 you're hosting")).toBeTruthy();
     expect(screen.queryByText('Tuesday game')).toBeNull();
     expect(screen.getByText('Friday Mahj')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'All' }));
+    fireEvent.click(screen.getByRole('button', { name: 'All games' }));
     expect(screen.getByText('Tuesday game')).toBeTruthy();
   });
 

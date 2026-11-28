@@ -98,25 +98,6 @@ export function gameCountLabel(n: number): string {
 }
 
 /**
- * "3 upcoming across 2 groups". A Mahj Night's hidden group (pivot batch 2)
- * is not one of the member's groups, so `nightClubIds` -- the groups behind
- * Your Mahj Nights -- are counted as nights instead.
- */
-export function upcomingSummary(
-  games: { clubId: string }[],
-  nightClubIds: ReadonlySet<string> = new Set(),
-): string {
-  const ids = new Set(games.map((g) => g.clubId));
-  const nights = [...ids].filter((id) => nightClubIds.has(id)).length;
-  const groups = ids.size - nights;
-  const groupText = `${groups} ${groups === 1 ? 'group' : 'groups'}`;
-  const nightText = `${nights} ${nights === 1 ? 'Mahj Night' : 'Mahj Nights'}`;
-  if (nights === 0) return `${games.length} upcoming across ${groupText}`;
-  if (groups === 0) return `${games.length} upcoming: ${nightText}`;
-  return `${games.length} upcoming across ${groupText} and ${nightText}`;
-}
-
-/**
  * Home's Games list with Mahj Nights in it (pivot batch 2b): a night's own
  * rows from my_games are replaced by one row per night from my_mahj_nights,
  * which knows the viewer's part (hosting / going / maybe / waitlist) and how
