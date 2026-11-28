@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   addDays, buildMonthGrid, clubColor, clubSubline, dateColumn, dayHeading,
   gameCountLabel, gameDateKey, gameHeadline, homeDefault, monthLabel,
-  normalizeTimeSpaces, upcomingSummary, weekBucket, labelNightGames,
+  normalizeTimeSpaces, upcomingSummary, weekBucket, mergeNights,
 } from './home';
 
 describe('gameHeadline', () => {
@@ -94,9 +94,20 @@ describe('labels', () => {
     expect(upcomingSummary([], nights)).toBe('0 upcoming across 0 groups');
   });
 
-  it('labelNightGames shows a night as Mahj Night, not its hidden group', () => {
-    const games = [{ clubId: 'n1', clubName: 'Friday Mahj' }, { clubId: 'a', clubName: 'QA Club' }];
-    expect(labelNightGames(games, new Set(['n1'])).map((g) => g.clubName)).toEqual(['Mahj Night', 'QA Club']);
+  it('mergeNights puts one row per night in the list, in date order', () => {
+    const games = [
+      { eventId: 'g1', clubId: 'a', startsAt: '2026-12-03T00:00:00Z', label: 'QA Club' },
+      // The host's own night, as my_games returns it: replaced by the night's row.
+      { eventId: 'e1', clubId: 'n1', startsAt: '2026-12-02T00:00:00Z', label: 'hidden group' },
+    ];
+    const nights = [
+      { clubId: 'n1', eventId: 'e1', startsAt: '2026-12-02T00:00:00Z' },
+      { clubId: 'n2', eventId: 'e2', startsAt: '2026-12-04T00:00:00Z' },
+    ];
+    const merged = mergeNights(games, nights, (n) => ({ ...n, label: 'Mahj Night' }));
+    expect(merged.map((g) => `${g.eventId}:${g.label}`)).toEqual([
+      'e1:Mahj Night', 'g1:QA Club', 'e2:Mahj Night',
+    ]);
   });
 
   it('upcomingSummary counts distinct clubs', () => {

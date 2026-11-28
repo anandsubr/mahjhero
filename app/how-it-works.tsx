@@ -48,7 +48,7 @@ export default function HowItWorks() {
 
       <Card style={styles.card}>
         <Text style={styles.section}>Playing</Text>
-        <Text style={styles.body}>1. Join a group with its code on Home, or accept an invite there. Games you're in show on Home under My games.</Text>
+        <Text style={styles.body}>1. Join a group with its code on Home, or accept an invite there. Games you're in show on Home under Games.</Text>
         <Text style={styles.body}>2. Tap Join to take a spot, or Invite to bring someone along.</Text>
         <Text style={styles.body}>3. Game full? Tap Join the waitlist and you'll move up if a seat opens.</Text>
         <Text style={styles.body}>4. On the day, check the game page for your table and messages.</Text>

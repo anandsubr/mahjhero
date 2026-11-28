@@ -7,7 +7,8 @@ import { supabase } from './supabase';
  * 'not' and 'invited' are only produced by the club Games section
  * (phase 2), never by my_games.
  */
-export type MyStatus = 'going' | 'waitlisted' | 'hosting' | 'invited' | 'not';
+/** 'maybe': a Mahj Night guest who answered maybe (pivot batch 2b). */
+export type MyStatus = 'going' | 'waitlisted' | 'hosting' | 'invited' | 'not' | 'maybe';
 
 /** One game row, shaped for components/GameRow. */
 export type MyGame = {
@@ -28,6 +29,8 @@ export type MyGame = {
   waitlistPosition: number | null;
   tableLabel: string | null;
   notes?: string;
+  /** Set on a Mahj Night's row: the row opens the night's event page. */
+  linkToken?: string;
   /**
    * The game's details (time, venue, name, description) changed since you
    * last opened it — drives GameRow's "Updated" pill. Computed by the RPC.

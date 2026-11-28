@@ -116,14 +116,25 @@ export function upcomingSummary(
   return `${games.length} upcoming across ${groupText} and ${nightText}`;
 }
 
-/** The label a game row shows above its title: "Mahj Night" rather than the hidden group's name. */
-export function labelNightGames<T extends { clubId: string; clubName: string }>(
-  games: T[],
-  nightClubIds: ReadonlySet<string>,
-): T[] {
-  if (nightClubIds.size === 0) return games;
-  return games.map((g) => (nightClubIds.has(g.clubId) ? { ...g, clubName: 'Mahj Night' } : g));
+/**
+ * Home's Games list with Mahj Nights in it (pivot batch 2b): a night's own
+ * rows from my_games are replaced by one row per night from my_mahj_nights,
+ * which knows the viewer's part (hosting / going / maybe / waitlist) and how
+ * many are going, labelled "Mahj Night" and opening the night's page.
+ */
+export function mergeNights<
+  G extends { eventId: string; clubId: string; startsAt: string },
+  N extends MyNightRow,
+>(games: G[], nights: N[], toRow: (n: N) => G): G[] {
+  if (nights.length === 0) return games;
+  const nightClubs = new Set(nights.map((n) => n.clubId));
+  return [...games.filter((g) => !nightClubs.has(g.clubId)), ...nights.map(toRow)].sort((a, b) =>
+    a.startsAt.localeCompare(b.startsAt),
+  );
 }
+
+/** The fields of a MyNight that mergeNights reads. */
+export type MyNightRow = { clubId: string; eventId: string; startsAt: string };
 
 // Five club colours from the design's calendar dots, assigned by the same
 // string hash glyphForClub (lib/dashboard.ts) uses, so a club keeps its

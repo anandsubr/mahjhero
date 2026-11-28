@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform, Share } from 'react-native';
 import { supabase } from './supabase';
+import type { MyGame } from './my-games';
 
 /**
  * Mahj Nights (pivot batch 2): a one-off party. Underneath it is a hidden
@@ -251,52 +252,82 @@ export type MyNight = {
   linkToken: string;
   themeId: string | null;
   startsAt: string;
+  endsAt: string;
   timezone: string;
   area: string;
   cancelled: boolean;
+  isHost: boolean;
+  /** This viewer's own answer; null for a host who hasn't RSVP'd. */
+  rsvpStatus: StoredRsvpStatus | null;
+  goingCount: number;
+  seats: number;
 };
 
 /**
- * Upcoming Mahj Nights whose group I'm in (as host, or as a guest who signed
- * in). RLS on clubs and events already limits this to my memberships.
- * Null on failure.
+ * Upcoming Mahj Nights I host or have answered (not "no"), with my own part
+ * in each -- my_mahj_nights (20261129120000). Null on failure.
  */
-export async function fetchMyMahjNights(now: Date = new Date()): Promise<MyNight[] | null> {
+export async function fetchMyMahjNights(): Promise<MyNight[] | null> {
   try {
-    const { data, error } = await supabase
-      .from('clubs')
-      .select('id, name, link_token, theme_id, timezone, events(id, title, starts_at, ends_at, public_area, status, event_type)')
-      .eq('kind', 'event');
+    const { data, error } = await supabase.rpc('my_mahj_nights');
     if (error) {
       console.error('fetchMyMahjNights failed', error);
       return null;
     }
     type Row = {
-      id: string; name: string; link_token: string; theme_id: string | null; timezone: string;
-      events: { id: string; title: string | null; starts_at: string; ends_at: string;
-        public_area: string; status: string; event_type: string }[];
+      club_id: string; event_id: string; title: string; starts_at: string; ends_at: string;
+      timezone: string; area: string; link_token: string; theme_id: string | null;
+      cancelled: boolean; is_host: boolean; rsvp_status: StoredRsvpStatus | null;
+      going_count: number; seats: number;
     };
-    const nights: MyNight[] = [];
-    for (const c of (data ?? []) as unknown as Row[]) {
-      const e = (c.events ?? []).find((x) => x.event_type === 'mahj_night');
-      if (!e || new Date(e.ends_at) < now) continue;
-      nights.push({
-        clubId: c.id,
-        eventId: e.id,
-        title: e.title ?? c.name,
-        linkToken: c.link_token,
-        themeId: c.theme_id,
-        startsAt: e.starts_at,
-        timezone: c.timezone,
-        area: e.public_area,
-        cancelled: e.status === 'cancelled',
-      });
-    }
-    return nights.sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+    return ((data ?? []) as Row[]).map((r) => ({
+      clubId: r.club_id,
+      eventId: r.event_id,
+      title: r.title,
+      linkToken: r.link_token,
+      themeId: r.theme_id,
+      startsAt: r.starts_at,
+      endsAt: r.ends_at,
+      timezone: r.timezone,
+      area: r.area,
+      cancelled: r.cancelled,
+      isHost: r.is_host,
+      rsvpStatus: r.rsvp_status,
+      goingCount: r.going_count,
+      seats: r.seats,
+    }));
   } catch (cause) {
     console.error('fetchMyMahjNights failed', cause);
     return null;
   }
+}
+
+/** A night as a row of Home's Games list (see lib/home.ts mergeNights). */
+export function nightAsGame(n: MyNight): MyGame {
+  return {
+    eventId: n.eventId,
+    clubId: n.clubId,
+    clubName: 'Mahj Night',
+    title: n.title,
+    gameMode: 'open_play',
+    seatingMode: 'assigned_tables',
+    startsAt: n.startsAt,
+    timezone: n.timezone,
+    venueName: n.area,
+    seatsTaken: n.goingCount,
+    capacity: n.seats,
+    myStatus: n.isHost
+      ? 'hosting'
+      : n.rsvpStatus === 'going'
+        ? 'going'
+        : n.rsvpStatus === 'waitlist'
+          ? 'waitlisted'
+          : 'maybe',
+    waitlistPosition: null,
+    tableLabel: null,
+    updated: false,
+    linkToken: n.linkToken,
+  };
 }
 
 // ---------------------------------------------------------------------------

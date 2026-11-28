@@ -5,12 +5,12 @@ import { colors, radius, type } from '../../lib/theme';
 export type HomeView = 'myGames' | 'clubs';
 
 const OPTIONS: { key: HomeView; label: string }[] = [
-  { key: 'myGames', label: 'My games' },
+  { key: 'myGames', label: 'Games' },
   { key: 'clubs', label: 'Groups' },
 ];
 
 /**
- * Home's segmented pill: My games (with its upcoming count) | Clubs.
+ * Home's segmented pill: Games (with its upcoming count) | Groups.
  * `aria-selected` is passed alongside `accessibilityState` because
  * react-native-web only maps the latter to the DOM for some roles.
  */
@@ -34,7 +34,7 @@ export default function HomeSwitch({
             accessibilityState={{ selected }}
             aria-selected={selected}
             accessibilityLabel={
-              o.key === 'myGames' ? `My games, ${upcomingCount} upcoming` : 'Groups'
+              o.key === 'myGames' ? `Games, ${upcomingCount} upcoming` : 'Groups'
             }
             onPress={() => onChange(o.key)}
             style={[styles.option, selected && styles.selected]}

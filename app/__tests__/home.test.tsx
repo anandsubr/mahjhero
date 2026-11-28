@@ -113,12 +113,12 @@ beforeEach(() => {
 });
 
 describe('HomeScreen', () => {
-  it('defaults to My games when something is upcoming', async () => {
+  it('defaults to Games when something is upcoming', async () => {
     fetchMyGames.mockResolvedValue([GAME]);
     render(<HomeScreen />);
     expect(await screen.findByText('Tuesday game')).toBeTruthy();
     expect(screen.getByText('1 upcoming across 1 group')).toBeTruthy();
-    expect(screen.getByRole('button', { name: /My games/ }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByRole('button', { name: /^Games/ }).getAttribute('aria-selected')).toBe('true');
   });
 
   it("opens a club card on the club's Games section", async () => {
@@ -128,32 +128,47 @@ describe('HomeScreen', () => {
     expect(push).toHaveBeenCalledWith('/clubs/c1/games');
   });
 
-  it('lists Your Mahj Nights and opens one on its event page', async () => {
-    fetchMyGames.mockResolvedValue([]);
-    myNights = [{
-      clubId: 'n1', eventId: 'e1', title: 'Friday Mahj', linkToken: 'tok_night',
-      themeId: 'jade', startsAt: '2026-12-05T00:00:00Z', timezone: 'America/New_York',
-      area: 'Suwanee', cancelled: false,
-    }];
+  const NIGHT = {
+    clubId: 'n1', eventId: 'e2', title: 'Friday Mahj', linkToken: 'tok_night',
+    themeId: 'jade', startsAt: new Date(Date.now() + 2 * 86_400_000).toISOString(),
+    endsAt: new Date(Date.now() + 2 * 86_400_000 + 3 * 3_600_000).toISOString(),
+    timezone: 'America/New_York', area: 'Suwanee', cancelled: false,
+    isHost: false, rsvpStatus: 'maybe', goingCount: 5, seats: 8,
+  };
+
+  it('lists a Mahj Night in Games, tagged with my answer, and opens its page', async () => {
+    fetchMyGames.mockResolvedValue([GAME]);
+    myNights = [NIGHT];
     render(<HomeScreen />);
-    expect(await screen.findByText('Your Mahj Nights')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: /^Friday Mahj, / }));
+    expect(await screen.findByText('Friday Mahj')).toBeTruthy();
+    expect(screen.queryByText('Your Mahj Nights')).toBeNull();
+    expect(screen.getByText('Mahj Night')).toBeTruthy();
+    expect(screen.getByText('Maybe')).toBeTruthy();
+    expect(screen.getByText('5/8')).toBeTruthy();
+    expect(screen.getByText('2 upcoming across 1 group and 1 Mahj Night')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /Friday Mahj/ }));
     expect(push).toHaveBeenCalledWith('/e/tok_night');
   });
 
-  it("counts a Mahj Night's game as a night, not a group", async () => {
-    fetchMyGames.mockResolvedValue([
-      GAME,
-      { ...GAME, eventId: 'e2', clubId: 'n1', clubName: 'Friday Mahj', title: 'Friday Mahj' },
-    ]);
-    myNights = [{
-      clubId: 'n1', eventId: 'e2', title: 'Friday Mahj', linkToken: 'tok_night',
-      themeId: 'jade', startsAt: GAME.startsAt, timezone: 'America/New_York',
-      area: '', cancelled: false,
-    }];
+  it('filters Games to what I am hosting', async () => {
+    fetchMyGames.mockResolvedValue([GAME]);
+    myNights = [{ ...NIGHT, isHost: true, rsvpStatus: null }];
     render(<HomeScreen />);
-    expect(await screen.findByText('2 upcoming across 1 group and 1 Mahj Night')).toBeTruthy();
-    expect(screen.getAllByText('Mahj Night').length).toBeGreaterThan(0);
+    await screen.findByText('Friday Mahj');
+    expect(screen.getByText('Tuesday game')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: "Only games you're hosting" }));
+    expect(screen.getByText("1 you're hosting")).toBeTruthy();
+    expect(screen.queryByText('Tuesday game')).toBeNull();
+    expect(screen.getByText('Friday Mahj')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'All' }));
+    expect(screen.getByText('Tuesday game')).toBeTruthy();
+  });
+
+  it('has no filter when I host nothing', async () => {
+    fetchMyGames.mockResolvedValue([GAME]);
+    render(<HomeScreen />);
+    await screen.findByText('Tuesday game');
+    expect(screen.queryByTestId('games-filter')).toBeNull();
   });
 
   it('defaults to Clubs when nothing is upcoming', async () => {
@@ -166,7 +181,7 @@ describe('HomeScreen', () => {
   it('shows the feed error with Retry', async () => {
     fetchMyGames.mockResolvedValueOnce(null).mockResolvedValue([GAME]);
     render(<HomeScreen />);
-    fireEvent.click(await screen.findByRole('button', { name: /My games/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /^Games/ }));
     expect(await screen.findByText('Could not load your games.')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(await screen.findByText('Tuesday game')).toBeTruthy();

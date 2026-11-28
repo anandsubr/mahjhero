@@ -19,6 +19,7 @@ import {
   createMahjNight,
   fetchEventPage,
   fetchMyMahjNights,
+  nightAsGame,
   googleCalendarUrl,
   icsFile,
   moneyLine,
@@ -109,28 +110,26 @@ describe('the edge function calls', () => {
 });
 
 describe('fetchMyMahjNights', () => {
-  it('lists upcoming nights soonest first and drops finished ones', async () => {
-    const eq = vi.fn().mockResolvedValue({
-      data: [
-        { id: 'c2', name: 'Later', link_token: 't2', theme_id: 'peony', timezone: 'UTC',
-          events: [{ id: 'e2', title: null, starts_at: '2026-12-20T00:00:00Z', ends_at: '2026-12-20T03:00:00Z',
-            public_area: '', status: 'published', event_type: 'mahj_night' }] },
-        { id: 'c1', name: 'Soon', link_token: 't1', theme_id: null, timezone: 'UTC',
-          events: [{ id: 'e1', title: 'Soon night', starts_at: '2026-12-01T00:00:00Z', ends_at: '2026-12-01T03:00:00Z',
-            public_area: 'Suwanee', status: 'cancelled', event_type: 'mahj_night' }] },
-        { id: 'c0', name: 'Past', link_token: 't0', theme_id: null, timezone: 'UTC',
-          events: [{ id: 'e0', title: null, starts_at: '2026-11-01T00:00:00Z', ends_at: '2026-11-01T03:00:00Z',
-            public_area: '', status: 'published', event_type: 'mahj_night' }] },
-      ],
-      error: null,
-    });
-    from.mockReturnValue({ select: () => ({ eq }) });
-    const nights = await fetchMyMahjNights(new Date('2026-11-28T00:00:00Z'));
-    expect(eq).toHaveBeenCalledWith('kind', 'event');
-    expect(nights?.map((n) => [n.title, n.linkToken, n.cancelled])).toEqual([
-      ['Soon night', 't1', true],
-      ['Later', 't2', false],
-    ]);
+  const row = {
+    club_id: 'c1', event_id: 'e1', title: 'Friday Mahj', starts_at: '2026-12-05T00:00:00Z',
+    ends_at: '2026-12-05T03:00:00Z', timezone: 'America/New_York', area: 'Suwanee',
+    link_token: 't1', theme_id: 'jade', cancelled: false, is_host: false,
+    rsvp_status: 'maybe', going_count: 5, seats: 8,
+  };
+
+  it('reads my nights, with my part in each, from my_mahj_nights', async () => {
+    rpc.mockResolvedValue({ data: [row], error: null });
+    const nights = await fetchMyMahjNights();
+    expect(rpc).toHaveBeenCalledWith('my_mahj_nights');
+    expect(nights?.[0]).toMatchObject({ title: 'Friday Mahj', linkToken: 't1', isHost: false, rsvpStatus: 'maybe', goingCount: 5, seats: 8 });
+  });
+
+  it('turns a night into a Games row tagged with my part, opening its page', async () => {
+    rpc.mockResolvedValue({ data: [row, { ...row, event_id: 'e2', is_host: true, rsvp_status: null }, { ...row, event_id: 'e3', rsvp_status: 'waitlist' }], error: null });
+    const nights = (await fetchMyMahjNights()) ?? [];
+    const rows = nights.map(nightAsGame);
+    expect(rows.map((g) => g.myStatus)).toEqual(['maybe', 'hosting', 'waitlisted']);
+    expect(rows[0]).toMatchObject({ clubName: 'Mahj Night', seatsTaken: 5, capacity: 8, linkToken: 't1', venueName: 'Suwanee' });
   });
 });
 

@@ -17,8 +17,8 @@ import MyGamesList from '../components/home/MyGamesList';
 import MyGamesModeToggle, { type MyGamesMode } from '../components/home/MyGamesModeToggle';
 import NeedsYouStack from '../components/home/NeedsYouStack';
 import StartChoices from '../components/home/StartChoices';
-import NightCard from '../components/night/NightCard';
-import { fetchMyMahjNights, type MyNight } from '../lib/mahj-nights';
+import { SmallChip } from '../components/GameForm';
+import { fetchMyMahjNights, nightAsGame, type MyNight } from '../lib/mahj-nights';
 import { fetchMyClubs, fetchMyRoles, type Club, type ClubRole } from '../lib/clubs';
 import { GENERIC_ERROR } from '../lib/constants';
 import {
@@ -26,7 +26,7 @@ import {
   hostChecklistKey,
   type HostChecklistCounts,
 } from '../lib/guides';
-import { gameDateKey, homeDefault, labelNightGames, localDateKey, upcomingSummary } from '../lib/home';
+import { gameDateKey, homeDefault, localDateKey, mergeNights, upcomingSummary } from '../lib/home';
 import { fetchClubsNextGame, fetchMyGames, type MyGame } from '../lib/my-games';
 import { fetchProfile } from '../lib/profile';
 import { useSession } from '../lib/session';
@@ -60,6 +60,8 @@ export default function HomeScreen() {
 
   const [clubs, setClubs] = useState<Club[] | null>(null);
   const [nights, setNights] = useState<MyNight[]>([]);
+  // Games: everything, or only what you're hosting.
+  const [filter, setFilter] = useState<'all' | 'hosting'>('all');
   const [clubsFailed, setClubsFailed] = useState(false);
   const [roles, setRoles] = useState<Roles | null>(null);
   const [nextGames, setNextGames] = useState<Record<string, string>>({});
@@ -162,12 +164,16 @@ export default function HomeScreen() {
 
   // Upcoming = from today on. The same array drives the switch default, the
   // My games count and the list, so they can never disagree.
+  // Mahj Nights join the list here (pivot batch 2b), each as one row tagged
+  // with the viewer's part, so a guest's night shows even with no seat.
   const upcomingGames = useMemo(
     () =>
       upcoming === null
         ? null
-        : upcoming.filter((g) => gameDateKey(g.startsAt, g.timezone) >= todayKey),
-    [upcoming, todayKey],
+        : mergeNights(upcoming, nights, nightAsGame).filter(
+            (g) => gameDateKey(g.startsAt, g.timezone) >= todayKey,
+          ),
+    [upcoming, nights, todayKey],
   );
 
   // The switch default is decided once, when the feed first lands, so it
@@ -237,7 +243,8 @@ export default function HomeScreen() {
     setSelectedKey(todayKey.startsWith(prefix) ? todayKey : localDateKey(d));
   }
 
-  const openGame = (g: MyGame) => router.push(`/clubs/${g.clubId}/events/${g.eventId}`);
+  const openGame = (g: MyGame) =>
+    router.push(g.linkToken ? `/e/${g.linkToken}` : `/clubs/${g.clubId}/events/${g.eventId}`);
 
   if (loading) {
     return (
@@ -274,7 +281,9 @@ export default function HomeScreen() {
   const roleFor = (clubId: string): ClubRole =>
     roles?.find((r) => r.club_id === clubId)?.role ?? 'member';
   const nightIds = new Set(nights.map((n) => n.clubId));
-  const games = labelNightGames(upcomingGames ?? [], nightIds);
+  const allGames = upcomingGames ?? [];
+  const hostingCount = allGames.filter((g) => g.myStatus === 'hosting').length;
+  const games = filter === 'hosting' ? allGames.filter((g) => g.myStatus === 'hosting') : allGames;
   const failed = mode === 'list' ? feedFailed : monthFailed;
   const retry = mode === 'list' ? () => void loadFeed() : () => setMonthRetry((n) => n + 1);
 
@@ -288,25 +297,29 @@ export default function HomeScreen() {
     >
       {header}
       <NeedsYouStack needs={needs} />
-      <HomeSwitch value={view} upcomingCount={games.length} onChange={setView} />
-
-      {nights.length > 0 ? (
-        <View style={styles.section} testID="my-nights">
-          <Text style={styles.nightsHeading} accessibilityRole="header">
-            Your Mahj Nights
-          </Text>
-          {nights.map((night) => (
-            <NightCard key={night.clubId} night={night} onPress={() => router.push(`/e/${night.linkToken}`)} />
-          ))}
-        </View>
-      ) : null}
+      <HomeSwitch value={view} upcomingCount={allGames.length} onChange={setView} />
 
       {view === 'myGames' ? (
         <View style={styles.section}>
           <View style={styles.subRow}>
-            <Text style={styles.sub}>{upcomingSummary(games, nightIds)}</Text>
+            <Text style={styles.sub}>
+              {filter === 'hosting'
+                ? `${games.length} you're hosting`
+                : upcomingSummary(games, nightIds)}
+            </Text>
             <MyGamesModeToggle mode={mode} onChange={chooseMode} />
           </View>
+          {hostingCount > 0 || filter === 'hosting' ? (
+            <View style={styles.filters} testID="games-filter">
+              <SmallChip label="All" selected={filter === 'all'} onPress={() => setFilter('all')} />
+              <SmallChip
+                label={`Hosting (${hostingCount})`}
+                accessibilityLabel="Only games you're hosting"
+                selected={filter === 'hosting'}
+                onPress={() => setFilter('hosting')}
+              />
+            </View>
+          ) : null}
 
           {failed ? (
             <View style={styles.errorBlock}>
@@ -341,7 +354,10 @@ export default function HomeScreen() {
               year={month.year}
               monthIndex={month.monthIndex}
               todayKey={todayKey}
-              games={labelNightGames(monthGames, nightIds)}
+              games={(() => {
+                const month = mergeNights(monthGames, nights, nightAsGame);
+                return filter === 'hosting' ? month.filter((g) => g.myStatus === 'hosting') : month;
+              })()}
               selectedKey={selectedKey}
               onSelect={setSelectedKey}
               onPrev={() => shiftMonth(-1)}
@@ -404,7 +420,7 @@ const styles = StyleSheet.create({
   container: { gap: 16, paddingHorizontal: 16, paddingBottom: 32 },
   centered: { alignItems: 'center' },
   section: { gap: 12 },
-  nightsHeading: { fontFamily: type.bodyBold, fontSize: 15, color: colors.text, paddingHorizontal: 4 },
+  filters: { flexDirection: 'row', gap: 8 },
   subRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   sub: { fontFamily: type.bodyRegular, fontSize: 13, color: colors.neutral[700], flexShrink: 1 },
   errorBlock: { gap: 8, alignItems: 'flex-start' },
