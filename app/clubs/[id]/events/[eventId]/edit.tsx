@@ -25,6 +25,7 @@ import { ClipboardCheckIcon, LockIcon } from '../../../../../components/icons';
 import Screen from '../../../../../components/Screen';
 import TimeField from '../../../../../components/TimeField';
 import VenuePicker from '../../../../../components/VenuePicker';
+import { setMahjNightDetails } from '../../../../../lib/mahj-nights';
 import type { SkillTier } from '../../../../../lib/bookings';
 import { fetchClub, type Club, type GameMode } from '../../../../../lib/clubs';
 import {
@@ -215,6 +216,10 @@ export default function EditEventScreen() {
   const [eventDate, setEventDate] = useState('');
   const [eventStartTime, setEventStartTime] = useState('19:00');
   const [eventNotes, setEventNotes] = useState('');
+  // Mahj Night only (pivot batch 2): the public area label and the badge.
+  const [nightArea, setNightArea] = useState('');
+  const [nightBeginners, setNightBeginners] = useState(false);
+  const isNight = event?.event_type === 'mahj_night';
   const [eventCheckInRequired, setEventCheckInRequired] = useState(false);
   const [eventGameMode, setEventGameMode] = useState<GameMode>('open_play');
   const [eventFeeText, setEventFeeText] = useState('');
@@ -363,6 +368,8 @@ export default function EditEventScreen() {
         setEventCapacityText(
           loadedEvent.capacity === null ? '' : String(loadedEvent.capacity),
         );
+        setNightArea(loadedEvent.public_area ?? '');
+        setNightBeginners(loadedEvent.beginners_welcome ?? false);
         setOriginal({
           title: loadedEvent.title ?? '',
           venueId: loadedEvent.venue_id,
@@ -749,6 +756,18 @@ export default function EditEventScreen() {
         setError(result.error);
         return;
       }
+      if (
+        isNight &&
+        (nightArea.trim() !== (event.public_area ?? '') ||
+          nightBeginners !== (event.beginners_welcome ?? false))
+      ) {
+        const ok = await setMahjNightDetails(event.id, nightArea, nightBeginners);
+        if (!ok) {
+          setSaving(false);
+          setError('Could not save the area or the beginners badge. Try again.');
+          return;
+        }
+      }
     }
 
     const tableError = await applyTableChanges();
@@ -876,6 +895,30 @@ export default function EditEventScreen() {
           </FormCard>
         </FormSection>
 
+        {isNight ? (
+          <FormSection
+            label="On the invite"
+            helper="Everyone with the link sees the area. Only people who say yes see the address."
+          >
+            <FormCard>
+              <TextRow
+                label="Area to show on the invite (optional)"
+                value={nightArea}
+                onChangeText={(v) => setNightArea(v.slice(0, 40))}
+                accessibilityLabel="Area to show on the invite"
+                placeholder="Suwanee"
+              />
+              <ToggleRow
+                icon={null}
+                title="Beginners welcome"
+                helper="Shows a badge on the invite, and guests can ask for a learning seat."
+                value={nightBeginners}
+                onValueChange={setNightBeginners}
+              />
+            </FormCard>
+          </FormSection>
+        ) : null}
+
         {advanced ? (
           <FormSection
             label="How does this seat people?"
@@ -948,6 +991,9 @@ export default function EditEventScreen() {
           </FormSection>
         ) : null}
 
+        {/* A Mahj Night's guest list is its RSVPs, so Invite-only means
+            nothing there; only an Advanced host's check-in switch remains. */}
+        {isNight && !advanced ? null : (
         <FormSection label={advanced ? 'Check-in & access' : 'Who can join'}>
           <FormCard>
             {advanced ? (
@@ -959,6 +1005,7 @@ export default function EditEventScreen() {
                 onValueChange={setCheckInRequired}
               />
             ) : null}
+            {isNight ? null : (
             <ToggleRow
               icon={<LockIcon size={18} color={colors.accent[700]} />}
               title="Invite-only"
@@ -970,8 +1017,10 @@ export default function EditEventScreen() {
               value={gameMode === 'invite_only'}
               onValueChange={(next) => setGameMode(next ? 'invite_only' : 'open_play')}
             />
+            )}
           </FormCard>
         </FormSection>
+        )}
 
         {scope === 'series' && series ? (
           <FormSection label="Repeats">

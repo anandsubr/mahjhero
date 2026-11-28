@@ -17,6 +17,8 @@ import MyGamesList from '../components/home/MyGamesList';
 import MyGamesModeToggle, { type MyGamesMode } from '../components/home/MyGamesModeToggle';
 import NeedsYouStack from '../components/home/NeedsYouStack';
 import StartChoices from '../components/home/StartChoices';
+import NightCard from '../components/night/NightCard';
+import { fetchMyMahjNights, type MyNight } from '../lib/mahj-nights';
 import { fetchMyClubs, fetchMyRoles, type Club, type ClubRole } from '../lib/clubs';
 import { GENERIC_ERROR } from '../lib/constants';
 import {
@@ -57,6 +59,7 @@ export default function HomeScreen() {
   const alertsUnread = useNotificationsUnread();
 
   const [clubs, setClubs] = useState<Club[] | null>(null);
+  const [nights, setNights] = useState<MyNight[]>([]);
   const [clubsFailed, setClubsFailed] = useState(false);
   const [roles, setRoles] = useState<Roles | null>(null);
   const [nextGames, setNextGames] = useState<Record<string, string>>({});
@@ -100,11 +103,13 @@ export default function HomeScreen() {
 
   const loadClubs = useCallback(async () => {
     if (!userId) return;
-    const [list, myRoles, next] = await Promise.all([
+    const [list, myRoles, next, myNights] = await Promise.all([
       fetchMyClubs(),
       fetchMyRoles(userId),
       fetchClubsNextGame(),
+      fetchMyMahjNights(),
     ]);
+    if (myNights) setNights(myNights);
     setClubsFailed(list === null);
     // Failed reads keep what is already on screen rather than blanking it.
     setClubs((prev) => list ?? prev ?? []);
@@ -284,6 +289,17 @@ export default function HomeScreen() {
       <NeedsYouStack needs={needs} />
       <HomeSwitch value={view} upcomingCount={games.length} onChange={setView} />
 
+      {nights.length > 0 ? (
+        <View style={styles.section} testID="my-nights">
+          <Text style={styles.nightsHeading} accessibilityRole="header">
+            Your Mahj Nights
+          </Text>
+          {nights.map((night) => (
+            <NightCard key={night.clubId} night={night} onPress={() => router.push(`/e/${night.linkToken}`)} />
+          ))}
+        </View>
+      ) : null}
+
       {view === 'myGames' ? (
         <View style={styles.section}>
           <View style={styles.subRow}>
@@ -343,7 +359,7 @@ export default function HomeScreen() {
               lines at half a 375pt phone's width. */}
           <View style={styles.actions}>
             <Button
-              onPress={() => router.push('/clubs/new?for=night')}
+              onPress={() => router.push('/nights/new')}
               accessibilityLabel="Host a Mahj Night"
             >
               Host a Mahj Night
@@ -387,6 +403,7 @@ const styles = StyleSheet.create({
   container: { gap: 16, paddingHorizontal: 16, paddingBottom: 32 },
   centered: { alignItems: 'center' },
   section: { gap: 12 },
+  nightsHeading: { fontFamily: type.bodyBold, fontSize: 15, color: colors.text, paddingHorizontal: 4 },
   subRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   sub: { fontFamily: type.bodyRegular, fontSize: 13, color: colors.neutral[700], flexShrink: 1 },
   errorBlock: { gap: 8, alignItems: 'flex-start' },

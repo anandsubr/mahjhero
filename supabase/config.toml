@@ -454,6 +454,13 @@ verify_jwt = true
 [functions.calendar-feed]
 verify_jwt = false
 
+# Mahj Night event page and RSVPs (pivot batch 2). Guests open the page and
+# RSVP from a browser with no account; the link token is the key. The
+# handler verifies a signed-in caller's JWT itself (auth.getUser) before
+# treating them as the host.
+[functions.mahj-night]
+verify_jwt = false
+
 # ---------------------------------------------------------------------------
 # Production (app.mahjhero.com). Everything above is the LOCAL config; this
 # block overrides it only when `supabase config push` targets the prod

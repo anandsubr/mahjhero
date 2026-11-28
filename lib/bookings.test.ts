@@ -597,6 +597,26 @@ describe('BOOKING_REFUSALS (self-audit against the migrations)', () => {
     // through set_club_advanced, which runs as the owner the trigger exempts.
     'club advanced setting cannot be changed directly':
       'trigger (clubs_freeze_identity) on public.clubs UPDATE — never reached through an RPC, only a direct UPDATE no lib/*.ts function performs',
+    // 20261128100000: same trigger again, for kind, theme and the link columns.
+    'club link settings cannot be changed directly':
+      'trigger (clubs_freeze_identity) on public.clubs UPDATE — never reached through an RPC, only a direct UPDATE no lib/*.ts function performs',
+    // Mahj Nights (20261128130000). create_mahj_night's guards: the create
+    // screen requires an address, caps the area at 40, sends a theme from
+    // lib/themes.ts and the device's own zone; lib/mahj-nights.ts maps the
+    // address case. Not booking refusals.
+    'an address is required': 'create_mahj_night guard; the create screen blocks an empty address, and createErrorMessage maps it',
+    'area label too long': 'create_mahj_night / set_mahj_night_details guard; both screens cap the field at 40 characters',
+    'unknown theme': 'create_mahj_night guard; the theme always comes from lib/themes.ts',
+    'unknown timezone': 'create_mahj_night guard; the zone is the device\'s own IANA name',
+    'not a mahj night': 'set_mahj_night_details guard; the edit screen only calls it for a mahj_night event',
+    // submit_rsvp's raises reach the guest through the mahj-night edge
+    // function (logic.ts rsvpError) and lib/mahj-nights.ts rsvpErrorMessage,
+    // never through lib/bookings.ts.
+    not_found: 'submit_rsvp, mapped by the mahj-night function and rsvpErrorMessage',
+    invalid_name: 'submit_rsvp, mapped by the mahj-night function and rsvpErrorMessage',
+    invalid_email: 'submit_rsvp, mapped by the mahj-night function and rsvpErrorMessage',
+    invalid_status: 'submit_rsvp; the edge function only ever sends going, maybe or no',
+    full: 'submit_rsvp, mapped by the mahj-night function and rsvpErrorMessage',
     // set_club_cover's path guard (20260930100100): new_path is always built
     // client-side from the club id it is uploading under, so a foreign
     // prefix is not a path a real client ever sends.

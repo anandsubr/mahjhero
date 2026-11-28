@@ -1,4 +1,4 @@
-import { Redirect, useRouter } from 'expo-router';
+import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Keyboard, Platform, StyleSheet, View } from 'react-native';
 import { Text } from '../components/Text';
@@ -20,6 +20,7 @@ import type { OAuthProvider } from '../lib/auth';
 import { openLegal } from '../lib/legal';
 import { GENERIC_ERROR } from '../lib/constants';
 import { useSession } from '../lib/session';
+import { safeReturnPath } from '../lib/start';
 import { colors, space, type } from '../lib/theme';
 
 const PROVIDER_LABEL: Record<OAuthProvider, string> = {
@@ -38,6 +39,7 @@ const RESEND_COOLDOWN_SECONDS = 60;
 export default function SignIn() {
   const { session, loading } = useSession();
   const router = useRouter();
+  const { next } = useLocalSearchParams<{ next?: string }>();
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [password, setPassword] = useState('');
@@ -190,7 +192,9 @@ export default function SignIn() {
   // Redirects to "/" rather than a fixed destination: app/index.tsx is the
   // one place that decides where a signed-in member lands. Hard-coding a
   // destination here would duplicate index's decision.
-  if (!loading && session) return <Redirect href="/" />;
+  // `?next=` (a Mahj Night guest signing in from the event page) returns
+  // there instead, but only to one of this app's own screens.
+  if (!loading && session) return <Redirect href={(safeReturnPath(next) ?? '/') as never} />;
 
   if (status === 'code-entry') {
     return (

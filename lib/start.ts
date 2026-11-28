@@ -39,7 +39,7 @@ export function inAppPathFromLink(text: string): string | null {
   }
 
   // Screens an invite can point at. Anything else is not an invite link.
-  if (!/^\/(clubs|messages)\/[^/]/.test(path)) return null;
+  if (!/^\/(clubs|messages|e)\/[^/]/.test(path)) return null;
   return `${path}${search}`;
 }
 
@@ -67,4 +67,15 @@ export async function shareAskAFriendToHost(): Promise<'shared' | 'copied' | 'fa
     console.error('shareAskAFriendToHost failed', cause);
     return 'failed';
   }
+}
+
+/**
+ * Where sign-in may send someone back to (`/sign-in?next=…`): only this
+ * app's own Mahj Night, group and message screens, never another site.
+ */
+export function safeReturnPath(next: unknown): string | null {
+  if (typeof next !== 'string' || next.length > 300) return null;
+  if (!/^\/(e|clubs|messages)\/[A-Za-z0-9_\-]/.test(next)) return null;
+  if (/[\\\s]|\/\//.test(next)) return null;
+  return next;
 }

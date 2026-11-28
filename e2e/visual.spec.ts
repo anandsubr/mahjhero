@@ -1753,4 +1753,17 @@ test.describe('signed in', () => {
       await captureScreen(page, vp, `how-it-works-${vp.name}.png`);
     });
   }
+
+  for (const vp of WIDTHS) {
+    // Host a Mahj Night (pivot batch 2). Its date chip defaults to today, so
+    // the whole form is pinned to the fixed clock every test in this file
+    // runs under.
+    test(`host a mahj night at ${vp.name}`, async ({ page }) => {
+      await page.clock.setFixedTime(new Date('2026-08-22T16:00:00Z'));
+      await page.setViewportSize({ width: vp.width, height: vp.height });
+      await page.goto('/nights/new');
+      await expect(page.getByText('Jade Garden')).toBeVisible();
+      await captureScreen(page, vp, `host-a-mahj-night-${vp.name}.png`);
+    });
+  }
 });

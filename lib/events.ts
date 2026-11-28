@@ -30,6 +30,13 @@ export type OverrideKey =
 
 export type ClubEvent = {
   id: string;
+  /**
+   * Mahj Nights (pivot batch 2). Optional so callers that build a ClubEvent
+   * by hand needn't care; absent reads as a regular game.
+   */
+  event_type?: 'regular' | 'mahj_night';
+  public_area?: string;
+  beginners_welcome?: boolean;
   club_id: string;
   series_id: string | null;
   /** NULL for an unnamed game -- show it with lib/home.ts gameHeadline. */
@@ -207,7 +214,8 @@ export type RecurrenceRule = {
 export const EVENT_COLUMNS =
   'id, club_id, series_id, title, venue_id, notes, starts_at, ends_at, ' +
   'status, occurrence_date, overrides, check_in_required, fee_cents, ' +
-  'min_spend_cents, game_mode, seating_mode, capacity, venues(name), ' +
+  'min_spend_cents, game_mode, seating_mode, capacity, event_type, public_area, ' +
+  'beginners_welcome, venues(name), ' +
   'event_tables(id, capacity, label), ' +
   'bookings(profile_id, status, event_table_id, group_id, invite_holds_seat)';
 
