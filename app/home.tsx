@@ -301,25 +301,40 @@ export default function HomeScreen() {
 
       {view === 'myGames' ? (
         <View style={styles.section}>
-          <View style={styles.subRow}>
-            <Text style={styles.sub}>
-              {filter === 'hosting'
-                ? `${games.length} you're hosting`
-                : upcomingSummary(games, nightIds)}
-            </Text>
-            <MyGamesModeToggle mode={mode} onChange={chooseMode} />
-          </View>
-          {hostingCount > 0 || filter === 'hosting' ? (
-            <View style={styles.filters} testID="games-filter">
-              <SmallChip label="All" selected={filter === 'all'} onPress={() => setFilter('all')} />
-              <SmallChip
-                label={`Hosting (${hostingCount})`}
-                accessibilityLabel="Only games you're hosting"
-                selected={filter === 'hosting'}
-                onPress={() => setFilter('hosting')}
-              />
-            </View>
-          ) : null}
+          {/* With the filter: All / Hosting on the left and List / Calendar on
+              the right of one row, the count line under them. Without it,
+              the count line takes the filter's place. */}
+          {(() => {
+            const summary = (
+              <Text style={styles.sub}>
+                {filter === 'hosting'
+                  ? `${games.length} you're hosting`
+                  : upcomingSummary(games, nightIds)}
+              </Text>
+            );
+            const showFilter = hostingCount > 0 || filter === 'hosting';
+            return (
+              <>
+                <View style={styles.subRow}>
+                  {showFilter ? (
+                    <View style={styles.filters} testID="games-filter">
+                      <SmallChip label="All" selected={filter === 'all'} onPress={() => setFilter('all')} />
+                      <SmallChip
+                        label={`Hosting (${hostingCount})`}
+                        accessibilityLabel="Only games you're hosting"
+                        selected={filter === 'hosting'}
+                        onPress={() => setFilter('hosting')}
+                      />
+                    </View>
+                  ) : (
+                    summary
+                  )}
+                  <MyGamesModeToggle mode={mode} onChange={chooseMode} />
+                </View>
+                {showFilter ? summary : null}
+              </>
+            );
+          })()}
 
           {failed ? (
             <View style={styles.errorBlock}>
@@ -420,7 +435,7 @@ const styles = StyleSheet.create({
   container: { gap: 16, paddingHorizontal: 16, paddingBottom: 32 },
   centered: { alignItems: 'center' },
   section: { gap: 12 },
-  filters: { flexDirection: 'row', gap: 8 },
+  filters: { flexDirection: 'row', gap: 6, flexShrink: 1 },
   subRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   sub: { fontFamily: type.bodyRegular, fontSize: 13, color: colors.neutral[700], flexShrink: 1 },
   errorBlock: { gap: 8, alignItems: 'flex-start' },
