@@ -232,7 +232,7 @@ export default function NewEventScreen() {
     return (
       <Screen contentStyle={styles.container}>
         <FormHeader clubName="" onClose={close} />
-        <ErrorBanner message="That club could not be loaded." />
+        <ErrorBanner message="That group could not be loaded." />
       </Screen>
     );
   }
@@ -245,6 +245,10 @@ export default function NewEventScreen() {
   // reserved for whoever actually created the club until a real cohost
   // feature exists to extend it deliberately.
   if (!isHost) return <Redirect href={`/clubs/${clubId}/games`} />;
+
+  // Group settings -> Advanced. Off: assigned tables of four with no
+  // levels, no money fields and no door list -- a small group's game.
+  const advanced = club.advanced_enabled;
 
   const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
   // "Monthly" means "the same weekday-of-month as the date you picked" --
@@ -408,12 +412,18 @@ export default function NewEventScreen() {
 
         {guides.isVisible('tip:new-game') ? (
           <TipCard tag="Tip" title="Setting up a game" onDismiss={() => guides.dismiss('tip:new-game')}>
-            <TipText>Assigned tables: players pick an Empty seat at a table.</TipText>
-            <TipText>Open seating: players tap Join, and no tables are set in advance.</TipText>
             <TipText>
-              Set Cost to play, and Minimum spend if the venue asks for one. Players see the
-              cost up front, and you mark who's paid at check-in. No money goes through the app.
+              Every table seats four. Players pick an Empty seat, and can save seats for friends.
             </TipText>
+            {advanced ? (
+              <>
+                <TipText>Open seating: players tap Join, and no tables are set in advance.</TipText>
+                <TipText>
+                  Set Cost to play, and Minimum spend if the venue asks for one. Players see the
+                  cost up front, and you mark who's paid at check-in. No money goes through the app.
+                </TipText>
+              </>
+            ) : null}
           </TipCard>
         ) : null}
 
@@ -507,23 +517,25 @@ export default function NewEventScreen() {
           </FormCard>
         </FormSection>
 
-        <FormSection
-          label="How does this seat people?"
-          helper={
-            seatingMode === 'assigned_tables'
-              ? 'You place players at tables. Set a level for each table.'
-              : 'Players take any open seat when they arrive.'
-          }
-        >
-          <Segmented
-            options={[
-              { value: 'assigned_tables' as const, label: 'Assigned tables' },
-              { value: 'open_seating' as const, label: 'Open seating' },
-            ]}
-            value={seatingMode}
-            onChange={setSeatingMode}
-          />
-        </FormSection>
+        {advanced ? (
+          <FormSection
+            label="How does this seat people?"
+            helper={
+              seatingMode === 'assigned_tables'
+                ? 'You place players at tables. Set a level for each table.'
+                : 'Players take any open seat when they arrive.'
+            }
+          >
+            <Segmented
+              options={[
+                { value: 'assigned_tables' as const, label: 'Assigned tables' },
+                { value: 'open_seating' as const, label: 'Open seating' },
+              ]}
+              value={seatingMode}
+              onChange={setSeatingMode}
+            />
+          </FormSection>
+        ) : null}
 
         {seatingMode === 'assigned_tables' ? (
           <TablesCard
@@ -540,9 +552,9 @@ export default function NewEventScreen() {
             max={6}
             // A series makes its tables week by week, each "Any level";
             // levels are then set per game, from its own Edit screen.
-            levels={!repeating}
+            levels={advanced && !repeating}
             note={
-              repeating
+              repeating && advanced
                 ? `Room for ${tableCount * 4} players. Set each table's level from a game's Edit screen once it's created.`
                 : `Every table seats four: room for ${tableCount * 4} players.`
             }
@@ -565,31 +577,35 @@ export default function NewEventScreen() {
           </FormSection>
         )}
 
-        <FormSection helper="Leave at 0 if it's free.">
-          <MoneyCards
-            fee={feeText}
-            minSpend={minSpendText}
-            onFeeChange={setFeeText}
-            onMinSpendChange={setMinSpendText}
-          />
-        </FormSection>
-
-        <FormSection label="Check-in & access">
-          <FormCard>
-            <ToggleRow
-              icon={<ClipboardCheckIcon size={18} color={colors.accent[700]} />}
-              title="Require check-in"
-              helper="Turn this on and this game gets a door list, so you can check people in as they arrive. Small games usually don't need it."
-              value={checkInRequired}
-              onValueChange={setCheckInRequired}
+        {advanced ? (
+          <FormSection helper="Leave at 0 if it's free.">
+            <MoneyCards
+              fee={feeText}
+              minSpend={minSpendText}
+              onFeeChange={setFeeText}
+              onMinSpendChange={setMinSpendText}
             />
+          </FormSection>
+        ) : null}
+
+        <FormSection label={advanced ? 'Check-in & access' : 'Who can join'}>
+          <FormCard>
+            {advanced ? (
+              <ToggleRow
+                icon={<ClipboardCheckIcon size={18} color={colors.accent[700]} />}
+                title="Require check-in"
+                helper="Turn this on and this game gets a door list, so you can check people in as they arrive. Small games usually don't need it."
+                value={checkInRequired}
+                onValueChange={setCheckInRequired}
+              />
+            ) : null}
             <ToggleRow
               icon={<LockIcon size={18} color={colors.accent[700]} />}
               title="Invite-only"
               helper={
                 gameMode === 'invite_only'
                   ? 'Only people you invite can see and join.'
-                  : 'Anyone in the club can see and join.'
+                  : 'Anyone in the group can see and join.'
               }
               value={gameMode === 'invite_only'}
               onValueChange={(next) => setGameMode(next ? 'invite_only' : 'open_play')}

@@ -73,6 +73,7 @@ const CLUB: Club = {
   code: 'RIVER24',
   cover_path: null,
   cover_color: 'accent2_800',
+  advanced_enabled: false,
 };
 
 function post(id: string, body: string): FeedPost {
@@ -121,8 +122,8 @@ describe('club hub Board section', () => {
 
   it('gives hosts the composer megaphone (counting this club), not an Announcement button', async () => {
     renderSection('host');
-    fireEvent.click(await screen.findByRole('switch', { name: 'Email everyone in the club' }));
-    expect(await screen.findByText('Will also email 8 people in the club')).toBeTruthy();
+    fireEvent.click(await screen.findByRole('switch', { name: 'Email everyone in the group' }));
+    expect(await screen.findByText('Will also email 8 people in the group')).toBeTruthy();
     expect(countBroadcastRecipients).toHaveBeenCalledWith('c1', null);
     expect(screen.queryByRole('button', { name: 'Announcement' })).toBeNull();
     expect(screen.queryByText('Most recent')).toBeNull();
@@ -130,13 +131,13 @@ describe('club hub Board section', () => {
 
   it('gives co-organizers the megaphone too', async () => {
     renderSection('co_organizer');
-    expect(await screen.findByRole('switch', { name: 'Email everyone in the club' })).toBeTruthy();
+    expect(await screen.findByRole('switch', { name: 'Email everyone in the group' })).toBeTruthy();
   });
 
   it('does not show members the megaphone, an Announcement button, or the old New post pill', async () => {
     renderSection('member');
     await screen.findByText('Nothing here yet. Start the first post.');
-    expect(screen.queryByRole('switch', { name: 'Email everyone in the club' })).toBeNull();
+    expect(screen.queryByRole('switch', { name: 'Email everyone in the group' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Announcement' })).toBeNull();
     expect(screen.queryByLabelText('New post')).toBeNull();
   });
@@ -148,7 +149,7 @@ describe('club hub Board section', () => {
     postMessage.mockResolvedValue({ id: 'p9', error: null });
     renderSection();
     await screen.findByText('Older post');
-    const field = screen.getByPlaceholderText('Write to the club');
+    const field = screen.getByPlaceholderText('Write to the group');
     // Outside the scroller: the footer column, not the scrolling content.
     expect(screen.getByTestId('hub-section-scroll').contains(field)).toBe(false);
     fireEvent.change(field, { target: { value: 'Fresh post' } });

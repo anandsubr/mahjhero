@@ -82,7 +82,7 @@ describe('BringSomeoneSheet', () => {
       });
       expect(
         screen.getByText(
-          "You're the only member of this club so far. Invite people from the club page to fill a table.",
+          "You're the only member of this group so far. Invite people from the group page to fill a table.",
         ),
       ).toBeTruthy();
     });
@@ -90,7 +90,7 @@ describe('BringSomeoneSheet', () => {
     it('explains that everyone else is already booked, when the club has other members', () => {
       renderSheet({ booked: ['p2', 'p3'] });
       expect(
-        screen.getByText('Everyone else in the club already has a seat at this game.'),
+        screen.getByText('Everyone else in the group already has a seat at this game.'),
       ).toBeTruthy();
     });
 
@@ -98,11 +98,11 @@ describe('BringSomeoneSheet', () => {
       renderSheet();
       expect(
         screen.queryByText(
-          "You're the only member of this club so far. Invite people from the club page to fill a table.",
+          "You're the only member of this group so far. Invite people from the group page to fill a table.",
         ),
       ).toBeNull();
       expect(
-        screen.queryByText('Everyone else in the club already has a seat at this game.'),
+        screen.queryByText('Everyone else in the group already has a seat at this game.'),
       ).toBeNull();
     });
   });

@@ -240,7 +240,7 @@ export default function NewMessageScreen() {
           {genuinelyEmpty ? (
             <View style={styles.emptyCard}>
               <Text style={styles.emptyText}>
-                Nobody to message yet. Add a friend or join a club to find
+                Nobody to message yet. Add a friend or join a group to find
                 people to message.
               </Text>
             </View>

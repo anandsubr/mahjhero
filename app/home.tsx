@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Redirect, useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { Text } from '../components/Text';
 import Button from '../components/Button';
 import ErrorBanner from '../components/ErrorBanner';
@@ -16,6 +16,7 @@ import MyGamesCalendar from '../components/home/MyGamesCalendar';
 import MyGamesList from '../components/home/MyGamesList';
 import MyGamesModeToggle, { type MyGamesMode } from '../components/home/MyGamesModeToggle';
 import NeedsYouStack from '../components/home/NeedsYouStack';
+import StartChoices from '../components/home/StartChoices';
 import { fetchMyClubs, fetchMyRoles, type Club, type ClubRole } from '../lib/clubs';
 import { GENERIC_ERROR } from '../lib/constants';
 import {
@@ -41,7 +42,9 @@ const modeKey = (userId: string) => `home:myGamesMode:${userId}`;
 
 /**
  * Home (Design V3 2a): header, "Needs you", then My games (list or
- * calendar) or Clubs. Replaces the old dashboard (app/clubs/index.tsx) and
+ * calendar) or Groups. Someone with no groups gets "What brings you here?"
+ * (components/home/StartChoices.tsx) in place of the Groups list; everyone
+ * else gets Host a Mahj Night and Start a group above theirs. Replaces the old dashboard (app/clubs/index.tsx) and
  * the global tab bar.
  */
 export default function HomeScreen() {
@@ -303,14 +306,14 @@ export default function HomeScreen() {
           ) : mode === 'list' ? (
             games.length === 0 ? (
               <View style={styles.emptyCard}>
-                <Text style={styles.sub}>No games yet. Join one from a club.</Text>
+                <Text style={styles.sub}>No games yet. Host a Mahj Night, or join one from a group.</Text>
                 <Button
                   variant="secondary"
                   big={false}
                   onPress={() => setView('clubs')}
-                  accessibilityLabel="Show my clubs"
+                  accessibilityLabel="Show my groups"
                 >
-                  Clubs
+                  Groups
                 </Button>
               </View>
             ) : (
@@ -330,14 +333,34 @@ export default function HomeScreen() {
             />
           )}
         </View>
+      ) : clubs !== null && clubs.length === 0 && !clubsFailed ? (
+        <View style={styles.section}>
+          <StartChoices />
+        </View>
       ) : (
         <View style={styles.section}>
+          {/* Stacked, not side by side: "Host a Mahj Night" wraps to two
+              lines at half a 375pt phone's width. */}
+          <View style={styles.actions}>
+            <Button
+              onPress={() => router.push('/clubs/new?for=night')}
+              accessibilityLabel="Host a Mahj Night"
+            >
+              Host a Mahj Night
+            </Button>
+            <Button
+              variant="secondary"
+              onPress={() => router.push('/clubs/new')}
+              accessibilityLabel="Start a group"
+            >
+              Start a group
+            </Button>
+          </View>
           <JoinClubCard onJoined={(clubId) => router.push(`/clubs/${clubId}/games`)} />
           <HomeGuides
             clubs={clubs}
             roles={roles}
             checklist={checklist}
-            email={email}
             guides={guides}
             router={router}
           />
@@ -352,14 +375,6 @@ export default function HomeScreen() {
               onPress={() => router.push(`/clubs/${club.id}/games`)}
             />
           ))}
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Start a club"
-            onPress={() => router.push('/clubs/new')}
-            style={styles.startClub}
-          >
-            <Text style={styles.startClubText}>+ Start a club</Text>
-          </Pressable>
         </View>
       )}
     </Screen>
@@ -384,14 +399,5 @@ const styles = StyleSheet.create({
     gap: 10,
     alignItems: 'center',
   },
-  startClub: {
-    minHeight: 56,
-    borderRadius: 20,
-    borderWidth: 1.5,
-    borderStyle: 'dashed',
-    borderColor: colors.neutral[400],
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  startClubText: { fontFamily: type.bodyBold, fontSize: 16, color: colors.accent[700] },
+  actions: { gap: 8 },
 });

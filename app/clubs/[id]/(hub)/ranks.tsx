@@ -1,3 +1,4 @@
+import { Redirect } from 'expo-router';
 import { useRef } from 'react';
 import ClubLeaderboard, { type ClubLeaderboardHandle } from '../../../../components/ClubLeaderboard';
 import HubSection from '../../../../components/hub/HubSection';
@@ -15,6 +16,9 @@ export default function RanksSection() {
   const { club } = useClubHub();
   const { session } = useSession();
   const leaderboardRef = useRef<ClubLeaderboardHandle>(null);
+
+  // Club-scale: hidden unless Group settings -> Advanced is on.
+  if (!club.advanced_enabled) return <Redirect href={`/clubs/${club.id}/games`} />;
 
   return (
     <HubSection onRefresh={() => leaderboardRef.current?.reload() ?? Promise.resolve()}>

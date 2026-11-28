@@ -207,8 +207,8 @@ export default function BringSomeoneSheet({
           {available.length === 0 ? (
             <Text style={styles.helper}>
               {soloClub
-                ? "You're the only member of this club so far. Invite people from the club page to fill a table."
-                : "Everyone else in the club already has a seat at this game."}
+                ? "You're the only member of this group so far. Invite people from the group page to fill a table."
+                : "Everyone else in the group already has a seat at this game."}
             </Text>
           ) : null}
 

@@ -142,11 +142,11 @@ export default function VenuePicker({
           <Toggle
             value={sharePublicly}
             onValueChange={setSharePublicly}
-            accessibilityLabel="Other clubs can use this venue"
+            accessibilityLabel="Other groups can use this venue"
           />
           <Text style={styles.help}>
-            Other clubs can use this venue. Leave this off for a home or
-            anywhere private — once another club starts using a shared venue,
+            Other groups can use this venue. Leave this off for a home or
+            anywhere private — once another group starts using a shared venue,
             it cannot be made private again.
           </Text>
         </View>
@@ -171,12 +171,12 @@ export default function VenuePicker({
         <View style={styles.row}>
           <MapPinIcon size={18} color={colors.accent2[700]} />
           <View style={styles.rowText}>
-            <Text style={styles.rowLabel}>Venue</Text>
+            <Text style={styles.rowLabel}>Where</Text>
             <TextInput
               value={query}
               onChangeText={setQuery}
               editable={!disabled}
-              accessibilityLabel="Venue"
+              accessibilityLabel="Where"
               placeholder="Where are you playing?"
               placeholderTextColor={colors.neutral[600]}
               style={styles.rowInput}
@@ -209,7 +209,7 @@ export default function VenuePicker({
           {own.length > 0 ? (
             <>
               <Text style={styles.resultsGroup}>
-                {clubName ? `${clubName} venues` : 'This club'}
+                {clubName ? `${clubName} venues` : 'This group'}
               </Text>
               {own.map((match) => (
                 <VenueRow key={match.id} match={match} query={trimmed} onPress={() => select(match)} />
@@ -239,7 +239,7 @@ export default function VenuePicker({
             </View>
             <View style={styles.resultText}>
               <Text numberOfLines={1} style={styles.addTitle}>{`Add “${trimmed}”`}</Text>
-              <Text style={styles.resultMeta}>Save as a new venue for this club</Text>
+              <Text style={styles.resultMeta}>Save as a new venue for this group</Text>
             </View>
           </Pressable>
         </View>

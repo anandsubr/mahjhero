@@ -1,4 +1,4 @@
-import { Redirect, useRouter } from 'expo-router';
+import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { Text } from '../../components/Text';
@@ -18,13 +18,17 @@ import { useSession } from '../../lib/session';
 import { colors, type } from '../../lib/theme';
 
 /**
- * Start a club (profile & club handoff, 1b): a flow screen in the game
- * form's shape — ✕ + "Clubs" header, a live preview of the club's tile and
- * name, one card of fields, and "Create the club" pinned at the bottom.
+ * Start a group (profile & club handoff, 1b): a flow screen in the game
+ * form's shape — ✕ + "Groups" header, a live preview of the group's tile and
+ * name, one card of fields, and "Create the group" pinned at the bottom.
  *
- * "Description (optional)" is the club's `rhythm` column under a new label —
- * the design binds it to the same state — so it keeps showing as the line
- * under the club's name in its header, one line with an ellipsis.
+ * "When do you usually play?" is the club's `rhythm` column under a new
+ * label, so it keeps showing as the line under the group's name in its
+ * header, one line with an ellipsis.
+ *
+ * `?for=night` is Host a Mahj Night's stand-in until the Mahj Night create
+ * flow exists (pivot batch 2): the same form, worded for a one-off night,
+ * then straight on to that group's New game form.
  *
  * The ✕ goes to `/home` rather than `back()`, since the history stack here
  * is typically one deep (2026-09-01-back-links-design.md).
@@ -32,6 +36,8 @@ import { colors, type } from '../../lib/theme';
 export default function NewClubScreen() {
   const { session, loading } = useSession();
   const router = useRouter();
+  const { for: purpose } = useLocalSearchParams<{ for?: string }>();
+  const forNight = purpose === 'night';
   const [name, setName] = useState('');
   const [rhythm, setRhythm] = useState('');
   const [code, setCode] = useState('');
@@ -59,10 +65,10 @@ export default function NewClubScreen() {
     const { clubId, error: createError } = await createClub(name, rhythm, code);
     setSaving(false);
     if (createError || !clubId) {
-      setError(createError ?? 'Could not create the club.');
+      setError(createError ?? 'Could not create the group.');
       return;
     }
-    router.replace(`/clubs/${clubId}/games`);
+    router.replace(forNight ? `/clubs/${clubId}/events/new` : `/clubs/${clubId}/games`);
   }
 
   return (
@@ -71,8 +77,8 @@ export default function NewClubScreen() {
       contentStyle={formStyles.body}
       footer={
         <ActionBar
-          primaryLabel="Create the club"
-          primaryAccessibilityLabel="Create the club"
+          primaryLabel={forNight ? 'Next: the night' : 'Create the group'}
+          primaryAccessibilityLabel={forNight ? 'Next: the night' : 'Create the group'}
           onPrimary={onCreate}
           busy={saving}
           disabled={!canCreate}
@@ -80,15 +86,17 @@ export default function NewClubScreen() {
       }
     >
       <FormHeader
-        clubName="Clubs"
-        closeLabel="Back to your clubs"
+        clubName="Groups"
+        closeLabel="Back to Home"
         onClose={() => router.push('/home')}
       />
 
       <View style={styles.intro}>
-        <FormTitle>Start a club</FormTitle>
+        <FormTitle>{forNight ? 'Host a Mahj Night' : 'Start a group'}</FormTitle>
         <Text style={styles.introText}>
-          A club is just a name and a rhythm. Invite people once it exists.
+          {forNight
+            ? 'Who is it for? Name the night, then pick the date and tables. If everyone wants to keep playing, it can become your group.'
+            : 'A group is just a name and when you play. Invite people once it exists.'}
         </Text>
       </View>
 
@@ -103,10 +111,10 @@ export default function NewClubScreen() {
             numberOfLines={1}
             style={[styles.previewName, !canCreate && styles.previewPlaceholder]}
           >
-            {trimmedName || 'Your club'}
+            {trimmedName || (forNight ? 'Your Mahj Night' : 'Your group')}
           </Text>
           <Text numberOfLines={1} style={styles.previewRhythm}>
-            {trimmedRhythm || 'Add a short description'}
+            {trimmedRhythm || (forNight ? 'A one-off night' : 'When you usually play')}
           </Text>
         </View>
       </View>
@@ -115,31 +123,32 @@ export default function NewClubScreen() {
 
       <FormCard>
         <TextRow
-          label="Club name"
+          label={forNight ? 'Name the night' : 'Group name'}
           value={name}
           onChangeText={(value) => {
             setName(value);
             setError(null);
           }}
-          placeholder="Oakfield Tiles"
-          accessibilityLabel="Club name"
+          placeholder={forNight ? "Ellie's holiday Mahj Night" : 'Thursday Tiles'}
+          accessibilityLabel={forNight ? 'Name the night' : 'Group name'}
         />
-        <TextRow
-          label="Description (optional)"
-          value={rhythm}
-          onChangeText={setRhythm}
-          placeholder="Who it's for, when you play, where you meet…"
-          accessibilityLabel="Description"
-          multiline
-          numberOfLines={3}
-          inputStyle={styles.description}
-        />
-        <ClubCodeField
-          label="Club code (optional)"
-          value={code}
-          onChangeText={setCode}
-          helper="People type this on Home to join. Leave blank and we'll make one. You can change it later."
-        />
+        {forNight ? null : (
+          <>
+            <TextRow
+              label="When do you usually play? (optional)"
+              value={rhythm}
+              onChangeText={setRhythm}
+              placeholder="Thursday evenings"
+              accessibilityLabel="When do you usually play?"
+            />
+            <ClubCodeField
+              label="Group code (optional)"
+              value={code}
+              onChangeText={setCode}
+              helper="People type this on Home to join. Leave blank and we'll make one. You can change it later."
+            />
+          </>
+        )}
       </FormCard>
     </Screen>
   );
@@ -180,12 +189,5 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 16,
     color: colors.neutral[700],
-  },
-  description: {
-    fontFamily: type.bodyRegular,
-    lineHeight: 22,
-    minHeight: 66,
-    // Web only: a textarea's drag handle. Not in RN's style types.
-    ...({ resize: 'none' } as object),
   },
 });

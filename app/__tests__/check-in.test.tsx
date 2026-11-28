@@ -240,7 +240,7 @@ describe('screen chrome', () => {
     fetchRoster.mockResolvedValue([{ ...HOST, role: 'member' as const }]);
     canGoBack.mockReturnValue(false);
     render(<CheckInScreen />);
-    await screen.findByText('You are not an organizer of this club.');
+    await screen.findByText('You are not a host of this group.');
     fireEvent.click(screen.getByRole('button', { name: 'Back to the game' }));
     expect(replace).toHaveBeenCalledWith('/clubs/club-1/events/event-1');
   });
@@ -1576,7 +1576,7 @@ describe('the open-seating door list', () => {
     ]);
     render(<CheckInScreen />);
 
-    await screen.findByText('You are not an organizer of this club.');
+    await screen.findByText('You are not a host of this group.');
     // The RLS gate in Task 5 is the real one; a member's client should not
     // even ask the question.
     expect(fetchEventPayments).not.toHaveBeenCalled();

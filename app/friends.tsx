@@ -176,7 +176,7 @@ export default function FriendsScreen() {
                     <PeopleIcon size={20} color={colors.accent2[800]} />
                   </View>
                   <Text style={styles.emptyText}>
-                    No friends yet. Add someone from your clubs below.
+                    No friends yet. Add someone from your groups below.
                   </Text>
                 </View>
               ) : (
@@ -210,7 +210,7 @@ export default function FriendsScreen() {
 
           {people !== null && showPeople ? (
             <View style={styles.section}>
-              <Text style={styles.sectionLabel}>People in your clubs</Text>
+              <Text style={styles.sectionLabel}>People in your groups</Text>
               {allPeople.length > 0 ? (
                 <View style={styles.search}>
                   <SearchIcon size={18} color={colors.neutral[700]} />
@@ -256,7 +256,7 @@ export default function FriendsScreen() {
                 <Text style={styles.peopleEmpty}>
                   {allPeople.length > 0
                     ? `No one matches \u201c${query.trim()}\u201d.`
-                    : "You've added everyone in your clubs."}
+                    : "You've added everyone in your groups."}
                 </Text>
               )}
             </View>

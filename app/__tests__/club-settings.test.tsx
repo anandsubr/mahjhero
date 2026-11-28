@@ -24,6 +24,7 @@ const fetchClub = vi.fn();
 const fetchMyRoles = vi.fn();
 const setClubCode = vi.fn();
 const setDefaultGameMode = vi.fn();
+const setClubAdvanced = vi.fn();
 vi.mock('../../lib/clubs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../lib/clubs')>();
   return {
@@ -32,6 +33,7 @@ vi.mock('../../lib/clubs', async (importOriginal) => {
     fetchMyRoles: (...args: unknown[]) => fetchMyRoles(...args),
     setClubCode: (...args: unknown[]) => setClubCode(...args),
     setDefaultGameMode: (...args: unknown[]) => setDefaultGameMode(...args),
+    setClubAdvanced: (...args: unknown[]) => setClubAdvanced(...args),
   };
 });
 
@@ -64,6 +66,7 @@ const CLUB = {
   code: 'TEST1',
   cover_path: null as string | null,
   cover_color: 'accent2_800' as const,
+  advanced_enabled: false,
 };
 
 const IMAGE = { uri: 'file:///photo.jpg', width: 3000, height: 2000 };
@@ -79,6 +82,7 @@ beforeEach(() => {
   removeClubCover.mockResolvedValue({ error: null });
   setClubCoverColor.mockResolvedValue({ error: null });
   setDefaultGameMode.mockResolvedValue({ error: null });
+  setClubAdvanced.mockResolvedValue({ error: null });
   pickImages.mockResolvedValue([IMAGE]);
 });
 
@@ -100,24 +104,24 @@ describe('access', () => {
   it('lets a co-organizer in', async () => {
     fetchMyRoles.mockResolvedValue([{ club_id: 'c1', role: 'co_organizer' }]);
     render(<ClubSettingsScreen />);
-    expect(await screen.findByText('Club settings')).toBeTruthy();
+    expect(await screen.findByText('Group settings')).toBeTruthy();
     expect(screen.queryByTestId('redirect')).toBeNull();
   });
 
   it('shows an error with Retry when the club fails to load', async () => {
     fetchClub.mockResolvedValueOnce(null);
     render(<ClubSettingsScreen />);
-    expect(await screen.findByText('Could not load this club.')).toBeTruthy();
+    expect(await screen.findByText('Could not load this group.')).toBeTruthy();
     fireEvent.click(screen.getByLabelText('Retry'));
-    expect(await screen.findByText('Club settings')).toBeTruthy();
+    expect(await screen.findByText('Group settings')).toBeTruthy();
   });
 
   it('goes back to the hub, or replaces to Games with nothing to pop', async () => {
     render(<ClubSettingsScreen />);
-    fireEvent.click(await screen.findByLabelText('Back to the club'));
+    fireEvent.click(await screen.findByLabelText('Back to the group'));
     expect(back).toHaveBeenCalled();
     canGoBack.mockReturnValue(false);
-    fireEvent.click(screen.getByLabelText('Back to the club'));
+    fireEvent.click(screen.getByLabelText('Back to the group'));
     expect(replace).toHaveBeenCalledWith('/clubs/c1/games');
   });
 });
@@ -213,15 +217,15 @@ describe('refresh after a change', () => {
       await screen.findByText('Saved, but the preview could not be refreshed.'),
     ).toBeTruthy();
     // The screen itself stays up -- no failure state.
-    expect(screen.getByText('Club settings')).toBeTruthy();
+    expect(screen.getByText('Group settings')).toBeTruthy();
   });
 
   it('a code save does not revert a cover refetch that landed while it was saving', async () => {
     let resolveCode: (v: { code: string; error: null }) => void = () => {};
     setClubCode.mockReturnValueOnce(new Promise((r) => (resolveCode = r)));
     render(<ClubSettingsScreen />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Change club code' }));
-    fireEvent.change(screen.getByLabelText('New club code'), { target: { value: 'NEWCODE' } });
+    fireEvent.click(await screen.findByRole('button', { name: 'Change group code' }));
+    fireEvent.change(screen.getByLabelText('New group code'), { target: { value: 'NEWCODE' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save code' }));
     // A colour change completes (and refetches) while the code save is pending.
     fetchClub.mockResolvedValue({ ...CLUB, cover_color: 'accent_700' });
@@ -230,7 +234,7 @@ describe('refresh after a change', () => {
       expect(screen.getByRole('radio', { name: 'Clay' }).getAttribute('aria-checked')).toBe('true'),
     );
     await act(async () => resolveCode({ code: 'NEWCODE', error: null }));
-    expect(await screen.findByText('Club code: NEWCODE')).toBeTruthy();
+    expect(await screen.findByText('Group code: NEWCODE')).toBeTruthy();
     expect(screen.getByRole('radio', { name: 'Clay' }).getAttribute('aria-checked')).toBe('true');
   });
 });
@@ -239,19 +243,19 @@ describe('club code', () => {
   it('lets an organizer change the code', async () => {
     setClubCode.mockResolvedValueOnce({ code: 'NEWCODE', error: null });
     render(<ClubSettingsScreen />);
-    expect(await screen.findByText('Club code: TEST1')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Change club code' }));
-    fireEvent.change(screen.getByLabelText('New club code'), { target: { value: 'newcode' } });
+    expect(await screen.findByText('Group code: TEST1')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Change group code' }));
+    fireEvent.change(screen.getByLabelText('New group code'), { target: { value: 'newcode' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save code' }));
-    expect(await screen.findByText('Club code: NEWCODE')).toBeTruthy();
+    expect(await screen.findByText('Group code: NEWCODE')).toBeTruthy();
     expect(setClubCode).toHaveBeenCalledWith('c1', 'NEWCODE');
   });
 
   it('shows the taken error', async () => {
     setClubCode.mockResolvedValueOnce({ code: null, error: 'That code is taken.' });
     render(<ClubSettingsScreen />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Change club code' }));
-    fireEvent.change(screen.getByLabelText('New club code'), { target: { value: 'OAK2' } });
+    fireEvent.click(await screen.findByRole('button', { name: 'Change group code' }));
+    fireEvent.change(screen.getByLabelText('New group code'), { target: { value: 'OAK2' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save code' }));
     expect(await screen.findByText('That code is taken.')).toBeTruthy();
   });
@@ -264,7 +268,22 @@ describe('game mode and links', () => {
     await waitFor(() => expect(setDefaultGameMode).toHaveBeenCalledWith('c1', 'invite_only'));
   });
 
-  it('links to Venues and Import a roster', async () => {
+  it('keeps Venues and Import a roster behind Advanced', async () => {
+    render(<ClubSettingsScreen />);
+    await screen.findByRole('switch', { name: 'Tools for bigger groups' });
+    expect(screen.queryByRole('button', { name: 'Venues' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Import a roster from a spreadsheet' })).toBeNull();
+  });
+
+  it('turns Advanced on through setClubAdvanced, then shows its links', async () => {
+    render(<ClubSettingsScreen />);
+    fireEvent.click(await screen.findByRole('switch', { name: 'Tools for bigger groups' }));
+    await waitFor(() => expect(setClubAdvanced).toHaveBeenCalledWith('c1', true));
+    expect(await screen.findByRole('button', { name: 'Venues' })).toBeTruthy();
+  });
+
+  it('links to Venues and Import a roster when Advanced is on', async () => {
+    fetchClub.mockResolvedValue({ ...CLUB, advanced_enabled: true });
     render(<ClubSettingsScreen />);
     fireEvent.click(await screen.findByRole('button', { name: 'Venues' }));
     expect(push).toHaveBeenCalledWith('/clubs/c1/venues');

@@ -9,6 +9,7 @@ import {
   TrophyIcon,
 } from '../icons';
 import { HUB_SECTIONS, type HubSection } from '../../lib/club-hub';
+
 import { colors, type } from '../../lib/theme';
 
 const ICONS: Record<HubSection, ComponentType<{ size?: number; color?: string }>> = {
@@ -30,13 +31,16 @@ const ICONS: Record<HubSection, ComponentType<{ size?: number; color?: string }>
 export default function SectionButtons({
   active,
   onSelect,
+  sections = HUB_SECTIONS,
 }: {
   active: HubSection;
   onSelect: (s: HubSection) => void;
+  /** Defaults to all five; the hub passes hubSections(advanced). */
+  sections?: { key: HubSection; label: string }[];
 }) {
   return (
     <View accessibilityRole="tablist" style={styles.row}>
-      {HUB_SECTIONS.map(({ key, label }) => {
+      {sections.map(({ key, label }) => {
         const selected = key === active;
         const Icon = ICONS[key];
         const fg = selected ? colors.accent[800] : '#fff';

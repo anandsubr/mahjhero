@@ -42,6 +42,7 @@ const CLUB: Club = {
   code: 'RIVER24',
   cover_path: null,
   cover_color: 'accent2_800',
+  advanced_enabled: false,
 };
 
 const MEMBER_ROLE = [

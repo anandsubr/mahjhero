@@ -745,7 +745,7 @@ const RPC_ERROR_MESSAGES: { contains: string; message: string; codes: string[] }
     contains: 'venue not available to this club',
     // assert_venue_available, called by create_event/update_event/
     // update_event_series whenever a venue changes.
-    message: 'That venue is not available to this club.',
+    message: 'That venue is not available to this group.',
     codes: ['42501'],
   },
   {
@@ -753,7 +753,7 @@ const RPC_ERROR_MESSAGES: { contains: string; message: string; codes: string[] }
     // A member without the organizer role hitting Cancel, Remove table, or
     // End series used to be told the connection was down.
     contains: 'not an organizer of this club',
-    message: 'Only a club organizer can do that.',
+    message: 'Only a host can do that.',
     codes: ['42501'],
   },
   {

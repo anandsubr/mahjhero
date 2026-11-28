@@ -143,7 +143,7 @@ export function hostChecklist(counts: HostChecklistCounts): {
   complete: boolean;
 } {
   const steps: ChecklistStep[] = [
-    { key: 'club', label: 'Create your club', done: true, optional: false },
+    { key: 'club', label: 'Create your group', done: true, optional: false },
     { key: 'game', label: 'Schedule your first game', done: counts.events > 0, optional: false },
     {
       key: 'invite',

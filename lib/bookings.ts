@@ -216,18 +216,18 @@ const BOOKING_REFUSALS: { contains: string; message: string; codes: string[] }[]
     // the club's roster (e.g. a co-organizer removed them mid-shift after
     // the door screen's roster was fetched).
     contains: 'that person is not a member of this club',
-    message: 'That person is no longer a member of this club.',
+    message: 'That person is no longer a member of this group.',
     codes: ['23514'],
   },
   {
     // Order before 'not a member' below — see the note above.
     contains: 'not a member of this club',
-    message: 'You are no longer a member of this club.',
+    message: 'You are no longer a member of this group.',
     codes: ['42501'],
   },
   {
     contains: 'not a member',
-    message: 'Someone in your group is no longer in this club.',
+    message: 'Someone in your party is no longer in this group.',
     codes: ['23514'],
   },
   {
@@ -237,7 +237,7 @@ const BOOKING_REFUSALS: { contains: string; message: string; codes: string[] }[]
     // was down; this module actually calls call_for_a_fourth, so it owns
     // this mapping too (lib/events.ts's own copy covers its own functions).
     contains: 'not an organizer of this club',
-    message: 'Only a club organizer can do that.',
+    message: 'Only a host can do that.',
     codes: ['42501'],
   },
   {
@@ -272,7 +272,7 @@ const BOOKING_REFUSALS: { contains: string; message: string; codes: string[] }[]
   },
   {
     contains: 'only an organizer or a player at this table can record a round',
-    message: 'Only an organizer or someone seated at this table can record a round.',
+    message: 'Only a host or someone seated at this table can record a round.',
     codes: ['42501'],
   },
   {
@@ -356,7 +356,7 @@ const BOOKING_REFUSALS: { contains: string; message: string; codes: string[] }[]
   },
   {
     contains: 'you can only check yourself in',
-    message: 'Only an organizer can check someone else in.',
+    message: 'Only a host can check someone else in.',
     codes: ['42501'],
   },
   {

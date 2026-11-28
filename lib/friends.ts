@@ -28,7 +28,7 @@ export type AddablePerson = {
  * read as a rendering bug rather than a fact about the friendship.
  */
 export function sharedClubsLabel(clubNames: string[]): string {
-  if (clubNames.length === 0) return 'No clubs in common';
+  if (clubNames.length === 0) return 'No groups in common';
   return clubNames.join(' · ');
 }
 

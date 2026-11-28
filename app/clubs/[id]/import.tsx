@@ -90,9 +90,9 @@ export default function ImportRosterScreen() {
         onPress={() =>
           router.canGoBack() ? router.back() : router.replace(`/clubs/${id}/settings`)
         }
-        accessibilityLabel="Back to club settings"
+        accessibilityLabel="Back to group settings"
       >
-        Club settings
+        Group settings
       </Button>
 
       <Text style={styles.heading}>Import a roster</Text>

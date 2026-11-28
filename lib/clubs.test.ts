@@ -615,7 +615,7 @@ describe('createInvite', () => {
     const result = await createInvite('club-1', 'jane@example.com');
     expect(result).toEqual({
       id: null,
-      error: 'That person is already in this club.',
+      error: 'That person is already in this group.',
     });
   });
 
@@ -767,7 +767,7 @@ describe('club codes', () => {
   it('joinClubByCode maps no match', async () => {
     rpcMock.mockResolvedValueOnce({ data: null, error: null });
     await expect(joinClubByCode('NOPE')).resolves.toEqual({
-      clubId: null, alreadyMember: false, error: 'No club with that code.',
+      clubId: null, alreadyMember: false, error: 'No group with that code.',
     });
   });
 
@@ -776,7 +776,7 @@ describe('club codes', () => {
     expect((await joinClubByCode('X1X1')).error).toBe('Too many tries. Try again in an hour.');
     rpcMock.mockResolvedValueOnce({ data: null, error: { code: 'P0001', message: 'removed_member' } });
     expect((await joinClubByCode('X1X1')).error).toBe(
-      'You left or were removed from this club. Ask a host to invite you back.',
+      'You left or were removed from this group. Ask a host to invite you back.',
     );
   });
 

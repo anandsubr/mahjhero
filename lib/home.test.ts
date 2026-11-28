@@ -86,16 +86,16 @@ describe('labels', () => {
 
   it('upcomingSummary counts distinct clubs', () => {
     expect(upcomingSummary([{ clubId: 'a' }, { clubId: 'a' }, { clubId: 'b' }])).toBe(
-      '3 upcoming across 2 clubs',
+      '3 upcoming across 2 groups',
     );
-    expect(upcomingSummary([{ clubId: 'a' }])).toBe('1 upcoming across 1 club');
+    expect(upcomingSummary([{ clubId: 'a' }])).toBe('1 upcoming across 1 group');
   });
 
   it('clubSubline', () => {
     expect(clubSubline('host', '2026-09-29T15:30:00Z', 'America/New_York')).toBe(
       'Host · Next game Tue 29 Sept, 11:30 AM',
     );
-    expect(clubSubline('co_organizer', null, 'UTC')).toBe('Co-organizer · No games scheduled');
+    expect(clubSubline('co_organizer', null, 'UTC')).toBe('Co-host · No games scheduled');
     expect(clubSubline('member', null, 'UTC')).toBe('Member · No games scheduled');
   });
 

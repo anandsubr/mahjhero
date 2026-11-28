@@ -111,7 +111,7 @@ describe('MemberRow', () => {
 
   it('tags a co-organizer and omits skill when none is set', () => {
     renderRow({ member: KIRAN });
-    expect(screen.getByText('Co-organizer')).toBeTruthy();
+    expect(screen.getByText('Co-host')).toBeTruthy();
     expect(screen.queryByText('Beginner')).toBeNull();
     expect(screen.queryByText('Intermediate')).toBeNull();
     expect(screen.queryByText('Advanced')).toBeNull();

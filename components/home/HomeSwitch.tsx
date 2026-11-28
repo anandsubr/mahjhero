@@ -6,7 +6,7 @@ export type HomeView = 'myGames' | 'clubs';
 
 const OPTIONS: { key: HomeView; label: string }[] = [
   { key: 'myGames', label: 'My games' },
-  { key: 'clubs', label: 'Clubs' },
+  { key: 'clubs', label: 'Groups' },
 ];
 
 /**
@@ -34,7 +34,7 @@ export default function HomeSwitch({
             accessibilityState={{ selected }}
             aria-selected={selected}
             accessibilityLabel={
-              o.key === 'myGames' ? `My games, ${upcomingCount} upcoming` : 'Clubs'
+              o.key === 'myGames' ? `My games, ${upcomingCount} upcoming` : 'Groups'
             }
             onPress={() => onChange(o.key)}
             style={[styles.option, selected && styles.selected]}

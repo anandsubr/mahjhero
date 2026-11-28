@@ -797,6 +797,9 @@ export default function EditEventScreen() {
     ? frequencyLabel(series.frequency, series.weekday, series.nth_week)
     : null;
 
+  // Group settings -> Advanced: see the same gate on the New game form.
+  const advanced = club.advanced_enabled;
+
   return (
     <>
       <Screen
@@ -873,23 +876,25 @@ export default function EditEventScreen() {
           </FormCard>
         </FormSection>
 
-        <FormSection
-          label="How does this seat people?"
-          helper={
-            seatingMode === 'assigned_tables'
-              ? 'You place players at tables. Set a level for each table.'
-              : 'Players take any open seat when they arrive.'
-          }
-        >
-          <Segmented
-            options={[
-              { value: 'assigned_tables' as const, label: 'Assigned tables' },
-              { value: 'open_seating' as const, label: 'Open seating' },
-            ]}
-            value={seatingMode}
-            onChange={setSeatingMode}
-          />
-        </FormSection>
+        {advanced ? (
+          <FormSection
+            label="How does this seat people?"
+            helper={
+              seatingMode === 'assigned_tables'
+                ? 'You place players at tables. Set a level for each table.'
+                : 'Players take any open seat when they arrive.'
+            }
+          >
+            <Segmented
+              options={[
+                { value: 'assigned_tables' as const, label: 'Assigned tables' },
+                { value: 'open_seating' as const, label: 'Open seating' },
+              ]}
+              value={seatingMode}
+              onChange={setSeatingMode}
+            />
+          </FormSection>
+        ) : null}
 
         {seatingMode === 'open_seating' ? (
           // This cap is independent of table capacity, and entirely optional.
@@ -927,35 +932,40 @@ export default function EditEventScreen() {
             onTierChange={(index, tier) =>
               setTableDraft((current) => current.map((t, i) => (i === index ? { ...t, tier } : t)))
             }
+            levels={advanced}
             note={isSeriesScope ? 'Tables are set per game: these apply to this game only.' : null}
           />
         ) : null}
 
-        <FormSection helper="Leave at 0 if it's free.">
-          <MoneyCards
-            fee={feeText}
-            minSpend={minSpendText}
-            onFeeChange={setFeeText}
-            onMinSpendChange={setMinSpendText}
-          />
-        </FormSection>
-
-        <FormSection label="Check-in & access">
-          <FormCard>
-            <ToggleRow
-              icon={<ClipboardCheckIcon size={18} color={colors.accent[700]} />}
-              title="Require check-in"
-              helper="Turn this on and this game gets a door list, so you can check people in as they arrive. Small games usually don't need it."
-              value={checkInRequired}
-              onValueChange={setCheckInRequired}
+        {advanced ? (
+          <FormSection helper="Leave at 0 if it's free.">
+            <MoneyCards
+              fee={feeText}
+              minSpend={minSpendText}
+              onFeeChange={setFeeText}
+              onMinSpendChange={setMinSpendText}
             />
+          </FormSection>
+        ) : null}
+
+        <FormSection label={advanced ? 'Check-in & access' : 'Who can join'}>
+          <FormCard>
+            {advanced ? (
+              <ToggleRow
+                icon={<ClipboardCheckIcon size={18} color={colors.accent[700]} />}
+                title="Require check-in"
+                helper="Turn this on and this game gets a door list, so you can check people in as they arrive. Small games usually don't need it."
+                value={checkInRequired}
+                onValueChange={setCheckInRequired}
+              />
+            ) : null}
             <ToggleRow
               icon={<LockIcon size={18} color={colors.accent[700]} />}
               title="Invite-only"
               helper={
                 gameMode === 'invite_only'
                   ? 'Only people you invite can see and join.'
-                  : 'Anyone in the club can see and join.'
+                  : 'Anyone in the group can see and join.'
               }
               value={gameMode === 'invite_only'}
               onValueChange={(next) => setGameMode(next ? 'invite_only' : 'open_play')}

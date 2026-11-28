@@ -1279,7 +1279,7 @@ describe('the table/series mutations report their own refusals', () => {
       error: { code: '42501', message: 'not an organizer of this club' },
     });
     await expect(removeEventTable('table-1')).resolves.toEqual({
-      error: 'Only a club organizer can do that.',
+      error: 'Only a host can do that.',
     });
   });
 
@@ -1288,7 +1288,7 @@ describe('the table/series mutations report their own refusals', () => {
       error: { code: '42501', message: 'venue not available to this club' },
     });
     await expect(updateEvent('event-1', { venueId: 'venue-9' })).resolves.toEqual({
-      error: 'That venue is not available to this club.',
+      error: 'That venue is not available to this group.',
     });
   });
 });

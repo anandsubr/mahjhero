@@ -25,6 +25,7 @@ const CLUB: Club = {
   code: 'RIVER24',
   cover_path: null,
   cover_color: 'accent_700',
+  advanced_enabled: false,
 };
 
 function renderHeader(overrides: Partial<Parameters<typeof ClubHubHeader>[0]> = {}) {
@@ -78,17 +79,17 @@ describe('ClubHubHeader', () => {
   it('shows the club name and code', () => {
     renderHeader();
     expect(screen.getByText('Riverside Mah Jongg')).toBeTruthy();
-    expect(screen.getByText('Club code: RIVER24')).toBeTruthy();
+    expect(screen.getByText('Group code: RIVER24')).toBeTruthy();
   });
 
   it('shows the settings gear only to organizers', () => {
     renderHeader({ canManage: false });
-    expect(screen.queryByLabelText('Club settings')).toBeNull();
+    expect(screen.queryByLabelText('Group settings')).toBeNull();
   });
 
   it('gear and back call their handlers', () => {
     const props = renderHeader({ canManage: true });
-    fireEvent.click(screen.getByLabelText('Club settings'));
+    fireEvent.click(screen.getByLabelText('Group settings'));
     expect(props.onSettings).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByLabelText('Back to home'));
     expect(props.onBack).toHaveBeenCalledTimes(1);
@@ -98,7 +99,7 @@ describe('ClubHubHeader', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     shareClubCode.mockResolvedValue('copied');
     renderHeader();
-    fireEvent.click(screen.getByLabelText('Share club code'));
+    fireEvent.click(screen.getByLabelText('Share group code'));
     expect(shareClubCode).toHaveBeenCalledWith('Riverside Mah Jongg', 'RIVER24');
     await waitFor(() => expect(screen.getByText('Copied')).toBeTruthy());
     act(() => {
@@ -116,7 +117,7 @@ describe('ClubHubHeader', () => {
   it('keeps "Share" when the native sheet was used', async () => {
     shareClubCode.mockResolvedValue('shared');
     renderHeader();
-    fireEvent.click(screen.getByLabelText('Share club code'));
+    fireEvent.click(screen.getByLabelText('Share group code'));
     await waitFor(() => expect(shareClubCode).toHaveBeenCalled());
     await act(async () => {});
     expect(screen.queryByText('Copied')).toBeNull();

@@ -21,6 +21,7 @@ import {
   canInvite,
   fetchClub,
   fetchMyRoles,
+  setClubAdvanced,
   setClubCode,
   setDefaultGameMode,
   type Club,
@@ -65,6 +66,7 @@ export default function ClubSettingsScreen() {
   // is blind to a second tap landing before React has re-rendered with the
   // disabled button -- this repo has shipped that exact bug five times.
   const gameModeBusyRef = useRef(false);
+  const advancedBusyRef = useRef(false);
   const coverBusyRef = useRef(false);
 
   /**
@@ -115,11 +117,11 @@ export default function ClubSettingsScreen() {
         <CompactHeader
           variant="inset"
           onBack={goBack}
-          backLabel="Back to the club"
+          backLabel="Back to the group"
           kind={null}
-          title="Club settings"
+          title="Group settings"
         />
-        <Text style={styles.body}>Could not load this club.</Text>
+        <Text style={styles.body}>Could not load this group.</Text>
         <Button
           variant="secondary"
           big={false}
@@ -212,6 +214,22 @@ export default function ClubSettingsScreen() {
     }
   }
 
+  async function onToggleAdvanced(next: boolean) {
+    if (advancedBusyRef.current) return;
+    advancedBusyRef.current = true;
+    try {
+      setError(null);
+      const { error: toggleError } = await setClubAdvanced(club.id, next);
+      if (toggleError) {
+        setError(toggleError);
+        return;
+      }
+      patchClub({ advanced_enabled: next });
+    } finally {
+      advancedBusyRef.current = false;
+    }
+  }
+
   const hasPhoto = club.cover_path !== null;
   const busy = coverBusy !== null;
 
@@ -220,11 +238,11 @@ export default function ClubSettingsScreen() {
       <CompactHeader
         variant="inset"
         onBack={goBack}
-        backLabel="Back to the club"
+        backLabel="Back to the group"
         kind="club"
         clubId={club.id}
         avatarTestID="thread-avatar-club-tile"
-        title="Club settings"
+        title="Group settings"
         subtitle={club.name}
       />
 
@@ -288,7 +306,7 @@ export default function ClubSettingsScreen() {
 
       <View style={styles.section}>
         <View style={styles.codeRow}>
-          <Text style={styles.codeText}>{`Club code: ${club.code}`}</Text>
+          <Text style={styles.codeText}>{`Group code: ${club.code}`}</Text>
           {codeDraft === null ? (
             <Button
               variant="ghost"
@@ -297,7 +315,7 @@ export default function ClubSettingsScreen() {
                 setCodeDraft(club.code);
                 setCodeError(null);
               }}
-              accessibilityLabel="Change club code"
+              accessibilityLabel="Change group code"
             >
               Change
             </Button>
@@ -306,7 +324,7 @@ export default function ClubSettingsScreen() {
         {codeDraft !== null ? (
           <View style={styles.codeEdit}>
             <ClubCodeField
-              label="New club code"
+              label="New group code"
               value={codeDraft}
               onChangeText={setCodeDraft}
               error={codeError}
@@ -349,20 +367,40 @@ export default function ClubSettingsScreen() {
         />
       </View>
 
-      <Button
-        variant="secondary"
-        onPress={() => router.push(`/clubs/${id}/venues`)}
-        accessibilityLabel="Venues"
-      >
-        Venues
-      </Button>
-      <Button
-        variant="secondary"
-        onPress={() => router.push(`/clubs/${id}/import`)}
-        accessibilityLabel="Import a roster from a spreadsheet"
-      >
-        Import a roster
-      </Button>
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle} accessibilityRole="header">
+          Advanced
+        </Text>
+        <View style={styles.gameModeRow}>
+          <Text style={[styles.help, styles.flex]}>
+            Tools for bigger groups: table levels, open seating, a door list, cost to play,
+            venues and the leaderboard
+          </Text>
+          <Toggle
+            value={club.advanced_enabled}
+            onValueChange={onToggleAdvanced}
+            accessibilityLabel="Tools for bigger groups"
+          />
+        </View>
+        {club.advanced_enabled ? (
+          <>
+            <Button
+              variant="secondary"
+              onPress={() => router.push(`/clubs/${id}/venues`)}
+              accessibilityLabel="Venues"
+            >
+              Venues
+            </Button>
+            <Button
+              variant="secondary"
+              onPress={() => router.push(`/clubs/${id}/import`)}
+              accessibilityLabel="Import a roster from a spreadsheet"
+            >
+              Import a roster
+            </Button>
+          </>
+        ) : null}
+      </View>
 
       {error ? <ErrorBanner message={error} /> : null}
     </Screen>
@@ -406,4 +444,5 @@ const styles = StyleSheet.create({
   codeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   codeText: { fontFamily: type.bodySemiBold, fontSize: 14, color: colors.text },
   codeEdit: { gap: 8 },
+  flex: { flex: 1 },
 });
