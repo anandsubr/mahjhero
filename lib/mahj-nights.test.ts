@@ -21,7 +21,11 @@ import {
   fetchMyMahjNights,
   googleCalendarUrl,
   icsFile,
+  moneyLine,
+  oneMoreLine,
   rsvpErrorMessage,
+  setsWarning,
+  tableLine,
   submitRsvp,
 } from './mahj-nights';
 
@@ -59,11 +63,11 @@ describe('createMahjNight', () => {
     const result = await createMahjNight({
       name: 'Friday', date: '2026-12-04', startTime: '19:00', durationMinutes: 180,
       address: '12 Oak Lane', area: 'Suwanee', tables: 2, themeId: 'jade',
-      beginnersWelcome: true, note: '',
+      beginnersWelcome: true, note: '', sets: 2, money: 'quarters', moneyNote: 'ignored',
     });
     expect(result).toEqual({ data: { clubId: 'c1', eventId: 'e1', linkToken: 't' }, error: null });
     expect(rpc).toHaveBeenCalledWith('create_mahj_night', expect.objectContaining({
-      night_name: 'Friday', table_count: 2, theme: 'jade',
+      night_name: 'Friday', table_count: 2, theme: 'jade', sets: 2, money: 'quarters', money_text: '',
       night_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     }));
   });
@@ -73,6 +77,7 @@ describe('createMahjNight', () => {
     const result = await createMahjNight({
       name: '', date: '2020-01-01', startTime: '19:00', durationMinutes: 180,
       address: 'x', area: '', tables: 1, themeId: 'jade', beginnersWelcome: false, note: '',
+      sets: 1, money: 'none', moneyNote: '',
     });
     expect(result.error).toBe('That start time has already passed.');
   });
@@ -96,7 +101,8 @@ describe('the edge function calls', () => {
       error: { context: { json: async () => ({ error: 'full' }) } },
     });
     const result = await submitRsvp({
-      token: 'tok', name: 'A', email: 'a@b.co', status: 'going', isBeginner: false, secret: null,
+      token: 'tok', name: 'A', email: 'a@b.co', status: 'going', isBeginner: false,
+      isTeacher: false, bringsSet: false, hasCard: false, secret: null,
     });
     expect(result).toEqual({ outcome: 'error', message: rsvpErrorMessage('full') });
   });
@@ -125,5 +131,32 @@ describe('fetchMyMahjNights', () => {
       ['Soon night', 't1', true],
       ['Later', 't2', false],
     ]);
+  });
+});
+
+describe("the planner's wording", () => {
+  it('reads tables of four, filled in order', () => {
+    expect(tableLine([4, 3, 0], [4, 4, 4])).toBe('Table 1 full · Table 2: 3 of 4 · Table 3: open');
+  });
+
+  it('says how many more make a full table', () => {
+    expect(oneMoreLine([4, 3, 0], [4, 4, 4])).toBe('1 more makes a full table');
+    expect(oneMoreLine([2, 0], [4, 4])).toBe('2 more make a full table');
+    expect(oneMoreLine([4, 4], [4, 4])).toBeNull();
+    expect(oneMoreLine([4, 0], [4, 4])).toBeNull();
+  });
+
+  it('shows the money choice', () => {
+    expect(moneyLine('none', '')).toBe('No money');
+    expect(moneyLine('quarters', '')).toBe('Quarters');
+    expect(moneyLine('host_choice', ' A dollar a game ')).toBe('A dollar a game');
+  });
+
+  it('warns when the yeses outgrow the sets', () => {
+    expect(setsWarning(10, 3, 2)).toBe('You have 10 going and 2 sets. Ask someone to bring a set, or cap at 8.');
+    expect(setsWarning(8, 3, 2)).toBeNull();
+    expect(setsWarning(5, 2, 0)).toBe('You have 5 going and no sets. Ask someone to bring a set.');
+    // Never more tables than planned, however many sets.
+    expect(setsWarning(9, 2, 5)).toBe('You have 9 going and 5 sets. Ask someone to bring a set, or cap at 8.');
   });
 });

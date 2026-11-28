@@ -617,6 +617,11 @@ describe('BOOKING_REFUSALS (self-audit against the migrations)', () => {
     invalid_email: 'submit_rsvp, mapped by the mahj-night function and rsvpErrorMessage',
     invalid_status: 'submit_rsvp; the edge function only ever sends going, maybe or no',
     full: 'submit_rsvp, mapped by the mahj-night function and rsvpErrorMessage',
+    // 20261129110000 (batch 2b): the planner's own guards.
+    'set count out of range': 'create_mahj_night / set_mahj_night_details guard; both screens offer 0-5 sets',
+    'money note too long': 'create_mahj_night / set_mahj_night_details guard; both screens cap the field at 60 characters',
+    'only a guest who said yes has a table': 'set_rsvp_table guard; the seating plan only lists guests who said yes',
+    'not a guest of this night': 'set_rsvp_table guard; the plan only offers this night\'s RSVPs',
     // set_club_cover's path guard (20260930100100): new_path is always built
     // client-side from the club id it is uploading under, so a foreign
     // prefix is not a path a real client ever sends.

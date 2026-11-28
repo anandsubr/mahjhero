@@ -7,7 +7,7 @@ import { SmtpSender } from '../_shared/smtp.ts';
 import { renderShell } from '../_shared/email-shell.ts';
 import { sanitizeSubject, assertCleanAddress, renderText } from '../_shared/email-text.ts';
 import { corsHeaders } from '../_shared/cors.ts';
-import { buildRsvpEmail, clientIp, eventLink, parseRsvpRequest, rsvpError } from './logic.ts';
+import { buildRsvpEmail, clientIp, eventLink, parseRsvpRequest, rsvpError, shapePage } from './logic.ts';
 
 // Same local-stub reasoning as deliver-notifications/index.ts.
 declare const Deno: {
@@ -74,7 +74,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
       return json({ error: 'failed' }, 500);
     }
     if (!data) return json({ error: 'not_found' }, 404);
-    return json({ page: data }, 200);
+    return json({ page: shapePage(data as Record<string, unknown>) }, 200);
   }
 
   if (request.method !== 'POST') return json({ error: 'method not allowed' }, 405);
@@ -94,6 +94,9 @@ Deno.serve(async (request: Request): Promise<Response> => {
     rsvp_email: rsvp.email,
     rsvp_status: rsvp.status,
     beginner: rsvp.isBeginner,
+    teacher: rsvp.isTeacher,
+    bringing_set: rsvp.bringsSet,
+    card: rsvp.hasCard,
     client_ip: clientIp(request.headers),
     secret: rsvp.secret,
   });
@@ -109,7 +112,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
     secret: string;
     email: string;
     name: string;
-    status: 'going' | 'maybe' | 'no';
+    status: 'going' | 'maybe' | 'no' | 'waitlist';
     title: string;
     host_first_name: string;
     starts_at: string;
@@ -128,7 +131,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
     // Never hand the secret to a caller who didn't prove they own the row.
     return json({ outcome: 'exists' }, 200);
   }
-  return json({ outcome: result.outcome, secret: result.secret }, 200);
+  return json({ outcome: result.outcome, secret: result.secret, status: result.status }, 200);
 });
 
 async function verifiedViewer(
@@ -152,7 +155,7 @@ async function sendRsvpEmail(
   r: {
     outcome: 'created' | 'updated' | 'exists';
     rsvp_id: string; secret: string; email: string; name: string;
-    status: 'going' | 'maybe' | 'no'; title: string; host_first_name: string;
+    status: 'going' | 'maybe' | 'no' | 'waitlist'; title: string; host_first_name: string;
     starts_at: string; timezone: string; area: string;
   },
 ): Promise<void> {

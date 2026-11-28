@@ -6,6 +6,7 @@ import {
   formatWhen,
   parseRsvpRequest,
   rsvpError,
+  shapePage,
 } from '../logic';
 
 const TOKEN = 'abcdefghijklmnopqrstuvwxyz012345';
@@ -16,7 +17,7 @@ describe('parseRsvpRequest', () => {
   it('accepts a complete RSVP and trims it', () => {
     expect(parseRsvpRequest({ ...ok, isBeginner: true })).toEqual({
       token: TOKEN, name: 'Ana', email: 'ana@example.com', status: 'going',
-      isBeginner: true, secret: null,
+      isBeginner: true, isTeacher: false, bringsSet: false, hasCard: false, secret: null,
     });
   });
 
@@ -77,5 +78,43 @@ describe('the RSVP email', () => {
   it('never puts the address in the email', () => {
     const body = buildRsvpEmail({ ...facts, kind: 'confirm' });
     expect(JSON.stringify(body)).not.toMatch(/Oak Lane/);
+  });
+});
+
+describe('shapePage', () => {
+  const raw = {
+    tier: 'public',
+    title: 'Friday Mahj',
+    my_rsvp: { status: 'going' },
+    _my_rsvp_id: 'r2',
+    _seating: {
+      capacities: [4, 4],
+      guests: [
+        { id: 'r1', level: 'played', pinned: null },
+        { id: 'r2', level: 'new', pinned: 2 },
+      ],
+    },
+  };
+
+  it('adds the table line and strips the private inputs', () => {
+    const page = shapePage(raw);
+    expect(page.table_counts).toEqual([2, 1]);
+    expect(page.table_capacities).toEqual([4, 4]);
+    expect(Object.keys(page).some((k) => k.startsWith('_'))).toBe(false);
+    expect(JSON.stringify(page)).not.toContain('r1');
+  });
+
+  it("tells a guest who said yes their table", () => {
+    expect(shapePage(raw).my_table).toBe(2);
+    expect(shapePage({ ...raw, my_rsvp: { status: 'maybe' } }).my_table).toBeUndefined();
+  });
+
+  it('gives the host each guest\'s table', () => {
+    const page = shapePage({ ...raw, tier: 'host', rsvps: [{ id: 'r1' }, { id: 'r2' }, { id: 'r3' }] });
+    expect(page.rsvps).toEqual([
+      { id: 'r1', table: 1, table_pinned: false },
+      { id: 'r2', table: 2, table_pinned: true },
+      { id: 'r3', table: null, table_pinned: false },
+    ]);
   });
 });

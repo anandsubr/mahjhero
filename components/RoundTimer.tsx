@@ -18,6 +18,11 @@ type Props = {
    *  viewer not seated at any one table of a multi-table game), the copy
    *  drops the number: "Start round". */
   roundNumber?: number;
+  /**
+   * A Mahj Night that welcomes beginners (pivot batch 2b): round 1 is
+   * labelled "Practice round: open hands". Copy only; nothing is enforced.
+   */
+  practice?: boolean;
   /** Show "Tap the winner's seat to record the win." while running -- only
    *  for a viewer who can actually record one. */
   showRecordHint?: boolean;
@@ -42,7 +47,7 @@ type Props = {
  * above the tab bar, with the countdown inline, so the seats stay in view
  * while a round runs.
  */
-export default function RoundTimer({ roundNumber, showRecordHint = false }: Props) {
+export default function RoundTimer({ roundNumber, showRecordHint = false, practice = false }: Props) {
   const [selectedMinutes, setSelectedMinutes] = useState(DEFAULT_MINUTES);
   const [runningMinutes, setRunningMinutes] = useState<number | null>(null);
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
@@ -66,6 +71,12 @@ export default function RoundTimer({ roundNumber, showRecordHint = false }: Prop
 
   const roundLabel = roundNumber !== undefined ? `round ${roundNumber}` : 'round';
   const roundHeading = roundNumber !== undefined ? `Round ${roundNumber}` : 'Round';
+  const practiceLine =
+    practice && roundNumber === 1 ? (
+      <Text style={styles.status} testID="practice-round">
+        Practice round: open hands
+      </Text>
+    ) : null;
 
   function start() {
     setRunningMinutes(selectedMinutes);
@@ -82,6 +93,7 @@ export default function RoundTimer({ roundNumber, showRecordHint = false }: Prop
   if (secondsLeft === null || runningMinutes === null) {
     return (
       <View style={styles.bar} testID="round-bar">
+        {practiceLine}
         <View style={styles.segmented} accessibilityRole="radiogroup">
           {DURATIONS_MINUTES.map((minutes) => {
             const selected = minutes === selectedMinutes;
@@ -122,6 +134,7 @@ export default function RoundTimer({ roundNumber, showRecordHint = false }: Prop
 
   return (
     <View style={styles.bar} testID="round-bar">
+      {practiceLine}
       <View style={styles.runningRow}>
         <View style={styles.runningText}>
           <Text style={styles.status}>

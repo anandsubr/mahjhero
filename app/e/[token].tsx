@@ -17,6 +17,9 @@ import {
   googleCalendarUrl,
   icsDataUrl,
   loadRsvpSecret,
+  moneyLine,
+  oneMoreLine,
+  tableLine,
   saveRsvpSecret,
   type EventPage,
 } from '../../lib/mahj-nights';
@@ -151,9 +154,17 @@ export default function EventPageScreen() {
           <Fact label="Where" value={page.area} />
         ) : null}
         <Fact
-          label="Tables"
-          value={`${page.tables} ${page.tables === 1 ? 'table' : 'tables'} of four · ${page.going_count} going`}
+          label={`Tables · ${page.going_count} going`}
+          value={
+            page.table_counts?.length
+              ? tableLine(page.table_counts, page.table_capacities)
+              : `${page.tables} ${page.tables === 1 ? 'table' : 'tables'} of four`
+          }
         />
+        {!cancelled && page.table_counts?.length && oneMoreLine(page.table_counts, page.table_capacities) ? (
+          <Text style={styles.oneMore}>{oneMoreLine(page.table_counts, page.table_capacities)}</Text>
+        ) : null}
+        <Fact label="Money" value={moneyLine(page.money_norm ?? 'none', page.money_note ?? '')} />
         {page.beginners_welcome ? (
           <View style={styles.badge}>
             <Text style={styles.badgeText}>Beginners welcome</Text>
@@ -200,7 +211,7 @@ export default function EventPageScreen() {
 
       {!isHost && !cancelled ? (
         <RsvpForm
-          key={page.my_rsvp ? `${page.my_rsvp.status}` : 'new'}
+          key={page.my_rsvp ? `${page.my_rsvp.status}-${page.going_count}` : 'new'}
           token={token}
           page={page}
           secret={secret}
@@ -325,6 +336,7 @@ const styles = StyleSheet.create({
   fact: { gap: 1 },
   factLabel: { fontFamily: type.bodySemiBold, fontSize: 12, color: colors.neutral[700] },
   factValue: { fontFamily: type.bodySemiBold, fontSize: 17, color: colors.text },
+  oneMore: { fontFamily: type.bodyBold, fontSize: 14, color: colors.accent[700] },
   badge: {
     alignSelf: 'flex-start',
     backgroundColor: colors.accent2[100],

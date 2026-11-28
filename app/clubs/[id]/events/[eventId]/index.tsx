@@ -1039,6 +1039,7 @@ export default function EventScreen() {
           <RoundTimer
             roundNumber={barRoundNumber}
             showRecordHint={isOrganizer || myTableId !== null}
+            practice={event?.event_type === 'mahj_night' && event?.beginners_welcome === true}
           />
         ) : null
       }
