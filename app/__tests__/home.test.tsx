@@ -78,10 +78,15 @@ const CLUB = {
   timezone: 'America/New_York', default_game_mode: 'open_play', code: 'TEST1',
 };
 let myClubs: unknown[] = [CLUB];
+let myNights: unknown[] = [];
 vi.mock('../../lib/clubs', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../lib/clubs')>()),
   fetchMyClubs: async () => myClubs,
   fetchMyRoles: async () => [{ club_id: 'c1', role: 'member' }],
+}));
+vi.mock('../../lib/mahj-nights', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/mahj-nights')>()),
+  fetchMyMahjNights: async () => myNights,
 }));
 vi.mock('../../lib/profile', () => ({
   fetchProfile: async () => ({ display_name: 'Anand' }),
@@ -101,6 +106,7 @@ beforeEach(() => {
   push.mockReset();
   store.clear();
   myClubs = [CLUB];
+  myNights = [];
   GUIDES.isVisible = () => false;
   fetchMyGames.mockReset();
   fetchClubsNextGame.mockResolvedValue({});
@@ -120,6 +126,34 @@ describe('HomeScreen', () => {
     render(<HomeScreen />);
     fireEvent.click(await screen.findByRole('button', { name: /^Test Club\./ }));
     expect(push).toHaveBeenCalledWith('/clubs/c1/games');
+  });
+
+  it('lists Your Mahj Nights and opens one on its event page', async () => {
+    fetchMyGames.mockResolvedValue([]);
+    myNights = [{
+      clubId: 'n1', eventId: 'e1', title: 'Friday Mahj', linkToken: 'tok_night',
+      themeId: 'jade', startsAt: '2026-12-05T00:00:00Z', timezone: 'America/New_York',
+      area: 'Suwanee', cancelled: false,
+    }];
+    render(<HomeScreen />);
+    expect(await screen.findByText('Your Mahj Nights')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /^Friday Mahj, / }));
+    expect(push).toHaveBeenCalledWith('/e/tok_night');
+  });
+
+  it("counts a Mahj Night's game as a night, not a group", async () => {
+    fetchMyGames.mockResolvedValue([
+      GAME,
+      { ...GAME, eventId: 'e2', clubId: 'n1', clubName: 'Friday Mahj', title: 'Friday Mahj' },
+    ]);
+    myNights = [{
+      clubId: 'n1', eventId: 'e2', title: 'Friday Mahj', linkToken: 'tok_night',
+      themeId: 'jade', startsAt: GAME.startsAt, timezone: 'America/New_York',
+      area: '', cancelled: false,
+    }];
+    render(<HomeScreen />);
+    expect(await screen.findByText('2 upcoming across 1 group and 1 Mahj Night')).toBeTruthy();
+    expect(screen.getAllByText('Mahj Night').length).toBeGreaterThan(0);
   });
 
   it('defaults to Clubs when nothing is upcoming', async () => {
@@ -184,7 +218,7 @@ describe('HomeScreen', () => {
     render(<HomeScreen />);
     expect(await screen.findByText('What brings you here?')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Host a Mahj Night' }));
-    expect(push).toHaveBeenCalledWith('/clubs/new?for=night');
+    expect(push).toHaveBeenCalledWith('/nights/new');
     fireEvent.click(screen.getByRole('button', { name: 'Start a group' }));
     expect(push).toHaveBeenCalledWith('/clubs/new');
   });
@@ -193,7 +227,7 @@ describe('HomeScreen', () => {
     fetchMyGames.mockResolvedValue([]);
     render(<HomeScreen />);
     fireEvent.click(await screen.findByRole('button', { name: 'Host a Mahj Night' }));
-    expect(push).toHaveBeenCalledWith('/clubs/new?for=night');
+    expect(push).toHaveBeenCalledWith('/nights/new');
     expect(screen.queryByText('What brings you here?')).toBeNull();
   });
 

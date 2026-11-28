@@ -289,6 +289,9 @@ export async function fetchMyClubs(): Promise<Club[] | null> {
     const { data, error } = await supabase
       .from('clubs')
       .select(CLUB_COLUMNS)
+      // A Mahj Night's hidden group (kind 'event') is never listed as a
+      // group; Home shows it under Your Mahj Nights instead (pivot batch 2).
+      .eq('kind', 'group')
       .order('name');
 
     if (error) {

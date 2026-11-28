@@ -43,6 +43,15 @@ export type SetSession = Dispatch<SetStateAction<Session | null | undefined>>;
  *
  * Returns its own unsubscribe.
  */
+const claimed = new Set<string>();
+function claimOncePerUser(userId: string) {
+  if (claimed.has(userId)) return;
+  claimed.add(userId);
+  setTimeout(() => {
+    import('./mahj-nights').then((m) => m.claimMyRsvps()).catch(() => {});
+  }, 0);
+}
+
 export function subscribeToSession(setSession: SetSession): () => void {
   supabase.auth
     .getSession()
@@ -61,9 +70,13 @@ export function subscribeToSession(setSession: SetSession): () => void {
 
   // Deliberately unguarded: every later event — SIGNED_IN, SIGNED_OUT,
   // TOKEN_REFRESHED — is newer than anything above and must win.
-  const { data: subscription } = supabase.auth.onAuthStateChange(
-    (_event, nextSession) => setSession(nextSession),
-  );
+  const { data: subscription } = supabase.auth.onAuthStateChange((event, nextSession) => {
+    setSession(nextSession);
+    // Mahj Night RSVPs made with this email before the account existed
+    // (pivot batch 2). Deferred: supabase-js must not be called back into
+    // from inside its own auth callback.
+    if (event === 'SIGNED_IN' && nextSession) claimOncePerUser(nextSession.user.id);
+  });
 
   return () => subscription.subscription.unsubscribe();
 }

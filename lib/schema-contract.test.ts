@@ -539,9 +539,13 @@ describe.runIf(reachable || required)('events schema contract', () => {
         // seating mode but never its actual cap — an organizer opening a
         // game capped at 60 saw a blank field that read as uncapped.
         'capacity',
+        // Pivot batch 2: what makes a game a Mahj Night.
+        'event_type', 'public_area', 'beginners_welcome',
         'event_tables', 'bookings',
       ].sort(),
     );
+    expect(row.event_type).toBe('regular');
+    expect(row.beginners_welcome).toBe(false);
     expect(row.title).toBe('Tuesday Mahjong');
     expect(row.overrides).toEqual(['title']);
     // Not set on insert above, so this pins the column's own default —

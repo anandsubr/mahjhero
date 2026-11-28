@@ -145,22 +145,3 @@ describe('Start a group', () => {
     expect(await screen.findByText('That code is taken.')).toBeTruthy();
   });
 });
-
-describe('Host a Mahj Night (?for=night)', () => {
-  beforeEach(() => {
-    params.for = 'night';
-  });
-
-  it('names the night, then goes straight to its New game form', async () => {
-    render(<NewClubScreen />);
-    expect(screen.getByText('Host a Mahj Night')).toBeTruthy();
-    expect(screen.queryByLabelText('When do you usually play?')).toBeNull();
-    expect(screen.queryByLabelText('Group code (optional)')).toBeNull();
-    fireEvent.change(screen.getByLabelText('Name the night'), {
-      target: { value: "Ellie's birthday" },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Next: the night' }));
-    await waitFor(() => expect(createClub).toHaveBeenCalledWith("Ellie's birthday", '', ''));
-    await waitFor(() => expect(replace).toHaveBeenCalledWith('/clubs/club-9/events/new'));
-  });
-});

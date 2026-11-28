@@ -6,6 +6,7 @@ vi.mock('react-native', async (importOriginal) => {
   return { ...actual, Platform: { ...actual.Platform, OS: 'ios' } };
 });
 vi.mock('expo-router', () => ({
+  useLocalSearchParams: () => ({}),
   Redirect: () => null,
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn(), canGoBack: () => true }),
 }));

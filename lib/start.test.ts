@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { askAFriendToHostMessage, inAppPathFromLink } from './start';
+import { askAFriendToHostMessage, inAppPathFromLink, safeReturnPath } from './start';
 
 describe('inAppPathFromLink', () => {
   it('keeps only the path and query of a full app link', () => {
@@ -34,5 +34,26 @@ describe('inAppPathFromLink', () => {
 describe('askAFriendToHostMessage', () => {
   it('ends with the link it was given', () => {
     expect(askAFriendToHostMessage('https://x.test/')).toMatch(/https:\/\/x\.test\/$/);
+  });
+});
+
+describe('safeReturnPath', () => {
+  it("allows this app's own night, group and message screens", () => {
+    expect(safeReturnPath('/e/tok_abc')).toBe('/e/tok_abc');
+    expect(safeReturnPath('/clubs/c1/games')).toBe('/clubs/c1/games');
+  });
+
+  it('refuses anything else', () => {
+    expect(safeReturnPath('https://evil.example/e/x')).toBeNull();
+    expect(safeReturnPath('//evil.example')).toBeNull();
+    expect(safeReturnPath('/e//evil.example')).toBeNull();
+    expect(safeReturnPath('/home')).toBeNull();
+    expect(safeReturnPath(undefined)).toBeNull();
+  });
+});
+
+describe('inAppPathFromLink and Mahj Night links', () => {
+  it('opens a pasted event page link in the app', () => {
+    expect(inAppPathFromLink('https://app.mahjhero.com/e/tok_abc?r=sec')).toBe('/e/tok_abc?r=sec');
   });
 });

@@ -11,6 +11,7 @@ let canGoBackResult = true;
 const canGoBack = vi.fn(() => canGoBackResult);
 
 vi.mock('expo-router', () => ({
+  useLocalSearchParams: () => ({}),
   Redirect: ({ href }: { href: string }) => (
     <div data-testid="redirect" data-href={href} />
   ),

@@ -32,7 +32,7 @@ export default function StartChoices() {
       <ChoiceRow
         title="Host a Mahj Night"
         body="Invite friends to a night of mahjong. We'll seat everyone at tables of four."
-        onPress={() => router.push('/clubs/new?for=night')}
+        onPress={() => router.push('/nights/new')}
       />
       <ChoiceRow
         title="Start a group"
