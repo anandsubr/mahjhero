@@ -26,7 +26,7 @@ import {
   hostChecklistKey,
   type HostChecklistCounts,
 } from '../lib/guides';
-import { gameDateKey, homeDefault, localDateKey, upcomingSummary } from '../lib/home';
+import { gameDateKey, homeDefault, labelNightGames, localDateKey, upcomingSummary } from '../lib/home';
 import { fetchClubsNextGame, fetchMyGames, type MyGame } from '../lib/my-games';
 import { fetchProfile } from '../lib/profile';
 import { useSession } from '../lib/session';
@@ -273,7 +273,8 @@ export default function HomeScreen() {
 
   const roleFor = (clubId: string): ClubRole =>
     roles?.find((r) => r.club_id === clubId)?.role ?? 'member';
-  const games = upcomingGames ?? [];
+  const nightIds = new Set(nights.map((n) => n.clubId));
+  const games = labelNightGames(upcomingGames ?? [], nightIds);
   const failed = mode === 'list' ? feedFailed : monthFailed;
   const retry = mode === 'list' ? () => void loadFeed() : () => setMonthRetry((n) => n + 1);
 
@@ -303,7 +304,7 @@ export default function HomeScreen() {
       {view === 'myGames' ? (
         <View style={styles.section}>
           <View style={styles.subRow}>
-            <Text style={styles.sub}>{upcomingSummary(games)}</Text>
+            <Text style={styles.sub}>{upcomingSummary(games, nightIds)}</Text>
             <MyGamesModeToggle mode={mode} onChange={chooseMode} />
           </View>
 
@@ -340,7 +341,7 @@ export default function HomeScreen() {
               year={month.year}
               monthIndex={month.monthIndex}
               todayKey={todayKey}
-              games={monthGames}
+              games={labelNightGames(monthGames, nightIds)}
               selectedKey={selectedKey}
               onSelect={setSelectedKey}
               onPrev={() => shiftMonth(-1)}

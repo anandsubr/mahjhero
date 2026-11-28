@@ -97,9 +97,32 @@ export function gameCountLabel(n: number): string {
   return `${n} ${n === 1 ? 'game' : 'games'}`;
 }
 
-export function upcomingSummary(games: { clubId: string }[]): string {
-  const clubs = new Set(games.map((g) => g.clubId)).size;
-  return `${games.length} upcoming across ${clubs} ${clubs === 1 ? 'group' : 'groups'}`;
+/**
+ * "3 upcoming across 2 groups". A Mahj Night's hidden group (pivot batch 2)
+ * is not one of the member's groups, so `nightClubIds` -- the groups behind
+ * Your Mahj Nights -- are counted as nights instead.
+ */
+export function upcomingSummary(
+  games: { clubId: string }[],
+  nightClubIds: ReadonlySet<string> = new Set(),
+): string {
+  const ids = new Set(games.map((g) => g.clubId));
+  const nights = [...ids].filter((id) => nightClubIds.has(id)).length;
+  const groups = ids.size - nights;
+  const groupText = `${groups} ${groups === 1 ? 'group' : 'groups'}`;
+  const nightText = `${nights} ${nights === 1 ? 'Mahj Night' : 'Mahj Nights'}`;
+  if (nights === 0) return `${games.length} upcoming across ${groupText}`;
+  if (groups === 0) return `${games.length} upcoming: ${nightText}`;
+  return `${games.length} upcoming across ${groupText} and ${nightText}`;
+}
+
+/** The label a game row shows above its title: "Mahj Night" rather than the hidden group's name. */
+export function labelNightGames<T extends { clubId: string; clubName: string }>(
+  games: T[],
+  nightClubIds: ReadonlySet<string>,
+): T[] {
+  if (nightClubIds.size === 0) return games;
+  return games.map((g) => (nightClubIds.has(g.clubId) ? { ...g, clubName: 'Mahj Night' } : g));
 }
 
 // Five club colours from the design's calendar dots, assigned by the same

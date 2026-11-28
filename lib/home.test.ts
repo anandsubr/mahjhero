@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   addDays, buildMonthGrid, clubColor, clubSubline, dateColumn, dayHeading,
   gameCountLabel, gameDateKey, gameHeadline, homeDefault, monthLabel,
-  normalizeTimeSpaces, upcomingSummary, weekBucket,
+  normalizeTimeSpaces, upcomingSummary, weekBucket, labelNightGames,
 } from './home';
 
 describe('gameHeadline', () => {
@@ -82,6 +82,21 @@ describe('labels', () => {
   it('gameCountLabel', () => {
     expect(gameCountLabel(1)).toBe('1 game');
     expect(gameCountLabel(4)).toBe('4 games');
+  });
+
+  it('upcomingSummary counts Mahj Nights apart from groups', () => {
+    const nights = new Set(['n1', 'n2']);
+    expect(upcomingSummary([{ clubId: 'n1' }], nights)).toBe('1 upcoming: 1 Mahj Night');
+    expect(upcomingSummary([{ clubId: 'n1' }, { clubId: 'n2' }], nights)).toBe('2 upcoming: 2 Mahj Nights');
+    expect(upcomingSummary([{ clubId: 'a' }, { clubId: 'a' }, { clubId: 'n1' }], nights)).toBe(
+      '3 upcoming across 1 group and 1 Mahj Night',
+    );
+    expect(upcomingSummary([], nights)).toBe('0 upcoming across 0 groups');
+  });
+
+  it('labelNightGames shows a night as Mahj Night, not its hidden group', () => {
+    const games = [{ clubId: 'n1', clubName: 'Friday Mahj' }, { clubId: 'a', clubName: 'QA Club' }];
+    expect(labelNightGames(games, new Set(['n1'])).map((g) => g.clubName)).toEqual(['Mahj Night', 'QA Club']);
   });
 
   it('upcomingSummary counts distinct clubs', () => {

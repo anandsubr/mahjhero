@@ -141,6 +141,21 @@ describe('HomeScreen', () => {
     expect(push).toHaveBeenCalledWith('/e/tok_night');
   });
 
+  it("counts a Mahj Night's game as a night, not a group", async () => {
+    fetchMyGames.mockResolvedValue([
+      GAME,
+      { ...GAME, eventId: 'e2', clubId: 'n1', clubName: 'Friday Mahj', title: 'Friday Mahj' },
+    ]);
+    myNights = [{
+      clubId: 'n1', eventId: 'e2', title: 'Friday Mahj', linkToken: 'tok_night',
+      themeId: 'jade', startsAt: GAME.startsAt, timezone: 'America/New_York',
+      area: '', cancelled: false,
+    }];
+    render(<HomeScreen />);
+    expect(await screen.findByText('2 upcoming across 1 group and 1 Mahj Night')).toBeTruthy();
+    expect(screen.getAllByText('Mahj Night').length).toBeGreaterThan(0);
+  });
+
   it('defaults to Clubs when nothing is upcoming', async () => {
     fetchMyGames.mockResolvedValue([]);
     render(<HomeScreen />);
