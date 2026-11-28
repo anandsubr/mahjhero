@@ -737,7 +737,7 @@ export default function CheckInScreen() {
           title="Check-in"
         />
         <View style={styles.container}>
-          <ErrorBanner message="You are not an organizer of this club." />
+          <ErrorBanner message="You are not a host of this group." />
         </View>
       </Screen>
     );
@@ -1261,7 +1261,7 @@ export default function CheckInScreen() {
         {guides.isVisible('tip:check-in') ? (
           <TipCard tag="Tip" title="Running the door" onDismiss={() => guides.dismiss('tip:check-in')}>
             <TipText>Tap ✓ when someone arrives, or ✕ if they've told you they're not coming.</TipText>
-            <TipText>Tap $ once they've paid. Only organizers see who has paid.</TipText>
+            <TipText>Tap $ once they've paid. Only hosts see who has paid.</TipText>
           </TipCard>
         ) : null}
 

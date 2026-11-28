@@ -101,9 +101,9 @@ export default function Welcome() {
       <TileHero />
 
       <View>
-        <Text style={styles.heading}>Your club&apos;s table, always set.</Text>
+        <Text style={styles.heading}>Host a mahj night. Keep the group going.</Text>
         <Text style={styles.body}>
-          Find a game, keep your seat, and let the club know when you&apos;re in.
+          Invite friends to a night, fill tables of four, and keep your group playing week after week.
         </Text>
       </View>
 
@@ -116,7 +116,7 @@ export default function Welcome() {
         <Tag variant="accent2">Invites</Tag>
         <Text style={styles.inviteLead}>Got an invite link?</Text>
         <Text style={styles.inviteBody}>
-          Open it on this device and you&apos;ll land straight in your club —
+          Open it on this device and you&apos;ll land straight in your group —
           no code to type.
         </Text>
       </Card>

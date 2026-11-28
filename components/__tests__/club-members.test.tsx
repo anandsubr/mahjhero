@@ -84,6 +84,7 @@ const CLUB: Club = {
   code: 'TEST1',
   cover_path: null,
   cover_color: 'accent2_800',
+  advanced_enabled: false,
 };
 
 const MEMBER_ROLE = [
@@ -221,7 +222,7 @@ describe('ClubMembers', () => {
     // "Invite by email" TextField label renders as its own visible text
     // too -- anchored to the fuller phrases, unique to the tip's own copy.
     expect(screen.getByText(/Use Invite by email for one person/)).toBeTruthy();
-    expect(screen.getByText(/Import a roster in Club settings for a whole list/)).toBeTruthy();
+    expect(screen.getByText(/Import a roster in Group settings for a whole list/)).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Got it: Bringing people in' }));
     expect(dismiss).toHaveBeenCalledWith('tip:club');
@@ -317,7 +318,7 @@ describe('ClubMembers redesign', () => {
     render(<ClubMembers club={CLUB} role="member" />);
     await screen.findByText('Ada (you)');
     fireEvent.click(screen.getByRole('button', { name: 'Show: Everyone' }));
-    expect(screen.getByText('No hosts in this club yet.')).toBeTruthy();
+    expect(screen.getByText('No hosts in this group yet.')).toBeTruthy();
   });
 
   it('toggles the invite form from the invite button for an organizer', async () => {
@@ -370,10 +371,10 @@ describe('ClubMembers redesign', () => {
   });
 
   it('shows the refusal and returns the button to idle when Add friend fails', async () => {
-    addFriend.mockResolvedValue({ error: 'you can only add someone from one of your clubs' });
+    addFriend.mockResolvedValue({ error: 'you can only add someone from one of your groups' });
     await renderThree();
     fireEvent.click(screen.getByRole('button', { name: 'Add Zed Quinn as a friend' }));
-    expect(await screen.findByText('you can only add someone from one of your clubs')).toBeTruthy();
+    expect(await screen.findByText('you can only add someone from one of your groups')).toBeTruthy();
     expect(screen.queryByText('Friend')).toBeNull();
     await waitFor(() => {
       const button = screen.getByRole('button', { name: 'Add Zed Quinn as a friend' });

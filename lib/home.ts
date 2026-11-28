@@ -99,7 +99,7 @@ export function gameCountLabel(n: number): string {
 
 export function upcomingSummary(games: { clubId: string }[]): string {
   const clubs = new Set(games.map((g) => g.clubId)).size;
-  return `${games.length} upcoming across ${clubs} ${clubs === 1 ? 'club' : 'clubs'}`;
+  return `${games.length} upcoming across ${clubs} ${clubs === 1 ? 'group' : 'groups'}`;
 }
 
 // Five club colours from the design's calendar dots, assigned by the same
@@ -121,7 +121,7 @@ export function clubColor(clubId: string): string {
 
 const ROLE_LABEL: Record<ClubRole, string> = {
   host: 'Host',
-  co_organizer: 'Co-organizer',
+  co_organizer: 'Co-host',
   member: 'Member',
 };
 

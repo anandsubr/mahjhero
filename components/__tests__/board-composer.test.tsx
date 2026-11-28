@@ -39,7 +39,7 @@ beforeEach(() => {
 });
 
 const postBtn = () => screen.getByRole('button', { name: 'Post' });
-const field = () => screen.getByPlaceholderText('Write to the club');
+const field = () => screen.getByPlaceholderText('Write to the group');
 const type = (v: string) => fireEvent.change(field(), { target: { value: v } });
 
 async function addPhoto() {
@@ -143,11 +143,11 @@ describe('BoardComposer', () => {
   });
 
   describe('email everyone (announce)', () => {
-    const megaphone = () => screen.getByRole('switch', { name: 'Email everyone in the club' });
+    const megaphone = () => screen.getByRole('switch', { name: 'Email everyone in the group' });
 
     it('never shows members the toggle', () => {
       render(<BoardComposer threadId="t1" clubId="c1" onPosted={() => {}} />);
-      expect(screen.queryByRole('switch', { name: 'Email everyone in the club' })).toBeNull();
+      expect(screen.queryByRole('switch', { name: 'Email everyone in the group' })).toBeNull();
       expect(screen.queryByText(/Will also email/)).toBeNull();
       expect(countBroadcastRecipients).not.toHaveBeenCalled();
     });
@@ -164,7 +164,7 @@ describe('BoardComposer', () => {
       render(<BoardComposer threadId="t1" clubId="c1" canAnnounce onPosted={() => {}} />);
       fireEvent.click(megaphone());
       expect(megaphone().getAttribute('aria-checked')).toBe('true');
-      expect(await screen.findByText('Will also email 23 people in the club')).toBeTruthy();
+      expect(await screen.findByText('Will also email 23 people in the group')).toBeTruthy();
       expect(countBroadcastRecipients).toHaveBeenCalledWith('c1', null);
       const btn = screen.getByRole('button', { name: 'Post and email everyone' });
       expect(btn.textContent).toBe('Post');
@@ -179,7 +179,7 @@ describe('BoardComposer', () => {
       countBroadcastRecipients.mockResolvedValue(1);
       render(<BoardComposer threadId="t1" clubId="c1" canAnnounce onPosted={() => {}} />);
       fireEvent.click(megaphone());
-      expect(await screen.findByText('Will also email 1 person in the club')).toBeTruthy();
+      expect(await screen.findByText('Will also email 1 person in the group')).toBeTruthy();
     });
 
     it('falls back to "everyone in the club" when the count fails', async () => {
@@ -187,7 +187,7 @@ describe('BoardComposer', () => {
       render(<BoardComposer threadId="t1" clubId="c1" canAnnounce onPosted={() => {}} />);
       fireEvent.click(megaphone());
       await waitFor(() => expect(countBroadcastRecipients).toHaveBeenCalled());
-      expect(screen.getByText('Will also email everyone in the club')).toBeTruthy();
+      expect(screen.getByText('Will also email everyone in the group')).toBeTruthy();
     });
 
     it('posts as an announcement once on double tap, then turns the toggle off', async () => {
@@ -266,13 +266,13 @@ describe('BoardComposer', () => {
     it('shows the email subject (the first line) on the recipient line once there is text', async () => {
       render(<BoardComposer threadId="t1" clubId="c1" canAnnounce onPosted={() => {}} />);
       fireEvent.click(megaphone());
-      expect(await screen.findByText('Will also email 23 people in the club')).toBeTruthy();
+      expect(await screen.findByText('Will also email 23 people in the group')).toBeTruthy();
       type('\n  Doors at seven  \nBring snacks');
       expect(
-        screen.getByText('Will also email 23 people in the club · Subject: Doors at seven'),
+        screen.getByText('Will also email 23 people in the group · Subject: Doors at seven'),
       ).toBeTruthy();
       type('   ');
-      expect(screen.getByText('Will also email 23 people in the club')).toBeTruthy();
+      expect(screen.getByText('Will also email 23 people in the group')).toBeTruthy();
     });
 
     it('the toggle is a switch with aria-checked only', () => {

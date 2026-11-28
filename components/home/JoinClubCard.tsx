@@ -37,11 +37,11 @@ export default function JoinClubCard({ onJoined }: { onJoined: (clubId: string) 
 
   return (
     <View style={styles.card}>
-      <Text style={styles.title}>Join a club</Text>
+      <Text style={styles.title}>Join a group</Text>
       <View style={styles.row}>
         <TextInput
-          accessibilityLabel="Club code"
-          placeholder="Club code"
+          accessibilityLabel="Group code"
+          placeholder="Group code"
           placeholderTextColor={colors.neutral[600]}
           value={code}
           onChangeText={(t) => {

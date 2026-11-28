@@ -103,7 +103,7 @@ describe('friends screen', () => {
   it('says so plainly for a friend from a club neither of you is in now', async () => {
     fetchFriends.mockResolvedValueOnce([{ ...BOB, club_names: [] }]);
     render(<FriendsScreen />);
-    expect(await screen.findByText('No clubs in common')).toBeTruthy();
+    expect(await screen.findByText('No groups in common')).toBeTruthy();
   });
 
   it('shows the dashed empty card when there are no friends yet', async () => {
@@ -136,12 +136,12 @@ describe('friends screen', () => {
   it('surfaces a refusal from add_friend in the member’s own words', async () => {
     fetchAddablePeople.mockResolvedValueOnce([CAROL]);
     addFriend.mockResolvedValueOnce({
-      error: 'you can only add someone from one of your clubs',
+      error: 'you can only add someone from one of your groups',
     });
     render(<FriendsScreen />);
     fireEvent.click(await screen.findByLabelText('Add Carol Diaz'));
     expect(
-      await screen.findByText('you can only add someone from one of your clubs'),
+      await screen.findByText('you can only add someone from one of your groups'),
     ).toBeTruthy();
   });
 
@@ -197,14 +197,14 @@ describe('friends screen', () => {
   it('says everyone is added once there is no one left but you have friends', async () => {
     fetchFriends.mockResolvedValueOnce([BOB]);
     render(<FriendsScreen />);
-    expect(await screen.findByText("You've added everyone in your clubs.")).toBeTruthy();
+    expect(await screen.findByText("You've added everyone in your groups.")).toBeTruthy();
     expect(screen.queryByLabelText('Search people')).toBeNull();
   });
 
   it('hides the club-mates section when there are no friends and no one to add', async () => {
     render(<FriendsScreen />);
     await screen.findByText(/No friends yet/);
-    expect(screen.queryByText('People in your clubs')).toBeNull();
+    expect(screen.queryByText('People in your groups')).toBeNull();
   });
 
   it('removes a friend and reloads', async () => {

@@ -86,6 +86,9 @@ const CLUB = {
   rhythm: 'Thursday evenings',
   visibility: 'private' as const,
   timezone: 'America/New_York',
+  // Most of this file exercises the club-scale controls (seating mode,
+  // levels, cost to play, check-in), which only show with Advanced on.
+  advanced_enabled: true,
 };
 
 beforeEach(() => {
@@ -146,7 +149,7 @@ describe('Close before the form is ready', () => {
     fetchClub.mockResolvedValue(null);
     canGoBack.mockReturnValue(false);
     render(<NewEventScreen />);
-    await screen.findByText('That club could not be loaded.');
+    await screen.findByText('That group could not be loaded.');
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
     expect(replace).toHaveBeenCalledWith('/clubs/club-1/games');
   });
@@ -1025,5 +1028,25 @@ describe('optional name', () => {
 
     await vi.waitFor(() => expect(createEventSeries).toHaveBeenCalled());
     expect(createEventSeries.mock.calls[0][0].title).toBe('');
+  });
+});
+
+describe('a group without Advanced (the default)', () => {
+  beforeEach(() => {
+    fetchClub.mockResolvedValue({ ...CLUB, advanced_enabled: false });
+  });
+
+  it('shows tables of four with no seating choice, levels, money or door list', async () => {
+    render(<NewEventScreen />);
+    await screen.findByText('New game');
+
+    expect(screen.getByLabelText('1 table')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Open seating' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Assigned tables' })).toBeNull();
+    expect(screen.queryByLabelText('Cost to play')).toBeNull();
+    expect(screen.queryByLabelText('Minimum spend')).toBeNull();
+    expect(screen.queryByRole('switch', { name: 'Require check-in' })).toBeNull();
+    expect(screen.getByRole('switch', { name: 'Invite-only' })).toBeTruthy();
+    expect(screen.queryByLabelText(/Table 1: /)).toBeNull();
   });
 });

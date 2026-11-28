@@ -217,7 +217,7 @@ const ClubBoard = forwardRef<ClubBoardHandle, Props>(function ClubBoard(
 
   return (
     <>
-      <Text style={styles.caption}>Everyone in the club sees posts here</Text>
+      <Text style={styles.caption}>Everyone in the group sees posts here</Text>
 
       {actionsFor ? (
         <ActionSheet

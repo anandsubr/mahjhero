@@ -80,7 +80,7 @@ const NEED_A_FOURTH_FOOTER = (club: string) =>
  * until the window closes, which is the one lever that's real.
  */
 const BROADCAST_FOOTER = (club: string) =>
-  `You're getting this because you're a member of ${club}. Messages like this from your organizers can't be turned off, but quiet hours in your notification settings can hold them until morning.`;
+  `You're getting this because you're a member of ${club}. Messages like this from your hosts can't be turned off, but quiet hours in your notification settings can hold them until morning.`;
 
 const REMINDER_FOOTER =
   "You're getting this because you have a seat at this game. Reminders for games you've booked can't be switched off.";
@@ -145,7 +145,7 @@ export function bodyFor(row: RenderRow, appUrl: string): Body {
         headline: 'Your seat was cancelled',
         paragraphs: [
           `${actor(row, 'A host')} cancelled your seat at ${game(row)}.`,
-          'If that looks wrong, the club is the place to sort it out.',
+          'If that looks wrong, the group is the place to sort it out.',
         ],
         cta: { label: 'See the game', url },
         footerNote: seatFooter,
@@ -320,7 +320,7 @@ export function bodyFor(row: RenderRow, appUrl: string): Body {
         subject: `Your invite to ${row.event_title ?? 'the game'} was withdrawn`,
         headline: 'Invite withdrawn',
         paragraphs: [
-          `${actor(row, 'The organizer')} withdrew your invite to ${game(row)}.`,
+          `${actor(row, 'The host')} withdrew your invite to ${game(row)}.`,
           "There's nothing you need to do.",
         ],
         // The club, not the event: an invite-only game stops being visible

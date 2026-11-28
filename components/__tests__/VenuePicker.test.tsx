@@ -73,7 +73,7 @@ describe('VenuePicker', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText('This club')).toBeTruthy();
+      expect(screen.getByText('This group')).toBeTruthy();
     });
     expect(screen.getByText('Public venues')).toBeTruthy();
 
@@ -85,7 +85,7 @@ describe('VenuePicker', () => {
     // "This club" renders first, which is the actual requirement ("own
     // club first").
     const text = container.textContent ?? '';
-    const thisClubAt = text.indexOf('This club');
+    const thisClubAt = text.indexOf('This group');
     const stMichaelAt = text.indexOf('St Michael’s Rooms'); // is_own_club: true
     const publicVenuesAt = text.indexOf('Public venues');
     const stMaryAt = text.indexOf('St Mary’s Hall'); // is_own_club: false
@@ -183,7 +183,7 @@ describe('VenuePicker', () => {
     // thing a screen reader actually announces rather than a proxy for it —
     // and the literal 'false' comparison also fails if the attribute goes
     // missing again, which a `not.toBe('true')` check would not.
-    const share = screen.getByLabelText('Other clubs can use this venue');
+    const share = screen.getByLabelText('Other groups can use this venue');
     expect(share.getAttribute('aria-checked')).toBe('false');
   });
 
@@ -256,7 +256,7 @@ describe('VenuePicker', () => {
     // The add option still renders — a search outage must not block a host
     // from adding the venue they came here to add.
     expect(screen.getByRole('button', { name: /Add “St”/ })).toBeTruthy();
-    expect(screen.queryByText('This club')).toBeNull();
+    expect(screen.queryByText('This group')).toBeNull();
     expect(screen.queryByText('Public venues')).toBeNull();
   });
 
@@ -290,7 +290,7 @@ describe('VenuePicker', () => {
 
   it('clears the typed text with the ✕', async () => {
     render(<VenuePicker variant="row" clubId="c1" value={null} valueName="" onChange={() => {}} />);
-    const field = screen.getByLabelText('Venue') as HTMLInputElement;
+    const field = screen.getByLabelText('Where') as HTMLInputElement;
     expect(screen.queryByRole('button', { name: 'Clear venue' })).toBeNull();
     fireEvent.change(field, { target: { value: 'St' } });
     fireEvent.click(screen.getByRole('button', { name: 'Clear venue' }));

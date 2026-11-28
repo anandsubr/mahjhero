@@ -5,7 +5,7 @@ import { Text } from '../Text';
 import { ChevronLeftIcon, SettingsIcon, ShareIcon } from '../icons';
 import ClubCover from './ClubCover';
 import SectionButtons from './SectionButtons';
-import { shareClubCode, type HubSection } from '../../lib/club-hub';
+import { hubSections, shareClubCode, type HubSection } from '../../lib/club-hub';
 import type { Club } from '../../lib/clubs';
 import { colors, layout, radius, type } from '../../lib/theme';
 
@@ -83,7 +83,7 @@ export default function ClubHubHeader({
           {canManage ? (
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Club settings"
+              accessibilityLabel="Group settings"
               onPress={onSettings}
               style={({ pressed }) => [styles.iconButton, pressed && styles.iconPressed]}
             >
@@ -92,10 +92,10 @@ export default function ClubHubHeader({
           ) : null}
         </View>
         <View style={styles.codeRow} testID="club-hub-code-row">
-          <Text style={styles.code} numberOfLines={1}>{`Club code: ${club.code}`}</Text>
+          <Text style={styles.code} numberOfLines={1}>{`Group code: ${club.code}`}</Text>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Share club code"
+            accessibilityLabel="Share group code"
             onPress={onShare}
             // A 44pt target with the 32pt pill drawn inside it: hitSlop is
             // not honoured on react-native-web.
@@ -115,7 +115,11 @@ export default function ClubHubHeader({
             )}
           </Pressable>
         </View>
-        <SectionButtons active={active} onSelect={onSelect} />
+        <SectionButtons
+          active={active}
+          onSelect={onSelect}
+          sections={hubSections(club.advanced_enabled)}
+        />
       </View>
     </ClubCover>
   );

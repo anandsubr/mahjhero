@@ -18,6 +18,12 @@ export type Club = {
   code: string;
   cover_path: string | null;
   cover_color: CoverColor;
+  /**
+   * Group settings -> Advanced. Only decides what the app shows: the
+   * club-scale controls (co-hosts, table levels, open seating, door list,
+   * cost to play, minimum spend, venues, the leaderboard).
+   */
+  advanced_enabled: boolean;
 };
 
 export type ClubMember = {
@@ -49,7 +55,7 @@ export type RosterRow = {
 export type RosterError = { row: number; message: string };
 
 const CLUB_COLUMNS =
-  'id, name, slug, rhythm, visibility, timezone, default_game_mode, code, cover_path, cover_color';
+  'id, name, slug, rhythm, visibility, timezone, default_game_mode, code, cover_path, cover_color, advanced_enabled';
 const INVITE_COLUMNS = 'id, email, display_name, skill_level, declined_at';
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const SKILL_LEVELS: SkillLevel[] = ['beginner', 'intermediate', 'advanced'];
@@ -128,6 +134,30 @@ export async function setDefaultGameMode(
     return { error: null };
   } catch (cause) {
     console.error('setDefaultGameMode failed', cause);
+    return { error: GENERIC_ERROR };
+  }
+}
+
+/**
+ * Turns Group settings -> Advanced on or off. Host or co-host, through the
+ * set_club_advanced RPC; a direct UPDATE of the column is refused.
+ */
+export async function setClubAdvanced(
+  clubId: string,
+  enabled: boolean,
+): Promise<{ error: string | null }> {
+  try {
+    const { error } = await supabase.rpc('set_club_advanced', {
+      target_club: clubId,
+      enabled,
+    });
+    if (error) {
+      console.error('setClubAdvanced failed', error);
+      return { error: GENERIC_ERROR };
+    }
+    return { error: null };
+  } catch (cause) {
+    console.error('setClubAdvanced failed', cause);
     return { error: GENERIC_ERROR };
   }
 }
@@ -440,7 +470,7 @@ export async function createClub(
   const trimmed = name.trim();
 
   if (trimmed.length === 0) {
-    return { clubId: null, error: 'Give the club a name.' };
+    return { clubId: null, error: 'Give the group a name.' };
   }
   if (slugify(trimmed).length === 0) {
     return { clubId: null, error: 'That name needs at least one letter or number.' };
@@ -486,14 +516,14 @@ export async function joinClubByCode(
         return {
           clubId: null,
           alreadyMember: false,
-          error: 'You left or were removed from this club. Ask a host to invite you back.',
+          error: 'You left or were removed from this group. Ask a host to invite you back.',
         };
       }
       console.error('joinClubByCode failed', error);
       return { clubId: null, alreadyMember: false, error: codeError(error) };
     }
     if (!data) {
-      return { clubId: null, alreadyMember: false, error: 'No club with that code.' };
+      return { clubId: null, alreadyMember: false, error: 'No group with that code.' };
     }
     const result = data as { club_id: string; already_member: boolean };
     return { clubId: result.club_id, alreadyMember: result.already_member, error: null };
@@ -550,7 +580,7 @@ export async function createInvite(
     if (error) {
       console.error('createInvite failed', error);
       if (error.message.includes('already in this club')) {
-        return { id: null, error: 'That person is already in this club.' };
+        return { id: null, error: 'That person is already in this group.' };
       }
       return { id: null, error: GENERIC_ERROR };
     }

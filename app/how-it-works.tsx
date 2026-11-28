@@ -48,19 +48,19 @@ export default function HowItWorks() {
 
       <Card style={styles.card}>
         <Text style={styles.section}>Playing</Text>
-        <Text style={styles.body}>1. Join a club with its code on Home, or accept an invite there. Games you're in show on Home under My games.</Text>
+        <Text style={styles.body}>1. Join a group with its code on Home, or accept an invite there. Games you're in show on Home under My games.</Text>
         <Text style={styles.body}>2. Tap Join to take a spot, or Invite to bring someone along.</Text>
         <Text style={styles.body}>3. Game full? Tap Join the waitlist and you'll move up if a seat opens.</Text>
         <Text style={styles.body}>4. On the day, check the game page for your table and messages.</Text>
       </Card>
 
       <Card style={styles.card}>
-        <Text style={styles.section}>Organizing</Text>
-        <Text style={styles.body}>1. Create your club.</Text>
-        <Text style={styles.body}>2. Schedule your first game. Choose Assigned tables or Open seating, and set Cost to play.</Text>
-        <Text style={styles.body}>3. Invite your players by email, or import a roster.</Text>
-        <Text style={styles.body}>4. Say hello with an announcement in the club thread.</Text>
-        <Text style={styles.body}>On the night, open the game's Door list to mark who's Here and who has paid.</Text>
+        <Text style={styles.section}>Hosting</Text>
+        <Text style={styles.body}>1. Start your group.</Text>
+        <Text style={styles.body}>2. Schedule your first game. Every table seats four, and players can save seats for friends.</Text>
+        <Text style={styles.body}>3. Invite your players by email, or share your group code.</Text>
+        <Text style={styles.body}>4. Say hello with an announcement in the group thread.</Text>
+        <Text style={styles.body}>Bigger groups can turn on a door list under Group settings → Advanced.</Text>
       </Card>
 
       <View style={styles.resetGroup}>

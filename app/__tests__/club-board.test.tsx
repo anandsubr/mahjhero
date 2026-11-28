@@ -126,7 +126,7 @@ describe('the club board', () => {
     fetchClubFeed.mockResolvedValue([post('p1', { body: 'Anyone free Thursday?', heartCount: 3 })]);
     render(<ClubBoard threadId="t1" />);
     expect(await screen.findByText('Anyone free Thursday?')).toBeTruthy();
-    expect(screen.getByText('Everyone in the club sees posts here')).toBeTruthy();
+    expect(screen.getByText('Everyone in the group sees posts here')).toBeTruthy();
     // PostCard's own heart pill and comment link.
     expect(screen.getByRole('button', { name: 'Heart this post' })).toBeTruthy();
     expect(screen.getByText('Comment')).toBeTruthy();

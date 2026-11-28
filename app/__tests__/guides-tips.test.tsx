@@ -397,9 +397,12 @@ describe('event page tip', () => {
 
 describe('new game tip', () => {
   it('explains seating and cost to a host', async () => {
+    // Open seating and cost are Advanced: the tip only explains them when
+    // the group has Advanced turned on.
+    fetchClub.mockResolvedValue({ ...CLUB, advanced_enabled: true });
     renderNewGameAsHost();
     expect(await screen.findByText('Setting up a game')).toBeTruthy();
-    expect(screen.getByText(/Assigned tables: players pick an Empty seat/)).toBeTruthy();
+    expect(screen.getByText(/Players pick an Empty seat, and can save seats/)).toBeTruthy();
     expect(screen.getByText(/Open seating: players tap Join/)).toBeTruthy();
     // Not the bare /Cost to play/ the brief's sample code uses: the form's
     // own "Cost to play" field label (components/TextField.tsx renders
@@ -422,7 +425,7 @@ describe('check-in tip', () => {
     renderCheckInAsHost();
     expect(await screen.findByText('Running the door')).toBeTruthy();
     expect(screen.getByText(/Tap ✓ when someone arrives, or ✕ if/)).toBeTruthy();
-    expect(screen.getByText(/Only organizers see who has paid/)).toBeTruthy();
+    expect(screen.getByText(/Only hosts see who has paid/)).toBeTruthy();
   });
 
   it('dismisses with its key', async () => {

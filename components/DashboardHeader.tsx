@@ -63,7 +63,7 @@ export default function DashboardHeader({
   onPressScope,
   onPressAddGame,
   onPressBack,
-  backLabel = 'Clear club filter',
+  backLabel = 'Clear group filter',
 }: {
   kicker: string;
   name: string;

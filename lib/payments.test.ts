@@ -76,7 +76,7 @@ describe('setPaymentStatus', () => {
       isPaid: true,
     });
     expect(error).toBe(bookingErrorMessage(pgError));
-    expect(error).toBe('Only a club organizer can do that.');
+    expect(error).toBe('Only a host can do that.');
     expect(error).not.toBe(pgError.message);
   });
 

@@ -155,7 +155,7 @@ describe('DashboardHeader', () => {
           onPressBack={onPressBack}
         />,
       );
-      fireEvent.click(screen.getByRole('button', { name: 'Clear club filter' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Clear group filter' }));
       expect(onPressBack).toHaveBeenCalled();
     });
 
@@ -163,7 +163,7 @@ describe('DashboardHeader', () => {
       render(
         <DashboardHeader kicker="Your club" name="Riverside Mah Jongg" meta="Thursdays, 7pm" />,
       );
-      expect(screen.queryByRole('button', { name: 'Clear club filter' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Clear group filter' })).toBeNull();
     });
 
     it('adds a game for this club when the + is pressed', () => {
@@ -201,7 +201,7 @@ describe('DashboardHeader', () => {
           clubId="club-1"
         />,
       );
-      expect(screen.queryByRole('button', { name: 'Clear club filter' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Clear group filter' })).toBeNull();
       expect(screen.queryByRole('button', { name: 'Add a game' })).toBeNull();
       expect(screen.getByTestId('thread-avatar-club-tile')).toBeTruthy();
     });

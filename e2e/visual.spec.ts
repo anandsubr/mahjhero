@@ -48,7 +48,7 @@ const SCROLLER = '[data-testid="screen-scroll"]';
  * children collapse into a single text node on web), so this masks the
  * digits regardless of how many the suffix ends up being.
  */
-const CLUB_CODE_MASK = ['text=/Club code:/'];
+const CLUB_CODE_MASK = ['text=/Group code:/'];
 
 /**
  * `extraMask` for every OTHER club-hub baseline (Games/Board/Ranks/Photos/
@@ -469,7 +469,7 @@ test.describe('signed in', () => {
     test(`new club at ${vp.name}`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/clubs/new');
-      await expect(page.getByText('Add a short description')).toBeVisible();
+      await expect(page.getByText('When you usually play')).toBeVisible();
       await captureScreen(page, vp, `new-club-${vp.name}.png`);
     });
 
@@ -539,7 +539,7 @@ test.describe('signed in', () => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/messages/new');
       await expect(
-        page.getByText('Nobody to message yet. Add a friend or join a club to find people to message.'),
+        page.getByText('Nobody to message yet. Add a friend or join a group to find people to message.'),
       ).toBeVisible();
       await captureScreen(page, vp, `message-new-empty-${vp.name}.png`);
     });
@@ -556,7 +556,8 @@ test.describe('signed in', () => {
     test(`home empty at ${vp.name}`, async ({ page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await page.goto('/home');
-      await expect(page.getByText('Join a club')).toBeVisible();
+      // No groups yet: Home asks "What brings you here?" (StartChoices).
+      await expect(page.getByText('What brings you here?')).toBeVisible();
       await captureScreen(page, vp, `home-empty-${vp.name}.png`);
     });
   }
@@ -681,7 +682,7 @@ test.describe('signed in', () => {
       test(`home clubs at ${vp.name}`, async ({ page }) => {
         await page.setViewportSize({ width: vp.width, height: vp.height });
         await page.goto('/home');
-        await page.getByRole('button', { name: /^Clubs/ }).click();
+        await page.getByRole('button', { name: /^Groups/ }).click();
         await expect(page.getByText('Riverside Mah Jongg')).toBeVisible();
         await captureScreen(page, vp, `home-clubs-${vp.name}.png`, [
           'div:has(> [data-testid^="glyph-"])',
@@ -753,7 +754,7 @@ test.describe('signed in', () => {
         await page.setViewportSize({ width: vp.width, height: vp.height });
         await page.goto(`/clubs/${seeded.clubId}/games`);
         await expect(page.getByText('Riverside Mah Jongg', { exact: true })).toBeVisible();
-        await expect(page.getByText('Club code:')).toBeVisible();
+        await expect(page.getByText('Group code:')).toBeVisible();
         await expect(page.getByRole('tab', { name: 'Upcoming', selected: true })).toBeVisible();
         await expect(page.getByText('No games yet. Pick a night and invite your table.')).toBeVisible();
         // Exactly one "New game" button now: the pinned footer's (host-only,
@@ -819,7 +820,7 @@ test.describe('signed in', () => {
         await expect(
           page.getByText('Anyone free to help set up tables Saturday morning?'),
         ).toBeVisible();
-        await expect(page.getByText('Everyone in the club sees posts here')).toBeVisible();
+        await expect(page.getByText('Everyone in the group sees posts here')).toBeVisible();
         // No sort control (user decision 2026-10-17): newest first, always.
         await expect(page.getByText('Most recent')).toHaveCount(0);
         // Both plurals, read as text -- "pixels cannot catch a one-glyph
@@ -829,7 +830,7 @@ test.describe('signed in', () => {
         await expect(page.getByText('View all 4 comments')).toBeVisible();
         await expect(page.getByRole('button', { name: 'Heart this post' })).toBeVisible();
         await expect(page.getByRole('button', { name: 'Remove your heart' })).toBeVisible();
-        await expect(page.getByLabel('Write to the club')).toBeVisible();
+        await expect(page.getByLabel('Write to the group')).toBeVisible();
         await captureScreen(page, vp, `club-hub-board-${vp.name}.png`, [
           ...CLUB_HUB_HEADER_CODE_ROW_MASK,
           ...MEMBER_AVATAR_MASK,
@@ -1006,9 +1007,9 @@ test.describe('signed in', () => {
       test(`club settings at ${vp.name}`, async ({ page }) => {
         await page.setViewportSize({ width: vp.width, height: vp.height });
         await page.goto(`/clubs/${seeded.clubId}/settings`);
-        await expect(page.getByText('Club settings', { exact: true })).toBeVisible();
+        await expect(page.getByText('Group settings', { exact: true })).toBeVisible();
         await expect(page.getByText('Cover', { exact: true })).toBeVisible();
-        await expect(page.getByText('Club code:')).toBeVisible();
+        await expect(page.getByText('Group code:')).toBeVisible();
         await expect(page.getByText('New games default to invite-only')).toBeVisible();
         await expect(page.getByRole('button', { name: 'Venues' })).toBeVisible();
         await expect(page.getByRole('button', { name: 'Import a roster from a spreadsheet' })).toBeVisible();
@@ -1284,7 +1285,7 @@ test.describe('signed in', () => {
         await page.setViewportSize({ width: vp.width, height: vp.height });
         await seedUnreadClubMessage(seeded.clubId, userId.slice(0, 8));
         await page.goto('/home');
-        await page.getByRole('button', { name: /^Clubs/ }).click();
+        await page.getByRole('button', { name: /^Groups/ }).click();
         // ClubCard composes the unread count straight into its
         // accessibilityLabel (components/home/ClubCard.tsx,
         // `unreadSuffix`, lib/messages.ts) rather than leaving it on
@@ -1716,7 +1717,7 @@ test.describe('signed in', () => {
         await setDismissedGuides(userId, []);
         await page.setViewportSize({ width: vp.width, height: vp.height });
         await page.goto('/home');
-        await page.getByRole('button', { name: /^Clubs/ }).click();
+        await page.getByRole('button', { name: /^Groups/ }).click();
         const card = page.getByTestId(`host-checklist-${seeded.clubId}`);
         await expect(card.getByText('Get Riverside Mah Jongg going')).toBeVisible();
         await expect(card.getByText('Schedule your first game')).toBeVisible();

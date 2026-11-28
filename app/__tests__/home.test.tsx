@@ -111,7 +111,7 @@ describe('HomeScreen', () => {
     fetchMyGames.mockResolvedValue([GAME]);
     render(<HomeScreen />);
     expect(await screen.findByText('Tuesday game')).toBeTruthy();
-    expect(screen.getByText('1 upcoming across 1 club')).toBeTruthy();
+    expect(screen.getByText('1 upcoming across 1 group')).toBeTruthy();
     expect(screen.getByRole('button', { name: /My games/ }).getAttribute('aria-selected')).toBe('true');
   });
 
@@ -125,7 +125,7 @@ describe('HomeScreen', () => {
   it('defaults to Clubs when nothing is upcoming', async () => {
     fetchMyGames.mockResolvedValue([]);
     render(<HomeScreen />);
-    expect(await screen.findByText('Join a club')).toBeTruthy();
+    expect(await screen.findByText('Join a group')).toBeTruthy();
     expect(screen.getByText('Test Club')).toBeTruthy();
   });
 
@@ -178,13 +178,23 @@ describe('HomeScreen', () => {
     expect(await screen.findByRole('button', { name: 'Next month' })).toBeTruthy();
   });
 
-  it('shows the welcome card to a member with no clubs', async () => {
+  it('asks a member with no groups what brings them here', async () => {
     myClubs = [];
-    GUIDES.isVisible = (k: string) => k === 'welcome';
     fetchMyGames.mockResolvedValue([]);
     render(<HomeScreen />);
-    expect(await screen.findByText('Welcome to MahjHero')).toBeTruthy();
-    expect(screen.getByText('me@example.com')).toBeTruthy();
+    expect(await screen.findByText('What brings you here?')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Host a Mahj Night' }));
+    expect(push).toHaveBeenCalledWith('/clubs/new?for=night');
+    fireEvent.click(screen.getByRole('button', { name: 'Start a group' }));
+    expect(push).toHaveBeenCalledWith('/clubs/new');
+  });
+
+  it('keeps Host a Mahj Night and Start a group above a member\'s groups', async () => {
+    fetchMyGames.mockResolvedValue([]);
+    render(<HomeScreen />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Host a Mahj Night' }));
+    expect(push).toHaveBeenCalledWith('/clubs/new?for=night');
+    expect(screen.queryByText('What brings you here?')).toBeNull();
   });
 
   it('restores a saved Calendar choice on mount', async () => {

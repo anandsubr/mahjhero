@@ -101,7 +101,7 @@ export default function AdminReportsScreen() {
               <Text style={styles.meta}>
                 {r.kind === 'profile' ? 'Profile' : r.kind === 'message' ? 'Message' : r.mediaKind === 'file' ? 'File' : 'Photo'}
                 {' · '}
-                {r.clubName ?? 'No club'}
+                {r.clubName ?? 'No group'}
                 {' · '}
                 {relativeTimestamp(r.createdAt)}
               </Text>

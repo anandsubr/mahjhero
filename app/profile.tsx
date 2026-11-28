@@ -196,7 +196,7 @@ export default function ProfileScreen() {
     const url = await resetCalendarFeed();
     setResetting(false);
     if (url) {
-      setResetNotice('New calendar link ready. Tap Add to calendar in a club to subscribe again.');
+      setResetNotice('New calendar link ready. Tap Add to calendar in a group to subscribe again.');
     } else {
       setResetError(GENERIC_ERROR);
     }

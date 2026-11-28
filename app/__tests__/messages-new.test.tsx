@@ -118,7 +118,7 @@ describe('new message screen', () => {
     render(<NewMessageScreen />);
     expect(
       await screen.findByText(
-        'Nobody to message yet. Add a friend or join a club to find people to message.',
+        'Nobody to message yet. Add a friend or join a group to find people to message.',
       ),
     ).toBeTruthy();
     expect(screen.queryByText(/Could not reach MahjHero/)).toBeNull();

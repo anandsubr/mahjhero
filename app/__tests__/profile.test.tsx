@@ -369,7 +369,7 @@ describe('profile screen', () => {
       await waitFor(() => expect(resetCalendarFeed).toHaveBeenCalledTimes(1));
       expect(
         await screen.findByText(
-          'New calendar link ready. Tap Add to calendar in a club to subscribe again.',
+          'New calendar link ready. Tap Add to calendar in a group to subscribe again.',
         ),
       ).toBeTruthy();
       expect(screen.queryByTestId('confirm-sheet')).toBeNull();
@@ -384,7 +384,7 @@ describe('profile screen', () => {
       expect(await screen.findByText(/Could not reach MahjHero/)).toBeTruthy();
       expect(
         screen.queryByText(
-          'New calendar link ready. Tap Add to calendar in a club to subscribe again.',
+          'New calendar link ready. Tap Add to calendar in a group to subscribe again.',
         ),
       ).toBeNull();
     });

@@ -186,10 +186,10 @@ export default function VenuesScreen() {
         onPress={() =>
           router.canGoBack() ? router.back() : router.replace(`/clubs/${clubId}/settings`)
         }
-        accessibilityLabel="Back to club settings"
+        accessibilityLabel="Back to group settings"
         style={styles.backButton}
       >
-        Club settings
+        Group settings
       </Button>
 
       <DashboardHeader
@@ -198,7 +198,7 @@ export default function VenuesScreen() {
         meta=""
       />
       <Text style={styles.help}>
-        Places this club plays. Add a new one while creating a game — this
+        Places this group plays. Add a new one while creating a game — this
         is where you fix a name or retire a venue you no longer use.
       </Text>
 
@@ -256,7 +256,7 @@ export default function VenuesScreen() {
                 ) : null}
                 {venue.visibility === 'public' ? (
                   <Text style={styles.help}>
-                    Other clubs can use this venue. It cannot be made private
+                    Other groups can use this venue. It cannot be made private
                     again — their games point at it.
                   </Text>
                 ) : null}

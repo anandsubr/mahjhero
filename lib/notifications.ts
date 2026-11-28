@@ -235,7 +235,7 @@ export function describeNotification(
     case 'booking_invite_withdrawn':
       return {
         headline: 'Invite withdrawn',
-        detail: `${actor(row, 'The organizer')} withdrew your invite to ${game(row)}.`,
+        detail: `${actor(row, 'The host')} withdrew your invite to ${game(row)}.`,
         // The game may no longer be visible to them (invite-only).
         href: `/clubs/${row.club_id}/games`,
       };

@@ -123,7 +123,7 @@ describe('deleteRound', () => {
       error: { message: 'not an organizer of this club', code: '42501' },
     });
     const { error } = await deleteRound('r1');
-    expect(error).toBe('Only a club organizer can do that.');
+    expect(error).toBe('Only a host can do that.');
   });
 });
 

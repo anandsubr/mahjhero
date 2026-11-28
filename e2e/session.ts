@@ -451,6 +451,9 @@ export async function seedClubWithEvent(profileId: string): Promise<{
         rhythm: 'Tuesday evenings',
         timezone: 'America/New_York',
         created_by: profileId,
+        // Group settings -> Advanced on: these baselines picture the
+        // club-scale screens (Ranks, Venues, levels, check-in, open seating).
+        advanced_enabled: true,
       })
       .select('id')
       .single(),

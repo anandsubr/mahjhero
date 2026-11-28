@@ -342,10 +342,10 @@ describe('screen chrome', () => {
   it('goes back to club settings, or replaces to it on a cold open', async () => {
     canGoBack.mockReturnValue(true);
     render(<VenuesScreen />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Back to club settings' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Back to group settings' }));
     expect(back).toHaveBeenCalled();
     canGoBack.mockReturnValue(false);
-    fireEvent.click(screen.getByRole('button', { name: 'Back to club settings' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Back to group settings' }));
     expect(replace).toHaveBeenCalledWith('/clubs/club-1/settings');
   });
 });

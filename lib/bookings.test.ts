@@ -227,7 +227,7 @@ describe('attendance refusals (record_attendance/clear_attendance)', () => {
         code: '23514',
         message: 'that person is not a member of this club',
       }),
-    ).toBe('That person is no longer a member of this club.');
+    ).toBe('That person is no longer a member of this group.');
   });
 
   it('reports a cancelled event via assert_attendance_writable', () => {
@@ -248,7 +248,7 @@ describe('attendance refusals (record_attendance/clear_attendance)', () => {
   it('reports a member trying to check someone else in', () => {
     expect(
       bookingErrorMessage({ code: '42501', message: 'you can only check yourself in' }),
-    ).toBe('Only an organizer can check someone else in.');
+    ).toBe('Only a host can check someone else in.');
   });
 
   it('reports a write outside the attendance window', () => {
@@ -385,7 +385,7 @@ describe('callForAFourth', () => {
       error: { code: '42501', message: 'not an organizer of this club' },
     });
     const { error } = await callForAFourth('t1');
-    expect(error).toBe('Only a club organizer can do that.');
+    expect(error).toBe('Only a host can do that.');
     expect(error).not.toBe(GENERIC_ERROR);
   });
 });
@@ -593,6 +593,10 @@ describe('BOOKING_REFUSALS (self-audit against the migrations)', () => {
     // cover_path/cover_color — a direct client UPDATE never reaches this.
     'club cover cannot be changed directly':
       'trigger (clubs_freeze_identity) on public.clubs UPDATE — never reached through an RPC, only a direct UPDATE no lib/*.ts function performs',
+    // 20261127100000: same trigger, same reasoning -- setClubAdvanced goes
+    // through set_club_advanced, which runs as the owner the trigger exempts.
+    'club advanced setting cannot be changed directly':
+      'trigger (clubs_freeze_identity) on public.clubs UPDATE — never reached through an RPC, only a direct UPDATE no lib/*.ts function performs',
     // set_club_cover's path guard (20260930100100): new_path is always built
     // client-side from the club id it is uploading under, so a foreign
     // prefix is not a path a real client ever sends.
@@ -665,6 +669,8 @@ describe('BOOKING_REFUSALS (self-audit against the migrations)', () => {
       'raised by add_friend — lib/friends.ts is the module responsible, and by design relays error.message rather than mapping through a refusal table',
     'you can only add someone from one of your clubs':
       'raised by add_friend — lib/friends.ts is the module responsible, and by design relays error.message rather than mapping through a refusal table',
+    'you can only add someone from one of your groups':
+      'raised by add_friend (reworded in 20261127110000) — lib/friends.ts is the module responsible, and by design relays error.message rather than mapping through a refusal table',
 
     // series_occurrence_dates is revoked from public/anon/authenticated
     // (20260822197000, restated 20260823000000) and called only from inside

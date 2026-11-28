@@ -30,7 +30,7 @@ describe('sharedClubsLabel', () => {
   // array is a real answer from fetch_friends, not a failure, and a blank
   // line under their name would read as a rendering bug.
   it('says so plainly when nothing is shared any more', () => {
-    expect(sharedClubsLabel([])).toBe('No clubs in common');
+    expect(sharedClubsLabel([])).toBe('No groups in common');
   });
 });
 
@@ -127,10 +127,10 @@ describe('addFriend', () => {
   it('relays the refusal verbatim', async () => {
     rpcMock.mockResolvedValueOnce({
       data: null,
-      error: { message: 'you can only add someone from one of your clubs' },
+      error: { message: 'you can only add someone from one of your groups' },
     });
     await expect(addFriend('p9')).resolves.toEqual({
-      error: 'you can only add someone from one of your clubs',
+      error: 'you can only add someone from one of your groups',
     });
   });
 

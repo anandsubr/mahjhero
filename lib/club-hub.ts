@@ -37,6 +37,11 @@ export const HUB_SECTIONS: { key: HubSection; label: string }[] = [
   { key: 'ranks', label: 'Ranks' },
 ];
 
+/** Ranks is a club-scale section: shown only with Group settings -> Advanced on. */
+export function hubSections(advanced: boolean): { key: HubSection; label: string }[] {
+  return advanced ? HUB_SECTIONS : HUB_SECTIONS.filter((s) => s.key !== 'ranks');
+}
+
 export function shareText(clubName: string, code: string): string {
   return `Join ${clubName} on MahjHero with code ${code}`;
 }

@@ -21,6 +21,7 @@ const CLUBS: Club[] = [
     code: 'TESTCODE',
     cover_path: null,
     cover_color: 'accent2_800',
+    advanced_enabled: false,
   },
   {
     id: 'club-2',
@@ -33,6 +34,7 @@ const CLUBS: Club[] = [
     code: 'TESTCODE',
     cover_path: null,
     cover_color: 'accent2_800',
+    advanced_enabled: false,
   },
 ];
 

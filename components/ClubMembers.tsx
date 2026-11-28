@@ -263,7 +263,7 @@ const ClubMembers = forwardRef<ClubMembersHandle, Props>(function ClubMembers(
       trimmedSearch.length > 0
         ? `No members match “${trimmedSearch}”.`
         : hostsOnly
-          ? 'No hosts in this club yet.'
+          ? 'No hosts in this group yet.'
           : null;
   }
 
@@ -438,7 +438,7 @@ const ClubMembers = forwardRef<ClubMembersHandle, Props>(function ClubMembers(
       {mayInvite && guides.isVisible('tip:club') ? (
         <TipCard tag="Tip" title="Bringing people in" onDismiss={() => guides.dismiss('tip:club')}>
           <TipText>
-            Use Invite by email for one person, or Import a roster in Club settings for a whole list.
+            Use Invite by email for one person, or Import a roster in Group settings for a whole list.
           </TipText>
           <TipText>
             They'll see the invite on their Home screen once they sign in with that email.

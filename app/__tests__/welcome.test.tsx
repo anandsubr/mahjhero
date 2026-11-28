@@ -32,8 +32,8 @@ describe('welcome screen', () => {
 
   it('leads with the headline and the promise under it', () => {
     render(<Welcome />);
-    expect(screen.getByText("Your club's table, always set.")).toBeTruthy();
-    expect(screen.getByText(/Find a game, keep your seat/)).toBeTruthy();
+    expect(screen.getByText("Host a mahj night. Keep the group going.")).toBeTruthy();
+    expect(screen.getByText(/Invite friends to a night, fill tables of four/)).toBeTruthy();
   });
 
   // The artboard's card names a person and a club that do not exist. This
@@ -82,7 +82,7 @@ describe('welcome screen', () => {
     useSessionMock.mockReturnValue({ session: null, loading: true });
     render(<Welcome />);
     expect(screen.queryByTestId('redirect')).toBeNull();
-    expect(screen.getByText("Your club's table, always set.")).toBeTruthy();
+    expect(screen.getByText("Host a mahj night. Keep the group going.")).toBeTruthy();
   });
 
   // accessibilityElementsHidden / importantForAccessibility are native-only

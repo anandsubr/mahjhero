@@ -193,8 +193,8 @@ export default function BoardComposer({
             {announce ? (
               <Text style={styles.announceNote}>
                 {(recipients !== null
-                  ? `Will also email ${recipients} ${recipients === 1 ? 'person' : 'people'} in the club`
-                  : 'Will also email everyone in the club') +
+                  ? `Will also email ${recipients} ${recipients === 1 ? 'person' : 'people'} in the group`
+                  : 'Will also email everyone in the group') +
                   (hasText ? ` · Subject: ${deriveSubject(body.trim())}` : '')}
               </Text>
             ) : null}
@@ -209,7 +209,7 @@ export default function BoardComposer({
                 <Pressable
                   onPress={() => setAnnounceOn((on) => !on)}
                   accessibilityRole="switch"
-                  accessibilityLabel="Email everyone in the club"
+                  accessibilityLabel="Email everyone in the group"
                   // aria-*, not accessibilityState: react-native-web drops
                   // accessibilityState entirely (see components/Toggle.tsx),
                   // and RN's Pressable reads aria-checked natively too.
@@ -224,9 +224,9 @@ export default function BoardComposer({
                 value={body}
                 onChangeText={setBody}
                 onContentSizeChange={handleSize}
-                placeholder="Write to the club"
+                placeholder="Write to the group"
                 placeholderTextColor={colors.neutral[600]}
-                accessibilityLabel="Write to the club"
+                accessibilityLabel="Write to the group"
                 multiline
                 numberOfLines={1}
                 maxLength={BODY_MAX}

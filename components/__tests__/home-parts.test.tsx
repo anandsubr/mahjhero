@@ -85,20 +85,20 @@ describe('JoinClubCard', () => {
   // the typed code keeps its letter-spacing (and is still uppercased).
   it('shows the placeholder without letter-spacing, spacing only the typed code', () => {
     render(<JoinClubCard onJoined={() => {}} />);
-    const input = screen.getByLabelText('Club code') as HTMLInputElement;
-    expect(input.placeholder).toBe('Club code');
+    const input = screen.getByLabelText('Group code') as HTMLInputElement;
+    expect(input.placeholder).toBe('Group code');
     expect(getComputedStyle(input).letterSpacing).not.toBe('2px');
     expect(getComputedStyle(input).textTransform).not.toBe('uppercase');
     fireEvent.change(input, { target: { value: 'oak2' } });
-    expect(getComputedStyle(screen.getByLabelText('Club code')).letterSpacing).toBe('2px');
+    expect(getComputedStyle(screen.getByLabelText('Group code')).letterSpacing).toBe('2px');
   });
 
   it('disables Join until text is entered, uppercases input', () => {
     render(<JoinClubCard onJoined={() => {}} />);
     const join = screen.getByRole('button', { name: 'Join' });
     expect(join.getAttribute('aria-disabled')).toBe('true');
-    fireEvent.change(screen.getByLabelText('Club code'), { target: { value: 'oak 2' } });
-    expect((screen.getByLabelText('Club code') as HTMLInputElement).value).toBe('OAK2');
+    fireEvent.change(screen.getByLabelText('Group code'), { target: { value: 'oak 2' } });
+    expect((screen.getByLabelText('Group code') as HTMLInputElement).value).toBe('OAK2');
     expect(screen.getByRole('button', { name: 'Join' }).getAttribute('aria-disabled')).not.toBe('true');
   });
 
@@ -106,7 +106,7 @@ describe('JoinClubCard', () => {
     joinClubByCode.mockResolvedValueOnce({ clubId: 'c1', alreadyMember: false, error: null });
     const onJoined = vi.fn();
     render(<JoinClubCard onJoined={onJoined} />);
-    fireEvent.change(screen.getByLabelText('Club code'), { target: { value: 'OAK2' } });
+    fireEvent.change(screen.getByLabelText('Group code'), { target: { value: 'OAK2' } });
     fireEvent.click(screen.getByRole('button', { name: 'Join' }));
     await vi.waitFor(() => expect(onJoined).toHaveBeenCalledWith('c1'));
   });
@@ -116,7 +116,7 @@ describe('JoinClubCard', () => {
     joinClubByCode.mockResolvedValue({ clubId: 'c1', alreadyMember: false, error: null });
     const onJoined = vi.fn();
     render(<JoinClubCard onJoined={onJoined} />);
-    fireEvent.change(screen.getByLabelText('Club code'), { target: { value: 'OAK2' } });
+    fireEvent.change(screen.getByLabelText('Group code'), { target: { value: 'OAK2' } });
     const join = screen.getByRole('button', { name: 'Join' });
     // Both taps inside one act: no re-render between them, so the disabled
     // prop can't stop the second one; only the synchronous ref can.
@@ -130,11 +130,11 @@ describe('JoinClubCard', () => {
   });
 
   it('shows the error inline', async () => {
-    joinClubByCode.mockResolvedValueOnce({ clubId: null, alreadyMember: false, error: 'No club with that code.' });
+    joinClubByCode.mockResolvedValueOnce({ clubId: null, alreadyMember: false, error: 'No group with that code.' });
     render(<JoinClubCard onJoined={() => {}} />);
-    fireEvent.change(screen.getByLabelText('Club code'), { target: { value: 'NOPE' } });
+    fireEvent.change(screen.getByLabelText('Group code'), { target: { value: 'NOPE' } });
     fireEvent.click(screen.getByRole('button', { name: 'Join' }));
-    expect(await screen.findByText('No club with that code.')).toBeTruthy();
+    expect(await screen.findByText('No group with that code.')).toBeTruthy();
   });
 });
 
@@ -144,7 +144,7 @@ describe('ClubCard', () => {
       <ClubCard
         club={{ id: 'c1', name: 'Test Club', slug: 't', rhythm: '', visibility: 'private',
           timezone: 'UTC', default_game_mode: 'open_play', code: 'TEST1',
-          cover_path: null, cover_color: 'accent2_800' }}
+          cover_path: null, cover_color: 'accent2_800', advanced_enabled: false }}
         role="member"
         nextStartsAt={null}
         unread={3}
@@ -164,14 +164,13 @@ describe('HomeGuides', () => {
     const club = {
       id: 'c1', name: 'Test Club', slug: 't', rhythm: '', visibility: 'private' as const,
       timezone: 'America/New_York', default_game_mode: 'open_play' as const, code: 'TEST1',
-      cover_path: null, cover_color: 'accent2_800' as const,
+      cover_path: null, cover_color: 'accent2_800' as const, advanced_enabled: false,
     };
     render(
       <HomeGuides
         clubs={[club]}
         roles={[{ club_id: 'c1', role: 'host' }]}
         checklist={{ c1: { events: 1, members: 1, pendingInvites: 0, announcements: 0 } }}
-        email="me@example.com"
         guides={{ isVisible: () => true, dismiss: vi.fn(), reset: vi.fn() } as never}
         router={{ push } as never}
       />,

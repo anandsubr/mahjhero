@@ -103,15 +103,15 @@ describe('club hub layout', () => {
     await waitFor(() => expect(screen.getByText('Riverside Mah Jongg')).toBeTruthy());
     expect(screen.getByTestId('slot')).toBeTruthy();
     expect(screen.getByRole('tab', { name: 'Members' }).getAttribute('aria-selected')).toBe('true');
-    expect(screen.queryByLabelText('Club settings')).toBeNull();
+    expect(screen.queryByLabelText('Group settings')).toBeNull();
     expect(getClubCoverUrl).not.toHaveBeenCalled();
   });
 
   it('shows organizers the gear and routes back, settings and sections', async () => {
     fetchMyRoles.mockResolvedValue([{ club_id: 'c1', role: 'co_organizer' }]);
     render(<ClubHubLayout />);
-    await waitFor(() => expect(screen.getByLabelText('Club settings')).toBeTruthy());
-    fireEvent.click(screen.getByLabelText('Club settings'));
+    await waitFor(() => expect(screen.getByLabelText('Group settings')).toBeTruthy());
+    fireEvent.click(screen.getByLabelText('Group settings'));
     expect(push).toHaveBeenCalledWith('/clubs/c1/settings');
     fireEvent.click(screen.getByRole('tab', { name: 'Board' }));
     expect(replace).toHaveBeenCalledWith('/clubs/c1/board');
@@ -130,7 +130,7 @@ describe('club hub layout', () => {
   it('shows an error with Retry when the club fails to load', async () => {
     fetchClub.mockResolvedValueOnce(null);
     render(<ClubHubLayout />);
-    await waitFor(() => expect(screen.getByText('Could not load this club.')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Could not load this group.')).toBeTruthy());
     expect(screen.queryByTestId('slot')).toBeNull();
     fireEvent.click(screen.getByLabelText('Retry'));
     await waitFor(() => expect(screen.getByText('Riverside Mah Jongg')).toBeTruthy());
@@ -153,7 +153,7 @@ describe('club hub layout', () => {
     fireEvent.click(screen.getByTestId('probe'));
     await waitFor(() => expect(fetchClub).toHaveBeenCalledTimes(2));
     await act(async () => {});
-    expect(screen.queryByText('Could not load this club.')).toBeNull();
+    expect(screen.queryByText('Could not load this group.')).toBeNull();
     expect(screen.getByTestId('probe').textContent).toBe('Riverside Mah Jongg');
   });
 
@@ -198,7 +198,7 @@ describe('club hub layout', () => {
     fetchClub.mockResolvedValueOnce(null);
     useSessionMock.mockReturnValue({ session: { user: { id: 'me' } }, loading: false });
     rerender(<ClubHubLayout />);
-    await waitFor(() => expect(screen.getByText('Could not load this club.')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Could not load this group.')).toBeTruthy());
     expect(screen.getByLabelText('Retry')).toBeTruthy();
     expect(fetchClub).toHaveBeenCalledTimes(1);
   });

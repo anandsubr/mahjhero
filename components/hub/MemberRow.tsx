@@ -53,7 +53,7 @@ export default function MemberRow({
   const pair = avatarColorsFor(member.profile_id);
   const skill = skillLabel(member.skill_level);
   const roleTag =
-    member.role === 'host' ? 'Host' : member.role === 'co_organizer' ? 'Co-organizer' : null;
+    member.role === 'host' ? 'Host' : member.role === 'co_organizer' ? 'Co-host' : null;
 
   return (
     <View style={styles.row}>

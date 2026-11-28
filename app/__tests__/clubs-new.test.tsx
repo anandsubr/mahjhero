@@ -5,12 +5,14 @@ import NewClubScreen from '../clubs/new';
 
 const push = vi.fn();
 const replace = vi.fn();
+const params: { for?: string } = {};
 
 vi.mock('expo-router', () => ({
   Redirect: ({ href }: { href: string }) => (
     <div data-testid="redirect" data-href={href} />
   ),
   useRouter: () => ({ push, replace }),
+  useLocalSearchParams: () => params,
   usePathname: () => '/clubs/new',
   // Wrapped in a real `useEffect` keyed on the callback's identity, not
   // called inline on every render: `(cb) => cb()` fires on every render,
@@ -44,41 +46,42 @@ vi.mock('../../lib/clubs', async (importOriginal) => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  delete params.for;
   useSessionMock.mockReturnValue(SESSION);
   createClub.mockResolvedValue({ clubId: 'club-9', error: null });
 });
 
-describe('new club screen', () => {
-  it('creates a club and navigates to it', async () => {
+describe('Start a group', () => {
+  it('creates a group and navigates to it', async () => {
     render(<NewClubScreen />);
-    fireEvent.change(screen.getByLabelText('Club name'), {
+    fireEvent.change(screen.getByLabelText('Group name'), {
       target: { value: 'Oakfield Tiles' },
     });
-    fireEvent.click(screen.getByLabelText('Create the club'));
+    fireEvent.click(screen.getByLabelText('Create the group'));
     await waitFor(() => expect(replace).toHaveBeenCalledWith('/clubs/club-9/games'));
   });
 
-  it('keeps Create the club disabled until the name has more than spaces', async () => {
+  it('keeps Create the group disabled until the name has more than spaces', async () => {
     render(<NewClubScreen />);
-    const create = screen.getByRole('button', { name: 'Create the club' });
+    const create = screen.getByRole('button', { name: 'Create the group' });
     expect(create.getAttribute('aria-disabled')).toBe('true');
     fireEvent.click(create);
     expect(createClub).not.toHaveBeenCalled();
 
-    fireEvent.change(screen.getByLabelText('Club name'), { target: { value: '   ' } });
+    fireEvent.change(screen.getByLabelText('Group name'), { target: { value: '   ' } });
     expect(create.getAttribute('aria-disabled')).toBe('true');
 
-    fireEvent.change(screen.getByLabelText('Club name'), { target: { value: 'Oak' } });
+    fireEvent.change(screen.getByLabelText('Group name'), { target: { value: 'Oak' } });
     expect(create.getAttribute('aria-disabled')).not.toBe('true');
   });
 
-  it('sends the description as the club rhythm', async () => {
+  it('sends the usual day as the club rhythm', async () => {
     render(<NewClubScreen />);
-    fireEvent.change(screen.getByLabelText('Club name'), { target: { value: 'Oakfield Tiles' } });
-    fireEvent.change(screen.getByLabelText('Description'), {
+    fireEvent.change(screen.getByLabelText('Group name'), { target: { value: 'Oakfield Tiles' } });
+    fireEvent.change(screen.getByLabelText('When do you usually play?'), {
       target: { value: 'Thursday evenings at the library' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Create the club' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create the group' }));
     await waitFor(() =>
       expect(createClub).toHaveBeenCalledWith(
         'Oakfield Tiles',
@@ -88,15 +91,15 @@ describe('new club screen', () => {
     );
   });
 
-  it('previews the club as it is typed', () => {
+  it('previews the group as it is typed', () => {
     render(<NewClubScreen />);
     const preview = screen.getByTestId('club-preview');
     expect(preview.textContent).toContain('?');
-    expect(preview.textContent).toContain('Your club');
-    expect(preview.textContent).toContain('Add a short description');
+    expect(preview.textContent).toContain('Your group');
+    expect(preview.textContent).toContain('When you usually play');
 
-    fireEvent.change(screen.getByLabelText('Club name'), { target: { value: 'oakfield' } });
-    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'Tuesdays' } });
+    fireEvent.change(screen.getByLabelText('Group name'), { target: { value: 'oakfield' } });
+    fireEvent.change(screen.getByLabelText('When do you usually play?'), { target: { value: 'Tuesdays' } });
     expect(preview.textContent).toContain('O');
     expect(preview.textContent).toContain('oakfield');
     expect(preview.textContent).toContain('Tuesdays');
@@ -105,27 +108,27 @@ describe('new club screen', () => {
   it('shows the error when creating fails', async () => {
     createClub.mockResolvedValueOnce({ clubId: null, error: 'That name is taken.' });
     render(<NewClubScreen />);
-    fireEvent.change(screen.getByLabelText('Club name'), { target: { value: 'Oak' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Create the club' }));
+    fireEvent.change(screen.getByLabelText('Group name'), { target: { value: 'Oak' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create the group' }));
     expect(await screen.findByText('That name is taken.')).toBeTruthy();
     expect(replace).not.toHaveBeenCalled();
   });
 
   it('closes to Home', async () => {
     render(<NewClubScreen />);
-    await screen.findByText('Start a club');
-    fireEvent.click(screen.getByRole('button', { name: 'Back to your clubs' }));
+    await screen.findByText('Start a group');
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Home' }));
     expect(push).toHaveBeenCalledWith('/home');
   });
 
-  it('passes the optional club code to createClub', async () => {
+  it('passes the optional group code to createClub', async () => {
     createClub.mockResolvedValueOnce({ clubId: 'c1', error: null });
     render(<NewClubScreen />);
-    fireEvent.change(screen.getByLabelText('Club name'), { target: { value: 'North Side' } });
-    fireEvent.change(screen.getByLabelText('Club code (optional)'), {
+    fireEvent.change(screen.getByLabelText('Group name'), { target: { value: 'North Side' } });
+    fireEvent.change(screen.getByLabelText('Group code (optional)'), {
       target: { value: 'north side' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Create the club' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create the group' }));
     await waitFor(() =>
       expect(createClub).toHaveBeenCalledWith('North Side', '', 'NORTHSIDE'),
     );
@@ -134,11 +137,30 @@ describe('new club screen', () => {
   it('shows a taken code error', async () => {
     createClub.mockResolvedValueOnce({ clubId: null, error: 'That code is taken.' });
     render(<NewClubScreen />);
-    fireEvent.change(screen.getByLabelText('Club name'), { target: { value: 'North Side' } });
-    fireEvent.change(screen.getByLabelText('Club code (optional)'), {
+    fireEvent.change(screen.getByLabelText('Group name'), { target: { value: 'North Side' } });
+    fireEvent.change(screen.getByLabelText('Group code (optional)'), {
       target: { value: 'OAK2' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Create the club' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create the group' }));
     expect(await screen.findByText('That code is taken.')).toBeTruthy();
+  });
+});
+
+describe('Host a Mahj Night (?for=night)', () => {
+  beforeEach(() => {
+    params.for = 'night';
+  });
+
+  it('names the night, then goes straight to its New game form', async () => {
+    render(<NewClubScreen />);
+    expect(screen.getByText('Host a Mahj Night')).toBeTruthy();
+    expect(screen.queryByLabelText('When do you usually play?')).toBeNull();
+    expect(screen.queryByLabelText('Group code (optional)')).toBeNull();
+    fireEvent.change(screen.getByLabelText('Name the night'), {
+      target: { value: "Ellie's birthday" },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Next: the night' }));
+    await waitFor(() => expect(createClub).toHaveBeenCalledWith("Ellie's birthday", '', ''));
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/clubs/club-9/events/new'));
   });
 });

@@ -94,7 +94,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
   // many-to-one, so it types this embed as an array by default even though
   // a single row is what actually comes back at runtime. Cast through
   // `unknown` (as tsc itself suggests) rather than changing the query.
-  const clubName = (invite.clubs as unknown as { name: string } | null)?.name ?? 'your club';
+  const clubName = (invite.clubs as unknown as { name: string } | null)?.name ?? 'your group';
   const appUrl = required('PUBLIC_APP_URL');
   const settingsUrl = `${appUrl}/sign-in`;
   const body = buildInviteBody(clubName, appUrl, invite.display_name as string | null);

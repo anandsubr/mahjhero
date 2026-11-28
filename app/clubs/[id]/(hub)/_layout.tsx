@@ -118,7 +118,7 @@ export default function ClubHubLayout() {
     return (
       <Screen center contentStyle={styles.failed}>
         <BackRow label="Home" accessibilityLabel="Back to home" onPress={() => router.replace('/home')} />
-        <Text style={styles.failedText}>Could not load this club.</Text>
+        <Text style={styles.failedText}>Could not load this group.</Text>
         <Button
           variant="secondary"
           big={false}

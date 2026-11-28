@@ -17,7 +17,7 @@ const DELETED_ITEMS = [
   'Your messages, board posts and the replies under them',
   'Photos and files you shared',
   'Your bookings. Seats you hold are released to the waitlist',
-  "Clubs you host pass to the longest-standing member, or close if you're the only one",
+  "Groups you host pass to the longest-standing member, or close if you're the only one",
 ];
 
 export default function DeleteAccountScreen() {

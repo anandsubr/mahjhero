@@ -132,6 +132,9 @@ const CLUB = {
   rhythm: 'Thursday evenings',
   visibility: 'private' as const,
   timezone: 'Asia/Tokyo',
+  // Most of this file exercises the club-scale controls (seating mode,
+  // levels, cost to play, check-in), which only show with Advanced on.
+  advanced_enabled: true,
 };
 
 // 2026-09-03T10:00:00Z is 19:00 JST (UTC+9, no DST).
