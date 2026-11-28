@@ -5,11 +5,12 @@ import type { EventPage } from '../../lib/mahj-nights';
 
 const push = vi.fn();
 const setParams = vi.fn();
+const replace = vi.fn();
 const params: { token: string; r?: string; created?: string } = { token: 'tok_abcdefghijklmnopqrstuvwx' };
 
 vi.mock('expo-router', () => ({
   useLocalSearchParams: () => params,
-  useRouter: () => ({ push, setParams }),
+  useRouter: () => ({ push, setParams, replace }),
 }));
 vi.mock('expo-router/head', () => ({ default: () => null }));
 
@@ -173,6 +174,31 @@ describe('the event page', () => {
     expect(screen.queryByTestId('rsvp-form')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Edit the night' }));
     expect(push).toHaveBeenCalledWith('/clubs/c1/events/e1/edit');
+  });
+
+  it('gives a signed-out visitor the wordmark and a Sign in that comes back here', async () => {
+    render(<EventPageScreen />);
+    await screen.findByText('Friday Mahj');
+    fireEvent.click(screen.getByRole('link', { name: 'About MahjHero' }));
+    expect(push).toHaveBeenCalledWith('/welcome');
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    expect(push).toHaveBeenCalledWith(`/sign-in?next=${encodeURIComponent(`/e/${params.token}`)}`);
+  });
+
+  it('gives a signed-in visitor a way back to Home', async () => {
+    SESSION.session = { user: { id: 'u1' } };
+    render(<EventPageScreen />);
+    await screen.findByText('Friday Mahj');
+    expect(screen.queryByRole('button', { name: 'Sign in' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Home' }));
+    expect(replace).toHaveBeenCalledWith('/home');
+  });
+
+  it('keeps the header on the not-found page', async () => {
+    fetchEventPage.mockResolvedValue({ page: null, error: 'not_found' });
+    render(<EventPageScreen />);
+    await screen.findByText("This invite isn't open");
+    expect(screen.getByRole('button', { name: 'Sign in' })).toBeTruthy();
   });
 
   it('says the invite is not open for an unknown or switched-off link', async () => {

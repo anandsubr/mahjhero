@@ -8,6 +8,7 @@ import Screen from '../../components/Screen';
 import ThemeArt from '../../components/night/ThemeArt';
 import RsvpForm from '../../components/night/RsvpForm';
 import HostPanel from '../../components/night/HostPanel';
+import EventHeader from '../../components/night/EventHeader';
 import {
   claimMyRsvps,
   eventUrl,
@@ -74,9 +75,19 @@ export default function EventPageScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, sessionLoading, session?.user.id]);
 
+  const signInHere = () => router.push(`/sign-in?next=${encodeURIComponent(`/e/${token}`)}`);
+  const header = (
+    <EventHeader
+      signedIn={!!session}
+      onHome={() => router.replace('/home')}
+      onWelcome={() => router.push('/welcome')}
+      onSignIn={signInHere}
+    />
+  );
+
   if (state === 'loading') {
     return (
-      <Screen center>
+      <Screen center header={header}>
         <NoIndex title="Mahj Night" />
         <ActivityIndicator color={colors.accentColor} />
       </Screen>
@@ -85,7 +96,7 @@ export default function EventPageScreen() {
 
   if (state !== 'ready' || !page) {
     return (
-      <Screen center contentStyle={styles.missing}>
+      <Screen center header={header} contentStyle={styles.missing}>
         <NoIndex title="Mahj Night" />
         <Text style={styles.title}>
           {state === 'not_found' ? "This invite isn't open" : 'Could not load the invite'}
@@ -113,7 +124,7 @@ export default function EventPageScreen() {
     page.club_id && page.event_id && router.push(`/clubs/${page.club_id}/events/${page.event_id}`);
 
   return (
-    <Screen scroll contentStyle={styles.body_}>
+    <Screen scroll header={header} contentStyle={styles.body_}>
       <NoIndex title={page.title} />
       <ThemeArt theme={theme} height={180} />
 
@@ -225,7 +236,7 @@ export default function EventPageScreen() {
               <Button
                 variant="secondary"
                 big={false}
-                onPress={() => router.push(`/sign-in?next=${encodeURIComponent(`/e/${token}`)}`)}
+                onPress={signInHere}
                 accessibilityLabel="Sign in with a code"
               >
                 Sign in with a code
@@ -303,7 +314,9 @@ function NoIndex({ title }: { title: string }) {
 
 const styles = StyleSheet.create({
   body_: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 32, gap: 16 },
-  missing: { alignItems: 'center', gap: 12, paddingHorizontal: 24 },
+  // With a header, Screen stops centring vertically; this keeps the
+  // message clear of it.
+  missing: { alignItems: 'center', gap: 12, paddingHorizontal: 24, paddingTop: 64 },
   headline: { gap: 4, paddingHorizontal: 4 },
   title: { fontFamily: type.heading, fontSize: 32, lineHeight: 36, color: colors.text, textAlign: 'left' },
   host: { fontFamily: type.bodySemiBold, fontSize: 16, color: colors.neutral[700] },
